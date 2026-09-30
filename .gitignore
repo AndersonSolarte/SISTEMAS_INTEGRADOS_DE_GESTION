@@ -39,6 +39,7 @@ frontend/.env
 config/backend_.env
 config/frontend_.env
 backend/keys/google-service-account.json
+backend/keys/*.json
 *.sql
 
 # Logs y temporales

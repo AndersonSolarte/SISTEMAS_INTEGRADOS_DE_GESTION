@@ -15,14 +15,14 @@ const ACTION_LABELS = {
   schedule_meeting: 'Programar reunión', start_formulation: 'Iniciar formulación',
   submit_preliminary_minutes: 'Enviar acta preliminar', submit_technical_review: 'Enviar a revisión técnica',
   request_adjustments: 'Solicitar ajustes', resubmit_technical_review: 'Reenviar revisión',
-  submit_owner_validation: 'Enviar al responsable', request_owner_adjustments: 'Devolver para ajustes',
-  notify_rectorate: 'Informar a Rectoría', activate: 'Activar plan', start_monitoring: 'Iniciar seguimientos', close: 'Cerrar vigencia'
+  submit_owner_validation: 'Enviar a revisión y firmas del líder', request_owner_adjustments: 'Devolver para ajustes a Planeación',
+  notify_rectorate: 'Informar a Rectoría', activate: 'Ejecutar Plan de Acción', start_monitoring: 'Iniciar seguimientos', close: 'Cerrar vigencia'
 };
 const STATUS_LABELS = {
   convocation: 'Convocatoria', meeting_scheduled: 'Reunión programada', formulation: 'Formulación',
-  preliminary_minutes: 'Acta preliminar', technical_review: 'Revisión técnica', adjustments: 'Ajustes',
-  owner_validation: 'Validación del responsable', rectorate_notification: 'Información a Rectoría',
-  active: 'Plan activo', monitoring: 'Seguimientos', closed: 'Cerrado'
+  preliminary_minutes: 'Acta preliminar', technical_review: 'Revisión técnica', adjustments: 'En ajustes (devuelto por líder)',
+  owner_validation: 'En validación y firmas de acta', rectorate_notification: 'Información a Rectoría',
+  active: 'En Ejecución Oficial', monitoring: 'En Seguimiento Semestral', closed: 'Cerrado'
 };
 const emptyItem = { macroactivity: '', activity: '', indicator_type: '', starts_on: '', ends_on: '', indicator: '', target: '', co_responsibles: '', budget: '', custom_values: {} };
 const ACTIVITY_FORM_EXCLUDED_KEYS = new Set(['responsible','progress_s1','observations_s1','progress_s2','observations_s2','total_progress']);
@@ -883,6 +883,31 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               )}
             </Box>
             <Stack direction="row" spacing={1.25} alignItems="center" sx={{ position: 'relative', zIndex: 1 }}>
+              {detail && ['owner_validation', 'formulation', 'adjustments', 'technical_review'].includes(detail.status) && (
+                <Button
+                  variant="contained"
+                  startIcon={<PlayArrow />}
+                  onClick={() => transition('activate')}
+                  sx={{
+                    fontWeight: 900,
+                    textTransform: 'none',
+                    borderRadius: 2.5,
+                    bgcolor: '#10b981',
+                    color: '#ffffff',
+                    boxShadow: '0 4px 12px rgba(16,185,129,.35)',
+                    '&:hover': { bgcolor: '#059669' }
+                  }}
+                >
+                  Ejecutar Plan de Acción
+                </Button>
+              )}
+              {detail && detail.status === 'active' && (
+                <Chip
+                  icon={<CheckCircle sx={{ color: '#ffffff !important' }} />}
+                  label="Plan en Ejecución Oficial"
+                  sx={{ bgcolor: '#059669', color: '#ffffff', fontWeight: 900, px: 1 }}
+                />
+              )}
               <Button
                 variant="outlined"
                 onClick={load}

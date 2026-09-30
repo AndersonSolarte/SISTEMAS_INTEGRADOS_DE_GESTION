@@ -40,6 +40,7 @@ const strategicPlanningService = {
   updateTerm: (termId, payload) => api.patch(`${root}/terms/${termId}`, payload).then(data),
   deleteTerm: (termId) => api.delete(`${root}/terms/${termId}`).then(data),
   listActionPlans: (params = {}) => api.get(`${root}/action-plans`, { params }).then(data),
+  getMyActionPlans: () => api.get(`${root}/my-action-plans`).then(data),
   getActionPlan: (id) => api.get(`${root}/action-plans/${id}`, { timeout: 30000 }).then(data),
   exportActionPlan: (id) => api.get(`${root}/action-plans/${id}/export`, { responseType: 'blob', timeout: 60000 }).then((response) => response.data),
   createActionPlan: (payload) => api.post(`${root}/action-plans`, payload).then(data),

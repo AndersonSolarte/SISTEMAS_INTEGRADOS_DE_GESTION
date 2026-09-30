@@ -200,13 +200,7 @@ function App() {
                   {/* Plan de Acción del responsable de dependencia - Consulta */}
                   <Route
                     path="plan-accion-mi-plan"
-                    element={
-                      <RoleRoute
-                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.CONSULTA]}
-                      >
-                        <PlanAccionConsulta />
-                      </RoleRoute>
-                    }
+                    element={<PlanAccionConsulta />}
                   />
 
                   {/* Rutas de administración */}

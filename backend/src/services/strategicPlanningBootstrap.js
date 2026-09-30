@@ -53,11 +53,22 @@ const DEFAULT_WORKFLOW = {
     { action: 'submit_technical_review', from: 'preliminary_minutes', to: 'technical_review' },
     { action: 'request_adjustments', from: 'technical_review', to: 'adjustments' },
     { action: 'resubmit_technical_review', from: 'adjustments', to: 'technical_review' },
+    { action: 'submit_owner_validation', from: 'formulation', to: 'owner_validation' },
+    { action: 'submit_owner_validation', from: 'preliminary_minutes', to: 'owner_validation' },
     { action: 'submit_owner_validation', from: 'technical_review', to: 'owner_validation' },
+    { action: 'submit_owner_validation', from: 'adjustments', to: 'owner_validation' },
     { action: 'request_owner_adjustments', from: 'owner_validation', to: 'adjustments' },
     { action: 'notify_rectorate', from: 'owner_validation', to: 'rectorate_notification' },
+    { action: 'activate', from: 'convocation', to: 'active' },
+    { action: 'activate', from: 'meeting_scheduled', to: 'active' },
+    { action: 'activate', from: 'formulation', to: 'active' },
+    { action: 'activate', from: 'preliminary_minutes', to: 'active' },
+    { action: 'activate', from: 'technical_review', to: 'active' },
+    { action: 'activate', from: 'adjustments', to: 'active' },
+    { action: 'activate', from: 'owner_validation', to: 'active' },
     { action: 'activate', from: 'rectorate_notification', to: 'active' },
     { action: 'start_monitoring', from: 'active', to: 'monitoring' },
+    { action: 'close', from: 'active', to: 'closed' },
     { action: 'close', from: 'monitoring', to: 'closed' }
   ]
 };

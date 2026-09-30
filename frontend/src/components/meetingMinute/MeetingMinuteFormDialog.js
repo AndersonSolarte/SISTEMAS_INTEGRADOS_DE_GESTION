@@ -4,13 +4,14 @@ import {
   DialogTitle, IconButton, Menu, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
 import {
-  Add, ArrowBack, ArrowForward, Close, ContentCopy, DeleteOutline, Download, EditNote, Email, PersonSearch,
+  Add, ArrowBack, ArrowForward, CalendarMonth, Close, ContentCopy, DeleteOutline, Download, EditNote, Email, PersonSearch,
   QrCode2, Refresh, Save, Send, ViewSidebar, Visibility
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import meetingMinuteService from '../../services/meetingMinuteService';
 import logoFormatos from '../../assets/logo_formatos.jpg';
 import RichTextEditor, { sanitizeRichHtml } from './RichTextEditor';
+import MeetingCalendarScheduler from './MeetingCalendarScheduler';
 import formatPersonName from '../../utils/formatPersonName';
 
 const localDate = (date = new Date()) => {
@@ -304,6 +305,15 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     (userDoc && form.responsable_document && String(form.responsable_document).trim().toLowerCase() === userDoc) ||
     (userEmail && form.responsable_email && String(form.responsable_email).trim().toLowerCase() === userEmail)
   );
+  const primaryResponsible = (Array.isArray(responsablesList) && responsablesList.find((responsible) => responsible.is_primary))
+    || responsablesList[0]
+    || (Array.isArray(form.responsables_data) && form.responsables_data.find((responsible) => responsible.is_primary))
+    || form.responsables_data?.[0];
+  const isPrimaryResponsible = Boolean(primaryResponsible && (
+    (userDoc && primaryResponsible.document && String(primaryResponsible.document).trim().toLowerCase() === userDoc)
+    || (userId && primaryResponsible.user_id && Number(primaryResponsible.user_id) === userId)
+    || (userEmail && primaryResponsible.email && String(primaryResponsible.email).trim().toLowerCase() === userEmail)
+  ));
   const isAdminUser = Boolean(
     user?.role === 'admin' ||
     user?.role === 'administrador' ||
@@ -1546,6 +1556,28 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 })}
               </Stack>
             </Paper>
+            {isPrimaryResponsible && (form.id ? (
+              <MeetingCalendarScheduler
+                minuteId={form.id}
+                minuteTitle={form.titulo}
+                defaultLocation={form.lugar}
+                participants={form.participants}
+                responsibles={responsablesList}
+              />
+            ) : (
+              <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3, borderColor: '#93c5fd', bgcolor: '#f8fbff' }}>
+                <Stack direction="row" gap={1} alignItems="center" mb={1}>
+                  <CalendarMonth color="primary" />
+                  <Typography fontWeight={900}>3. Programar siguiente reunión</Typography>
+                </Stack>
+                <Alert severity="info">
+                  Primero guarde el acta. Después podrá consultar la disponibilidad y programar la siguiente reunión en Google Calendar desde este mismo espacio.
+                </Alert>
+                <Typography variant="body2" color="text.secondary" mt={1}>
+                  Esta opción es voluntaria y no se incluirá en el acta ni en el PDF.
+                </Typography>
+              </Paper>
+            ))}
           </Stack>
           <Paper
             variant="outlined"

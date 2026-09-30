@@ -73,6 +73,8 @@ const DatabaseBackupRun = require('./DatabaseBackupRun');
 const DigitalMeetingMinute = require('./DigitalMeetingMinute');
 const DigitalMeetingParticipant = require('./DigitalMeetingParticipant');
 const DigitalMeetingSignature = require('./DigitalMeetingSignature');
+const DigitalMeetingSchedule = require('./DigitalMeetingSchedule');
+const GoogleCalendarConnection = require('./GoogleCalendarConnection');
 const CronogramaMovilidad = require('./CronogramaMovilidad');
 const CronogramaMovilidadActividad = require('./CronogramaMovilidadActividad');
 const strategicPlanning = require('./StrategicPlanning');
@@ -105,6 +107,11 @@ DigitalMeetingParticipant.belongsTo(User, { foreignKey: 'user_id', as: 'user' })
 DigitalMeetingMinute.hasMany(DigitalMeetingSignature, { foreignKey: 'minute_id', as: 'signatures', onDelete: 'CASCADE' });
 DigitalMeetingSignature.belongsTo(DigitalMeetingMinute, { foreignKey: 'minute_id', as: 'minute' });
 DigitalMeetingSignature.belongsTo(DigitalMeetingParticipant, { foreignKey: 'participant_id', as: 'participant' });
+DigitalMeetingMinute.hasOne(DigitalMeetingSchedule, { foreignKey: 'minute_id', as: 'calendarSchedule', onDelete: 'CASCADE' });
+DigitalMeetingSchedule.belongsTo(DigitalMeetingMinute, { foreignKey: 'minute_id', as: 'minute' });
+DigitalMeetingSchedule.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+User.hasOne(GoogleCalendarConnection, { foreignKey: 'user_id', as: 'googleCalendarConnection', onDelete: 'CASCADE' });
+GoogleCalendarConnection.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 // Favoritos de documentos
 User.hasMany(DocumentoFavorito, { foreignKey: 'user_id', as: 'favoritos' });
@@ -418,6 +425,8 @@ module.exports = {
   DigitalMeetingMinute,
   DigitalMeetingParticipant,
   DigitalMeetingSignature,
+    DigitalMeetingSchedule,
+    GoogleCalendarConnection,
   CronogramaMovilidad,
   CronogramaMovilidadActividad,
   ...strategicPlanning

@@ -585,6 +585,111 @@ const deleteTerm = wrap(async (req, res) => {
   ok(res, { id: term.id }, 'Año eliminado de forma lógica.');
 });
 
+const getMyActionPlans = wrap(async (req, res) => {
+  const userId = req.user.id;
+  const userEmail = String(req.user.email || '').trim().toLowerCase();
+
+  const directPlans = await StrategicActionPlan.findAll({
+    where: { deleted_at: null, responsible_user_id: userId },
+    attributes: ['id']
+  });
+
+  const respAssignments = await StrategicResponsibility.findAll({
+    where: { user_id: userId, status: 'active' },
+    attributes: ['action_plan_id']
+  });
+
+  const meetingParts = await StrategicMeetingParticipant.findAll({
+    where: {
+      [Op.or]: [
+        { user_id: userId },
+        ...(userEmail ? [{ email: { [Op.iLike]: userEmail } }] : [])
+      ]
+    },
+    include: [{ model: StrategicMeeting, as: 'meeting', attributes: ['action_plan_id'] }]
+  });
+
+  const planIds = Array.from(new Set([
+    ...directPlans.map((p) => p.id),
+    ...respAssignments.map((r) => r.action_plan_id).filter(Boolean),
+    ...meetingParts.map((m) => m.meeting?.action_plan_id).filter(Boolean)
+  ]));
+
+  if (!planIds.length) {
+    return ok(res, []);
+  }
+
+  const plans = await StrategicActionPlan.findAll({
+    where: { id: { [Op.in]: planIds }, deleted_at: null },
+    include: [
+      {
+        model: StrategicTerm, as: 'term',
+        include: [
+          { model: StrategicPlan, as: 'strategicPlan' },
+          { model: StrategicMonitoringPeriod, as: 'monitoringPeriods', separate: true, order: [['position', 'ASC']] }
+        ]
+      },
+      { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      {
+        model: StrategicActionItem, as: 'items',
+        where: { deleted_at: null }, required: false, separate: true, order: [['code', 'ASC']],
+        include: [
+          { model: StrategicMonitoringResult, as: 'monitoringResults', required: false, separate: true },
+          { model: StrategicEvidence, as: 'evidence', where: { deleted_at: null }, required: false, separate: true }
+        ]
+      },
+      {
+        model: StrategicMeeting, as: 'meetings', required: false, separate: true, order: [['starts_at', 'DESC']],
+        include: [
+          {
+            model: StrategicMeetingParticipant, as: 'participants', required: false, separate: true,
+            include: [{ model: User, as: 'user', attributes: ['id', 'username'] }]
+          },
+          {
+            model: StrategicMinuteVersion, as: 'minuteVersions', required: false, separate: true,
+            include: [{ model: StrategicMinuteSignature, as: 'signatures', required: false }]
+          }
+        ]
+      }
+    ],
+    order: [['created_at', 'DESC']]
+  });
+
+  const result = plans.map((plan) => {
+    const plain = plan.toJSON();
+    const meetings = plain.meetings || [];
+    const latestMeeting = meetings[0] || null;
+    const latestMinute = (latestMeeting?.minuteVersions || []).sort((a, b) => Number(b.version) - Number(a.version))[0] || null;
+    const isSigning = latestMinute?.status === 'signing';
+    const isFinalized = latestMinute?.status === 'finalized' || latestMeeting?.status === 'formalized';
+    const isActive = plain.status === 'active' || plain.status === 'monitoring';
+    const isOwnerValidation = plain.status === 'owner_validation' || isSigning;
+
+    const myParticipant = (latestMeeting?.participants || []).find((p) => (
+      String(p.user_id) === String(userId) ||
+      (userEmail && String(p.email || '').trim().toLowerCase() === userEmail)
+    ));
+    const mySignature = myParticipant
+      ? (latestMinute?.signatures || []).find((s) => String(s.participant_id) === String(myParticipant.id))
+      : null;
+
+    return {
+      ...plain,
+      is_responsible: String(plain.responsible_user_id) === String(userId),
+      can_execute: isActive,
+      needs_review: isOwnerValidation && !mySignature,
+      my_signed: Boolean(mySignature || myParticipant?.status === 'signed'),
+      latest_minute_id: latestMinute?.id || null,
+      latest_minute_status: latestMinute?.status || null,
+      drive_file_id: latestMinute?.drive_file_id || null,
+      drive_folder_url: latestMinute?.content?.drive_folder_url || null,
+      drive_file_url: latestMinute?.content?.drive_file_url || null
+    };
+  });
+
+  ok(res, result);
+});
+
 const listActionPlans = wrap(async (req, res) => ok(res, await findActionPlans(req.query)));
 
 const getActionPlan = wrap(async (req, res) => {
@@ -675,9 +780,19 @@ const updateActionPlan = wrap(async (req, res) => {
   ok(res, actionPlan);
 });
 
+const ensureCanModifyActionPlanItems = (actionPlan, req) => {
+  const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user?.role);
+  if (isPlanningAdmin) return true;
+  if (['active', 'monitoring', 'closed'].includes(actionPlan?.status)) {
+    throw Object.assign(new Error('El Plan de Acción se encuentra en ejecución. Para adicionar, modificar o eliminar actividades, comuníquese con la Dirección de Planeación y Aseguramiento de la Calidad.'), { statusCode: 403 });
+  }
+  return true;
+};
+
 const addActionItem = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
   if (!actionPlan) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
+  ensureCanModifyActionPlanItems(actionPlan, req);
   await ensureActionPlanSchemaSnapshot(actionPlan);
   const item = await saveActionItem({ req, actionPlan, payload: req.body });
   await refreshActionRepository(actionPlan.term_id, req, 'activity_created');
@@ -698,11 +813,17 @@ const previewDynamicItems = wrap(async (req, res) => {
   if (!req.file) throw Object.assign(new Error('Seleccione la plantilla dinámica en formato .xlsx.'), { statusCode: 422 });
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
   if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+  ensureCanModifyActionPlanItems(actionPlan, req);
   await ensureActionPlanSchemaSnapshot(actionPlan);
   ok(res, await previewDynamicActionItems({ actionPlanId: req.params.id, file: req.file, userId: req.user.id }), 'Vista previa generada. Todavía no se modificaron registros.');
 });
 
 const confirmDynamicItems = wrap(async (req, res) => {
+  const importRecord = await StrategicDynamicActionItemImport.findByPk(req.params.importId);
+  if (importRecord) {
+    const actionPlan = await StrategicActionPlan.findByPk(importRecord.action_plan_id);
+    if (actionPlan) ensureCanModifyActionPlanItems(actionPlan, req);
+  }
   const batch = await confirmDynamicActionItems({ importId: req.params.importId, req });
   await refreshActionRepository(batch.term_id, req, 'activities_imported');
   ok(res, batch, 'Carga masiva confirmada correctamente.');
@@ -712,6 +833,7 @@ const updateActionItem = wrap(async (req, res) => {
   const item = await StrategicActionItem.findByPk(req.params.itemId);
   if (!item || String(item.action_plan_id) !== String(req.params.id)) throw Object.assign(new Error('Actividad no encontrada en este Plan de Acción.'), { statusCode: 404 });
   const actionPlan = await StrategicActionPlan.findByPk(item.action_plan_id);
+  ensureCanModifyActionPlanItems(actionPlan, req);
   await ensureActionPlanSchemaSnapshot(actionPlan);
   const updated = await saveActionItem({ req, actionPlan, payload: req.body, item });
   await refreshActionRepository(actionPlan.term_id, req, 'activity_updated');
@@ -721,9 +843,10 @@ const updateActionItem = wrap(async (req, res) => {
 const deleteActionItem = wrap(async (req, res) => {
   const item = await StrategicActionItem.findByPk(req.params.itemId);
   if (!item || String(item.action_plan_id) !== String(req.params.id)) throw Object.assign(new Error('Actividad no encontrada en este Plan de Acción.'), { statusCode: 404 });
+  const actionPlan = await StrategicActionPlan.findByPk(item.action_plan_id, { attributes: ['term_id', 'status'] });
+  if (actionPlan) ensureCanModifyActionPlanItems(actionPlan, req);
   const previous = item.toJSON(); await item.update({ deleted_at: new Date(), status: 'deleted', updated_by: req.user.id });
   await audit(req, 'action_item.soft_delete', 'action_item', item.id, previous, item.toJSON(), req.body?.justification);
-  const actionPlan = await StrategicActionPlan.findByPk(item.action_plan_id, { attributes: ['term_id'] });
   await refreshActionRepository(actionPlan?.term_id, req, 'activity_deleted');
   ok(res, null, 'Actividad eliminada lógicamente.');
 });
@@ -731,7 +854,16 @@ const deleteActionItem = wrap(async (req, res) => {
 const transitionActionPlan = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
   if (!actionPlan) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
-  ok(res, await transitionPlan({ req, actionPlan, action: req.body.action, comment: req.body.comment, metadata: req.body.metadata }), 'Transición registrada.');
+  const isLeader = String(actionPlan.responsible_user_id) === String(req.user.id);
+  const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user.role);
+  if (!isLeader && !isPlanningAdmin) {
+    throw Object.assign(new Error('No tiene permisos para modificar el estado de este Plan de Acción.'), { statusCode: 403 });
+  }
+  const updated = await transitionPlan({ req, actionPlan, action: req.body.action, comment: req.body.comment, metadata: req.body.metadata });
+  if (updated.status === 'active') {
+    await refreshActionRepository(updated.term_id, req, 'plan_activated');
+  }
+  ok(res, updated, 'Transición registrada.');
 });
 
 const saveMonitoring = wrap(async (req, res) => {
@@ -1607,7 +1739,7 @@ module.exports = {
   applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, previewFieldSchema, confirmFieldSchema,
   downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, termDependencies, downloadTermDependencyTemplate,
   termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
-  listActionPlans, getActionPlan, createActionPlan, updateActionPlan, addActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
+  listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, addActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
   transitionActionPlan, saveMonitoring, createMeeting, updateMeeting, improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
   uploadEvidence, downloadEvidence, retrySync, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,

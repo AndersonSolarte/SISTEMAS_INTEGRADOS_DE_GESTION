@@ -27,6 +27,19 @@ const TERM_STATUS_LABEL = {
   active: 'Activa', closed: 'Cerrada', planned: 'Programada', draft: 'Borrador', inactive: 'Eliminada', archived: 'Archivada'
 };
 
+const ACTION_PLAN_STATUS_INFO = {
+  convocation: { label: 'Convocatoria', color: 'default' },
+  meeting_scheduled: { label: 'Reunión prog.', color: 'info' },
+  formulation: { label: 'En formulación', color: 'info' },
+  preliminary_minutes: { label: 'Acta preliminar', color: 'warning' },
+  technical_review: { label: 'Revisión técnica', color: 'warning' },
+  adjustments: { label: 'En ajustes (Líder)', color: 'error' },
+  owner_validation: { label: 'En firmas líder', color: 'warning' },
+  active: { label: 'En ejecución', color: 'success' },
+  monitoring: { label: 'En seguimiento', color: 'primary' },
+  closed: { label: 'Cerrado', color: 'default' }
+};
+
 const PLAN_STATUS_LABEL = {
   active: 'Activo', closed: 'Cerrado', planned: 'Programado', draft: 'Borrador', historical: 'Histórico'
 };
@@ -934,7 +947,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               const actionPlan = selectedYearPlans.find((item) => String(item.catalog_item_id || item.organizationalUnit?.id) === String(unit.id));
               const suggestedLeader = unit.annualAssignment?.responsible;
               return <Paper key={unit.id} elevation={0} sx={{ p: 1.75, borderRadius: 2.75, border: '1px solid', borderColor: actionPlan ? '#bbf7d0' : '#e2e8f0', bgcolor: actionPlan ? '#f7fef9' : '#fff', display: 'flex', flexDirection: 'column', minHeight: 188 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}><Box sx={{ width: 38, height: 38, flex: '0 0 38px', borderRadius: 2, bgcolor: actionPlan ? '#dcfce7' : '#eff6ff', color: actionPlan ? '#15803d' : '#2563eb', display: 'grid', placeItems: 'center' }}><AccountTree fontSize="small" /></Box><Chip size="small" color={actionPlan ? 'success' : 'default'} variant={actionPlan ? 'filled' : 'outlined'} label={actionPlan ? 'Plan creado' : 'Pendiente'} sx={{ fontWeight: 850 }} /></Stack>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}><Box sx={{ width: 38, height: 38, flex: '0 0 38px', borderRadius: 2, bgcolor: actionPlan ? '#dcfce7' : '#eff6ff', color: actionPlan ? '#15803d' : '#2563eb', display: 'grid', placeItems: 'center' }}><AccountTree fontSize="small" /></Box><Chip size="small" color={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.color || 'success') : 'default'} variant={actionPlan ? 'filled' : 'outlined'} label={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.label || 'Plan creado') : 'Pendiente'} sx={{ fontWeight: 850 }} /></Stack>
                 <Typography fontWeight={950} mt={1.2} lineHeight={1.3}>{unit.name}</Typography><Typography variant="caption" color="text.secondary">{unit.code}</Typography>
                 <Box sx={{ flex: 1, mt: 1 }}>{actionPlan ? <><Typography variant="caption" color="text.secondary">{actionPlan.code} · {actionPlan.items?.length || 0} registros</Typography><Typography variant="caption" display="block" color="text.secondary" noWrap>{actionPlan.responsibleUser?.nombre || 'Sin líder asignado'}</Typography></> : <Typography variant="caption" color="text.secondary">{suggestedLeader ? `Responsable: ${suggestedLeader.name}` : 'Configure primero el responsable de esta vigencia.'}</Typography>}</Box>
                 {actionPlan ? <Stack direction="row" gap={0.75} mt={1.25}><Button fullWidth size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button><Button size="small" variant="outlined" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ minWidth: 42, borderRadius: 2 }}><SwapHoriz fontSize="small" /></Button></Stack> : <Button fullWidth size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ mt: 1.25, borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear Plan de Acción'}</Button>}
@@ -969,9 +982,9 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     <TableCell sx={{ fontFamily: 'monospace', fontWeight: 750, color: '#42566f' }}>{responsible.document || '—'}</TableCell>
                     <TableCell><Typography fontSize={12.8} lineHeight={1.35}>{responsible.position || actionPlan?.responsibleUser?.cargo || '—'}</Typography></TableCell>
                     <TableCell><Typography component={responsible.email || actionPlan?.responsibleUser?.email ? 'a' : 'span'} href={(responsible.email || actionPlan?.responsibleUser?.email) ? `mailto:${responsible.email || actionPlan?.responsibleUser?.email}` : undefined} fontSize={12.5} color="#315f9d" sx={{ textDecoration: 'none', '&:hover': { textDecoration: 'underline' }, wordBreak: 'break-word' }}>{responsible.email || actionPlan?.responsibleUser?.email || '—'}</Typography></TableCell>
-                    <TableCell><Chip size="small" color={actionPlan ? 'success' : 'default'} variant={actionPlan ? 'filled' : 'outlined'} label={actionPlan ? 'Plan creado' : 'Pendiente'} sx={{ fontWeight: 850 }} /></TableCell>
+                    <TableCell><Chip size="small" color={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.color || 'success') : 'default'} variant={actionPlan ? 'filled' : 'outlined'} label={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.label || 'Plan creado') : 'Pendiente'} sx={{ fontWeight: 850 }} /></TableCell>
                     <TableCell align="center"><Box sx={{ width: 32, height: 32, mx: 'auto', borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: actionPlan?.items?.length ? '#e8f2ff' : '#f1f5f9', color: actionPlan?.items?.length ? '#245ab5' : '#64748b', fontWeight: 950 }}>{actionPlan?.items?.length || 0}</Box></TableCell>
-                    <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>{actionPlan ? <Stack direction="row" justifyContent="center" gap={0.75}><Button size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ minWidth: 112, height: 36, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button><Button size="small" variant="outlined" title="Cambiar responsable" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ minWidth: 40, width: 40, height: 36, borderRadius: 1.75 }}><SwapHoriz fontSize="small" /></Button></Stack> : <Button size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ minWidth: 160, height: 36, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear plan'}</Button>}</TableCell>
+                    <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>{actionPlan ? <Stack direction="row" justifyContent="center" gap={0.75}><Button size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ minWidth: 95, height: 36, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>{['owner_validation', 'formulation', 'adjustments'].includes(actionPlan.status) && <Button size="small" variant="contained" color="success" onClick={async () => { try { await strategicPlanningService.transition(actionPlan.id, { action: 'activate', comment: 'Plan ejecutado directamente desde la plataforma institucional' }); enqueueSnackbar(`Plan ${actionPlan.code} pasado a Ejecución Oficial.`, { variant: 'success' }); await load(); } catch (err) { enqueueSnackbar(err?.response?.data?.message || 'No fue posible activar el plan.', { variant: 'error' }); } }} sx={{ height: 36, borderRadius: 1.75, textTransform: 'none', fontWeight: 900, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}>Ejecutar</Button>}<Button size="small" variant="outlined" title="Cambiar responsable" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ minWidth: 40, width: 40, height: 36, borderRadius: 1.75 }}><SwapHoriz fontSize="small" /></Button></Stack> : <Button size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ minWidth: 160, height: 36, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear plan'}</Button>}</TableCell>
                   </TableRow>;
                 })}
               </TableBody>
@@ -983,8 +996,146 @@ export default function StrategicPlanningPlatform({ onBack }) {
       </Box>}
 
       {pedWorkspaceOpen && space === 'monitoring' && <Box>
-        <SectionHeader title="Diligencie los informes semestrales" description="Abra un plan y registre sus avances y evidencias en S1 o S2." />
-        {!visiblePlans.length ? <Alert severity="warning">Todavía no hay Planes de Acción para este PED.</Alert> : <TableContainer component={Paper} variant="outlined"><Table><TableHead><TableRow><TableCell>Año</TableCell><TableCell>Dependencia</TableCell><TableCell>Plan de Acción</TableCell><TableCell>Actividades</TableCell><TableCell>Avance general</TableCell><TableCell /></TableRow></TableHead><TableBody>{visiblePlans.map((actionPlan) => { const actionItems=actionPlan.items || []; const progress=actionItems.length ? actionItems.reduce((sum, row) => sum + Number(row.current_progress || 0), 0) / actionItems.length : 0; return <TableRow key={actionPlan.id}><TableCell>{actionPlan.term?.year}</TableCell><TableCell>{actionPlan.organizationalUnit?.name}</TableCell><TableCell><Typography fontWeight={800}>{actionPlan.title}</Typography><Typography variant="caption">{actionPlan.code}</Typography></TableCell><TableCell>{actionItems.length}</TableCell><TableCell sx={{ minWidth: 160 }}><Typography variant="body2" fontWeight={800}>{progress.toFixed(1)}%</Typography><LinearProgress variant="determinate" value={progress} /></TableCell><TableCell><Button variant="contained" size="small" onClick={() => setEditorPlanId(actionPlan.id)}>Llenar informe</Button></TableCell></TableRow>; })}</TableBody></Table></TableContainer>}
+        <SectionHeader title="Seguimiento y Estado de los Planes de Acción" description="Tablero integral para la Dirección de Planeación y Aseguramiento de la Calidad. Controle el estado de cada plan, firmas, ajustes y avances semestrales." />
+        {(() => {
+          const totalCount = visiblePlans.length;
+          const enFirmasCount = visiblePlans.filter((p) => p.status === 'owner_validation').length;
+          const enAjustesCount = visiblePlans.filter((p) => p.status === 'adjustments').length;
+          const enEjecucionCount = visiblePlans.filter((p) => ['active', 'monitoring'].includes(p.status)).length;
+          const enFormulacionCount = visiblePlans.filter((p) => ['convocation', 'meeting_scheduled', 'formulation', 'technical_review'].includes(p.status)).length;
+
+          return (
+            <Stack spacing={2.5}>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6} md={2.4}>
+                  <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: '#ffffff' }}>
+                    <CardContent sx={{ p: 2 }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={800} textTransform="uppercase">Total Planes</Typography>
+                      <Typography variant="h4" fontWeight={950} color="#1e3a8a">{totalCount}</Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+                <Grid item xs={12} sm={6} md={2.4}>
+                  <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: '#f8fafc' }}>
+                    <CardContent sx={{ p: 2 }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={800} textTransform="uppercase">En Formulación</Typography>
+                      <Typography variant="h4" fontWeight={950} color="#475569">{enFormulacionCount}</Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+                <Grid item xs={12} sm={6} md={2.4}>
+                  <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: '#fffbeb', borderColor: '#fde68a' }}>
+                    <CardContent sx={{ p: 2 }}>
+                      <Typography variant="caption" color="#b45309" fontWeight={800} textTransform="uppercase">En Firmas / Líder</Typography>
+                      <Typography variant="h4" fontWeight={950} color="#b45309">{enFirmasCount}</Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+                <Grid item xs={12} sm={6} md={2.4}>
+                  <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: enAjustesCount > 0 ? '#fef2f2' : '#ffffff', borderColor: enAjustesCount > 0 ? '#fecaca' : '#e2e8f0' }}>
+                    <CardContent sx={{ p: 2 }}>
+                      <Typography variant="caption" color={enAjustesCount > 0 ? '#b91c1c' : 'text.secondary'} fontWeight={800} textTransform="uppercase">En Ajustes (Líder)</Typography>
+                      <Typography variant="h4" fontWeight={950} color={enAjustesCount > 0 ? '#dc2626' : '#64748b'}>{enAjustesCount}</Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+                <Grid item xs={12} sm={6} md={2.4}>
+                  <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: '#f0fdf4', borderColor: '#bbf7d0' }}>
+                    <CardContent sx={{ p: 2 }}>
+                      <Typography variant="caption" color="#15803d" fontWeight={800} textTransform="uppercase">En Ejecución Oficial</Typography>
+                      <Typography variant="h4" fontWeight={950} color="#16a34a">{enEjecucionCount}</Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
+
+              {enAjustesCount > 0 && (
+                <Alert severity="error" sx={{ borderRadius: 2.5 }}>
+                  Hay <strong>{enAjustesCount}</strong> plan(es) devuelto(s) por el Líder de Dependencia solicitando ajustes. Revise las observaciones, ajuste las actividades y vuelva a enviarlo o ejecútelo.
+                </Alert>
+              )}
+
+              {!visiblePlans.length ? (
+                <Alert severity="warning">Todavía no hay Planes de Acción para este PED.</Alert>
+              ) : (
+                <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3 }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                        <TableCell sx={{ fontWeight: 900 }}>Vigencia</TableCell>
+                        <TableCell sx={{ fontWeight: 900 }}>Dependencia</TableCell>
+                        <TableCell sx={{ fontWeight: 900 }}>Responsable</TableCell>
+                        <TableCell sx={{ fontWeight: 900 }}>Código Plan</TableCell>
+                        <TableCell sx={{ fontWeight: 900 }} align="center">Estado Actual</TableCell>
+                        <TableCell sx={{ fontWeight: 900 }} align="center">Actividades</TableCell>
+                        <TableCell sx={{ fontWeight: 900, minWidth: 150 }}>Avance Físico</TableCell>
+                        <TableCell sx={{ fontWeight: 900 }} align="center">Acciones</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {visiblePlans.map((actionPlan) => {
+                        const actionItems = actionPlan.items || [];
+                        const progress = actionItems.length ? actionItems.reduce((sum, row) => sum + Number(row.current_progress || 0), 0) / actionItems.length : 0;
+                        const statusObj = ACTION_PLAN_STATUS_INFO[actionPlan.status] || { label: actionPlan.status, color: 'default' };
+
+                        return (
+                          <TableRow key={actionPlan.id} hover>
+                            <TableCell sx={{ fontWeight: 700 }}>{actionPlan.term?.year || '—'}</TableCell>
+                            <TableCell sx={{ fontWeight: 800 }}>{actionPlan.organizationalUnit?.name || '—'}</TableCell>
+                            <TableCell>
+                              <Typography variant="body2" fontWeight={700}>{actionPlan.responsibleUser?.nombre || 'Sin asignar'}</Typography>
+                              <Typography variant="caption" color="text.secondary">{actionPlan.responsibleUser?.cargo || ''}</Typography>
+                            </TableCell>
+                            <TableCell><Chip size="small" label={actionPlan.code} sx={{ fontWeight: 800, bgcolor: '#f1f5f9' }} /></TableCell>
+                            <TableCell align="center">
+                              <Chip size="small" color={statusObj.color} label={statusObj.label} sx={{ fontWeight: 900 }} />
+                            </TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 800 }}>{actionItems.length}</TableCell>
+                            <TableCell>
+                              <Stack spacing={0.5}>
+                                <Typography variant="caption" fontWeight={900}>{progress.toFixed(1)}%</Typography>
+                                <LinearProgress variant="determinate" value={progress} sx={{ height: 6, borderRadius: 3 }} />
+                              </Stack>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Stack direction="row" spacing={1} justifyContent="center">
+                                <Button variant="outlined" size="small" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}>
+                                  Abrir
+                                </Button>
+                                {['owner_validation', 'formulation', 'adjustments'].includes(actionPlan.status) && (
+                                  <Button
+                                    variant="contained"
+                                    color="success"
+                                    size="small"
+                                    onClick={async () => {
+                                      try {
+                                        await strategicPlanningService.transition(actionPlan.id, {
+                                          action: 'activate',
+                                          comment: 'Plan ejecutado desde seguimiento institucional'
+                                        });
+                                        enqueueSnackbar(`Plan ${actionPlan.code} pasado a Ejecución Oficial.`, { variant: 'success' });
+                                        await load();
+                                      } catch (err) {
+                                        enqueueSnackbar(err?.response?.data?.message || 'No fue posible ejecutar el plan.', { variant: 'error' });
+                                      }
+                                    }}
+                                    sx={{ textTransform: 'none', fontWeight: 900, borderRadius: 2, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
+                                  >
+                                    Ejecutar Plan
+                                  </Button>
+                                )}
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Stack>
+          );
+        })()}
         {!!syncJobs.length && <Alert severity="success" icon={<Folder />} sx={{ mt: 2 }}>Las evidencias se conservan y se sincronizan automáticamente con el expediente institucional.</Alert>}
         <StepNavigation onBack={() => setSpace('actions')} onNext={() => setSpace('analytics')} nextLabel="Ver resultados" />
       </Box>}

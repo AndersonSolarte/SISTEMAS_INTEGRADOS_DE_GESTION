@@ -20,6 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS, ROLES } from '../constants/roles';
 import VigiladaMineducacion from './VigiladaMineducacion';
 import planAccionWorkflowService from '../services/planAccionWorkflowService';
+import strategicPlanningService from '../services/strategicPlanningService';
 import reporteSalidaService from '../services/reporteSalidaService';
 import { getEstadoLegalizacion } from '../services/legalizacionViaticosService';
 
@@ -58,21 +59,40 @@ function DashboardLayout() {
   const [openGestionProcesos, setOpenGestionProcesos] = useState(false);
   const [openAdministracionSistema, setOpenAdministracionSistema] = useState(false);
   const [planAccionPendientes, setPlanAccionPendientes] = useState(0);
+  const [hasPlanAccionModulo, setHasPlanAccionModulo] = useState(false);
   const [reposicionBadge, setReposicionBadge] = useState(null);
   const [legalizacionesPendientes, setLegalizacionesPendientes] = useState(0);
 
   const refrescarBadgePlanAccion = useCallback(async () => {
-    if (!user?.role) return;
-    const rolesQueVenBadge = [ROLES.PLANEACION_ESTRATEGICA, ROLES.CONSULTA];
-    if (!rolesQueVenBadge.includes(user.role)) return;
+    if (!user) return;
     try {
-      const resp = await planAccionWorkflowService.obtenerBadge();
-      const value = Number(resp?.data?.count || 0);
-      setPlanAccionPendientes(Number.isFinite(value) ? value : 0);
+      let peiCount = 0;
+      let hasPeiPlan = false;
+      try {
+        const peiResp = await strategicPlanningService.getMyActionPlans();
+        const myPlans = Array.isArray(peiResp?.data) ? peiResp.data : [];
+        const visiblePlans = myPlans.filter((p) =>
+          ['owner_validation', 'active', 'monitoring', 'closed'].includes(p.status)
+        );
+        hasPeiPlan = visiblePlans.length > 0;
+        peiCount = visiblePlans.filter((p) => p.status === 'owner_validation').length;
+      } catch (_) {}
+
+      let legacyCount = 0;
+      try {
+        const resp = await planAccionWorkflowService.obtenerBadge();
+        const value = Number(resp?.data?.count || 0);
+        legacyCount = Number.isFinite(value) ? value : 0;
+      } catch (_) {}
+
+      const totalBadge = peiCount + legacyCount;
+      setPlanAccionPendientes(totalBadge);
+      setHasPlanAccionModulo(hasPeiPlan || legacyCount > 0);
     } catch (err) {
       setPlanAccionPendientes(0);
+      setHasPlanAccionModulo(false);
     }
-  }, [user?.role]);
+  }, [user]);
 
   const refrescarBadgeReposicion = useCallback(async () => {
     if (!user) return;
@@ -477,15 +497,15 @@ function DashboardLayout() {
     }
   }
 
-  // === Inyección dinámica del módulo "Plan de Acción" según rol y pendientes ===
-  if (planAccionPendientes > 0) {
-    if (user?.role === ROLES.CONSULTA) {
+  // === Inyección dinámica del módulo "Plan de Acción" según rol y planes asignados ===
+  if (hasPlanAccionModulo || planAccionPendientes > 0) {
+    if (user?.role !== ROLES.PLANEACION_ESTRATEGICA && user?.role !== ROLES.PLANEACION_EFECTIVIDAD) {
       const planAccionItem = {
         key: 'plan_accion_consulta',
         path: '/dashboard/plan-accion-mi-plan',
         label: 'Plan de Acción',
         icon: <AssignmentTurnedInIcon />,
-        badge: planAccionPendientes
+        badge: planAccionPendientes > 0 ? planAccionPendientes : undefined
       };
       const inicioIdx = menuItems.findIndex((it) => it.key === 'dashboard');
       if (inicioIdx >= 0) {
@@ -498,7 +518,6 @@ function DashboardLayout() {
         menuItems = [planAccionItem, ...menuItems];
       }
     }
-
   }
 
   if (legalizacionesPendientes > 0) {

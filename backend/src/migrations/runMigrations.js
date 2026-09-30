@@ -563,6 +563,8 @@ const runMigrations = async () => {
     await models.DigitalMeetingMinute.sync();
     await models.DigitalMeetingParticipant.sync();
     await models.DigitalMeetingSignature.sync();
+    await models.DigitalMeetingSchedule.sync();
+    await models.GoogleCalendarConnection.sync();
     await ensureColumn(qi, 'digital_meeting_minutes', 'finalized_at', { type: DataTypes.DATE, allowNull: true });
     await ensureColumn(qi, 'digital_meeting_minutes', 'distributed_at', { type: DataTypes.DATE, allowNull: true });
     await ensureColumn(qi, 'digital_meeting_minutes', 'distribution_count', { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 });

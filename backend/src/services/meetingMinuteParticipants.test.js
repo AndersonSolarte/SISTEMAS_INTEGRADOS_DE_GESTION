@@ -84,6 +84,8 @@ test('solo reconoce como responsables de revisión al principal y corresponsable
   assert.equal(_internals.isMinuteResponsible({ id: 8, email: 'corresponsable@unicesmag.edu.co' }, minute), true);
   assert.equal(_internals.isMinuteResponsible({ id: 99, email: 'creador@unicesmag.edu.co' }, minute), false);
   assert.equal(_internals.isMinuteResponsible({ id: 10, nombre: 'Mismo nombre del responsable' }, minute), false);
+  assert.equal(_internals.isMinutePrimaryResponsible({ id: 7, username: '10850001' }, minute), true);
+  assert.equal(_internals.isMinutePrimaryResponsible({ id: 8, email: 'corresponsable@unicesmag.edu.co' }, minute), false);
 });
 
 test('impide cambiar la lista de personas durante una revisión posterior a firmas', () => {

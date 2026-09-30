@@ -45,6 +45,7 @@ router.patch('/terms/:termId', permit('pei_configurar'), c.updateTerm);
 router.delete('/terms/:termId', permit('pei_configurar'), c.deleteTerm);
 
 router.get('/action-plans', permit(), c.listActionPlans);
+router.get('/my-action-plans', permit(), c.getMyActionPlans);
 router.post('/action-plans', permit('pei_formular'), c.createActionPlan);
 router.get('/action-plans/:id', permit(), c.getActionPlan);
 router.patch('/action-plans/:id', permit('pei_formular'), c.updateActionPlan);
@@ -54,7 +55,7 @@ router.post('/action-plans/:id/items-import/preview', permit('pei_formular'), up
 router.post('/action-items-imports/:importId/confirm', permit('pei_formular'), c.confirmDynamicItems);
 router.patch('/action-plans/:id/items/:itemId', permit('pei_formular'), c.updateActionItem);
 router.delete('/action-plans/:id/items/:itemId', permit('pei_formular'), c.deleteActionItem);
-router.post('/action-plans/:id/transitions', permit('pei_formular', 'pei_revision_tecnica', 'pei_validar_responsable'), c.transitionActionPlan);
+router.post('/action-plans/:id/transitions', permit(), c.transitionActionPlan);
 router.post('/action-plans/:id/transfer-leader', permit('pei_formular'), c.transferLeader);
 router.get('/action-plans/:id/export', permit(), c.exportActionPlan);
 router.put('/action-items/:itemId/monitoring/:periodId', permit('pei_seguimiento'), c.saveMonitoring);

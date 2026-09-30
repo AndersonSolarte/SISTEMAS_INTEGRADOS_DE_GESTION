@@ -7,7 +7,7 @@ const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const {
   DigitalMeetingMinute, DigitalMeetingParticipant, DigitalMeetingSignature,
-  Documento, User
+  DigitalMeetingSchedule, Documento, User
 } = require('../models');
 const {
   getMeetingMinuteFeatureState, isMeetingMinuteDocument, setMeetingMinuteFeatureState
@@ -19,6 +19,9 @@ const {
   PRIVACY_POLICY_NOTICE, PRIVACY_POLICY_URL, PRIVACY_POLICY_VERSION
 } = require('../constants/privacyPolicy');
 const { formatPersonName } = require('../utils/formatPersonName');
+const {
+  getCalendarConfiguration, normalizeAttendees, checkAvailability, saveCalendarEvent
+} = require('../services/meetingCalendarService');
 
 const PRIVATE_ROOT = path.resolve(process.env.SIAC_MEETING_MINUTE_DIR || path.join(__dirname, '../../uploads/.private/digital-meeting-minutes'));
 const SIGNATURE_ROOT = path.join(PRIVATE_ROOT, 'signatures');
@@ -234,6 +237,27 @@ const isMinuteResponsible = (user, minute) => {
   ) || (userDoc && content.responsable_document && String(content.responsable_document).trim().toLowerCase() === userDoc)
     || (userEmail && content.responsable_email && clean(content.responsable_email, 254).toLowerCase() === userEmail);
   return Boolean(isResp);
+};
+
+const isMinutePrimaryResponsible = (user, minute) => {
+  if (!user || !minute) return false;
+  const userId = Number(user.id);
+  const userDoc = String(user.username || user.documento || user.cedula || '').trim().toLowerCase();
+  const userEmail = clean(user.email, 254).toLowerCase();
+  const content = minute.content || {};
+  const data = Array.isArray(content.responsables_data) ? content.responsables_data : [];
+  const primary = data.find((responsible) => responsible.is_primary) || data[0];
+  if (primary) {
+    return Boolean(
+      (userDoc && primary.document && String(primary.document).trim().toLowerCase() === userDoc)
+      || (userId && primary.user_id && Number(primary.user_id) === userId)
+      || (userEmail && primary.email && clean(primary.email, 254).toLowerCase() === userEmail)
+    );
+  }
+  return Boolean(
+    (userDoc && content.responsable_document && String(content.responsable_document).trim().toLowerCase() === userDoc)
+    || (userEmail && content.responsable_email && clean(content.responsable_email, 254).toLowerCase() === userEmail)
+  );
 };
 
 const canAccessMinuteFullSignatures = async (user, minute) => {
@@ -454,7 +478,11 @@ const parseDataUrl = (value) => {
   return { extension: match[1] === 'jpeg' ? 'jpg' : 'png', buffer };
 };
 
-const fail = (res, error) => res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Error interno' });
+const fail = (res, error) => res.status(error.statusCode || 500).json({
+  success: false,
+  message: error.message || 'Error interno',
+  ...(error.data ? { data: error.data } : {})
+});
 const wrap = (fn) => async (req, res) => { try { await fn(req, res); } catch (error) { console.error('[digital-meeting-minute]', error); fail(res, error); } };
 
 const participantInclude = { model: DigitalMeetingParticipant, as: 'participants', separate: true, order: [['created_at', 'ASC']], attributes: ['id', 'minute_id', 'user_id', 'document', 'name', 'email', 'organization', 'role_title', 'status', 'created_at'] };
@@ -1307,6 +1335,137 @@ const sendFinalMinute = wrap(async (req, res) => {
   res.json({ success: true, message: `Acta firmada enviada a ${recipients.length} participante(s).`, data: { status: 'distributed', distributed_at: sentAt, recipients: recipients.length } });
 });
 
+const loadMinuteForCalendar = async (req) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id);
+  if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+  if (!isMinutePrimaryResponsible(req.user, minute)) {
+    throw Object.assign(new Error('Solo el Responsable Principal puede programar la siguiente reunión.'), { statusCode: 403 });
+  }
+  const organizer = await resolveMinutePrimaryResponsible(minute);
+  if (!organizer?.email) {
+    throw Object.assign(new Error('El Responsable Principal no tiene un correo institucional registrado.'), { statusCode: 422 });
+  }
+  return { minute, organizer };
+};
+
+const getCalendarSchedule = wrap(async (req, res) => {
+  const { minute, organizer } = await loadMinuteForCalendar(req);
+  const schedule = await DigitalMeetingSchedule.findOne({ where: { minute_id: minute.id } });
+  res.json({
+    success: true,
+    data: {
+      configuration: getCalendarConfiguration(),
+      organizer,
+      schedule: schedule ? schedule.toJSON() : null
+    }
+  });
+});
+
+const prepareCalendarError = (error) => {
+  if (error.statusCode) return error;
+  if (error.code === 'CALENDAR_NOT_CONFIGURED') error.statusCode = 503;
+  else if (['INVALID_CALENDAR_RANGE', 'INVALID_CALENDAR_ORGANIZER'].includes(error.code)) error.statusCode = 422;
+  else {
+    error.statusCode = 502;
+    if ([401, 403, 'unauthorized_client', 'access_denied'].includes(error.code) || /unauthorized|forbidden|delegat/i.test(error.message || '')) {
+      error.message = 'Google Calendar rechazó la autorización. Revise la delegación del dominio y los permisos calendar.events y calendar.freebusy.';
+    }
+  }
+  return error;
+};
+
+const calendarAvailability = wrap(async (req, res) => {
+  const { organizer } = await loadMinuteForCalendar(req);
+  const attendees = normalizeAttendees(req.body.attendees);
+  try {
+    const availability = await checkAvailability({
+      organizerEmail: organizer.email,
+      organizerName: organizer.name,
+      attendees,
+      startAt: req.body.start_at,
+      endAt: req.body.end_at
+    });
+    res.json({ success: true, data: { organizer, availability } });
+  } catch (error) {
+    throw prepareCalendarError(error);
+  }
+});
+
+const saveCalendarSchedule = wrap(async (req, res) => {
+  const { minute, organizer } = await loadMinuteForCalendar(req);
+  const summary = clean(req.body.summary, 240);
+  const attendees = normalizeAttendees(req.body.attendees);
+  if (!summary) throw Object.assign(new Error('Digite el título de la siguiente reunión.'), { statusCode: 422 });
+  const requestedStart = new Date(req.body.start_at);
+  if (Number.isNaN(requestedStart.getTime()) || requestedStart <= new Date()) {
+    throw Object.assign(new Error('La siguiente reunión debe programarse en una fecha y hora futuras.'), { statusCode: 422 });
+  }
+  const existing = await DigitalMeetingSchedule.findOne({ where: { minute_id: minute.id } });
+  let availability;
+  try {
+    availability = await checkAvailability({
+      organizerEmail: organizer.email,
+      organizerName: organizer.name,
+      attendees,
+      startAt: req.body.start_at,
+      endAt: req.body.end_at
+    });
+  } catch (error) {
+    throw prepareCalendarError(error);
+  }
+  const busyPeople = availability.filter((person) => person.status === 'busy');
+  if (busyPeople.length && req.body.force !== true) {
+    const error = Object.assign(new Error('Algunos participantes están ocupados en este horario.'), {
+      statusCode: 409,
+      data: { availability }
+    });
+    throw error;
+  }
+
+  try {
+    const event = await saveCalendarEvent({
+      organizerEmail: organizer.email,
+      minuteId: minute.id,
+      minuteCode: minute.code,
+      eventId: existing?.google_event_id,
+      summary,
+      description: clean(req.body.description || `Seguimiento del acta ${minute.code}.`, 4000),
+      location: clean(req.body.location, 500),
+      startAt: req.body.start_at,
+      endAt: req.body.end_at,
+      attendees
+    });
+    const values = {
+      organizer_email: organizer.email,
+      summary,
+      description: clean(req.body.description || `Seguimiento del acta ${minute.code}.`, 4000),
+      location: clean(req.body.location, 500),
+      start_at: new Date(req.body.start_at),
+      end_at: new Date(req.body.end_at),
+      timezone: getCalendarConfiguration().timezone,
+      attendees,
+      google_event_id: event.id,
+      google_event_url: event.htmlLink || null,
+      status: 'scheduled',
+      last_error: null,
+      updated_by: req.user.id
+    };
+    const schedule = existing
+      ? await existing.update(values)
+      : await DigitalMeetingSchedule.create({ ...values, minute_id: minute.id, created_by: req.user.id });
+    res.json({
+      success: true,
+      message: existing ? 'La siguiente reunión fue actualizada en Google Calendar.' : 'La siguiente reunión fue programada en Google Calendar.',
+      data: { schedule: schedule.toJSON(), availability }
+    });
+  } catch (error) {
+    if (existing) await existing.update({ status: 'error', last_error: clean(error.message, 2000), updated_by: req.user.id }).catch(() => {});
+    if (!error.statusCode) error.statusCode = 502;
+    if (error.statusCode === 502) error.message = `Google Calendar no pudo programar la reunión: ${error.message}`;
+    throw error;
+  }
+});
+
 const updateComments = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id, {
     include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
@@ -1338,10 +1497,12 @@ const updateComments = wrap(async (req, res) => {
 });
 
 module.exports = {
+  calendarAvailability,
   deleteMinute,
   downloadPdf,
   downloadWord,
   getConfig,
+  getCalendarSchedule,
   googleSigningAccess,
   getMinute,
   getSigningAccess,
@@ -1355,6 +1516,7 @@ module.exports = {
   restoreAllMinutes,
   restoreMinute,
   saveDraft,
+  saveCalendarSchedule,
   sendFinalMinute,
   sign,
   updateComments,
@@ -1364,6 +1526,7 @@ module.exports = {
     buildSigningInvitationEmail,
     formatDependencyOfficeLocation,
     hasSameParticipantMembership,
+    isMinutePrimaryResponsible,
     isMinuteResponsible,
     minuteThreadSubject,
     minuteRootMessageId,
