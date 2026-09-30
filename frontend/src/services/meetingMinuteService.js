@@ -18,6 +18,8 @@ const meetingMinuteService = {
   sendFinal: (id) => api.post(`${root}/${id}/send-final`).then(unwrap),
   updateComments: (id, payload) => api.post(`${root}/${id}/comments`, payload).then(unwrap),
   getCalendarSchedule: (id) => api.get(`${root}/${id}/calendar`).then(unwrap),
+  startCalendarConnection: (id) => api.post(`${root}/${id}/calendar/connect`).then(unwrap),
+  disconnectCalendar: (id) => api.delete(`${root}/${id}/calendar/connection`).then(unwrap),
   checkCalendarAvailability: (id, payload) => api.post(`${root}/${id}/calendar/availability`, payload).then(unwrap),
   saveCalendarSchedule: (id, payload) => api.put(`${root}/${id}/calendar`, payload).then(unwrap),
   downloadWord: (id, params = {}) => api.get(`${root}/${id}/word`, { params, responseType: 'blob' }).then((response) => response.data),

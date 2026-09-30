@@ -8,6 +8,7 @@ const router = express.Router();
 router.get('/public/:token', publicLimiter, controller.publicMinute);
 router.post('/public/:token/google-access', publicLimiter, controller.googleSigningAccess);
 router.post('/public/:token/sign', publicLimiter, controller.sign);
+router.get('/calendar-connection/callback', publicLimiter, controller.calendarOAuthCallback);
 
 router.get('/config', auth, controller.getConfig);
 router.patch('/config', auth, controller.updateConfig);
@@ -17,6 +18,8 @@ router.get('/', auth, controller.listMinutes);
 router.post('/restore-all', auth, controller.restoreAllMinutes);
 router.post('/', auth, controller.saveDraft);
 router.get('/:id/calendar', auth, controller.getCalendarSchedule);
+router.post('/:id/calendar/connect', auth, controller.startCalendarConnection);
+router.delete('/:id/calendar/connection', auth, controller.disconnectCalendar);
 router.post('/:id/calendar/availability', auth, controller.calendarAvailability);
 router.put('/:id/calendar', auth, controller.saveCalendarSchedule);
 router.get('/:id', auth, controller.getMinute);

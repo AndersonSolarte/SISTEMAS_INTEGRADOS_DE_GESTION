@@ -48,7 +48,9 @@ export default function MeetingCalendarScheduler({
   const [working, setWorking] = useState(false);
   const [configuration, setConfiguration] = useState(null);
   const [organizer, setOrganizer] = useState(null);
+  const [connection, setConnection] = useState({ connected: false });
   const [existing, setExisting] = useState(null);
+  const [connectionRefresh, setConnectionRefresh] = useState(0);
   const [availability, setAvailability] = useState(null);
   const [extra, setExtra] = useState({ name: '', email: '' });
   const [form, setForm] = useState({
@@ -66,6 +68,7 @@ export default function MeetingCalendarScheduler({
       const schedule = data.schedule;
       setConfiguration(data.configuration || null);
       setOrganizer(data.organizer || null);
+      setConnection(data.connection || { connected: false });
       setExisting(schedule || null);
       if (schedule) {
         const start = bogotaParts(schedule.start_at);
@@ -88,7 +91,15 @@ export default function MeetingCalendarScheduler({
       if (active) defaults.enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar la programación de Calendar.', { variant: 'error' });
     }).finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [minuteId]); // Los asistentes se fijan al abrir el acta; después el usuario puede ajustarlos aquí.
+  }, [minuteId, connectionRefresh]); // Los asistentes se fijan al abrir el acta; después el usuario puede ajustarlos aquí.
+
+  useEffect(() => {
+    const receiveOAuthResult = (event) => {
+      if (event.data?.type === 'siac-calendar-oauth') setConnectionRefresh((value) => value + 1);
+    };
+    window.addEventListener('message', receiveOAuthResult);
+    return () => window.removeEventListener('message', receiveOAuthResult);
+  }, []);
 
   const update = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -152,6 +163,40 @@ export default function MeetingCalendarScheduler({
     }
   };
 
+  const connectCalendar = async () => {
+    const popup = window.open('', 'siac-google-calendar', 'width=560,height=720,resizable=yes,scrollbars=yes');
+    if (!popup) return enqueueSnackbar('Permita las ventanas emergentes para conectar Google Calendar.', { variant: 'warning' });
+    popup.document.write('<p style="font-family:Arial;padding:24px">Abriendo autorización segura de Google…</p>');
+    try {
+      const response = await meetingMinuteService.startCalendarConnection(minuteId);
+      popup.location.href = response.data?.url;
+      const poll = window.setInterval(() => {
+        if (popup.closed) {
+          window.clearInterval(poll);
+          setConnectionRefresh((value) => value + 1);
+        }
+      }, 800);
+    } catch (error) {
+      popup.close();
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible iniciar la conexión con Google Calendar.', { variant: 'error' });
+    }
+  };
+
+  const disconnectCalendar = async () => {
+    if (!window.confirm('¿Desea desconectar su cuenta de Google Calendar de SIAC?')) return;
+    setWorking(true);
+    try {
+      const response = await meetingMinuteService.disconnectCalendar(minuteId);
+      setConnection({ connected: false });
+      setAvailability(null);
+      enqueueSnackbar(response.message || 'Google Calendar fue desconectado.', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible desconectar Google Calendar.', { variant: 'error' });
+    } finally {
+      setWorking(false);
+    }
+  };
+
   const busy = availability?.filter((person) => person.status === 'busy') || [];
   const unknown = availability?.filter((person) => person.status === 'unknown') || [];
 
@@ -168,7 +213,16 @@ export default function MeetingCalendarScheduler({
       </Stack>
 
       {!configuration?.configured && <Alert severity="warning" sx={{ mb: 1.5 }}>{configuration?.message || 'Google Calendar aún no está configurado en el servidor.'}</Alert>}
-      {organizer && <Alert severity="info" icon={<EventAvailable />} sx={{ mb: 1.5 }}>Organiza <strong>{formatPersonName(organizer.name)}</strong> ({organizer.email}).</Alert>}
+      {configuration?.configured && !connection.connected && (
+        <Alert severity="warning" sx={{ mb: 1.5 }} action={<Button color="inherit" size="small" onClick={connectCalendar} sx={{ fontWeight: 900, whiteSpace: 'nowrap' }}>Conectar mi Calendar</Button>}>
+          Conecte la cuenta <strong>{organizer?.email}</strong>. Google solicitará permiso solamente para consultar disponibilidad y administrar reuniones.
+        </Alert>
+      )}
+      {connection.connected && (
+        <Alert severity="success" icon={<EventAvailable />} sx={{ mb: 1.5 }} action={<Button color="inherit" size="small" onClick={disconnectCalendar}>Desconectar</Button>}>
+          Calendar conectado como <strong>{connection.email}</strong>. Organiza {formatPersonName(organizer?.name)}.
+        </Alert>
+      )}
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1.2 }}>
         <TextField label="Título de la reunión" value={form.summary} onChange={(event) => update('summary', event.target.value.slice(0, 240))} sx={{ gridColumn: { sm: '1 / -1' } }} />
@@ -200,11 +254,11 @@ export default function MeetingCalendarScheduler({
       {availability && !busy.length && !unknown.length && <Alert severity="success" sx={{ mt: 1.5 }}>Todos los calendarios consultados están disponibles.</Alert>}
 
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="flex-end" gap={1} mt={2}>
-        <Button variant="outlined" startIcon={working ? <CircularProgress size={16} /> : <Refresh />} disabled={working || !configuration?.configured} onClick={check} sx={{ textTransform: 'none', fontWeight: 850 }}>Consultar disponibilidad</Button>
+        <Button variant="outlined" startIcon={working ? <CircularProgress size={16} /> : <Refresh />} disabled={working || !configuration?.configured || !connection.connected} onClick={check} sx={{ textTransform: 'none', fontWeight: 850 }}>Consultar disponibilidad</Button>
         {busy.length > 0 ? (
-          <Button color="warning" variant="contained" disabled={working || !configuration?.configured} onClick={() => schedule(true)} sx={{ textTransform: 'none', fontWeight: 900 }}>{existing ? 'Actualizar de todas formas' : 'Programar de todas formas'}</Button>
+          <Button color="warning" variant="contained" disabled={working || !configuration?.configured || !connection.connected} onClick={() => schedule(true)} sx={{ textTransform: 'none', fontWeight: 900 }}>{existing ? 'Actualizar de todas formas' : 'Programar de todas formas'}</Button>
         ) : (
-          <Button variant="contained" startIcon={<EventAvailable />} disabled={working || !configuration?.configured || !availability} onClick={() => schedule(false)} sx={{ textTransform: 'none', fontWeight: 900 }}>{existing ? 'Actualizar en Calendar' : 'Programar en Calendar'}</Button>
+          <Button variant="contained" startIcon={<EventAvailable />} disabled={working || !configuration?.configured || !connection.connected || !availability} onClick={() => schedule(false)} sx={{ textTransform: 'none', fontWeight: 900 }}>{existing ? 'Actualizar en Calendar' : 'Programar en Calendar'}</Button>
         )}
       </Stack>
     </Paper>

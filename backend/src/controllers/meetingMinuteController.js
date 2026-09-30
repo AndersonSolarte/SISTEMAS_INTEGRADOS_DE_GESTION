@@ -7,7 +7,7 @@ const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const {
   DigitalMeetingMinute, DigitalMeetingParticipant, DigitalMeetingSignature,
-  DigitalMeetingSchedule, Documento, User
+  DigitalMeetingSchedule, GoogleCalendarConnection, Documento, User
 } = require('../models');
 const {
   getMeetingMinuteFeatureState, isMeetingMinuteDocument, setMeetingMinuteFeatureState
@@ -22,6 +22,10 @@ const { formatPersonName } = require('../utils/formatPersonName');
 const {
   getCalendarConfiguration, normalizeAttendees, checkAvailability, saveCalendarEvent
 } = require('../services/meetingCalendarService');
+const {
+  getOAuthConfiguration, createAuthorizationUrl, readAuthorizationState,
+  exchangeAuthorizationCode, encryptRefreshToken, createConnectedOAuthClient
+} = require('../services/meetingCalendarOAuthService');
 
 const PRIVATE_ROOT = path.resolve(process.env.SIAC_MEETING_MINUTE_DIR || path.join(__dirname, '../../uploads/.private/digital-meeting-minutes'));
 const SIGNATURE_ROOT = path.join(PRIVATE_ROOT, 'signatures');
@@ -1348,14 +1352,103 @@ const loadMinuteForCalendar = async (req) => {
   return { minute, organizer };
 };
 
+const loadCalendarConnection = async (userId, organizerEmail) => {
+  const connection = await GoogleCalendarConnection.findOne({ where: { user_id: userId } });
+  const expectedEmail = clean(organizerEmail, 254).toLowerCase();
+  const connected = Boolean(
+    connection
+    && connection.status === 'connected'
+    && clean(connection.google_email, 254).toLowerCase() === expectedEmail
+  );
+  return { connection, connected };
+};
+
+const publicCalendarConnection = (connection, connected) => ({
+  connected,
+  email: connected ? connection.google_email : null,
+  connected_at: connected ? connection.connected_at : null,
+  last_used_at: connected ? connection.last_used_at : null
+});
+
+const startCalendarConnection = wrap(async (req, res) => {
+  const { organizer } = await loadMinuteForCalendar(req);
+  const configuration = getOAuthConfiguration();
+  if (!configuration.configured) {
+    throw Object.assign(new Error(configuration.message), { statusCode: 503 });
+  }
+  const url = createAuthorizationUrl({ userId: req.user.id, expectedEmail: organizer.email });
+  res.json({ success: true, data: { url, expected_email: organizer.email } });
+});
+
+const disconnectCalendar = wrap(async (req, res) => {
+  const { organizer } = await loadMinuteForCalendar(req);
+  const { connection } = await loadCalendarConnection(req.user.id, organizer.email);
+  if (connection) await connection.destroy();
+  res.json({ success: true, message: 'La cuenta de Google Calendar fue desconectada.' });
+});
+
+const calendarOAuthCallback = async (req, res) => {
+  const nonce = crypto.randomBytes(18).toString('base64');
+  const frontendOrigin = (() => {
+    try {
+      return new URL(process.env.PUBLIC_APP_URL || process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:3000').origin;
+    } catch (_) {
+      return 'http://localhost:3000';
+    }
+  })();
+  const respond = (success, message) => {
+    const safeMessage = escapeHtml(message);
+    const eventPayload = JSON.stringify({ type: 'siac-calendar-oauth', success }).replace(/</g, '\\u003c');
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    res.setHeader('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'`);
+    return res.status(success ? 200 : 400).send(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Google Calendar</title></head><body style="font-family:Arial,sans-serif;padding:32px;text-align:center"><h2>${success ? 'Calendar conectado' : 'No fue posible conectar Calendar'}</h2><p>${safeMessage}</p><p>Puede cerrar esta ventana y regresar a SIAC.</p><script nonce="${nonce}">if(window.opener){window.opener.postMessage(${eventPayload},${JSON.stringify(frontendOrigin)});}setTimeout(function(){window.close();},900);</script></body></html>`);
+  };
+
+  try {
+    if (req.query.error) return respond(false, 'Google no autorizó el acceso solicitado.');
+    const state = readAuthorizationState(req.query.state);
+    const user = await User.findByPk(state.user_id);
+    if (!user || user.estado !== 'activo') return respond(false, 'El usuario de SIAC ya no está activo.');
+    const expectedEmail = clean(state.expected_email, 254).toLowerCase();
+    if (clean(user.email, 254).toLowerCase() !== expectedEmail) {
+      return respond(false, 'El correo del usuario cambió. Inicie nuevamente la conexión desde el acta.');
+    }
+    const authorization = await exchangeAuthorizationCode(req.query.code);
+    if (!authorization.verified || authorization.email !== expectedEmail) {
+      return respond(false, `Debe autorizar exactamente la cuenta ${expectedEmail}.`);
+    }
+    const existing = await GoogleCalendarConnection.findOne({ where: { user_id: user.id } });
+    const encryptedToken = authorization.tokens.refresh_token
+      ? encryptRefreshToken(authorization.tokens.refresh_token)
+      : existing?.refresh_token_encrypted;
+    if (!encryptedToken) return respond(false, 'Google no entregó una autorización permanente. Intente conectar nuevamente.');
+    const values = {
+      google_email: authorization.email,
+      refresh_token_encrypted: encryptedToken,
+      scopes: String(authorization.tokens.scope || '').split(/\s+/).filter(Boolean),
+      status: 'connected',
+      connected_at: new Date(),
+      last_error: null
+    };
+    if (existing) await existing.update(values);
+    else await GoogleCalendarConnection.create({ ...values, user_id: user.id });
+    return respond(true, `La cuenta ${authorization.email} quedó conectada.`);
+  } catch (error) {
+    console.error('[meeting-calendar-oauth]', error);
+    return respond(false, error.message || 'La autorización de Google Calendar no pudo completarse.');
+  }
+};
+
 const getCalendarSchedule = wrap(async (req, res) => {
   const { minute, organizer } = await loadMinuteForCalendar(req);
   const schedule = await DigitalMeetingSchedule.findOne({ where: { minute_id: minute.id } });
+  const { connection, connected } = await loadCalendarConnection(req.user.id, organizer.email);
   res.json({
     success: true,
     data: {
       configuration: getCalendarConfiguration(),
       organizer,
+      connection: publicCalendarConnection(connection, connected),
       schedule: schedule ? schedule.toJSON() : null
     }
   });
@@ -1363,12 +1456,13 @@ const getCalendarSchedule = wrap(async (req, res) => {
 
 const prepareCalendarError = (error) => {
   if (error.statusCode) return error;
-  if (error.code === 'CALENDAR_NOT_CONFIGURED') error.statusCode = 503;
+  if (['CALENDAR_NOT_CONFIGURED', 'CALENDAR_OAUTH_NOT_CONFIGURED'].includes(error.code)) error.statusCode = 503;
+  else if (error.code === 'CALENDAR_NOT_CONNECTED') error.statusCode = 409;
   else if (['INVALID_CALENDAR_RANGE', 'INVALID_CALENDAR_ORGANIZER'].includes(error.code)) error.statusCode = 422;
   else {
     error.statusCode = 502;
-    if ([401, 403, 'unauthorized_client', 'access_denied'].includes(error.code) || /unauthorized|forbidden|delegat/i.test(error.message || '')) {
-      error.message = 'Google Calendar rechazó la autorización. Revise la delegación del dominio y los permisos calendar.events y calendar.freebusy.';
+    if ([401, 403, 'unauthorized_client', 'access_denied', 'invalid_grant'].includes(error.code) || /unauthorized|forbidden|invalid_grant/i.test(error.message || '')) {
+      error.message = 'Google Calendar rechazó o revocó la autorización. Desconecte la cuenta y vuelva a conectarla desde el acta.';
     }
   }
   return error;
@@ -1378,13 +1472,18 @@ const calendarAvailability = wrap(async (req, res) => {
   const { organizer } = await loadMinuteForCalendar(req);
   const attendees = normalizeAttendees(req.body.attendees);
   try {
+    const { connection, connected } = await loadCalendarConnection(req.user.id, organizer.email);
+    if (!connected) throw Object.assign(new Error('Conecte su cuenta institucional de Google Calendar antes de consultar disponibilidad.'), { code: 'CALENDAR_NOT_CONNECTED' });
+    const authClient = createConnectedOAuthClient(connection);
     const availability = await checkAvailability({
       organizerEmail: organizer.email,
       organizerName: organizer.name,
       attendees,
       startAt: req.body.start_at,
-      endAt: req.body.end_at
+      endAt: req.body.end_at,
+      authClient
     });
+    await connection.update({ last_used_at: new Date(), last_error: null });
     res.json({ success: true, data: { organizer, availability } });
   } catch (error) {
     throw prepareCalendarError(error);
@@ -1401,6 +1500,9 @@ const saveCalendarSchedule = wrap(async (req, res) => {
     throw Object.assign(new Error('La siguiente reunión debe programarse en una fecha y hora futuras.'), { statusCode: 422 });
   }
   const existing = await DigitalMeetingSchedule.findOne({ where: { minute_id: minute.id } });
+  const { connection, connected } = await loadCalendarConnection(req.user.id, organizer.email);
+  if (!connected) throw Object.assign(new Error('Conecte su cuenta institucional de Google Calendar antes de programar la reunión.'), { statusCode: 409 });
+  const authClient = createConnectedOAuthClient(connection);
   let availability;
   try {
     availability = await checkAvailability({
@@ -1408,7 +1510,8 @@ const saveCalendarSchedule = wrap(async (req, res) => {
       organizerName: organizer.name,
       attendees,
       startAt: req.body.start_at,
-      endAt: req.body.end_at
+      endAt: req.body.end_at,
+      authClient
     });
   } catch (error) {
     throw prepareCalendarError(error);
@@ -1433,8 +1536,10 @@ const saveCalendarSchedule = wrap(async (req, res) => {
       location: clean(req.body.location, 500),
       startAt: req.body.start_at,
       endAt: req.body.end_at,
-      attendees
+      attendees,
+      authClient
     });
+    await connection.update({ last_used_at: new Date(), last_error: null });
     const values = {
       organizer_email: organizer.email,
       summary,
@@ -1498,6 +1603,7 @@ const updateComments = wrap(async (req, res) => {
 
 module.exports = {
   calendarAvailability,
+  calendarOAuthCallback,
   deleteMinute,
   downloadPdf,
   downloadWord,
@@ -1517,6 +1623,8 @@ module.exports = {
   restoreMinute,
   saveDraft,
   saveCalendarSchedule,
+  startCalendarConnection,
+  disconnectCalendar,
   sendFinalMinute,
   sign,
   updateComments,

@@ -1,74 +1,29 @@
-const fs = require('fs');
-const path = require('path');
 const { google } = require('googleapis');
-
-const CALENDAR_SCOPES = [
-  'https://www.googleapis.com/auth/calendar.events',
-  'https://www.googleapis.com/auth/calendar.freebusy'
-];
+const { getOAuthConfiguration } = require('./meetingCalendarOAuthService');
 
 const clean = (value, max = 500) => String(value || '').trim().slice(0, max);
 const normalizeEmail = (value) => clean(value, 254).toLowerCase();
 const isEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
 
-const readServiceAccount = () => {
-  const source = clean(
-    process.env.MEETING_CALENDAR_SERVICE_ACCOUNT_JSON
-      || process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
-    20000
-  );
-  if (!source) return null;
-  try {
-    if (source.startsWith('{')) return JSON.parse(source);
-    const resolved = path.isAbsolute(source) ? source : path.resolve(process.cwd(), source);
-    if (!fs.existsSync(resolved)) return null;
-    return JSON.parse(fs.readFileSync(resolved, 'utf8'));
-  } catch (_) {
-    return null;
-  }
-};
-
 const getCalendarConfiguration = () => {
-  const credentials = readServiceAccount();
-  const domain = clean(process.env.MEETING_CALENDAR_ALLOWED_DOMAIN || 'unicesmag.edu.co', 200).toLowerCase();
-  const timezone = clean(process.env.MEETING_CALENDAR_TIMEZONE || 'America/Bogota', 80);
-  const configured = Boolean(credentials?.client_email && credentials?.private_key && domain);
+  const oauth = getOAuthConfiguration();
   return {
-    configured,
-    domain,
-    timezone,
-    message: configured
-      ? 'Google Calendar está configurado.'
-      : 'Falta configurar la cuenta de servicio de Google Calendar con delegación institucional.'
+    configured: oauth.configured,
+    domain: clean(process.env.MEETING_CALENDAR_ALLOWED_DOMAIN || 'unicesmag.edu.co', 200).toLowerCase(),
+    timezone: clean(process.env.MEETING_CALENDAR_TIMEZONE || 'America/Bogota', 80),
+    message: oauth.message
   };
 };
 
 const assertInstitutionalOrganizer = (organizerEmail) => {
   const config = getCalendarConfiguration();
   const email = normalizeEmail(organizerEmail);
-  if (!config.configured) {
-    const error = new Error(config.message);
-    error.code = 'CALENDAR_NOT_CONFIGURED';
-    throw error;
-  }
   if (!isEmail(email) || !email.endsWith(`@${config.domain}`)) {
     const error = new Error(`El Responsable Principal debe tener un correo @${config.domain} para organizar la reunión.`);
     error.code = 'INVALID_CALENDAR_ORGANIZER';
     throw error;
   }
   return { ...config, email };
-};
-
-const createDelegatedCalendar = (organizerEmail) => {
-  const config = assertInstitutionalOrganizer(organizerEmail);
-  const credentials = readServiceAccount();
-  const auth = new google.auth.JWT({
-    email: credentials.client_email,
-    key: String(credentials.private_key || '').replace(/\\n/g, '\n'),
-    scopes: CALENDAR_SCOPES,
-    subject: config.email
-  });
-  return google.calendar({ version: 'v3', auth });
 };
 
 const normalizeAttendees = (attendees = []) => {
@@ -101,12 +56,22 @@ const parseRange = (startAt, endAt) => {
   return { start, end };
 };
 
-const checkAvailability = async ({ organizerEmail, organizerName, attendees, startAt, endAt, calendarClient }) => {
+const requireCalendar = (authClient, calendarClient) => {
+  if (calendarClient) return calendarClient;
+  if (!authClient) {
+    const error = new Error('Conecte su cuenta de Google Calendar antes de continuar.');
+    error.code = 'CALENDAR_NOT_CONNECTED';
+    throw error;
+  }
+  return google.calendar({ version: 'v3', auth: authClient });
+};
+
+const checkAvailability = async ({ organizerEmail, organizerName, attendees, startAt, endAt, authClient, calendarClient }) => {
   const config = assertInstitutionalOrganizer(organizerEmail);
   const range = parseRange(startAt, endAt);
   const people = normalizeAttendees([{ email: config.email, name: organizerName, source: 'organizer' }, ...attendees]);
   if (!people.length) return [];
-  const calendar = calendarClient || createDelegatedCalendar(config.email);
+  const calendar = requireCalendar(authClient, calendarClient);
   const calendars = {};
   for (let index = 0; index < people.length; index += 50) {
     const response = await calendar.freebusy.query({
@@ -145,15 +110,13 @@ const findExistingEvent = async (calendar, minuteId) => {
 
 const saveCalendarEvent = async ({
   organizerEmail, minuteId, minuteCode, eventId, summary, description, location,
-  startAt, endAt, attendees, calendarClient
+  startAt, endAt, attendees, authClient, calendarClient
 }) => {
   const config = assertInstitutionalOrganizer(organizerEmail);
   const range = parseRange(startAt, endAt);
   const people = normalizeAttendees(attendees).filter(({ email }) => email !== config.email);
-  const calendar = calendarClient || createDelegatedCalendar(config.email);
-  const existing = eventId
-    ? { id: eventId }
-    : await findExistingEvent(calendar, minuteId);
+  const calendar = requireCalendar(authClient, calendarClient);
+  const existing = eventId ? { id: eventId } : await findExistingEvent(calendar, minuteId);
   const requestBody = {
     summary: clean(summary, 240),
     description: clean(description || `Reunión programada desde el acta ${minuteCode || ''}.`, 4000),

@@ -1,73 +1,85 @@
 # Google Calendar para actas de reunión
 
-Esta integración permite que el Responsable Principal programe una siguiente reunión desde SIAC. El evento se crea en el calendario principal del responsable, consulta disponibilidad y envía invitaciones a participantes del acta o invitados adicionales.
+La integración utiliza autorización OAuth individual. Cada Responsable Principal conecta una vez su cuenta institucional y SIAC conserva el `refresh token` cifrado para consultar disponibilidad y crear o actualizar la siguiente reunión en su calendario.
 
-La programación se guarda separada del acta y no se incluye en el PDF, Word ni proceso de firmas.
+No requiere delegación de todo el dominio. La programación se almacena separada del acta y no se incluye en el PDF, Word ni proceso de firmas.
 
-## 1. Habilitar Google Calendar API
+## 1. Google Calendar API
 
-En el proyecto institucional de Google Cloud:
+1. Abra [Google Calendar API](https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=sig-cesmag-490522).
+2. Confirme que el proyecto sea `SIG-CESMAG`.
+3. Confirme que el estado sea **Habilitada**.
 
-1. Abra [Google Cloud Console](https://console.cloud.google.com/) y seleccione el proyecto institucional.
-2. Entre directamente a [Google Calendar API](https://console.cloud.google.com/apis/library/calendar-json.googleapis.com).
-3. Confirme que aparece el proyecto correcto en la barra superior.
-4. Pulse **Habilitar**.
+## 2. Configurar la aplicación OAuth
 
-## 2. Preparar la cuenta de servicio
+1. Abra [Google Auth Platform](https://console.cloud.google.com/auth/overview?project=sig-cesmag-490522).
+2. En **Público objetivo**, seleccione **Interno** si la consola permite esa opción para la organización `unicesmag.edu.co`.
+3. Complete la información básica de la aplicación con el nombre `SIAC Calendar` y un correo institucional de soporte.
+4. En **Acceso a los datos**, confirme los permisos de identidad y Calendar solicitados por la aplicación.
 
-1. Abra [IAM y administración > Cuentas de servicio](https://console.cloud.google.com/iam-admin/serviceaccounts).
-2. Cree o reutilice una cuenta de servicio institucional.
-3. Active **Delegación de todo el dominio de Google Workspace**.
-4. Abra **Claves > Agregar clave > Crear clave nueva > JSON**.
-5. Guárdela fuera del control de versiones, en `backend/keys/google-calendar-service-account.json`.
-6. Copie el **ID numérico del cliente** de la cuenta de servicio; no use su correo en el siguiente paso.
-
-## 3. Autorizar en Google Workspace
-
-Un superadministrador debe abrir [Delegación de todo el dominio](https://admin.google.com/ac/owl/domainwidedelegation), o navegar por:
-
-**Consola de administración > Seguridad > Controles de API > Delegación de todo el dominio > Añadir nuevo**
-
-Registre el ID numérico del cliente y estos permisos, separados por coma:
+Permisos utilizados:
 
 ```text
-https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/calendar.freebusy
+openid
+email
+https://www.googleapis.com/auth/calendar.events
+https://www.googleapis.com/auth/calendar.freebusy
 ```
 
-La delegación permite que SIAC cree el evento en nombre del Responsable Principal. SIAC no solicita ni almacena la contraseña del responsable.
+## 3. Crear el cliente OAuth web
+
+1. Abra [Google Auth Platform > Clientes](https://console.cloud.google.com/auth/clients?project=sig-cesmag-490522).
+2. Pulse **Crear cliente**.
+3. Tipo: **Aplicación web**.
+4. Nombre: `SIAC Calendar Web`.
+5. Agregue como origen autorizado:
+
+```text
+https://planeaciongp.unicesmag.edu.co
+```
+
+6. Agregue como URI de redireccionamiento autorizado:
+
+```text
+https://planeaciongp.unicesmag.edu.co/api/meeting-minutes/calendar-connection/callback
+```
+
+7. Cree el cliente y copie su **ID de cliente** y **secreto del cliente**. El secreto solamente se guarda en el `.env` del servidor.
+
+Para desarrollo local se puede agregar además:
+
+```text
+http://localhost:3000
+http://localhost:5000/api/meeting-minutes/calendar-connection/callback
+```
 
 ## 4. Variables del servidor
 
-En el servidor, configure estas variables en el archivo `.env` ubicado en la raíz del proyecto:
+En el `.env` ubicado en la raíz del proyecto configure:
 
 ```env
-MEETING_CALENDAR_SERVICE_ACCOUNT_JSON=/app/keys/google-calendar-service-account.json
+MEETING_CALENDAR_OAUTH_CLIENT_ID=ID_DEL_CLIENTE.apps.googleusercontent.com
+MEETING_CALENDAR_OAUTH_CLIENT_SECRET=SECRETO_DEL_CLIENTE
+MEETING_CALENDAR_OAUTH_REDIRECT_URI=https://planeaciongp.unicesmag.edu.co/api/meeting-minutes/calendar-connection/callback
 MEETING_CALENDAR_ALLOWED_DOMAIN=unicesmag.edu.co
 MEETING_CALENDAR_TIMEZONE=America/Bogota
 ```
 
-El archivo indicado puede ser el mismo de `GOOGLE_SERVICE_ACCOUNT_JSON` si esa cuenta tiene delegación y los permisos anteriores.
+No publique el secreto ni lo agregue a Git.
 
-## 5. Verificación
+## 5. Uso y verificación
 
-1. Reinicie el backend o ejecute el despliegue.
-2. Abra un acta guardada con la cuenta de su Responsable Principal.
-3. En **Programar siguiente reunión**, seleccione fecha y horas.
-4. Pulse **Consultar disponibilidad**.
-5. Programe el evento y confirme que el organizador mostrado en Google Calendar sea el Responsable Principal.
+1. Despliegue y abra un acta guardada con la cuenta del Responsable Principal.
+2. Pulse **Conectar mi Calendar**.
+3. Autorice exactamente el correo institucional que aparece registrado en el acta.
+4. Regrese a SIAC y confirme el estado **Calendar conectado**.
+5. Seleccione fecha y horario, consulte disponibilidad y programe la reunión.
 
-Si aparece un error de autorización, revise que:
-
-- se utilizó el ID numérico del cliente en la consola de administración;
-- ambos permisos fueron autorizados;
-- el correo del Responsable Principal pertenece al dominio configurado;
-- la cuenta de servicio tiene activada la delegación del dominio;
-- la política de Calendar del dominio permite consultar libre/ocupado entre usuarios.
-
-La propagación inicial de la autorización de Google Workspace puede tardar algunos minutos.
+Si la política institucional impide que los usuarios autoricen aplicaciones OAuth, Google mostrará un bloqueo administrativo. Esa política solamente puede cambiarla un administrador de Workspace; SIAC no puede omitirla.
 
 Referencias oficiales:
 
+- https://developers.google.com/workspace/guides/create-credentials
+- https://developers.google.com/identity/protocols/oauth2/web-server
 - https://developers.google.com/workspace/calendar/api/v3/reference/freebusy/query
 - https://developers.google.com/workspace/calendar/api/v3/reference/events/insert
-- https://developers.google.com/identity/protocols/oauth2/service-account

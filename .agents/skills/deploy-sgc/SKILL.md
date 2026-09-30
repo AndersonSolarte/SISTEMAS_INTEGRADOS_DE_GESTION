@@ -1,24 +1,30 @@
 ---
 name: deploy-sgc
-description: Desplegar el Sistema de Gestión de Calidad en el servidor de producción
+description: Guía de despliegue del Sistema de Gestión de Calidad en el servidor de producción (SOLO DOCUMENTACIÓN - EJECUTADO EXCLUSIVAMENTE POR EL USUARIO)
 ---
 
 # Despliegue del SGC en Producción
 
-Este skill automatiza y documenta el procedimiento para desplegar la última versión del Sistema de Gestión de Calidad (SGC) en el servidor de producción Linux.
+> [!CAUTION]
+> **REGLA CRÍTICA ESTRICTA PARA EL ASISTENTE DE IA:**
+> **EL AGENTE NUNCA DEBE CONECTARSE POR SSH NI EJECUTAR DESPLIEGUES O COMANDOS EN EL SERVIDOR DE PRODUCCIÓN.**
+> El asistente solo debe subir cambios a la rama `main` cuando el usuario lo solicite expresamente.
+> El despliegue en el servidor es una tarea **100% manual y exclusiva del usuario**.
 
-## Comandos del Despliegue
+---
 
-Para desplegar los últimos cambios, conéctate al servidor vía SSH y ejecuta el script de despliegue en la raíz del proyecto:
+## Procedimiento Manual del Usuario
 
+El usuario es el único autorizado para ingresar al servidor de producción y ejecutar el despliegue.
+
+### Comandos que ejecuta el usuario en el servidor:
 ```bash
 cd /var/www/SISTEMAS_INTEGRADOS_DE_GESTION && ./deploy.sh
 ```
 
-## Contenido del script `./deploy.sh`
-El script ejecuta los siguientes pasos secuenciales:
-1. Cambia al directorio del proyecto: `/var/www/SISTEMAS_INTEGRADOS_DE_GESTION`
-2. Cambia a la rama de producción: `git checkout main`
-3. Descarga la última versión: `git pull origin main`
-4. Compila y reinicia los contenedores de Docker: `docker compose up -d --build`
-5. Ejecuta las migraciones de base de datos pendientes: `docker compose exec -T backend npm run migrate`
+### Contenido del script `./deploy.sh`:
+1. Ir al directorio del proyecto: `/var/www/SISTEMAS_INTEGRADOS_DE_GESTION`
+2. Cambiar a la rama de producción: `git checkout main`
+3. Descargar la última versión de GitHub: `git pull origin main`
+4. Reconstruir e iniciar contenedores Docker: `docker compose up -d --build`
+5. Ejecutar migraciones pendientes: `docker compose exec -T backend npm run migrate`

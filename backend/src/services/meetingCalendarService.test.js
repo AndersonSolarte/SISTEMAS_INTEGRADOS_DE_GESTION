@@ -6,21 +6,22 @@ const {
 
 const withCalendarEnvironment = async (callback) => {
   const previous = {
-    credentials: process.env.MEETING_CALENDAR_SERVICE_ACCOUNT_JSON,
+    clientId: process.env.MEETING_CALENDAR_OAUTH_CLIENT_ID,
+    clientSecret: process.env.MEETING_CALENDAR_OAUTH_CLIENT_SECRET,
     domain: process.env.MEETING_CALENDAR_ALLOWED_DOMAIN,
     timezone: process.env.MEETING_CALENDAR_TIMEZONE
   };
-  process.env.MEETING_CALENDAR_SERVICE_ACCOUNT_JSON = JSON.stringify({
-    client_email: 'calendar-service@example-project.iam.gserviceaccount.com',
-    private_key: '-----BEGIN PRIVATE KEY-----\nTEST\n-----END PRIVATE KEY-----\n'
-  });
+  process.env.MEETING_CALENDAR_OAUTH_CLIENT_ID = 'calendar-oauth-client';
+  process.env.MEETING_CALENDAR_OAUTH_CLIENT_SECRET = 'calendar-oauth-secret';
   process.env.MEETING_CALENDAR_ALLOWED_DOMAIN = 'unicesmag.edu.co';
   process.env.MEETING_CALENDAR_TIMEZONE = 'America/Bogota';
   try {
     await callback();
   } finally {
-    if (previous.credentials === undefined) delete process.env.MEETING_CALENDAR_SERVICE_ACCOUNT_JSON;
-    else process.env.MEETING_CALENDAR_SERVICE_ACCOUNT_JSON = previous.credentials;
+    if (previous.clientId === undefined) delete process.env.MEETING_CALENDAR_OAUTH_CLIENT_ID;
+    else process.env.MEETING_CALENDAR_OAUTH_CLIENT_ID = previous.clientId;
+    if (previous.clientSecret === undefined) delete process.env.MEETING_CALENDAR_OAUTH_CLIENT_SECRET;
+    else process.env.MEETING_CALENDAR_OAUTH_CLIENT_SECRET = previous.clientSecret;
     if (previous.domain === undefined) delete process.env.MEETING_CALENDAR_ALLOWED_DOMAIN;
     else process.env.MEETING_CALENDAR_ALLOWED_DOMAIN = previous.domain;
     if (previous.timezone === undefined) delete process.env.MEETING_CALENDAR_TIMEZONE;
