@@ -480,4 +480,50 @@ const generateStrategicMinutePdf = async ({
   });
 };
 
-module.exports = { generateStrategicMinutePdf };
+const ensureMinuteFinalPdfBuffer = async (minute) => {
+  if (!minute) return null;
+  const privateRoot = process.env.PRIVATE_UPLOADS_ROOT || path.join(__dirname, '..', '..', 'uploads_private');
+  const reportsDir = path.join(privateRoot, '_minutes');
+  if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
+
+  if (minute.final_pdf_storage_key && fs.existsSync(minute.final_pdf_storage_key)) {
+    return fs.readFileSync(minute.final_pdf_storage_key);
+  }
+
+  const { StrategicMinuteSignature } = require('../models');
+  const QRCode = require('qrcode');
+  const crypto = require('crypto');
+
+  const signatures = await StrategicMinuteSignature.findAll({
+    where: { minute_version_id: minute.id },
+    order: [['signed_at', 'ASC']]
+  });
+
+  const baseUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'https://siac.unicesmag.edu.co').replace(/\/$/, '');
+  const validationUrl = `${baseUrl}/api/public/strategic-planning/validate/${minute.id}`;
+  let qrDataUrl = '';
+  try {
+    qrDataUrl = await QRCode.toDataURL(validationUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
+  } catch (_) {}
+
+  const buffer = await generateStrategicMinutePdf({
+    minute,
+    signatures,
+    validationUrl,
+    qrDataUrl,
+    hideGraphicSignatures: false
+  });
+
+  const finalPdfPath = minute.final_pdf_storage_key || path.join(reportsDir, `ACTA-${minute.meeting_id}-V${minute.version}.pdf`);
+  try {
+    fs.writeFileSync(finalPdfPath, buffer);
+    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+    await minute.update({ final_pdf_storage_key: finalPdfPath, final_pdf_hash: hash });
+  } catch (err) {
+    console.warn('ensureMinuteFinalPdfBuffer: no se pudo guardar en disco:', err.message);
+  }
+
+  return buffer;
+};
+
+module.exports = { generateStrategicMinutePdf, ensureMinuteFinalPdfBuffer };

@@ -4694,7 +4694,7 @@ function PlaneacionEfectividad() {
   const { enqueueSnackbar } = useSnackbar();
   const { user } = useAuth();
 
-  const isAdmin = user && [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user.role);
+  const isAdmin = user && [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.PLANEACION_EFECTIVIDAD].includes(user.role);
   const dashboards = (user && user.allowedPlanAccionDashboards) || [];
   const canEstadistica = isAdmin || dashboards.includes('plan_accion_estadistica');
   const canGestion = isAdmin || dashboards.includes('plan_accion_gestion');

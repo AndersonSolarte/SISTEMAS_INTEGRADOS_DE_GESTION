@@ -53,6 +53,18 @@ const parseRange = (startAt, endAt) => {
     error.code = 'INVALID_CALENDAR_RANGE';
     throw error;
   }
+  const bogotaMinutes = (value) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    }).formatToParts(value);
+    const get = (type) => Number(parts.find((part) => part.type === type)?.value || 0);
+    return get('hour') * 60 + get('minute');
+  };
+  if (bogotaMinutes(start) < 7 * 60 || bogotaMinutes(end) > 18 * 60) {
+    const error = new Error('Las reuniones solo pueden programarse entre las 7:00 a. m. y las 6:00 p. m.');
+    error.code = 'INVALID_CALENDAR_RANGE';
+    throw error;
+  }
   return { start, end };
 };
 
@@ -66,7 +78,37 @@ const requireCalendar = (authClient, calendarClient) => {
   return google.calendar({ version: 'v3', auth: authClient });
 };
 
-const checkAvailability = async ({ organizerEmail, organizerName, attendees, startAt, endAt, authClient, calendarClient }) => {
+const normalizeIgnoredBusyRange = (ignoreBusyRange) => {
+  if (!ignoreBusyRange) return null;
+  const start = new Date(ignoreBusyRange.startAt || ignoreBusyRange.start_at || ignoreBusyRange.start);
+  const end = new Date(ignoreBusyRange.endAt || ignoreBusyRange.end_at || ignoreBusyRange.end);
+  return Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start
+    ? null
+    : { start, end };
+};
+
+// FreeBusy no devuelve identificadores de eventos. Al editar una reunión, se
+// resta del resultado el intervalo que ya pertenece a esa misma programación,
+// evitando que el evento se marque a sí mismo como conflicto.
+const excludeBusyRange = (busyRanges, ignoreBusyRange) => {
+  const ignored = normalizeIgnoredBusyRange(ignoreBusyRange);
+  if (!ignored) return busyRanges;
+  return busyRanges.flatMap((busyRange) => {
+    const start = new Date(busyRange.start);
+    const end = new Date(busyRange.end);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= ignored.start || start >= ignored.end) {
+      return [busyRange];
+    }
+    const remaining = [];
+    if (start < ignored.start) remaining.push({ start: start.toISOString(), end: ignored.start.toISOString() });
+    if (end > ignored.end) remaining.push({ start: ignored.end.toISOString(), end: end.toISOString() });
+    return remaining;
+  });
+};
+
+const checkAvailability = async ({
+  organizerEmail, organizerName, attendees, startAt, endAt, ignoreBusyRange, authClient, calendarClient
+}) => {
   const config = assertInstitutionalOrganizer(organizerEmail);
   const range = parseRange(startAt, endAt);
   const people = normalizeAttendees([{ email: config.email, name: organizerName, source: 'organizer' }, ...attendees]);
@@ -87,7 +129,7 @@ const checkAvailability = async ({ organizerEmail, organizerName, attendees, sta
   return people.map((person) => {
     const calendarInfo = calendars[person.email];
     const errors = Array.isArray(calendarInfo?.errors) ? calendarInfo.errors : [];
-    const busy = Array.isArray(calendarInfo?.busy) ? calendarInfo.busy : [];
+    const busy = excludeBusyRange(Array.isArray(calendarInfo?.busy) ? calendarInfo.busy : [], ignoreBusyRange);
     return {
       ...person,
       status: !calendarInfo || errors.length ? 'unknown' : busy.length ? 'busy' : 'available',
@@ -95,6 +137,70 @@ const checkAvailability = async ({ organizerEmail, organizerName, attendees, sta
       reason: errors[0]?.reason || (!calendarInfo ? 'notFound' : '')
     };
   });
+};
+
+const bogotaDateKey = (value) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(value);
+  const get = (type) => parts.find((part) => part.type === type)?.value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+};
+
+const findAvailableSlots = async ({
+  organizerEmail, organizerName, attendees, startAt, endAt, days = 14, ignoreBusyRange, authClient, calendarClient
+}) => {
+  const config = assertInstitutionalOrganizer(organizerEmail);
+  const range = parseRange(startAt, endAt);
+  const durationMs = range.end.getTime() - range.start.getTime();
+  const people = normalizeAttendees([{ email: config.email, name: organizerName, source: 'organizer' }, ...attendees]);
+  const firstDate = bogotaDateKey(range.start);
+  const firstDay = new Date(`${firstDate}T00:00:00-05:00`);
+  const horizonDays = Math.min(30, Math.max(1, Number(days) || 14));
+  const lastDay = new Date(firstDay.getTime() + horizonDays * 24 * 60 * 60 * 1000);
+  const calendar = requireCalendar(authClient, calendarClient);
+  const calendars = {};
+  for (let index = 0; index < people.length; index += 50) {
+    const response = await calendar.freebusy.query({
+      requestBody: {
+        timeMin: firstDay.toISOString(),
+        timeMax: lastDay.toISOString(),
+        timeZone: config.timezone,
+        items: people.slice(index, index + 50).map(({ email }) => ({ id: email }))
+      }
+    });
+    Object.assign(calendars, response.data?.calendars || {});
+  }
+
+  const verifiable = people.filter((person) => calendars[person.email] && !(calendars[person.email].errors || []).length);
+  const unknown = people.filter((person) => !calendars[person.email] || (calendars[person.email].errors || []).length);
+  const slots = [];
+  const now = new Date();
+  for (let dayOffset = 0; dayOffset < horizonDays && slots.length < 16; dayOffset += 1) {
+    const day = new Date(firstDay.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+    const dateKey = bogotaDateKey(day);
+    const weekDay = new Date(`${dateKey}T12:00:00-05:00`).getUTCDay();
+    if (weekDay === 0 || weekDay === 6) continue;
+    for (let minutes = 7 * 60; minutes + durationMs / 60000 <= 18 * 60 && slots.length < 16; minutes += 30) {
+      const hour = String(Math.floor(minutes / 60)).padStart(2, '0');
+      const minute = String(minutes % 60).padStart(2, '0');
+      const candidateStart = new Date(`${dateKey}T${hour}:${minute}:00-05:00`);
+      const candidateEnd = new Date(candidateStart.getTime() + durationMs);
+      if (candidateStart <= now || candidateStart < range.start) continue;
+      const freeForAll = verifiable.every((person) => {
+        const busy = excludeBusyRange(
+          Array.isArray(calendars[person.email]?.busy) ? calendars[person.email].busy : [],
+          ignoreBusyRange
+        );
+        return busy.every((busyRange) => candidateEnd <= new Date(busyRange.start) || candidateStart >= new Date(busyRange.end));
+      });
+      if (freeForAll) slots.push({ start: candidateStart.toISOString(), end: candidateEnd.toISOString() });
+    }
+  }
+  return {
+    slots,
+    unknown: unknown.map(({ email, name }) => ({ email, name }))
+  };
 };
 
 const findExistingEvent = async (calendar, minuteId) => {
@@ -134,10 +240,24 @@ const saveCalendarEvent = async ({
   return response.data;
 };
 
+const cancelCalendarEvent = async ({ eventId, authClient, calendarClient }) => {
+  const id = clean(eventId, 255);
+  if (!id) return;
+  const calendar = requireCalendar(authClient, calendarClient);
+  try {
+    await calendar.events.delete({ calendarId: 'primary', eventId: id, sendUpdates: 'all' });
+  } catch (error) {
+    const status = Number(error?.response?.status || error?.code || 0);
+    if (status !== 404 && status !== 410) throw error;
+  }
+};
+
 module.exports = {
   getCalendarConfiguration,
   normalizeAttendees,
   checkAvailability,
+  findAvailableSlots,
   saveCalendarEvent,
-  _internals: { normalizeAttendees, parseRange, assertInstitutionalOrganizer }
+  cancelCalendarEvent,
+  _internals: { normalizeAttendees, parseRange, assertInstitutionalOrganizer, excludeBusyRange }
 };

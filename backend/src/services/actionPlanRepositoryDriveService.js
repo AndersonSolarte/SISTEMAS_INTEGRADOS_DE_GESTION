@@ -10,6 +10,7 @@ const {
 } = require('../models');
 const { generatePlanAccionBuffer } = require('./planAccionExportService');
 const { listTermDependencies } = require('./strategicTermDependencyService');
+const { ensureMinuteFinalPdfBuffer } = require('./strategicMinutePdfService');
 
 // Este servicio es deliberadamente independiente de la sincronizacion PEI existente.
 // Mientras se habilita el OAuth de Planes de Accion puede reutilizar, solo para Drive,
@@ -420,8 +421,8 @@ const syncActionPlanRepositoryTerm = async (termId) => {
 
     for (const meeting of actionPlan.meetings || []) {
       for (const minute of meeting.minuteVersions || []) {
-        if (!minute.final_pdf_storage_key || !fs.existsSync(minute.final_pdf_storage_key)) continue;
-        const buffer = fs.readFileSync(minute.final_pdf_storage_key);
+        const buffer = await ensureMinuteFinalPdfBuffer(minute);
+        if (!buffer) continue;
         const meetingDate = meeting.starts_at && !Number.isNaN(new Date(meeting.starts_at).getTime())
           ? new Date(meeting.starts_at).toISOString().slice(0, 10)
           : String(minute.finalized_at || minute.created_at || '').slice(0, 10);

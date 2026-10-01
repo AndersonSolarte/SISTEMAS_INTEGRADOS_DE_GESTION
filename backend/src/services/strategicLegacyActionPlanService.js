@@ -91,8 +91,36 @@ const performLegacyReconciliation = async () => {
     const creator = first.creado_por ? await User.findByPk(first.creado_por) : null;
 
     await sequelize.transaction(async (transaction) => {
+      let actionPlan = await StrategicActionPlan.findOne({
+        where: {
+          [Op.or]: [
+            { code: legacyCode },
+            { metadata: { [Op.contains]: { deleted_original_code: legacyCode } } }
+          ]
+        },
+        transaction
+      });
+      if (actionPlan?.deleted_at) {
+        const restoredMetadata = { ...(actionPlan.metadata || {}) };
+        delete restoredMetadata.deleted_original_code;
+        restoredMetadata.restored_from_legacy_at = new Date().toISOString();
+        await actionPlan.update({
+          code: legacyCode,
+          deleted_at: null,
+          metadata: restoredMetadata
+        }, { transaction });
+        await StrategicActionItem.update(
+          { deleted_at: null },
+          { where: { action_plan_id: actionPlan.id }, transaction }
+        );
+        if (actionPlan.responsibility_id) {
+          await StrategicResponsibility.update(
+            { status: 'active', ends_on: null },
+            { where: { id: actionPlan.responsibility_id }, transaction }
+          );
+        }
+      }
       const unit = await findOrCreateUnit({ plan: strategicPlan, dependency: first.dependencia || first.responsable, transaction });
-      let actionPlan = await StrategicActionPlan.findOne({ where: { code: legacyCode, deleted_at: null }, transaction });
       if (!actionPlan) {
         const formSchema = await captureActionPlanSchema(strategicPlan.id, transaction);
         actionPlan = await StrategicActionPlan.create({

@@ -13,6 +13,7 @@ const PLAN_ENV_KEYS = [
 
 const withPlanEnvironment = (values, callback) => {
   const original = Object.fromEntries(PLAN_ENV_KEYS.map((key) => [key, process.env[key]]));
+  PLAN_ENV_KEYS.forEach((key) => { delete process.env[key]; });
   Object.entries(values).forEach(([key, value]) => { process.env[key] = value; });
   try {
     return callback();

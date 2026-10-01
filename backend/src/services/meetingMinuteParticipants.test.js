@@ -86,6 +86,11 @@ test('solo reconoce como responsables de revisión al principal y corresponsable
   assert.equal(_internals.isMinuteResponsible({ id: 10, nombre: 'Mismo nombre del responsable' }, minute), false);
   assert.equal(_internals.isMinutePrimaryResponsible({ id: 7, username: '10850001' }, minute), true);
   assert.equal(_internals.isMinutePrimaryResponsible({ id: 8, email: 'corresponsable@unicesmag.edu.co' }, minute), false);
+  assert.equal(_internals.canManageMinuteCalendar({ id: 7, username: '10850001', role: 'consulta' }, minute), true);
+  assert.equal(_internals.canManageMinuteCalendar({ id: 8, email: 'corresponsable@unicesmag.edu.co', role: 'consulta' }, minute), true);
+  assert.equal(_internals.canManageMinuteCalendar({ id: 99, email: 'creador@unicesmag.edu.co', role: 'consulta' }, { ...minute, created_by: 99 }), true);
+  assert.equal(_internals.canManageMinuteCalendar({ id: 50, email: 'admin@unicesmag.edu.co', role: 'administrador' }, minute), true);
+  assert.equal(_internals.canManageMinuteCalendar({ id: 51, email: 'consulta@unicesmag.edu.co', role: 'consulta' }, minute), false);
 });
 
 test('impide cambiar la lista de personas durante una revisión posterior a firmas', () => {

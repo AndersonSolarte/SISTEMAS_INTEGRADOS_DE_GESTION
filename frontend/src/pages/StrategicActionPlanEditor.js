@@ -1,12 +1,19 @@
 // PEI StrategicActionPlanEditor Module
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, Grid, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Typography
+  DialogTitle, Grid, IconButton, InputAdornment, Menu, MenuItem, Paper, Stack, Tab, Tabs, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
-import { Add, ArrowBack, AutoAwesome, CheckCircle, CheckCircleOutline, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Event, InsertDriveFile, KeyboardArrowDown, PersonSearch, PlayArrow, QrCode2, Refresh, Save, Send, ViewSidebar, Visibility } from '@mui/icons-material';
+import {
+  Add, ArrowBack, AssignmentTurnedIn, AttachFile, AutoAwesome, CheckCircle, CheckCircleOutline,
+  Close, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Event,
+  AccessTime, CalendarMonth, History, LockOutlined, MoreTime, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, OpenInNew,
+  PersonSearch, PictureAsPdf as PdfIcon, PlayArrow, PriorityHigh, QrCode2, Refresh, Save, Search, Send,
+  TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility
+} from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
+import { useAuth } from '../context/AuthContext';
 import strategicPlanningService from '../services/strategicPlanningService';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import RichTextEditor, { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
@@ -70,6 +77,32 @@ const richTextPlain = (value = '') => sanitizeRichHtml(String(value || ''))
   .replace(/\s+/g, ' ')
   .trim();
 
+const formatFecha = (iso) => {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: '2-digit' });
+  } catch { return '—'; }
+};
+
+const formatBytes = (bytes) => {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+};
+
+const getFileIcon = (fileName) => {
+  const ext = (fileName || '').split('.').pop().toLowerCase();
+  if (ext === 'pdf') return <PdfIcon sx={{ color: '#dc2626', fontSize: 22 }} />;
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return <ExcelIcon sx={{ color: '#16a34a', fontSize: 22 }} />;
+  if (['doc', 'docx'].includes(ext)) return <Description sx={{ color: '#2563eb', fontSize: 22 }} />;
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) return <ImageIcon sx={{ color: '#9333ea', fontSize: 22 }} />;
+  return <InsertDriveFile sx={{ color: '#64748b', fontSize: 22 }} />;
+};
+
 const WorkflowStepLabel = ({ number, title, count }) => (
   <Stack direction="row" alignItems="center" spacing={1.25} sx={{ width: '100%', minWidth: 0, textAlign: 'left' }}>
     <Box className="step-number" sx={{ width: 31, height: 31, borderRadius: 2, display: 'grid', placeItems: 'center', flexShrink: 0, bgcolor: '#e3ebf4', color: '#65758a', fontWeight: 950, fontSize: 13 }}>
@@ -91,8 +124,15 @@ const WorkflowStepLabel = ({ number, title, count }) => (
   </Stack>
 );
 
-export default function StrategicActionPlanEditor({ open, planId, platformPlan, workflow, onClose, onChanged }) {
+export default function StrategicActionPlanEditor({ open, planId, platformPlan, workflow, onClose, onChanged, onPlanReplaced }) {
   const { enqueueSnackbar } = useSnackbar();
+  const { user } = useAuth();
+  const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(user?.role);
+
+  // Estados para vigencia y prórrogas de Etapa 1
+  const [timelineModalOpen, setTimelineModalOpen] = useState(false);
+  const [timelineForm, setTimelineForm] = useState({ starts_on: '', ends_on: '', reason: '' });
+  const [savingTimeline, setSavingTimeline] = useState(false);
   const [tab, setTab] = useState('activities');
   const [detail, setDetail] = useState(null);
   const [structure, setStructure] = useState([]);
@@ -115,11 +155,30 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [externalAttendee, setExternalAttendee] = useState({ document: '', name: '', email: '', organization: '', role_title: '' });
   const [improvingMeetingField, setImprovingMeetingField] = useState('');
   const [generatingMinuteSummary, setGeneratingMinuteSummary] = useState(false);
-  const [monitoring, setMonitoring] = useState({ item_id: '', period_id: '', physical_progress: '', observations: '', file: null, description: '' });
+  const [activitySearch, setActivitySearch] = useState('');
+  const [evidenceModalOpen, setEvidenceModalOpen] = useState(false);
+  const [evidenceItem, setEvidenceItem] = useState(null);
+  const [evalModalOpen, setEvalModalOpen] = useState(false);
+  const [evaluatingItem, setEvaluatingItem] = useState(null);
+  const [evalForm, setEvalForm] = useState({
+    period_id: '',
+    physical_progress: '',
+    observations: ''
+  });
+  const [previewModal, setPreviewModal] = useState({
+    open: false,
+    url: '',
+    fileName: '',
+    isPdf: false,
+    isImage: false,
+    isOffice: false,
+    loading: false
+  });
   const [published, setPublished] = useState(null);
   const [dynamicImportPreview, setDynamicImportPreview] = useState(null);
   const [editingItemId, setEditingItemId] = useState(null);
   const [syncingMinute, setSyncingMinute] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [lastDriveSync, setLastDriveSync] = useState(null);
 
   // Minute preview state (COM-IF-FR-002)
@@ -128,9 +187,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [pdfMenuAnchor, setPdfMenuAnchor] = useState(null);
   const [actaData, setActaData] = useState({
     responsables: '', dependencia: '', lugar: '', fecha: '', horario: '', objetivo: '', desarrollo: '', conclusiones: '', participantes: []
-  });  const load = useCallback(async () => {
+  });  const load = useCallback(async (showLoading = true) => {
     if (!planId) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     setLoadError('');
     try {
       const planResponse = await strategicPlanningService.getActionPlan(planId);
@@ -149,6 +208,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         setStructure([]);
       }
     } catch (error) {
+      const replacementPlanId = error.response?.data?.data?.replacement_plan_id;
+      if (replacementPlanId && String(replacementPlanId) !== String(planId)) {
+        onPlanReplaced?.(replacementPlanId);
+        enqueueSnackbar('Abriendo automáticamente el Plan de Acción vigente.', { variant: 'info' });
+        return;
+      }
       console.error('Error al cargar Plan de Acción:', error);
       const message = error.code === 'ECONNABORTED'
         ? 'El servidor tardó demasiado en responder. Intente cargar nuevamente el Plan de Acción.'
@@ -156,9 +221,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       setLoadError(message);
       enqueueSnackbar(message, { variant: 'error' });
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
-  }, [planId, platformPlan?.id, enqueueSnackbar]);
+  }, [planId, platformPlan?.id, enqueueSnackbar, onPlanReplaced]);
 
   useEffect(() => { if (open) load(); }, [open, load]);
 
@@ -220,8 +285,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
   };
 
-  const handleFinalizeMinute = async () => {
-    if (!latestMinute) return enqueueSnackbar('Primero genere o habilite una versión del acta.', { variant: 'warning' });
+  const autoSyncedMinuteRef = useRef(new Set());
+
+  const handleFinalizeMinute = async (silent = false) => {
+    if (!latestMinute) {
+      if (!silent) enqueueSnackbar('Primero genere o habilite una versión del acta.', { variant: 'warning' });
+      return;
+    }
     setSyncingMinute(true);
     try {
       const response = await strategicPlanningService.finalizeMinute(latestMinute.id);
@@ -231,11 +301,24 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       await load();
       enqueueSnackbar(response?.message || 'Acta formalizada y sincronizada en Google Drive.', { variant: 'success' });
     } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'No fue posible formalizar el acta.', { variant: 'error' });
+      if (!silent) {
+        enqueueSnackbar(error.response?.data?.message || 'No fue posible sincronizar el acta.', { variant: 'error' });
+      }
     } finally {
       setSyncingMinute(false);
     }
   };
+
+  useEffect(() => {
+    const isFinalized = activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized';
+    if (isFinalized && latestMinute?.id && !latestMinute?.drive_file_id && !syncingMinute) {
+      if (!autoSyncedMinuteRef.current.has(latestMinute.id)) {
+        autoSyncedMinuteRef.current.add(latestMinute.id);
+        handleFinalizeMinute(true);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMeeting?.status, latestMinute?.id, latestMinute?.status, latestMinute?.drive_file_id, syncingMinute]);
 
   useEffect(() => {
     if (detail) {
@@ -337,7 +420,69 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const activePed = (detailFieldsList.length > 0) ? detailPed : (platformFields.length > 0 ? platformPlan : (detailPed || platformPlan));
 
   const levels = [...(formSchema?.levels || activePed?.levels || platformPlan?.levels || [])].filter((level) => level.active !== false).sort((a, b) => a.position - b.position);
-  const periods = detail?.term?.monitoringPeriods || [];
+  const periods = useMemo(() => {
+    const raw = detail?.term?.monitoringPeriods || [];
+    return [...raw].sort((a, b) => (a.position || 0) - (b.position || 0));
+  }, [detail?.term?.monitoringPeriods]);
+
+  const defaultPeriodId = useMemo(() => {
+    if (!periods || periods.length === 0) return '';
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1; // 1-12
+    const targetCode = currentMonth <= 7 ? 'S1' : 'S2';
+    const found = periods.find((p) => (p.code || '').toUpperCase() === targetCode);
+    return found ? found.id : periods[0].id;
+  }, [periods]);
+
+  const tab4FilteredItems = useMemo(() => {
+    const items = detail?.items || [];
+    if (!activitySearch.trim()) return items;
+    const q = activitySearch.toLowerCase().trim();
+    return items.filter((it) =>
+      (it.code || '').toLowerCase().includes(q) ||
+      (it.activity || '').toLowerCase().includes(q) ||
+      (it.indicator || '').toLowerCase().includes(q) ||
+      (it.macroactivity || '').toLowerCase().includes(q)
+    );
+  }, [detail?.items, activitySearch]);
+
+  const kpiStats = useMemo(() => {
+    const items = detail?.items || [];
+    const totalActivities = items.length;
+    let totalProgressSum = 0;
+    let totalEvidences = 0;
+    let completedActivities = 0;
+
+    items.forEach((it) => {
+      const results = it.monitoringResults || [];
+      const evidences = it.evidence || [];
+      totalEvidences += evidences.length;
+
+      const validResults = results.filter((r) => r.physical_progress !== null && r.physical_progress !== undefined);
+      let itProgress = 0;
+      if (validResults.length > 0) {
+        itProgress = validResults.reduce((acc, r) => acc + Number(r.physical_progress || 0), 0);
+      } else if (it.current_progress !== undefined && it.current_progress !== null) {
+        itProgress = Number(it.current_progress || 0);
+      }
+      totalProgressSum += itProgress;
+      if (itProgress >= 100) {
+        completedActivities += 1;
+      }
+    });
+
+    const avgProgress = totalActivities > 0 ? (totalProgressSum / totalActivities).toFixed(1) : '0.0';
+    const pendingActivities = Math.max(0, totalActivities - completedActivities);
+
+    return {
+      totalActivities,
+      avgProgress,
+      totalEvidences,
+      completedActivities,
+      pendingActivities
+    };
+  }, [detail?.items]);
+
   const rawFields = [...(formSchema?.fields || activePed?.fieldDefinitions || platformPlan?.fieldDefinitions || [])].filter((field) => field.active !== false).sort((a, b) => a.position - b.position);
   const formElements = formSchema?.elements || structure;
   const formCatalogs = formSchema?.catalogs || activePed?.catalogItems || platformPlan?.catalogItems || [];
@@ -491,7 +636,58 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     );
   };
 
+  // Cálculos de vigencia y plazos de la Etapa 1
+  const stage1StartsOn = detail?.metadata?.formulation_starts_on || detail?.term?.metadata?.formulation_starts_on || (detail?.term?.year ? `${detail.term.year}-01-01` : '');
+  const stage1EndsOn = detail?.metadata?.formulation_ends_on || detail?.term?.metadata?.formulation_ends_on || (detail?.term?.year ? `${detail.term.year}-03-31` : '');
+  const stage1Extensions = Array.isArray(detail?.metadata?.formulation_extensions) ? detail.metadata.formulation_extensions : [];
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const isStage1Expired = Boolean(stage1EndsOn && todayIso > stage1EndsOn);
+  const isStage1NotStarted = Boolean(stage1StartsOn && todayIso < stage1StartsOn);
+  const isStage1Extended = Boolean(stage1Extensions.length > 0 && stage1EndsOn >= todayIso);
+  const isStage1Open = !isStage1Expired && !isStage1NotStarted;
+  const daysRemainingStage1 = stage1EndsOn ? Math.ceil((new Date(stage1EndsOn + 'T23:59:59') - new Date()) / (1000 * 60 * 60 * 24)) : null;
+
+  const handleOpenTimelineModal = () => {
+    setTimelineForm({
+      starts_on: stage1StartsOn,
+      ends_on: stage1EndsOn,
+      reason: ''
+    });
+    setTimelineModalOpen(true);
+  };
+
+  const handleAddDaysToTimeline = (days) => {
+    const base = timelineForm.ends_on ? new Date(timelineForm.ends_on + 'T00:00:00') : new Date();
+    base.setDate(base.getDate() + days);
+    setTimelineForm((prev) => ({ ...prev, ends_on: base.toISOString().slice(0, 10) }));
+  };
+
+  const handleSetEndOfMonth = () => {
+    const now = timelineForm.ends_on ? new Date(timelineForm.ends_on + 'T00:00:00') : new Date();
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    setTimelineForm((prev) => ({ ...prev, ends_on: endOfMonth.toISOString().slice(0, 10) }));
+  };
+
+  const handleSaveTimeline = async () => {
+    if (!timelineForm.ends_on) return enqueueSnackbar('Indique la fecha límite de cierre.', { variant: 'warning' });
+    setSavingTimeline(true);
+    try {
+      await strategicPlanningService.updateStage1Timeline(detail.id, timelineForm);
+      enqueueSnackbar(`Plazo de formulación actualizado con éxito hasta el ${timelineForm.ends_on}.`, { variant: 'success' });
+      setTimelineModalOpen(false);
+      await load();
+      if (onChanged) onChanged();
+    } catch (err) {
+      enqueueSnackbar(err?.response?.data?.message || 'No fue posible actualizar el plazo.', { variant: 'error' });
+    } finally {
+      setSavingTimeline(false);
+    }
+  };
+
   const saveItem = async () => {
+    if (!isPlanningAdmin && isStage1Expired) {
+      return enqueueSnackbar(`El plazo de formulación de la Etapa 1 finalizó el ${stage1EndsOn}. Solicite una prórroga a Planeación y Efectividad.`, { variant: 'error' });
+    }
     const primaryActivity = (item.activity || '').trim() ||
       String(item.custom_values?.[activityFields[0]?.key] || '').trim() ||
       String(Object.values(item.custom_values || {}).find((v) => String(v || '').trim()) || '').trim();
@@ -805,16 +1001,119 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible habilitar la firma por QR.', { variant: 'error' }); }
   };
 
-  const saveFollowUp = async () => {
-    if (!monitoring.item_id || !monitoring.period_id) return enqueueSnackbar('Seleccione actividad y periodo.', { variant: 'warning' });
+  const handlePreviewEvidence = async (ev) => {
+    if (!ev || !ev.id) return;
+    const name = ev.original_name || 'documento';
+    const ext = name.split('.').pop().toLowerCase();
+    const isPdf = ext === 'pdf';
+    const isImage = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext);
+    const isOffice = ['xls', 'xlsx', 'csv', 'doc', 'docx', 'ppt', 'pptx'].includes(ext);
+
+    setPreviewModal({
+      open: true,
+      url: '',
+      fileName: name,
+      isPdf,
+      isImage,
+      isOffice,
+      loading: true
+    });
+
+    try {
+      const blob = await strategicPlanningService.downloadEvidence(ev.id, true);
+      const mimeType = isPdf ? 'application/pdf' : (isImage ? `image/${ext}` : 'application/octet-stream');
+      const blobUrl = URL.createObjectURL(new Blob([blob], { type: mimeType }));
+      setPreviewModal((prev) => ({ ...prev, url: blobUrl, loading: false }));
+    } catch (err) {
+      console.error('Error previsualizando evidencia:', err);
+      enqueueSnackbar('No fue posible cargar la vista previa del documento.', { variant: 'error' });
+      setPreviewModal((prev) => ({ ...prev, open: false, loading: false }));
+    }
+  };
+
+  const handleClosePreview = () => {
+    if (previewModal.url) {
+      URL.revokeObjectURL(previewModal.url);
+    }
+    setPreviewModal({ open: false, url: '', fileName: '', isPdf: false, isImage: false, isOffice: false, loading: false });
+  };
+
+  const handleDownloadDirectEvidence = async (ev) => {
+    try {
+      enqueueSnackbar('Descargando archivo...', { variant: 'info' });
+      const blob = await strategicPlanningService.downloadEvidence(ev.id, false);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = ev.original_name || 'evidencia';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error al descargar evidencia:', err);
+      enqueueSnackbar('No fue posible descargar el archivo.', { variant: 'error' });
+    }
+  };
+
+  const handleOpenEvidenceModal = (it) => {
+    setEvidenceItem(it);
+    setEvidenceModalOpen(true);
+  };
+
+  const handleOpenEvalModal = (it) => {
+    setEvaluatingItem(it);
+    const existingResult = (it.monitoringResults || []).find((r) => r.monitoring_period_id === defaultPeriodId);
+    setEvalForm({
+      period_id: defaultPeriodId,
+      physical_progress: existingResult ? (existingResult.physical_progress ?? '') : '',
+      observations: existingResult ? (existingResult.observations ?? '') : ''
+    });
+    setEvalModalOpen(true);
+  };
+
+  const handleChangeEvalPeriod = (newPeriodId) => {
+    const existingResult = (evaluatingItem?.monitoringResults || []).find((r) => r.monitoring_period_id === newPeriodId);
+    setEvalForm((prev) => ({
+      ...prev,
+      period_id: newPeriodId,
+      physical_progress: existingResult ? (existingResult.physical_progress ?? '') : '',
+      observations: existingResult ? (existingResult.observations ?? '') : ''
+    }));
+  };
+
+  const handleSaveEvaluation = async () => {
+    if (!evaluatingItem || !evalForm.period_id) {
+      return enqueueSnackbar('Seleccione el periodo de seguimiento.', { variant: 'warning' });
+    }
+    if (evalForm.physical_progress === '' || evalForm.physical_progress === null || isNaN(Number(evalForm.physical_progress)) || Number(evalForm.physical_progress) < 0) {
+      return enqueueSnackbar('Ingrese un porcentaje de avance válido (mínimo 0%).', { variant: 'warning' });
+    }
+    const prog = Math.max(0, Number(evalForm.physical_progress));
     setSaving(true);
     try {
-      await strategicPlanningService.saveMonitoring(monitoring.item_id, monitoring.period_id, { physical_progress: monitoring.physical_progress, observations: monitoring.observations, status: 'submitted' });
-      if (monitoring.file) { const body = new FormData(); body.append('file', monitoring.file); body.append('monitoring_period_id', monitoring.period_id); body.append('description', monitoring.description); await strategicPlanningService.uploadEvidence(monitoring.item_id, body); }
-      setMonitoring({ item_id: '', period_id: '', physical_progress: '', observations: '', file: null, description: '' }); await load(); onChanged?.(); enqueueSnackbar('Seguimiento y evidencia guardados.', { variant: 'success' });
-    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar el seguimiento.', { variant: 'error' }); }
-    finally { setSaving(false); }
+      await strategicPlanningService.saveMonitoring(evaluatingItem.id, evalForm.period_id, {
+        physical_progress: prog,
+        observations: evalForm.observations || '',
+        status: 'submitted'
+      });
+      // Cierra la ventana emergente de valoración y actualiza silenciosamente sin cerrar el plan
+      setEvalModalOpen(false);
+      await load(false);
+      setTab('workflow');
+      if (prog > 100) {
+        enqueueSnackbar(`Valoración guardada: Sobrecumplimiento del ${prog}%. Queda marcado para revisión de meta.`, { variant: 'info' });
+      } else {
+        enqueueSnackbar('Valoración de seguimiento guardada con éxito.', { variant: 'success' });
+      }
+    } catch (error) {
+      console.error('Error guardando valoración:', error);
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar la valoración.', { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
   };
+
   const transition = async (action) => {
     try { await strategicPlanningService.transition(planId, { action, comment: `Acción ejecutada desde el formulario: ${ACTION_LABELS[action] || action}` }); await load(); onChanged?.(); enqueueSnackbar('Estado actualizado.', { variant: 'success' }); }
     catch (error) { enqueueSnackbar(error.response?.data?.message || 'La transición no fue permitida.', { variant: 'error' }); }
@@ -1005,6 +1304,88 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Box>
                 </Paper>
 
+                {/* TARJETA DE VIGENCIA Y PLAZO DE FORMULACIÓN (ETAPA 1) */}
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    borderRadius: 3.5,
+                    p: { xs: 1.5, sm: 2 },
+                    borderColor: isStage1Extended ? '#93c5fd' : isStage1Expired ? '#fed7aa' : '#bbf7d0',
+                    bgcolor: isStage1Extended ? '#f0f9ff' : isStage1Expired ? '#fffbeb' : '#f0fdf4',
+                    boxShadow: '0 4px 15px rgba(0,0,0,.03)'
+                  }}
+                >
+                  <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} gap={1.5}>
+                    <Stack direction="row" spacing={1.5} alignItems="center">
+                      <Box
+                        sx={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 2.5,
+                          bgcolor: isStage1Extended ? '#e0f2fe' : isStage1Expired ? '#fef3c7' : '#dcfce7',
+                          color: isStage1Extended ? '#0284c7' : isStage1Expired ? '#d97706' : '#16a34a',
+                          display: 'grid',
+                          placeItems: 'center',
+                          flexShrink: 0
+                        }}
+                      >
+                        {isStage1Extended ? <AccessTime /> : isStage1Expired ? <LockOutlined /> : <CalendarMonth />}
+                      </Box>
+                      <Box>
+                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                          <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 14.5 }}>
+                            Plazo de Formulación (Etapa 1: Plan y actividades)
+                          </Typography>
+                          {isStage1Extended && (
+                            <Chip size="small" label={`⏱️ Prórroga Activa hasta ${stage1EndsOn}`} sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 800, fontSize: 11 }} />
+                          )}
+                          {!isStage1Extended && isStage1Open && (
+                            <Chip size="small" label={`● Formulación Abierta · Vence ${stage1EndsOn}${daysRemainingStage1 !== null ? ` (quedan ${daysRemainingStage1} días)` : ''}`} sx={{ bgcolor: '#dcfce7', color: '#15803d', fontWeight: 800, fontSize: 11 }} />
+                          )}
+                          {isStage1Expired && (
+                            <Chip size="small" label={`🔒 Plazo Vencido (${stage1EndsOn})`} sx={{ bgcolor: '#fef3c7', color: '#b45309', fontWeight: 800, fontSize: 11 }} />
+                          )}
+                          {isStage1NotStarted && (
+                            <Chip size="small" label={`⏳ Inicia el ${stage1StartsOn}`} sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 800, fontSize: 11 }} />
+                          )}
+                        </Stack>
+                        <Typography variant="caption" color="#475569" sx={{ display: 'block', mt: 0.25, fontSize: 12 }}>
+                          Ventana de tiempo para registrar actividades: <strong>{stage1StartsOn || '01/01'}</strong> hasta <strong>{stage1EndsOn || 'Por definir'}</strong>.
+                          {stage1Extensions.length > 0 && ` (${stage1Extensions.length} ${stage1Extensions.length === 1 ? 'prórroga concedida' : 'prórrogas concedidas'})`}
+                        </Typography>
+                      </Box>
+                    </Stack>
+
+                    {isPlanningAdmin && (
+                      <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<MoreTime sx={{ fontSize: 18 }} />}
+                        onClick={handleOpenTimelineModal}
+                        sx={{
+                          textTransform: 'none',
+                          fontWeight: 800,
+                          fontSize: 13,
+                          borderRadius: 2.5,
+                          px: 2,
+                          py: 0.7,
+                          bgcolor: '#1e40af',
+                          '&:hover': { bgcolor: '#1d4ed8' },
+                          flexShrink: 0
+                        }}
+                      >
+                        Gestionar tiempo
+                      </Button>
+                    )}
+                  </Stack>
+
+                  {!isPlanningAdmin && isStage1Expired && (
+                    <Alert severity="warning" icon={<LockOutlined />} sx={{ mt: 1.5, borderRadius: 2, fontWeight: 700, fontSize: 12.5 }}>
+                      El plazo de formulación de actividades de la Etapa 1 finalizó el {stage1EndsOn}. Si requiere registrar actividades adicionales o solicitar ajustes, comuníquese con la Dirección de Planeación y Aseguramiento de la Calidad para habilitar una prórroga.
+                    </Alert>
+                  )}
+                </Paper>
+
                 <Paper id="activity-capture-form" variant="outlined" sx={{ borderRadius: 4, p: { xs: 1.75, sm: 2.25, md: 2.5 }, bgcolor: '#ffffff', borderColor: editingItemId ? '#8eb5dc' : '#e2e4ee', boxShadow: '0 10px 30px rgba(75,83,125,.065)', scrollMarginTop: 20 }}>
                   <Stack direction="row" spacing={1.25} alignItems="center" mb={2}>
                     <Box sx={{ width: 34, height: 34, borderRadius: 2.5, bgcolor: '#e6f1ff', color: '#5688c7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 14 }}>
@@ -1025,7 +1406,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     <Button
                       variant="contained"
                       startIcon={<Add />}
-                      disabled={saving}
+                      disabled={saving || (!isPlanningAdmin && isStage1Expired)}
                       onClick={saveItem}
                       sx={{
                         minWidth: 240,
@@ -1595,10 +1976,15 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               color="success"
                               disabled={syncingMinute}
                               startIcon={syncingMinute ? <CircularProgress size={16} color="inherit" /> : <InsertDriveFile fontSize="small" />}
-                              onClick={handleFinalizeMinute}
-                              sx={{ bgcolor: '#15803d', '&:hover': { bgcolor: '#166534' } }}
+                              onClick={() => handleFinalizeMinute(false)}
+                              sx={{
+                                bgcolor: latestMinute?.drive_file_id ? '#15803d' : '#1e40af',
+                                '&:hover': { bgcolor: latestMinute?.drive_file_id ? '#166534' : '#1d3485' }
+                              }}
                             >
-                              {syncingMinute ? 'Sincronizando con Drive...' : 'Sincronizar con Google Drive'}
+                              {syncingMinute
+                                ? 'Sincronizando con Drive...'
+                                : (latestMinute?.drive_file_id ? '✓ Acta sincronizada en Google Drive' : 'Sincronizar con Google Drive')}
                             </Button>
                           );
                         }
@@ -1881,83 +2267,1149 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
             {/* TAB 4: FLUJO Y SEGUIMIENTOS S1/S2 */}
             {tab === 'workflow' && (
-              <Stack gap={3}>
-                <Paper variant="outlined" sx={{ p: 3.5, borderRadius: 3.5, bgcolor: '#ffffff' }}>
-                  <Typography variant="h6" fontWeight={900} color="#0f172a" mb={2}>Transiciones de Estado de Aprobación</Typography>
-                  <Alert severity="warning" sx={{ mb: 2.5, borderRadius: 2.5 }}>
-                    Estado actual del Plan de Acción: <strong>{STATUS_LABELS[detail.status] || detail.status}</strong>. Cada cambio queda auditado.
-                  </Alert>
-                  {availableTransitions.length ? (
-                    <Stack direction={{xs:'column',sm:'row'}} gap={2}>
-                      {availableTransitions.map((entry) => (
-                        <Button key={entry.action} size="large" variant="contained" startIcon={<PlayArrow />} onClick={() => transition(entry.action)} sx={{ borderRadius: 2.5, fontWeight: 900, px: 3 }}>
-                          {ACTION_LABELS[entry.action] || entry.action}
-                        </Button>
-                      ))}
-                    </Stack>
-                  ) : (
-                    <Alert severity="info">No hay transiciones disponibles desde este estado.</Alert>
-                  )}
+              <Stack gap={2.5}>
+                {/* BARRA COMPACTA INSTITUCIONAL DE ESTADO Y TRANSICIONES */}
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: { xs: 2, sm: 2.25 },
+                    borderRadius: 3,
+                    bgcolor: '#ffffff',
+                    borderColor: '#e2e8f0',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+                  }}
+                >
+                  <Stack
+                    direction={{ xs: 'column', md: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', md: 'center' }}
+                    gap={2}
+                  >
+                    <Box sx={{ minWidth: 0 }}>
+                      <Stack direction="row" alignItems="center" spacing={1.25} flexWrap="wrap" useFlexGap mb={0.5}>
+                        <Typography sx={{ fontSize: 14, fontWeight: 900, color: '#1e293b' }}>
+                          Estado del Plan de Acción:
+                        </Typography>
+                        <Chip
+                          size="small"
+                          label={STATUS_LABELS[detail.status] || detail.status}
+                          sx={{
+                            fontWeight: 900,
+                            fontSize: 11.5,
+                            bgcolor: '#eff6ff',
+                            color: '#1d4ed8',
+                            border: '1px solid #bfdbfe'
+                          }}
+                        />
+                      </Stack>
+                      <Typography variant="body2" sx={{ color: '#64748b', fontSize: 12.5 }}>
+                        Seguimiento semestral activo. Las transiciones de ciclo y cierres de vigencia quedan registradas con trazabilidad institucional.
+                      </Typography>
+                    </Box>
+
+                    {availableTransitions.length > 0 && (
+                      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.25} sx={{ width: { xs: '100%', sm: 'auto' }, flexShrink: 0 }}>
+                        {availableTransitions.map((entry) => (
+                          <Button
+                            key={entry.action}
+                            variant="contained"
+                            startIcon={<PlayArrow />}
+                            onClick={() => transition(entry.action)}
+                            sx={{
+                              borderRadius: 2,
+                              fontWeight: 850,
+                              px: 2.5,
+                              py: 0.8,
+                              textTransform: 'none',
+                              fontSize: 13,
+                              bgcolor: '#2563eb',
+                              boxShadow: '0 2px 6px rgba(37,99,235,0.25)',
+                              '&:hover': { bgcolor: '#1d4ed8' }
+                            }}
+                          >
+                            {ACTION_LABELS[entry.action] || entry.action}
+                          </Button>
+                        ))}
+                      </Stack>
+                    )}
+                  </Stack>
                 </Paper>
 
-                <Paper variant="outlined" sx={{ p: 3.5, borderRadius: 3.5, bgcolor: '#ffffff' }}>
-                  <Typography variant="h6" fontWeight={900} color="#0f172a" mb={2.5}>Informe de Gestión Semestral (S1 / S2)</Typography>
-                  <Grid container spacing={2.5}>
-                    <Grid item xs={12} md={6}>
-                      <TextField fullWidth select label="Actividad del Plan de Acción" value={monitoring.item_id} onChange={(e) => setMonitoring({ ...monitoring, item_id:e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }}>
-                        {(detail.items || []).map((entry) => <MenuItem key={entry.id} value={entry.id}>{entry.code} · {entry.activity}</MenuItem>)}
-                      </TextField>
-                    </Grid>
-                    <Grid item xs={12} md={3}>
-                      <TextField fullWidth select label="Semestre del informe" value={monitoring.period_id} onChange={(e) => setMonitoring({ ...monitoring, period_id:e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }}>
-                        {periods.map((entry) => <MenuItem key={entry.id} value={entry.id}>{entry.code} · {entry.name}</MenuItem>)}
-                      </TextField>
-                    </Grid>
-                    <Grid item xs={12} md={3}>
-                      <TextField fullWidth type="number" inputProps={{min:0,max:100}} label="Avance alcanzado %" value={monitoring.physical_progress} onChange={(e) => setMonitoring({ ...monitoring, physical_progress:e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
-                    </Grid>
-                    <Grid item xs={12}>
-                      <TextField fullWidth multiline minRows={3} label="Resultado y observaciones del semestre" value={monitoring.observations} onChange={(e) => setMonitoring({ ...monitoring, observations:e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      <Button component="label" fullWidth variant="outlined" startIcon={<CloudUpload />} sx={{ height: 56, borderRadius: 2.5, textTransform: 'none', fontWeight: 800, borderColor: '#cbd5e1', color: '#334155' }}>
-                        {monitoring.file?.name || 'Adjuntar evidencia del informe'}
-                        <input hidden type="file" onChange={(e) => setMonitoring({ ...monitoring, file:e.target.files?.[0] || null })} />
-                      </Button>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      <TextField fullWidth label="Descripción de la evidencia" value={monitoring.description} onChange={(e) => setMonitoring({ ...monitoring, description:e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
-                    </Grid>
-                  </Grid>
-                  <Button sx={{ mt: 3, height: 48, borderRadius: 2.5, px: 4, fontWeight: 900 }} variant="contained" disabled={saving} onClick={saveFollowUp}>
-                    Guardar informe semestral
-                  </Button>
+                {/* TABLERO ESTADÍSTICO DE MONITOREO Y CUMPLIMIENTO (Colores pastel institucionales, 100% responsive) */}
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      sm: 'repeat(2, minmax(0, 1fr))',
+                      md: 'repeat(4, minmax(0, 1fr))'
+                    },
+                    gap: 2,
+                    width: '100%'
+                  }}
+                >
+                  {/* Card 1: Total Actividades (Cielo Pastel) */}
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: { xs: 2, sm: 2.25, md: 2.5 },
+                      minHeight: 104,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      borderRadius: 3,
+                      bgcolor: '#f0f9ff',
+                      border: '1px solid #bae6fd',
+                      boxShadow: '0 2px 8px rgba(14,165,233,0.06)',
+                      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                      '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 6px 16px rgba(14,165,233,0.12)' }
+                    }}
+                  >
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="caption" sx={{ color: '#0369a1', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
+                          Total Actividades
+                        </Typography>
+                        <Typography sx={{ fontSize: { xs: 24, sm: 26, md: 30 }, fontWeight: 900, color: '#0c4a6e', mt: 0.2, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                          {kpiStats.totalActivities}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600, fontSize: 11.5, mt: 0.3, display: 'block' }}>
+                          Plan de trabajo activo
+                        </Typography>
+                      </Box>
+                      <Box sx={{ width: 50, height: 50, borderRadius: 2.5, bgcolor: '#e0f2fe', color: '#0284c7', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                        <AssignmentTurnedIn sx={{ fontSize: 26 }} />
+                      </Box>
+                    </Stack>
+                  </Paper>
+
+                  {/* Card 2: Cumplimiento Global (Menta Pastel) */}
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: { xs: 2, sm: 2.25, md: 2.5 },
+                      minHeight: 104,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      borderRadius: 3,
+                      bgcolor: '#f0fdf4',
+                      border: '1px solid #bbf7d0',
+                      boxShadow: '0 2px 8px rgba(16,185,129,0.06)',
+                      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                      '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 6px 16px rgba(16,185,129,0.12)' }
+                    }}
+                  >
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="caption" sx={{ color: '#15803d', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
+                          Cumplimiento Global
+                        </Typography>
+                        <Typography sx={{ fontSize: { xs: 24, sm: 26, md: 30 }, fontWeight: 900, color: '#064e3b', mt: 0.2, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                          {kpiStats.avgProgress}%
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#16a34a', fontWeight: 600, fontSize: 11.5, mt: 0.3, display: 'block' }}>
+                          {kpiStats.completedActivities} de {kpiStats.totalActivities} completadas
+                        </Typography>
+                      </Box>
+                      <Box sx={{ width: 50, height: 50, borderRadius: 2.5, bgcolor: '#dcfce7', color: '#16a34a', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                        <TrendingUp sx={{ fontSize: 26 }} />
+                      </Box>
+                    </Stack>
+                  </Paper>
+
+                  {/* Card 3: Evidencias Radicadas (Lavanda Pastel) */}
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: { xs: 2, sm: 2.25, md: 2.5 },
+                      minHeight: 104,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      borderRadius: 3,
+                      bgcolor: '#faf5ff',
+                      border: '1px solid #e9d5ff',
+                      boxShadow: '0 2px 8px rgba(168,85,247,0.06)',
+                      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                      '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 6px 16px rgba(168,85,247,0.12)' }
+                    }}
+                  >
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="caption" sx={{ color: '#7e22ce', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
+                          Evidencias Radicadas
+                        </Typography>
+                        <Typography sx={{ fontSize: { xs: 24, sm: 26, md: 30 }, fontWeight: 900, color: '#581c87', mt: 0.2, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                          {kpiStats.totalEvidences}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#9333ea', fontWeight: 600, fontSize: 11.5, mt: 0.3, display: 'block' }}>
+                          Soportes cargados
+                        </Typography>
+                      </Box>
+                      <Box sx={{ width: 50, height: 50, borderRadius: 2.5, bgcolor: '#ede9fe', color: '#9333ea', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                        <AttachFile sx={{ fontSize: 26 }} />
+                      </Box>
+                    </Stack>
+                  </Paper>
+
+                  {/* Card 4: Actividades en Curso (Ámbar Pastel) */}
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: { xs: 2, sm: 2.25, md: 2.5 },
+                      minHeight: 104,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      borderRadius: 3,
+                      bgcolor: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      boxShadow: '0 2px 8px rgba(245,158,11,0.06)',
+                      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                      '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 6px 16px rgba(245,158,11,0.12)' }
+                    }}
+                  >
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="caption" sx={{ color: '#b45309', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
+                          Actividades en Curso
+                        </Typography>
+                        <Typography sx={{ fontSize: { xs: 24, sm: 26, md: 30 }, fontWeight: 900, color: '#78350f', mt: 0.2, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                          {kpiStats.pendingActivities}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#d97706', fontWeight: 600, fontSize: 11.5, mt: 0.3, display: 'block' }}>
+                          Pendientes por culminar
+                        </Typography>
+                      </Box>
+                      <Box sx={{ width: 50, height: 50, borderRadius: 2.5, bgcolor: '#fef3c7', color: '#d97706', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                        <HourglassBottom sx={{ fontSize: 26 }} />
+                      </Box>
+                    </Stack>
+                  </Paper>
+                </Box>
+
+                {/* TABLA DEL PLAN DE TRABAJO Y SEGUIMIENTOS DINÁMICOS */}
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: { xs: 2, sm: 2.5 },
+                    borderRadius: 3.5,
+                    bgcolor: '#ffffff',
+                    borderColor: '#e2e8f0',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
+                  }}
+                >
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    gap={2}
+                    mb={2}
+                  >
+                    <Box>
+                      <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
+                        <Typography variant="h6" fontWeight={900} color="#0f172a" sx={{ fontSize: { xs: 15, sm: 16 } }}>
+                          Plan de Trabajo y Cumplimiento de Actividades
+                        </Typography>
+                        <Chip
+                          size="small"
+                          label={`${tab4FilteredItems.length} actividades`}
+                          sx={{ bgcolor: '#e2e8f0', color: '#334155', fontWeight: 800, fontSize: 11, height: 22 }}
+                        />
+                      </Stack>
+                      <Typography variant="body2" color="#64748b" sx={{ fontSize: 12.5, mt: 0.3 }}>
+                        Seguimiento dinámico por periodos, consulta de evidencias cargadas y valoración oficial de Planeación.
+                      </Typography>
+                    </Box>
+                    <TextField
+                      size="small"
+                      placeholder="Buscar por código o actividad..."
+                      value={activitySearch}
+                      onChange={(e) => setActivitySearch(e.target.value)}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <Search sx={{ color: '#94a3b8', fontSize: 18 }} />
+                          </InputAdornment>
+                        ),
+                        sx: { borderRadius: 2, fontSize: 13, minWidth: { xs: '100%', sm: 260 }, bgcolor: '#f8fafc' }
+                      }}
+                      sx={{ width: { xs: '100%', sm: 'auto' } }}
+                    />
+                  </Stack>
+
+                  <TableContainer sx={{ maxHeight: 500, border: '1px solid #e2e8f0', borderRadius: 2, overflowX: 'auto' }}>
+                    <Table stickyHeader size="small" sx={{ minWidth: 1020 }}>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 800, color: '#1e293b', width: 95, py: 1.2, px: 1, fontSize: 11.5 }}>
+                            Código
+                          </TableCell>
+                          <TableCell sx={{ bgcolor: '#f1f5f9', fontWeight: 800, color: '#1e293b', minWidth: 200, maxWidth: { xs: 230, sm: 280, md: 320 }, py: 1.2, px: 1.5, fontSize: 11.5 }}>
+                            Actividad
+                          </TableCell>
+                          <TableCell sx={{ bgcolor: '#f1f5f9', fontWeight: 800, color: '#1e293b', width: 170, py: 1.2, px: 1.5, fontSize: 11.5 }}>
+                            Indicador y Meta
+                          </TableCell>
+                          <TableCell align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 800, color: '#1e293b', width: 115, py: 1.2, px: 1, fontSize: 11.5 }}>
+                            Plazo
+                          </TableCell>
+                          {periods.map((p) => (
+                            <TableCell key={p.id} align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 800, color: '#1e293b', width: 90, py: 1.2, px: 0.5, fontSize: 11.5 }}>
+                              Avance {p.code || p.name}
+                            </TableCell>
+                          ))}
+                          <TableCell align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 800, color: '#1e293b', width: 125, minWidth: 115, py: 1.2, px: 1, fontSize: 11.5 }}>
+                            Cumplimiento
+                          </TableCell>
+                          <TableCell align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 800, color: '#1e293b', width: 105, py: 1.2, px: 0.5, fontSize: 11.5 }}>
+                            Evidencias
+                          </TableCell>
+                          <TableCell align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 800, color: '#1e293b', width: 100, py: 1.2, px: 1, fontSize: 11.5 }}>
+                            Acción
+                          </TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {tab4FilteredItems.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6 + periods.length} align="center" sx={{ py: 4, color: '#64748b', fontSize: 12 }}>
+                              {activitySearch ? 'No se encontraron actividades con ese criterio de búsqueda.' : 'No hay actividades registradas en este plan.'}
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          tab4FilteredItems.map((it) => {
+                            const evidences = it.evidence || [];
+                            // Cálculo de cumplimiento de la actividad
+                            const validResults = (it.monitoringResults || []).filter((r) => r.physical_progress !== null && r.physical_progress !== undefined && !isNaN(Number(r.physical_progress)));
+                            let compProg = null;
+                            if (validResults.length > 0) {
+                              compProg = validResults.reduce((acc, r) => acc + Number(r.physical_progress || 0), 0);
+                            } else if (it.current_progress !== undefined && it.current_progress !== null && !isNaN(Number(it.current_progress))) {
+                              compProg = Number(it.current_progress);
+                            }
+
+                            return (
+                              <TableRow key={it.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, borderBottom: '1px solid #f1f5f9' }}>
+                                {/* Código centrado */}
+                                <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
+                                  <Chip
+                                    size="small"
+                                    label={it.code || '—'}
+                                    sx={{ fontWeight: 800, bgcolor: '#e2e8f0', color: '#1e293b', fontSize: 11, height: 24, borderRadius: 1 }}
+                                  />
+                                </TableCell>
+                                {/* Actividad centrada verticalmente con límite de ancho y 2 líneas */}
+                                <TableCell sx={{ verticalAlign: 'middle', py: 1.2, px: 1.5, minWidth: 200, maxWidth: { xs: 230, sm: 280, md: 320 } }}>
+                                  <Tooltip title={it.activity} arrow placement="top-start">
+                                    <Typography
+                                      sx={{
+                                        fontSize: 12.5,
+                                        fontWeight: 700,
+                                        color: '#0f172a',
+                                        lineHeight: 1.35,
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: 2,
+                                        WebkitBoxOrient: 'vertical',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      {it.activity}
+                                    </Typography>
+                                  </Tooltip>
+                                  {it.macroactivity && (
+                                    <Typography
+                                      sx={{
+                                        fontSize: 11,
+                                        color: '#64748b',
+                                        mt: 0.3,
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: 1,
+                                        WebkitBoxOrient: 'vertical',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis'
+                                      }}
+                                    >
+                                      PED: {it.macroactivity}
+                                    </Typography>
+                                  )}
+                                </TableCell>
+                                {/* Indicador y Meta centrado verticalmente */}
+                                <TableCell sx={{ verticalAlign: 'middle', py: 1.2, px: 1.5 }}>
+                                  <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#334155', lineHeight: 1.3 }}>
+                                    {it.indicator || 'Sin indicador'}
+                                  </Typography>
+                                  <Typography sx={{ fontSize: 11.5, color: '#059669', fontWeight: 700, mt: 0.3 }}>
+                                    Meta: {it.target || '100%'}
+                                  </Typography>
+                                </TableCell>
+                                {/* Plazo centrado */}
+                                <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
+                                  <Typography sx={{ fontSize: 11, color: '#475569', lineHeight: 1.35 }}>
+                                    {formatFecha(it.starts_on)}
+                                    <br />
+                                    al {formatFecha(it.ends_on)}
+                                  </Typography>
+                                </TableCell>
+                                {/* Columnas dinámicas de periodos centradas */}
+                                {periods.map((p) => {
+                                  const res = (it.monitoringResults || []).find((r) => r.monitoring_period_id === p.id);
+                                  const prog = res ? Number(res.physical_progress || 0) : null;
+                                  return (
+                                    <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5 }}>
+                                      {res && prog !== null ? (
+                                        <Tooltip title={res.observations ? `Obs: ${res.observations}` : `Avance ${p.code}: ${prog}%`} arrow>
+                                          <Chip
+                                            size="small"
+                                            label={`${prog}%`}
+                                            sx={{
+                                              fontWeight: 800,
+                                              fontSize: 11.5,
+                                              height: 24,
+                                              borderRadius: 1,
+                                              bgcolor: prog >= 100 ? '#dcfce7' : (prog > 0 ? '#fef3c7' : '#f1f5f9'),
+                                              color: prog >= 100 ? '#15803d' : (prog > 0 ? '#b45309' : '#64748b')
+                                            }}
+                                          />
+                                        </Tooltip>
+                                      ) : (
+                                        <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>—</Typography>
+                                      )}
+                                    </TableCell>
+                                  );
+                                })}
+
+                                {/* COLUMNA DE CUMPLIMIENTO (100% verde, <100% cuánto falta, >100% verde fuerte con borde de revisión) */}
+                                <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
+                                  {compProg !== null && compProg > 100 ? (
+                                    <Tooltip title={`Sobrecumplimiento (${compProg}%). Superó el 100% de la meta. Requiere revisión para evaluar aumento de meta o formalizar cierre con excedente.`} arrow>
+                                      <Stack alignItems="center" spacing={0.3}>
+                                        <Chip
+                                          size="small"
+                                          icon={<PriorityHigh sx={{ fontSize: '13px !important', color: '#f59e0b !important', fontWeight: 900 }} />}
+                                          label={`${compProg}%`}
+                                          sx={{
+                                            fontWeight: 900,
+                                            fontSize: 11.5,
+                                            height: 25,
+                                            borderRadius: 1.5,
+                                            bgcolor: '#064e3b', // Verde más fuerte
+                                            color: '#ecfdf5',
+                                            border: '1.5px dashed #f59e0b', // Borde de revisión
+                                            boxShadow: '0 1px 4px rgba(6,78,59,0.25)',
+                                            cursor: 'help'
+                                          }}
+                                        />
+                                        <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#b45309', lineHeight: 1.1 }}>
+                                          Revisar meta
+                                        </Typography>
+                                      </Stack>
+                                    </Tooltip>
+                                  ) : compProg !== null && compProg === 100 ? (
+                                    <Tooltip title="¡Meta cumplida al 100%!" arrow>
+                                      <Stack alignItems="center" spacing={0.3}>
+                                        <Chip
+                                          size="small"
+                                          icon={<CheckCircle sx={{ fontSize: '14px !important', color: '#16a34a !important' }} />}
+                                          label="100%"
+                                          sx={{
+                                            fontWeight: 850,
+                                            fontSize: 11.5,
+                                            height: 24,
+                                            borderRadius: 1.2,
+                                            bgcolor: '#dcfce7', // Verde institucional
+                                            color: '#15803d',
+                                            border: '1px solid #86efac'
+                                          }}
+                                        />
+                                        <Typography sx={{ fontSize: 9.5, fontWeight: 750, color: '#15803d', lineHeight: 1.1 }}>
+                                          Completada
+                                        </Typography>
+                                      </Stack>
+                                    </Tooltip>
+                                  ) : compProg !== null && compProg > 0 ? (
+                                    <Tooltip title={`Avance actual: ${compProg}%. Falta ${Number((100 - compProg).toFixed(1))}% para culminar la meta del 100%.`} arrow>
+                                      <Stack alignItems="center" spacing={0.3}>
+                                        <Chip
+                                          size="small"
+                                          label={`${compProg}%`}
+                                          sx={{
+                                            fontWeight: 800,
+                                            fontSize: 11.5,
+                                            height: 24,
+                                            borderRadius: 1.2,
+                                            bgcolor: '#fffbeb',
+                                            color: '#b45309',
+                                            border: '1px solid #fde68a'
+                                          }}
+                                        />
+                                        <Typography sx={{ fontSize: 9.5, fontWeight: 750, color: '#b45309', lineHeight: 1.1 }}>
+                                          Falta {Number((100 - compProg).toFixed(0))}%
+                                        </Typography>
+                                      </Stack>
+                                    </Tooltip>
+                                  ) : (
+                                    <Tooltip title="Sin avances registrados aún. Falta el 100% de la meta." arrow>
+                                      <Stack alignItems="center" spacing={0.3}>
+                                        <Chip
+                                          size="small"
+                                          label="0%"
+                                          sx={{
+                                            fontWeight: 750,
+                                            fontSize: 11,
+                                            height: 22,
+                                            borderRadius: 1.2,
+                                            bgcolor: '#f1f5f9',
+                                            color: '#64748b',
+                                            border: '1px solid #cbd5e1'
+                                          }}
+                                        />
+                                        <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#94a3b8', lineHeight: 1.1 }}>
+                                          Falta 100%
+                                        </Typography>
+                                      </Stack>
+                                    </Tooltip>
+                                  )}
+                                </TableCell>
+
+                                {/* Evidencias cargadas centradas */}
+                                <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5 }}>
+                                  {evidences.length > 0 ? (
+                                    <Tooltip title="Clic para ver y descargar las evidencias cargadas" arrow>
+                                      <Chip
+                                        size="small"
+                                        icon={<AttachFile sx={{ fontSize: 14 }} />}
+                                        label={`${evidences.length} arch.`}
+                                        onClick={() => handleOpenEvidenceModal(it)}
+                                        sx={{
+                                          cursor: 'pointer',
+                                          fontWeight: 800,
+                                          fontSize: 11.5,
+                                          height: 24,
+                                          borderRadius: 1,
+                                          bgcolor: '#e0e7ff',
+                                          color: '#4338ca',
+                                          transition: 'all 0.15s ease',
+                                          '&:hover': { bgcolor: '#c7d2fe' }
+                                        }}
+                                      />
+                                    </Tooltip>
+                                  ) : (
+                                    <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>Sin soportes</Typography>
+                                  )}
+                                </TableCell>
+                                {/* Acción Valorar centrada */}
+                                <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
+                                  <Button
+                                    size="small"
+                                    variant="contained"
+                                    startIcon={<EditNote sx={{ fontSize: 16 }} />}
+                                    onClick={() => handleOpenEvalModal(it)}
+                                    sx={{
+                                      borderRadius: 2,
+                                      textTransform: 'none',
+                                      fontWeight: 850,
+                                      fontSize: 12,
+                                      py: 0.5,
+                                      px: 1.5,
+                                      bgcolor: '#2563eb',
+                                      boxShadow: '0 2px 6px rgba(37,99,235,0.22)',
+                                      '&:hover': { bgcolor: '#1d4ed8', boxShadow: '0 4px 10px rgba(37,99,235,0.3)' }
+                                    }}
+                                  >
+                                    Valorar
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 </Paper>
               </Stack>
             )}
           </Stack>
         )}
       </DialogContent>
-      <DialogActions sx={{
-        borderTop:'1px solid #d7e3f0', px: { xs: 1.5, md: 3 }, py: 1.25,
-        bgcolor: 'rgba(255,255,255,.98)', flexWrap: 'wrap', gap: 1,
-        justifyContent: 'space-between', boxShadow: '0 -8px 24px rgba(30,64,175,.06)'
-      }}>
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ flex: 1 }}>
-          {tab === 'meeting' ? (
-            <Button variant="outlined" startIcon={<Save />} disabled={saving} onClick={saveMeeting} sx={{ fontWeight: 850, textTransform: 'none', borderRadius: 2, minWidth: { sm: 160 } }}>
-              {saving ? 'Guardando...' : 'Guardar borrador'}
-            </Button>
+
+      {/* MODAL: VISUALIZAR EVIDENCIAS RADICADAS EN VENTANA EMERGENTE */}
+      <Dialog
+        open={evidenceModalOpen}
+        onClose={() => setEvidenceModalOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3.5,
+            overflow: 'hidden',
+            boxShadow: '0 25px 60px rgba(15, 23, 42, 0.2)'
+          }
+        }}
+      >
+        <DialogTitle
+          sx={{
+            m: 0,
+            px: 3,
+            py: 2,
+            borderBottom: '1px solid #e2e8f0',
+            bgcolor: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1.5
+          }}
+        >
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+            <Box sx={{ width: 38, height: 38, borderRadius: 2, bgcolor: '#ede9fe', color: '#6d28d9', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              <AttachFile sx={{ fontSize: 20 }} />
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Chip size="small" label={evidenceItem?.code || 'Actividad'} sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 900, fontSize: 11 }} />
+                <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }} noWrap>
+                  Evidencias Radicadas
+                </Typography>
+              </Stack>
+              <Typography sx={{ fontSize: 12.5, color: '#64748b', mt: 0.2 }} noWrap>
+                {evidenceItem?.activity}
+              </Typography>
+            </Box>
+          </Stack>
+          <IconButton
+            aria-label="cerrar"
+            onClick={() => setEvidenceModalOpen(false)}
+            size="small"
+            sx={{ color: '#64748b' }}
+          >
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ px: 3, py: 2.5, bgcolor: '#f8fafc' }}>
+          {(!evidenceItem?.evidence || evidenceItem.evidence.length === 0) ? (
+            <Paper variant="outlined" sx={{ p: 4, textAlign: 'center', borderRadius: 3, bgcolor: '#ffffff' }}>
+              <InsertDriveFile sx={{ fontSize: 48, color: '#cbd5e1', mb: 1 }} />
+              <Typography sx={{ fontSize: 14.5, fontWeight: 700, color: '#475569' }}>
+                No hay evidencias radicadas para esta actividad
+              </Typography>
+              <Typography sx={{ fontSize: 12, color: '#94a3b8', mt: 0.5 }}>
+                El responsable de la dependencia aún no ha cargado documentos de soporte para este plan.
+              </Typography>
+            </Paper>
           ) : (
-            <Button startIcon={<Download />} onClick={exportPlan} sx={{ fontWeight: 800, textTransform: 'none', borderRadius: 2 }}>
-              Exportar DIR-PE-FR-003 (.xlsx)
-            </Button>
+            <Stack spacing={1.5}>
+              <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {evidenceItem.evidence.length} {evidenceItem.evidence.length === 1 ? 'documento radicado' : 'documentos radicados'}
+              </Typography>
+              {evidenceItem.evidence.map((ev) => (
+                <Paper
+                  key={ev.id}
+                  variant="outlined"
+                  sx={{
+                    p: 2,
+                    borderRadius: 2.5,
+                    bgcolor: '#ffffff',
+                    borderColor: '#e2e8f0',
+                    display: 'flex',
+                    flexDirection: { xs: 'column', sm: 'row' },
+                    justifyContent: 'space-between',
+                    alignItems: { xs: 'flex-start', sm: 'center' },
+                    gap: 1.5,
+                    transition: 'all 0.15s ease',
+                    '&:hover': { borderColor: '#93c5fd', boxShadow: '0 4px 14px rgba(37,99,235,0.06)' }
+                  }}
+                >
+                  <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+                    <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: '#f1f5f9', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                      {getFileIcon(ev.original_name)}
+                    </Box>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }} noWrap>
+                        {ev.original_name}
+                      </Typography>
+                      <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" sx={{ mt: 0.3 }}>
+                        <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>
+                          {formatBytes(ev.size_bytes)}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>•</Typography>
+                        <Typography variant="caption" sx={{ color: '#64748b' }}>
+                          Radicado: {formatFecha(ev.created_at)}
+                        </Typography>
+                      </Stack>
+                    </Box>
+                  </Stack>
+
+                  <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignSelf: { xs: 'flex-end', sm: 'center' } }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="primary"
+                      startIcon={<Visibility sx={{ fontSize: 15 }} />}
+                      onClick={() => handlePreviewEvidence(ev)}
+                      sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}
+                    >
+                      Visualizar
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="inherit"
+                      startIcon={<Download sx={{ fontSize: 15 }} />}
+                      onClick={() => handleDownloadDirectEvidence(ev)}
+                      sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12, bgcolor: '#f1f5f9', color: '#1e293b', '&:hover': { bgcolor: '#e2e8f0' } }}
+                    >
+                      Descargar
+                    </Button>
+                  </Stack>
+                </Paper>
+              ))}
+            </Stack>
           )}
-        </Stack>
-        <Button onClick={onClose} variant="outlined" sx={{ fontWeight: 800, textTransform: 'none', borderRadius: 2 }}>
-          Cerrar formulario
-        </Button>
-      </DialogActions>
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, py: 1.5, borderTop: '1px solid #e2e8f0' }}>
+          <Button
+            onClick={() => setEvidenceModalOpen(false)}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
+          >
+            Cerrar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* MODAL: VALORACIÓN PARA PLANEACIÓN Y EFECTIVIDAD */}
+      <Dialog
+        open={evalModalOpen}
+        onClose={() => !saving && setEvalModalOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 3, maxWidth: 660, width: '100%', overflow: 'hidden', boxShadow: '0 20px 45px rgba(15, 23, 42, 0.16)' }
+        }}
+      >
+        <DialogTitle
+          sx={{
+            m: 0, px: 3, py: 2, borderBottom: '1px solid #e2e8f0', bgcolor: '#ffffff',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5
+          }}
+        >
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+            <Chip size="small" label={evaluatingItem?.code || 'Actividad'} sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 800, fontSize: 12, flexShrink: 0 }} />
+            <Typography sx={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }} noWrap>
+              Valoración de Seguimiento
+            </Typography>
+          </Stack>
+          <IconButton aria-label="cerrar" onClick={() => !saving && setEvalModalOpen(false)} size="small" sx={{ color: '#64748b' }}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ px: 3, py: 2.5, bgcolor: '#ffffff' }}>
+          <Stack spacing={2.5}>
+            {/* Resumen puntual de la Actividad */}
+            <Box sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+              <Stack direction="row" spacing={1.2} alignItems="flex-start" mb={evaluatingItem?.target || evaluatingItem?.indicator ? 1.2 : 0}>
+                <Chip size="small" label={evaluatingItem?.code || 'Actividad'} sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 900, fontSize: 11.5, mt: 0.2, flexShrink: 0 }} />
+                <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a', lineHeight: 1.45 }}>
+                  {evaluatingItem?.activity}
+                </Typography>
+              </Stack>
+              {(evaluatingItem?.target || evaluatingItem?.indicator) && (
+                <Stack direction="row" spacing={2} flexWrap="wrap" sx={{ pt: 1, borderTop: '1px dashed #e2e8f0' }}>
+                  {evaluatingItem?.target && (
+                    <Typography sx={{ fontSize: 12, color: '#475569' }}>
+                      <strong style={{ color: '#0f172a' }}>Meta:</strong> {evaluatingItem.target}
+                    </Typography>
+                  )}
+                  {evaluatingItem?.indicator && (
+                    <Typography sx={{ fontSize: 12, color: '#475569' }}>
+                      <strong style={{ color: '#0f172a' }}>Indicador:</strong> {evaluatingItem.indicator}
+                    </Typography>
+                  )}
+                </Stack>
+              )}
+            </Box>
+
+            {/* Evidencias cargadas por la dependencia con previsualización */}
+            {evaluatingItem?.evidence && evaluatingItem.evidence.length > 0 && (
+              <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.75}>
+                  <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#166534' }}>
+                    Evidencias cargadas por la dependencia ({evaluatingItem.evidence.length})
+                  </Typography>
+                  <Button
+                    size="small"
+                    onClick={() => handleOpenEvidenceModal(evaluatingItem)}
+                    sx={{ textTransform: 'none', fontSize: 11, fontWeight: 750, color: '#15803d', p: 0 }}
+                  >
+                    Ver todas
+                  </Button>
+                </Stack>
+                <Stack spacing={0.75}>
+                  {evaluatingItem.evidence.map((ev) => (
+                    <Stack key={ev.id} direction="row" justifyContent="space-between" alignItems="center" sx={{ bgcolor: '#ffffff', p: 0.75, borderRadius: 1.5, border: '1px solid #dcfce7' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+                        <Box sx={{ flexShrink: 0 }}>{getFileIcon(ev.original_name)}</Box>
+                        <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#14532d' }} noWrap>
+                          {ev.original_name}
+                        </Typography>
+                      </Stack>
+                      <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0, ml: 1 }}>
+                        <Button
+                          size="small"
+                          startIcon={<Visibility sx={{ fontSize: 14 }} />}
+                          onClick={() => handlePreviewEvidence(ev)}
+                          sx={{ textTransform: 'none', fontSize: 11.5, fontWeight: 800, color: '#0284c7', bgcolor: '#f0f9ff', px: 1, py: 0.2, borderRadius: 1.5, minWidth: 0 }}
+                        >
+                          Previsualizar
+                        </Button>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleDownloadDirectEvidence(ev)}
+                          sx={{ color: '#166534', p: 0.4 }}
+                          title="Descargar archivo"
+                        >
+                          <Download sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Stack>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+
+            {/* Selección de Periodo y Porcentaje */}
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={7}>
+                <TextField
+                  select
+                  fullWidth
+                  size="small"
+                  label="Periodo de Seguimiento"
+                  InputLabelProps={{ shrink: true }}
+                  value={evalForm.period_id}
+                  onChange={(e) => handleChangeEvalPeriod(e.target.value)}
+                  SelectProps={{
+                    sx: { fontSize: 13.5, fontWeight: 700, color: '#0f172a' }
+                  }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff' },
+                    '& .MuiInputLabel-root': { fontWeight: 700, color: '#475569' }
+                  }}
+                >
+                  {periods.map((p) => (
+                    <MenuItem key={p.id} value={p.id} sx={{ fontSize: 13, fontWeight: 600 }}>
+                      {p.code} · {p.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+              <Grid item xs={12} sm={5}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="number"
+                  inputProps={{ min: 0, max: 999, step: 'any' }}
+                  label="Avance Físico"
+                  placeholder="0"
+                  InputLabelProps={{ shrink: true }}
+                  value={evalForm.physical_progress}
+                  onChange={(e) => setEvalForm({ ...evalForm, physical_progress: e.target.value })}
+                  helperText={Number(evalForm.physical_progress) > 100 ? '⚠️ Sobrecumplimiento (>100%)' : ''}
+                  FormHelperTextProps={{ sx: { color: '#b45309', fontWeight: 750, fontSize: 11, mt: 0.5 } }}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <Typography sx={{ fontWeight: 800, color: '#2563eb', fontSize: 14 }}>%</Typography>
+                      </InputAdornment>
+                    ),
+                    sx: { borderRadius: 2, bgcolor: '#ffffff', fontWeight: 700, fontSize: 14 }
+                  }}
+                  sx={{
+                    '& .MuiInputLabel-root': { fontWeight: 700, color: '#475569' }
+                  }}
+                />
+              </Grid>
+            </Grid>
+
+            {/* Observaciones y Concepto de Planeación */}
+            <TextField
+              fullWidth
+              multiline
+              minRows={3}
+              label="Observaciones y Concepto de Planeación y Efectividad"
+              InputLabelProps={{ shrink: true }}
+              placeholder="Ingrese el concepto oficial, retroalimentación o justificación del avance..."
+              value={evalForm.observations}
+              onChange={(e) => setEvalForm({ ...evalForm, observations: e.target.value })}
+              sx={{
+                '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff' },
+                '& .MuiInputLabel-root': { fontWeight: 700, color: '#475569' }
+              }}
+            />
+          </Stack>
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e2e8f0', gap: 1 }}>
+          <Button onClick={() => setEvalModalOpen(false)} disabled={saving} sx={{ textTransform: 'none', fontWeight: 750, borderRadius: 2 }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveEvaluation}
+            disabled={saving}
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, px: 3, bgcolor: '#2563eb', '&:hover': { bgcolor: '#1d4ed8' } }}
+          >
+            {saving ? 'Guardando...' : 'Guardar Valoración'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* MODAL: GESTIÓN DE PLAZO Y PRÓRROGA DE ETAPA 1 */}
+      <Dialog
+        open={timelineModalOpen}
+        onClose={() => !savingTimeline && setTimelineModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3.5, p: 1 } }}
+      >
+        <DialogTitle sx={{ px: 3, pt: 2, pb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box>
+            <Typography variant="h6" fontWeight={900} color="#0f172a">Vigencia y Prórroga de Formulación</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Etapa 1: Plan y actividades · {detail?.code} ({detail?.organizationalUnit?.name})
+            </Typography>
+          </Box>
+          <IconButton size="small" onClick={() => !savingTimeline && setTimelineModalOpen(false)} sx={{ color: '#64748b' }}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, py: 2 }}>
+          <Stack spacing={2.5}>
+            <Alert severity="info" sx={{ borderRadius: 2, fontSize: 12.5 }}>
+              Defina o amplíe la fecha límite para que el líder de dependencia pueda registrar o ajustar actividades en la <strong>Etapa 1</strong>. Al cumplirse la fecha, el acceso se cerrará automáticamente.
+            </Alert>
+
+            {/* Atajos rápidos de prórroga */}
+            <Box>
+              <Typography variant="caption" fontWeight={800} color="#475569" mb={0.75} display="block">
+                AMPLIACIÓN RÁPIDA DE TIEMPO (UN SOLO TOQUE):
+              </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap">
+                <Button size="small" variant="outlined" onClick={() => handleAddDaysToTimeline(7)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                  +7 Días
+                </Button>
+                <Button size="small" variant="outlined" onClick={() => handleAddDaysToTimeline(15)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                  +15 Días
+                </Button>
+                <Button size="small" variant="outlined" onClick={() => handleAddDaysToTimeline(30)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                  +30 Días
+                </Button>
+                <Button size="small" variant="outlined" onClick={handleSetEndOfMonth} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                  Hasta fin de mes
+                </Button>
+              </Stack>
+            </Box>
+
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="date"
+                  label="Fecha de inicio"
+                  InputLabelProps={{ shrink: true }}
+                  value={timelineForm.starts_on}
+                  onChange={(e) => setTimelineForm({ ...timelineForm, starts_on: e.target.value })}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="date"
+                  label="Fecha límite / Cierre"
+                  InputLabelProps={{ shrink: true }}
+                  value={timelineForm.ends_on}
+                  onChange={(e) => setTimelineForm({ ...timelineForm, ends_on: e.target.value })}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontWeight: 700 } }}
+                />
+              </Grid>
+            </Grid>
+
+            <TextField
+              fullWidth
+              multiline
+              minRows={2}
+              size="small"
+              label="Motivo de la prórroga o justificación"
+              placeholder="Ej: Solicitud formal de la dependencia para completar concertación de metas e indicadores..."
+              value={timelineForm.reason}
+              onChange={(e) => setTimelineForm({ ...timelineForm, reason: e.target.value })}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+
+            {/* Historial de prórrogas */}
+            {stage1Extensions.length > 0 && (
+              <Box sx={{ mt: 1, p: 1.5, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <Typography variant="caption" fontWeight={900} color="#334155" mb={1} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <History fontSize="small" /> Historial de prórrogas ({stage1Extensions.length})
+                </Typography>
+                <Stack spacing={0.75} sx={{ maxHeight: 150, overflowY: 'auto' }}>
+                  {stage1Extensions.map((ext, idx) => (
+                    <Box key={idx} sx={{ p: 1, borderRadius: 1.5, bgcolor: '#ffffff', border: '1px solid #e2e8f0', fontSize: 11.5 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Typography fontWeight={800} color="#0f172a" sx={{ fontSize: 12 }}>
+                          Nueva fecha: {ext.new_deadline}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {ext.granted_at ? new Date(ext.granted_at).toLocaleDateString('es-CO') : ''}
+                        </Typography>
+                      </Stack>
+                      <Typography color="#475569" sx={{ mt: 0.25 }}>{ext.reason || 'Sin motivo registrado'}</Typography>
+                      <Typography variant="caption" color="#64748b" display="block">Autorizado por: {ext.granted_by_name || 'Planeación'}</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e2e8f0', gap: 1 }}>
+          <Button onClick={() => setTimelineModalOpen(false)} disabled={savingTimeline} sx={{ textTransform: 'none', fontWeight: 700 }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveTimeline}
+            disabled={savingTimeline || !timelineForm.ends_on}
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, px: 3, bgcolor: '#1e40af', '&:hover': { bgcolor: '#1d4ed8' } }}
+          >
+            {savingTimeline ? 'Guardando...' : 'Guardar y Habilitar Plazo'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* VENTANA EMERGENTE COMPLETA DE VISTA PREVIA DE EVIDENCIA */}
+      <Dialog
+        open={previewModal.open}
+        onClose={handleClosePreview}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 3.5, overflow: 'hidden', height: '88vh', display: 'flex', flexDirection: 'column' }
+        }}
+      >
+        <DialogTitle
+          sx={{
+            m: 0, px: 3, py: 1.75, borderBottom: '1px solid #e2e8f0', bgcolor: '#ffffff',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5
+          }}
+        >
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+            <Box sx={{ width: 36, height: 36, borderRadius: 2, bgcolor: '#f1f5f9', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              {getFileIcon(previewModal.fileName)}
+            </Box>
+            <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }} noWrap>
+              {previewModal.fileName}
+            </Typography>
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center">
+            {previewModal.url && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<Download sx={{ fontSize: 15 }} />}
+                onClick={() => {
+                  const a = document.createElement('a');
+                  a.href = previewModal.url;
+                  a.download = previewModal.fileName;
+                  a.click();
+                }}
+                sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
+              >
+                Descargar
+              </Button>
+            )}
+            {previewModal.url && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<OpenInNew sx={{ fontSize: 15 }} />}
+                onClick={() => window.open(previewModal.url, '_blank')}
+                sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
+              >
+                Pestaña Nueva
+              </Button>
+            )}
+            <IconButton aria-label="cerrar" onClick={handleClosePreview} size="small" sx={{ color: '#64748b' }}>
+              <Close fontSize="small" />
+            </IconButton>
+          </Stack>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 0, bgcolor: '#f8fafc', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {previewModal.loading ? (
+            <Stack alignItems="center" justifyContent="center" sx={{ flex: 1, py: 8 }}>
+              <CircularProgress />
+              <Typography sx={{ mt: 2, color: '#64748b', fontSize: 13, fontWeight: 700 }}>
+                Cargando vista previa del documento...
+              </Typography>
+            </Stack>
+          ) : previewModal.isPdf ? (
+            <Box sx={{ flex: 1, width: '100%', height: '100%' }}>
+              <iframe
+                src={previewModal.url}
+                title={previewModal.fileName}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+              />
+            </Box>
+          ) : previewModal.isImage ? (
+            <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 3, bgcolor: '#0f172a' }}>
+              <img
+                src={previewModal.url}
+                alt={previewModal.fileName}
+                style={{ maxWidth: '100%', maxHeight: '78vh', objectFit: 'contain', borderRadius: 8 }}
+              />
+            </Box>
+          ) : (
+            <Stack alignItems="center" justifyContent="center" sx={{ flex: 1, p: 4, textAlign: 'center' }}>
+              <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, bgcolor: '#ffffff', maxWidth: 500, width: '100%', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
+                <Box sx={{ width: 64, height: 64, borderRadius: 3, bgcolor: '#f1f5f9', display: 'grid', placeItems: 'center', mx: 'auto', mb: 2 }}>
+                  {getFileIcon(previewModal.fileName)}
+                </Box>
+                <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#0f172a', mb: 0.5 }}>
+                  {previewModal.fileName}
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#64748b', mb: 3 }}>
+                  Documento cargado como soporte institucional. Puede descargarlo y visualizarlo de forma nativa en su equipo.
+                </Typography>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  size="large"
+                  startIcon={<Download />}
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = previewModal.url;
+                    a.download = previewModal.fileName;
+                    a.click();
+                  }}
+                  sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 850, px: 4 }}
+                >
+                  Descargar Documento
+                </Button>
+              </Paper>
+            </Stack>
+          )}
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

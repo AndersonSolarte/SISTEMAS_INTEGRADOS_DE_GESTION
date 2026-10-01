@@ -111,8 +111,10 @@ const syncMinute = async (minuteId) => {
       }]
     }]
   });
-  if (!minute?.final_pdf_storage_key || !fs.existsSync(minute.final_pdf_storage_key)) {
-    throw new Error('El PDF final del acta no existe en almacenamiento temporal.');
+  const { ensureMinuteFinalPdfBuffer } = require('./strategicMinutePdfService');
+  const buffer = await ensureMinuteFinalPdfBuffer(minute);
+  if (!buffer || !minute?.final_pdf_storage_key || !fs.existsSync(minute.final_pdf_storage_key)) {
+    throw new Error('No fue posible preparar el PDF final del acta para sincronización.');
   }
   const drive = buildWritableDriveClient();
   const actionPlan = minute.meeting?.actionPlan;

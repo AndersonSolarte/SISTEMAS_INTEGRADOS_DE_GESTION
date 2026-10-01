@@ -68,6 +68,7 @@ const StrategicTerm = sequelize.define('StrategicTerm', {
   starts_on: { type: DataTypes.DATEONLY, allowNull: false },
   ends_on: { type: DataTypes.DATEONLY, allowNull: false },
   status: { type: DataTypes.STRING(24), allowNull: false, defaultValue: 'planned' },
+  metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
   closed_at: { type: DataTypes.DATE, allowNull: true },
   closed_by: userId()
 }, commonOptions('pei_terms', [{ unique: true, fields: ['strategic_plan_id', 'year'] }, { fields: ['status'] }]));

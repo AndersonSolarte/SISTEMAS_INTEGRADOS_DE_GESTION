@@ -72,7 +72,11 @@ const PRIVATE_ROOT = path.resolve(process.env.SIAC_PEI_TEMP_DIR || path.join(__d
 const SIGNATURE_ROOT = path.join(PRIVATE_ROOT, '_signatures');
 const ensureDir = (dir) => fs.mkdirSync(dir, { recursive: true });
 const ok = (res, data, message = '') => res.json({ success: true, message, data });
-const fail = (res, error) => res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Error interno' });
+const fail = (res, error) => res.status(error.statusCode || 500).json({
+  success: false,
+  message: error.message || 'Error interno',
+  data: error.data || undefined
+});
 const wrap = (fn) => async (req, res) => { try { await fn(req, res); } catch (error) { console.error('PEI:', error); fail(res, error); } };
 const hashObject = (value) => sha256(Buffer.from(JSON.stringify(value)));
 const randomToken = (bytes = 32) => crypto.randomBytes(bytes).toString('base64url');
@@ -555,7 +559,23 @@ const transferLeader = wrap(async (req, res) => {
 
 const createTerm = wrap(async (req, res) => {
   const term = await sequelize.transaction(async (transaction) => {
-    const row = await StrategicTerm.create({ strategic_plan_id: req.params.planId, year: req.body.year, name: req.body.name || `Vigencia ${req.body.year}`, starts_on: req.body.starts_on, ends_on: req.body.ends_on, status: req.body.status || 'planned' }, { transaction });
+    const year = Number(req.body.year);
+    const formulationStartsOn = req.body.formulation_starts_on || `${year}-01-01`;
+    const formulationEndsOn = req.body.formulation_ends_on || `${year}-03-31`;
+    const metadata = {
+      ...(req.body.metadata || {}),
+      formulation_starts_on: formulationStartsOn,
+      formulation_ends_on: formulationEndsOn
+    };
+    const row = await StrategicTerm.create({
+      strategic_plan_id: req.params.planId,
+      year,
+      name: req.body.name || `Vigencia ${year}`,
+      starts_on: req.body.starts_on,
+      ends_on: req.body.ends_on,
+      status: req.body.status || 'planned',
+      metadata
+    }, { transaction });
     for (const [index, period] of (req.body.periods || []).entries()) await StrategicMonitoringPeriod.create({ term_id: row.id, code: cleanCode(period.code), name: period.name, starts_on: period.starts_on, ends_on: period.ends_on, position: period.position || index + 1, weight: period.weight || 1, status: period.status || 'planned' }, { transaction });
     await audit(req, 'term.create', 'term', row.id, null, row.toJSON(), null, transaction);
     return row;
@@ -567,10 +587,45 @@ const updateTerm = wrap(async (req, res) => {
   const term = await StrategicTerm.findByPk(req.params.termId);
   if (!term) throw Object.assign(new Error('Año no encontrado.'), { statusCode: 404 });
   const previous = term.toJSON();
-  const allowed = ['year', 'name', 'starts_on', 'ends_on', 'status'];
+  const allowed = ['year', 'name', 'starts_on', 'ends_on', 'status', 'metadata'];
   const changes = Object.fromEntries(allowed.filter((key) => req.body[key] !== undefined).map((key) => [key, req.body[key]]));
   if (String(changes.ends_on || term.ends_on) < String(changes.starts_on || term.starts_on)) throw Object.assign(new Error('La fecha final no puede ser anterior a la inicial.'), { statusCode: 422 });
+
+  if (req.body.formulation_starts_on !== undefined || req.body.formulation_ends_on !== undefined) {
+    changes.metadata = {
+      ...(term.metadata || {}),
+      ...(changes.metadata || {}),
+      ...(req.body.formulation_starts_on ? { formulation_starts_on: req.body.formulation_starts_on } : {}),
+      ...(req.body.formulation_ends_on ? { formulation_ends_on: req.body.formulation_ends_on } : {})
+    };
+  }
+
   await term.update(changes);
+
+  if (req.body.propagate_to_plans) {
+    const formulationStartsOn = changes.metadata?.formulation_starts_on || term.metadata?.formulation_starts_on || `${term.year}-01-01`;
+    const formulationEndsOn = changes.metadata?.formulation_ends_on || term.metadata?.formulation_ends_on;
+    if (formulationEndsOn) {
+      const plans = await StrategicActionPlan.findAll({ where: { term_id: term.id, deleted_at: null } });
+      for (const p of plans) {
+        const currentDeadline = p.metadata?.formulation_ends_on || null;
+        // Regla institucional:
+        // Solo actualizar si el plan no tenía fecha o si la nueva fecha general amplía el plazo.
+        // Nunca recortar ni bajar el plazo si ya tenía una fecha individual mayor.
+        const shouldUpdate = !currentDeadline || String(formulationEndsOn) >= String(currentDeadline);
+        if (shouldUpdate) {
+          await p.update({
+            metadata: {
+              ...(p.metadata || {}),
+              formulation_starts_on: formulationStartsOn,
+              formulation_ends_on: formulationEndsOn
+            }
+          });
+        }
+      }
+    }
+  }
+
   await audit(req, 'term.update', 'term', term.id, previous, term.toJSON(), req.body.justification);
   ok(res, term, 'Año actualizado.');
 });
@@ -704,7 +759,24 @@ const getActionPlan = wrap(async (req, res) => {
       { model: StrategicMeeting, as: 'meetings', required: false, separate: true, order: [['starts_at', 'DESC']], include: [{ model: StrategicMeetingParticipant, as: 'participants', required: false, separate: true, include: [{ model: User, as: 'user', attributes: ['id', 'username'], required: false }] }, { model: StrategicMinuteVersion, as: 'minuteVersions', required: false, separate: true, include: [{ model: StrategicMinuteSignature, as: 'signatures', required: false }] }] }
     ]
   });
-  if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+  if (!actionPlan) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+  if (actionPlan.deleted_at) {
+    const replacement = await StrategicActionPlan.findOne({
+      where: {
+        term_id: actionPlan.term_id,
+        catalog_item_id: actionPlan.catalog_item_id,
+        deleted_at: null,
+        id: { [Op.ne]: actionPlan.id }
+      },
+      order: [['updated_at', 'DESC']],
+      attributes: ['id', 'code']
+    });
+    const error = Object.assign(new Error(replacement
+      ? 'Este registro fue reemplazado por el Plan de Acción vigente.'
+      : 'Plan de Acción no encontrado.'), { statusCode: replacement ? 409 : 404 });
+    if (replacement) error.data = { replacement_plan_id: replacement.id, replacement_code: replacement.code };
+    throw error;
+  }
   const storedSchema = actionPlan.metadata?.form_schema;
   actionPlan.setDataValue('form_schema', storedSchema || await captureActionPlanSchema(actionPlan.term.strategic_plan_id));
   actionPlan.setDataValue('schema_is_snapshot', Boolean(storedSchema));
@@ -749,11 +821,27 @@ const createActionPlan = wrap(async (req, res) => {
   }
   const created = await sequelize.transaction(async (transaction) => {
     const formSchema = await captureActionPlanSchema(term.strategic_plan_id, transaction);
+    const termMeta = term.metadata || {};
+    const defaultStartsOn = termMeta.formulation_starts_on || `${term.year}-01-01`;
+    const defaultEndsOn = termMeta.formulation_ends_on || `${term.year}-03-31`;
     const action = await StrategicActionPlan.create({
-    term_id: term.id, catalog_item_id: unit.id, responsible_user_id: responsible.id,
-    code, title: req.body.title || `Plan de Acción ${unit.name} ${term.year}`, status: 'convocation',
-    workflow_version: term.strategicPlan.configuration_version, instrument_version: term.strategicPlan.configuration_version,
-    metadata: { ...(req.body.metadata || {}), form_schema: formSchema }, created_by: req.user.id, updated_by: req.user.id
+      term_id: term.id,
+      catalog_item_id: unit.id,
+      responsible_user_id: responsible.id,
+      code,
+      title: req.body.title || `Plan de Acción ${unit.name} ${term.year}`,
+      status: 'convocation',
+      workflow_version: term.strategicPlan.configuration_version,
+      instrument_version: term.strategicPlan.configuration_version,
+      metadata: {
+        ...(req.body.metadata || {}),
+        form_schema: formSchema,
+        formulation_starts_on: req.body.formulation_starts_on || defaultStartsOn,
+        formulation_ends_on: req.body.formulation_ends_on || defaultEndsOn,
+        formulation_extensions: []
+      },
+      created_by: req.user.id,
+      updated_by: req.user.id
     }, { transaction });
     if (responsible) {
       const responsibility = await StrategicResponsibility.create({ term_id: term.id, catalog_item_id: unit.id, action_plan_id: action.id, position_catalog_item_id: req.body.position_catalog_item_id || null, user_id: responsible.id, responsibility_type: 'action_plan_leader', starts_on: new Date().toISOString().slice(0, 10), status: 'active', created_by: req.user.id }, { transaction });
@@ -774,25 +862,253 @@ const updateActionPlan = wrap(async (req, res) => {
   const protectedMetadata = req.body.metadata
     ? { ...actionPlan.metadata, ...req.body.metadata, form_schema: actionPlan.metadata?.form_schema }
     : actionPlan.metadata;
-  await actionPlan.update({ title: req.body.title ?? actionPlan.title, responsible_user_id: req.body.responsible_user_id ?? actionPlan.responsible_user_id, metadata: protectedMetadata, updated_by: req.user.id });
+  await actionPlan.update({
+    code: req.body.code ? req.body.code.trim().toUpperCase() : actionPlan.code,
+    title: req.body.title ?? actionPlan.title,
+    responsible_user_id: req.body.responsible_user_id ?? actionPlan.responsible_user_id,
+    metadata: protectedMetadata,
+    updated_by: req.user.id
+  });
   await audit(req, 'action_plan.update', 'action_plan', actionPlan.id, previous, actionPlan.toJSON(), req.body.justification);
   await refreshActionRepository(actionPlan.term_id, req, 'action_plan_updated');
   ok(res, actionPlan);
 });
 
-const ensureCanModifyActionPlanItems = (actionPlan, req) => {
+const deleteActionPlan = wrap(async (req, res) => {
+  const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
+  if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+  const previous = actionPlan.toJSON();
+  await sequelize.transaction(async (transaction) => {
+    const deletedCode = `DELETED-${String(actionPlan.id).slice(0, 8)}-${actionPlan.code}`.slice(0, 80);
+    await StrategicActionItem.update({ deleted_at: new Date() }, { where: { action_plan_id: actionPlan.id, deleted_at: null }, transaction });
+    await StrategicResponsibility.update({ status: 'ended', ends_on: new Date().toISOString().slice(0, 10) }, { where: { action_plan_id: actionPlan.id, status: 'active' }, transaction });
+    // También retirar la dependencia de la vigencia (Paso 3)
+    await StrategicResponsibility.update(
+      { status: 'inactive', ends_on: new Date().toISOString().slice(0, 10), ended_by: req.user.id },
+      { where: { term_id: actionPlan.term_id, catalog_item_id: actionPlan.catalog_item_id, action_plan_id: null, responsibility_type: 'reference_leader', status: 'active' }, transaction }
+    );
+    await actionPlan.update({
+      code: deletedCode,
+      deleted_at: new Date(),
+      updated_by: req.user.id,
+      metadata: { ...(actionPlan.metadata || {}), deleted_original_code: actionPlan.code }
+    }, { transaction });
+    await audit(req, 'action_plan.delete', 'action_plan', actionPlan.id, previous, actionPlan.toJSON(), 'Eliminación de plan de acción y retiro de dependencia de la vigencia', transaction);
+  });
+  await refreshActionRepository(actionPlan.term_id, req, 'action_plan_deleted');
+  ok(res, { id: actionPlan.id }, 'Plan de Acción y dependencia eliminados de la vigencia correctamente.');
+});
+
+const bulkDeleteActionPlans = wrap(async (req, res) => {
+  const { termId } = req.params;
+  const term = await StrategicTerm.findByPk(termId);
+  if (!term) throw Object.assign(new Error('Vigencia no encontrada.'), { statusCode: 404 });
+  const plans = await StrategicActionPlan.findAll({ where: { term_id: termId, deleted_at: null } });
+
+  const planIds = plans.map((p) => p.id);
+  await sequelize.transaction(async (transaction) => {
+    if (planIds.length) {
+      await StrategicActionItem.update({ deleted_at: new Date() }, { where: { action_plan_id: { [Op.in]: planIds }, deleted_at: null }, transaction });
+      await StrategicResponsibility.update({ status: 'ended', ends_on: new Date().toISOString().slice(0, 10) }, { where: { action_plan_id: { [Op.in]: planIds }, status: 'active' }, transaction });
+      for (const plan of plans) {
+        const deletedCode = `DELETED-${String(plan.id).slice(0, 8)}-${plan.code}`.slice(0, 80);
+        await plan.update({
+          code: deletedCode,
+          deleted_at: new Date(),
+          updated_by: req.user.id,
+          metadata: { ...(plan.metadata || {}), deleted_original_code: plan.code }
+        }, { transaction });
+      }
+    }
+    // Retirar también todas las dependencias configuradas en esta vigencia (Paso 3)
+    await StrategicResponsibility.update(
+      { status: 'inactive', ends_on: new Date().toISOString().slice(0, 10), ended_by: req.user.id },
+      { where: { term_id: termId, action_plan_id: null, responsibility_type: 'reference_leader', status: 'active' }, transaction }
+    );
+    await audit(req, 'action_plan.bulk_delete', 'term', termId, null, { deleted_plans: planIds.length }, `Eliminación masiva de ${planIds.length} planes y dependencias en vigencia ${term.year}`, transaction);
+  });
+  await refreshActionRepository(termId, req, 'action_plans_bulk_deleted');
+  ok(res, { count: plans.length }, `Se eliminaron los planes de acción y las dependencias de la vigencia ${term.year}.`);
+});
+
+const bulkCreateActionPlans = wrap(async (req, res) => {
+  const { termId } = req.params;
+  const term = await StrategicTerm.findByPk(termId, { include: [{ model: StrategicPlan, as: 'strategicPlan' }] });
+  if (!term) throw Object.assign(new Error('Vigencia no encontrada.'), { statusCode: 404 });
+
+  const assignments = await StrategicResponsibility.findAll({
+    where: { term_id: term.id, action_plan_id: null, responsibility_type: 'reference_leader', status: 'active' },
+    include: [
+      { model: StrategicCatalogItem, as: 'catalogItem' },
+      { model: User, as: 'responsibleUser', where: { estado: 'activo' } }
+    ]
+  });
+
+  if (!assignments.length) {
+    throw Object.assign(new Error(`No hay dependencias configuradas con responsable activo en la vigencia ${term.year}. Configure las dependencias en el paso 3 primero.`), { statusCode: 422 });
+  }
+
+  const existingPlans = await StrategicActionPlan.findAll({
+    where: { term_id: term.id, deleted_at: null },
+    attributes: ['catalog_item_id']
+  });
+  const existingUnitIds = new Set(existingPlans.map((p) => String(p.catalog_item_id)));
+
+  const pendingAssignments = assignments.filter((a) => !existingUnitIds.has(String(a.catalog_item_id)));
+  if (!pendingAssignments.length) {
+    return ok(res, { created: 0 }, 'Todas las dependencias ya tienen su Plan de Acción creado.');
+  }
+
+  const formSchema = await captureActionPlanSchema(term.strategic_plan_id);
+  const createdPlans = [];
+
+  await sequelize.transaction(async (transaction) => {
+    for (const assignment of pendingAssignments) {
+      const unit = assignment.catalogItem;
+      const responsible = assignment.responsibleUser;
+      if (!unit || !responsible) continue;
+
+      const baseCode = cleanCode(`${term.year}-${unit.code}`);
+      let code = baseCode;
+      let sequence = 2;
+      while (await StrategicActionPlan.count({ where: { code }, transaction })) {
+        code = `${baseCode}-${String(sequence).padStart(2, '0')}`;
+        sequence += 1;
+      }
+
+      const termMeta = term.metadata || {};
+      const defaultStartsOn = termMeta.formulation_starts_on || `${term.year}-01-01`;
+      const defaultEndsOn = termMeta.formulation_ends_on || `${term.year}-03-31`;
+
+      const plan = await StrategicActionPlan.create({
+        term_id: term.id,
+        catalog_item_id: unit.id,
+        responsible_user_id: responsible.id,
+        code,
+        title: `Plan de Acción ${unit.name} ${term.year}`,
+        status: 'convocation',
+        workflow_version: term.strategicPlan.configuration_version,
+        instrument_version: term.strategicPlan.configuration_version,
+        metadata: {
+          form_schema: formSchema,
+          formulation_starts_on: defaultStartsOn,
+          formulation_ends_on: defaultEndsOn,
+          formulation_extensions: []
+        },
+        created_by: req.user.id,
+        updated_by: req.user.id
+      }, { transaction });
+
+      const resp = await StrategicResponsibility.create({
+        term_id: term.id,
+        catalog_item_id: unit.id,
+        action_plan_id: plan.id,
+        user_id: responsible.id,
+        responsibility_type: 'action_plan_leader',
+        starts_on: new Date().toISOString().slice(0, 10),
+        status: 'active',
+        created_by: req.user.id
+      }, { transaction });
+
+      await plan.update({ responsibility_id: resp.id }, { transaction });
+      createdPlans.push(plan);
+    }
+    await audit(req, 'action_plan.bulk_create', 'term', term.id, null, { count: createdPlans.length }, `Creación masiva de ${createdPlans.length} planes en vigencia ${term.year}`, transaction);
+  });
+
+  await refreshActionRepository(term.id, req, 'action_plans_bulk_created');
+  ok(res, { created: createdPlans.length }, `Se crearon ${createdPlans.length} planes de acción exitosamente para ${term.year}.`);
+});
+
+const ensureCanModifyActionPlanItems = async (actionPlan, req) => {
   const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user?.role);
   if (isPlanningAdmin) return true;
   if (['active', 'monitoring', 'closed'].includes(actionPlan?.status)) {
     throw Object.assign(new Error('El Plan de Acción se encuentra en ejecución. Para adicionar, modificar o eliminar actividades, comuníquese con la Dirección de Planeación y Aseguramiento de la Calidad.'), { statusCode: 403 });
   }
+
+  // Verificación de vigencia y plazo de la Etapa 1 para usuarios no administradores
+  const today = new Date().toISOString().slice(0, 10);
+  let termMetadata = {};
+  if (actionPlan?.term_id) {
+    const term = actionPlan.term || await StrategicTerm.findByPk(actionPlan.term_id, { attributes: ['metadata', 'year'] });
+    termMetadata = term?.metadata || {};
+  }
+  const startsOn = actionPlan?.metadata?.formulation_starts_on || termMetadata.formulation_starts_on;
+  const endsOn = actionPlan?.metadata?.formulation_ends_on || termMetadata.formulation_ends_on;
+
+  if (startsOn && today < startsOn) {
+    throw Object.assign(new Error(`El plazo de formulación de la Etapa 1 aún no ha iniciado (Inicia el ${startsOn}).`), { statusCode: 403 });
+  }
+  if (endsOn && today > endsOn) {
+    throw Object.assign(new Error(`El plazo de formulación de la Etapa 1 finalizó el ${endsOn}. Para solicitar una ampliación de tiempo o prórroga, comuníquese con la Dirección de Planeación y Efectividad.`), { statusCode: 403 });
+  }
+
   return true;
 };
+
+const updateStage1Timeline = wrap(async (req, res) => {
+  const actionPlan = await StrategicActionPlan.findByPk(req.params.id, {
+    include: [{ model: StrategicTerm, as: 'term' }]
+  });
+  if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
+
+  const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user?.role);
+  if (!isPlanningAdmin) {
+    throw Object.assign(new Error('Solo la Dirección de Planeación y Efectividad o el Administrador pueden gestionar el plazo de formulación o conceder prórrogas.'), { statusCode: 403 });
+  }
+
+  const { starts_on, ends_on, reason } = req.body;
+  if (!ends_on) throw Object.assign(new Error('La fecha límite de formulación (cierre) es obligatoria.'), { statusCode: 422 });
+  if (starts_on && ends_on && ends_on < starts_on) {
+    throw Object.assign(new Error('La fecha de cierre no puede ser anterior a la fecha de inicio.'), { statusCode: 422 });
+  }
+
+  const previous = actionPlan.toJSON();
+  const currentMetadata = actionPlan.metadata || {};
+  const currentExtensions = Array.isArray(currentMetadata.formulation_extensions) ? [...currentMetadata.formulation_extensions] : [];
+  const previousDeadline = currentMetadata.formulation_ends_on || actionPlan.term?.metadata?.formulation_ends_on || null;
+
+  currentExtensions.push({
+    previous_deadline: previousDeadline,
+    new_deadline: ends_on,
+    starts_on: starts_on || currentMetadata.formulation_starts_on || actionPlan.term?.metadata?.formulation_starts_on || `${actionPlan.term?.year}-01-01`,
+    reason: reason || 'Ampliación / ajuste de plazo de formulación autorizado por Planeación y Efectividad',
+    granted_by: req.user.id,
+    granted_by_name: req.user.nombre || req.user.username || 'Planeación',
+    granted_at: new Date().toISOString()
+  });
+
+  const updatedMetadata = {
+    ...currentMetadata,
+    formulation_starts_on: starts_on || currentMetadata.formulation_starts_on || actionPlan.term?.metadata?.formulation_starts_on || `${actionPlan.term?.year}-01-01`,
+    formulation_ends_on: ends_on,
+    formulation_extensions: currentExtensions,
+    last_extension_at: new Date().toISOString(),
+    last_extension_by: req.user.id
+  };
+
+  await actionPlan.update({
+    metadata: updatedMetadata,
+    updated_by: req.user.id
+  });
+
+  await audit(req, 'action_plan.stage1_timeline', 'action_plan', actionPlan.id, previous, actionPlan.toJSON(), reason || `Plazo de formulación ajustado hasta ${ends_on}`);
+  await refreshActionRepository(actionPlan.term_id, req, 'action_plan_timeline_updated');
+
+  ok(res, {
+    actionPlanId: actionPlan.id,
+    formulation_starts_on: updatedMetadata.formulation_starts_on,
+    formulation_ends_on: updatedMetadata.formulation_ends_on,
+    formulation_extensions: updatedMetadata.formulation_extensions,
+    metadata: updatedMetadata
+  }, `Plazo de formulación actualizado con éxito. Vence el ${ends_on}.`);
+});
 
 const addActionItem = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
   if (!actionPlan) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
-  ensureCanModifyActionPlanItems(actionPlan, req);
+  await ensureCanModifyActionPlanItems(actionPlan, req);
   await ensureActionPlanSchemaSnapshot(actionPlan);
   const item = await saveActionItem({ req, actionPlan, payload: req.body });
   await refreshActionRepository(actionPlan.term_id, req, 'activity_created');
@@ -813,7 +1129,7 @@ const previewDynamicItems = wrap(async (req, res) => {
   if (!req.file) throw Object.assign(new Error('Seleccione la plantilla dinámica en formato .xlsx.'), { statusCode: 422 });
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
   if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
-  ensureCanModifyActionPlanItems(actionPlan, req);
+  await ensureCanModifyActionPlanItems(actionPlan, req);
   await ensureActionPlanSchemaSnapshot(actionPlan);
   ok(res, await previewDynamicActionItems({ actionPlanId: req.params.id, file: req.file, userId: req.user.id }), 'Vista previa generada. Todavía no se modificaron registros.');
 });
@@ -822,7 +1138,7 @@ const confirmDynamicItems = wrap(async (req, res) => {
   const importRecord = await StrategicDynamicActionItemImport.findByPk(req.params.importId);
   if (importRecord) {
     const actionPlan = await StrategicActionPlan.findByPk(importRecord.action_plan_id);
-    if (actionPlan) ensureCanModifyActionPlanItems(actionPlan, req);
+    if (actionPlan) await ensureCanModifyActionPlanItems(actionPlan, req);
   }
   const batch = await confirmDynamicActionItems({ importId: req.params.importId, req });
   await refreshActionRepository(batch.term_id, req, 'activities_imported');
@@ -833,7 +1149,7 @@ const updateActionItem = wrap(async (req, res) => {
   const item = await StrategicActionItem.findByPk(req.params.itemId);
   if (!item || String(item.action_plan_id) !== String(req.params.id)) throw Object.assign(new Error('Actividad no encontrada en este Plan de Acción.'), { statusCode: 404 });
   const actionPlan = await StrategicActionPlan.findByPk(item.action_plan_id);
-  ensureCanModifyActionPlanItems(actionPlan, req);
+  await ensureCanModifyActionPlanItems(actionPlan, req);
   await ensureActionPlanSchemaSnapshot(actionPlan);
   const updated = await saveActionItem({ req, actionPlan, payload: req.body, item });
   await refreshActionRepository(actionPlan.term_id, req, 'activity_updated');
@@ -844,7 +1160,7 @@ const deleteActionItem = wrap(async (req, res) => {
   const item = await StrategicActionItem.findByPk(req.params.itemId);
   if (!item || String(item.action_plan_id) !== String(req.params.id)) throw Object.assign(new Error('Actividad no encontrada en este Plan de Acción.'), { statusCode: 404 });
   const actionPlan = await StrategicActionPlan.findByPk(item.action_plan_id, { attributes: ['term_id', 'status'] });
-  if (actionPlan) ensureCanModifyActionPlanItems(actionPlan, req);
+  if (actionPlan) await ensureCanModifyActionPlanItems(actionPlan, req);
   const previous = item.toJSON(); await item.update({ deleted_at: new Date(), status: 'deleted', updated_by: req.user.id });
   await audit(req, 'action_item.soft_delete', 'action_item', item.id, previous, item.toJSON(), req.body?.justification);
   await refreshActionRepository(actionPlan?.term_id, req, 'activity_deleted');
@@ -1282,82 +1598,19 @@ const storeSignature = ({ participant, minute, signatureData, signerUserId, meth
   });
 };
 
-const signInternal = wrap(async (req, res) => {
-  const minute = await StrategicMinuteVersion.findByPk(req.params.minuteId);
-  if (!minute || minute.status !== 'signing') throw Object.assign(new Error('El acta no está habilitada para firma.'), { statusCode: 409 });
-  const participant = await StrategicMeetingParticipant.findOne({ where: { id: req.body.participant_id, meeting_id: minute.meeting_id, user_id: req.user.id } });
-  if (!participant) throw Object.assign(new Error('No figura como participante interno de esta acta.'), { statusCode: 403 });
-  let signatureData = req.body.signature_data;
-  let method = 'drawn';
-  if (req.body.use_stored_signature) {
-    const stored = await StrategicUserSignature.findOne({ where: { user_id: req.user.id, active: true }, order: [['created_at', 'DESC']] });
-    if (!stored || !fs.existsSync(stored.storage_key)) throw Object.assign(new Error('No tiene una firma registrada disponible.'), { statusCode: 422 });
-    const storedMime = /\.jpe?g$/i.test(stored.storage_key) ? 'jpeg' : 'png';
-    signatureData = `data:image/${storedMime};base64,${fs.readFileSync(stored.storage_key).toString('base64')}`; method = 'stored';
-    await stored.update({ last_used_at: new Date() });
-  }
-  const signature = await storeSignature({ participant, minute, signatureData, signerUserId: req.user.id, method, verified: true, req });
-  await participant.update({ status: 'signed' }); ok(res, signature, 'Firma registrada con trazabilidad SIAC.');
-});
-
-const registerUserSignature = wrap(async (req, res) => {
-  const parsed = parseDataUrl(req.body.signature_data); ensureDir(SIGNATURE_ROOT);
-  const filePath = path.join(SIGNATURE_ROOT, `user-${req.user.id}-${Date.now()}.${parsed.extension}`);
-  fs.writeFileSync(filePath, parsed.buffer, { flag: 'wx' });
-  await StrategicUserSignature.update({ active: false }, { where: { user_id: req.user.id, active: true } });
-  const signature = await StrategicUserSignature.create({ user_id: req.user.id, storage_key: filePath, sha256: sha256(parsed.buffer), consented_at: new Date() });
-  ok(res, { id: signature.id }, 'Firma privada registrada.');
-});
-
-const signExternal = wrap(async (req, res) => {
-  const access = await resolveStrategicSigningAccess(req.params.token, ['signing']);
-  const { minute } = access;
-  const participant = minute && await StrategicMeetingParticipant.findOne({ where: { id: req.body.participant_id, meeting_id: minute.meeting_id, signature_required: true } });
-  if (access.invitationVerified && participant?.id !== access.participant?.id) {
-    throw Object.assign(new Error('Este enlace de firma pertenece a otro participante.'), { statusCode: 403 });
-  }
-  if (participant?.participant_type === 'external' && req.body.privacy_accepted !== true) {
-    throw Object.assign(new Error('Debe aceptar la autorizacion de tratamiento de datos personales para firmar.'), { statusCode: 422 });
-  }
-  if (!participant) throw Object.assign(new Error('Participante no válido.'), { statusCode: 404 });
-  if (participant.status === 'signed') throw Object.assign(new Error('Este participante ya firmó el acta.'), { statusCode: 409 });
-  if (!access.invitationVerified && (participant.otp_attempts >= 5 || !participant.otp_expires_at || participant.otp_expires_at < new Date() || participant.otp_hash !== sha256(String(req.body.otp || '')))) {
-    await participant.increment('otp_attempts'); throw Object.assign(new Error('Código inválido o vencido.'), { statusCode: 422 });
-  }
-  // La identidad procede de SIAC/invitación y no se modifica desde el enlace público.
-  await participant.update({ email_verified_at: new Date(), otp_hash: null, otp_expires_at: null });
-  const signature = await storeSignature({
-    participant,
-    minute,
-    signatureData: req.body.signature_data,
-    signerUserId: participant.user_id,
-    method: participant.user_id ? 'qr_internal_drawn' : 'external_drawn',
-    verified: true,
-    privacyAccepted: participant.participant_type === 'external',
-    req
-  });
-  await participant.update({ status: 'signed' }); ok(res, { id: signature.id }, 'Firma electrónica registrada.');
-});
-
-const downloadMinuteWord = wrap(async (req, res) => {
-  const minute = await StrategicMinuteVersion.findByPk(req.params.minuteId);
-  if (!minute) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
-  const buffer = await generateActaBuffer(minute.content);
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-  res.setHeader('Content-Disposition', `attachment; filename="ACTA-${minute.meeting_id}-V${minute.version}.docx"`); res.send(buffer);
-});
-
-const finalizeMinute = wrap(async (req, res) => {
-  const minute = await StrategicMinuteVersion.findByPk(req.params.minuteId);
+const finalizeAndSyncMinuteInternal = async (minuteId, { req = null, userId = null, justification = null } = {}) => {
+  const minute = await StrategicMinuteVersion.findByPk(minuteId);
   if (!minute) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
 
   // Si el acta ya estaba formalizada/finalizada, permitir re-sincronizarla con Google Drive
   if (minute.status === 'finalized') {
-    // Regenerar el PDF con el diseño institucional actualizado y firmas
     const signatures = await StrategicMinuteSignature.findAll({ where: { minute_version_id: minute.id }, order: [['signed_at', 'ASC']] });
-    const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
+    const baseUrl = (req ? signingFrontendOrigin(req) : (process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || 'https://siac.unicesmag.edu.co')).replace(/\/$/, '');
     const validationUrl = `${baseUrl}/api/public/strategic-planning/validate/${minute.id}`;
-    const qrDataUrl = await QRCode.toDataURL(validationUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
+    let qrDataUrl = '';
+    try {
+      qrDataUrl = await QRCode.toDataURL(validationUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
+    } catch (_) {}
     const originalBuffer = await generateStrategicMinutePdf({
       minute,
       signatures,
@@ -1375,16 +1628,13 @@ const finalizeMinute = wrap(async (req, res) => {
       driveSync = await syncMinute(minute.id);
     } catch (driveErr) {
       console.warn('PEI: Sincronización con Drive no completada, encolando tarea:', driveErr.message);
-      await enqueueSync({ entityType: 'minute', entityId: minute.id, createdBy: req.user.id });
+      await enqueueSync({ entityType: 'minute', entityId: minute.id, createdBy: userId });
     }
     const meeting = await StrategicMeeting.findByPk(minute.meeting_id, {
       include: [{ model: StrategicActionPlan, as: 'actionPlan', attributes: ['term_id'] }]
     });
     await refreshActionRepository(meeting?.actionPlan?.term_id, req, 'minute_resynced');
-    const successMsg = driveSync
-      ? `Acta y repositorio sincronizados en Google Drive como "${driveSync.fileName}".`
-      : 'Sincronización con Google Drive programada en la cola de tareas.';
-    return ok(res, { ...minute.toJSON(), driveSync }, successMsg);
+    return { minute, driveSync };
   }
 
   if (minute.status !== 'signing') throw Object.assign(new Error('El acta no está en firma ni finalizada.'), { statusCode: 409 });
@@ -1393,9 +1643,12 @@ const finalizeMinute = wrap(async (req, res) => {
 
   if (missing.length) throw Object.assign(new Error(`Faltan ${missing.length} firmas requeridas o su justificación de ausencia.`), { statusCode: 409 });
   const signatures = await StrategicMinuteSignature.findAll({ where: { minute_version_id: minute.id }, order: [['signed_at', 'ASC']] });
-  const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
+  const baseUrl = (req ? signingFrontendOrigin(req) : (process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || 'https://siac.unicesmag.edu.co')).replace(/\/$/, '');
   const validationUrl = `${baseUrl}/api/public/strategic-planning/validate/${minute.id}`;
-  const qrDataUrl = await QRCode.toDataURL(validationUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
+  let qrDataUrl = '';
+  try {
+    qrDataUrl = await QRCode.toDataURL(validationUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
+  } catch (_) {}
 
   // 1. Buffer Original con firmas gráficas para archivo institucional y responsable
   const originalBuffer = await generateStrategicMinutePdf({
@@ -1418,7 +1671,7 @@ const finalizeMinute = wrap(async (req, res) => {
   const reportsDir = path.join(PRIVATE_ROOT, '_minutes'); ensureDir(reportsDir);
   const finalPdfPath = path.join(reportsDir, `ACTA-${minute.meeting_id}-V${minute.version}.pdf`);
   fs.writeFileSync(finalPdfPath, originalBuffer);
-  await minute.update({ status: 'finalized', finalized_at: new Date(), finalized_by: req.user.id, final_pdf_storage_key: finalPdfPath, final_pdf_hash: sha256(originalBuffer) });
+  await minute.update({ status: 'finalized', finalized_at: new Date(), finalized_by: userId, final_pdf_storage_key: finalPdfPath, final_pdf_hash: sha256(originalBuffer) });
   await StrategicMeeting.update({ status: 'formalized' }, { where: { id: minute.meeting_id } });
 
   // Identificar responsables y co-responsables del acta
@@ -1498,13 +1751,17 @@ const finalizeMinute = wrap(async (req, res) => {
       bodyHtml
     });
 
-    await sendStrategicPlanningEmail({
-      to: participant.email,
-      subject: `Acta de Reunión Firmada · ${minuteCode}${isResponsibleRecipient ? ' (Original)' : ''}`,
-      text: `El acta versión ${minute.version} fue formalizada por todos los participantes. Se adjunta ${isResponsibleRecipient ? 'el documento original con las firmas para su custodia' : 'la copia oficial con la constancia ORIGINAL FIRMADO'}. Código de validación: ${minute.id}.`,
-      html,
-      attachments: [attachment]
-    });
+    try {
+      await sendStrategicPlanningEmail({
+        to: participant.email,
+        subject: `Acta de Reunión Firmada · ${minuteCode}${isResponsibleRecipient ? ' (Original)' : ''}`,
+        text: `El acta versión ${minute.version} fue formalizada por todos los participantes. Se adjunta ${isResponsibleRecipient ? 'el documento original con las firmas para su custodia' : 'la copia oficial con la constancia ORIGINAL FIRMADO'}. Código de validación: ${minute.id}.`,
+        html,
+        attachments: [attachment]
+      });
+    } catch (mailErr) {
+      console.warn('Error enviando correo de formalización a', participant.email, mailErr.message);
+    }
   }
 
   let driveSync = null;
@@ -1512,11 +1769,112 @@ const finalizeMinute = wrap(async (req, res) => {
     driveSync = await syncMinute(minute.id);
   } catch (driveErr) {
     console.warn('PEI: Sincronización inmediata con Drive no completada, encolando tarea:', driveErr.message);
-    await enqueueSync({ entityType: 'minute', entityId: minute.id, createdBy: req.user.id });
+    await enqueueSync({ entityType: 'minute', entityId: minute.id, createdBy: userId });
   }
 
   await refreshActionRepository(meeting?.actionPlan?.term_id, req, 'minute_finalized');
-  await audit(req, 'minute.finalize', 'minute_version', minute.id, null, minute.toJSON(), req.body.justification);
+  if (req && userId) {
+    await audit(req, 'minute.finalize', 'minute_version', minute.id, null, minute.toJSON(), justification);
+  }
+  return { minute, driveSync };
+};
+
+const checkAndAutoFinalizeMinute = async (minuteId, req, userId) => {
+  try {
+    const minute = await StrategicMinuteVersion.findByPk(minuteId);
+    if (!minute || minute.status !== 'signing') return null;
+    const required = await StrategicMeetingParticipant.findAll({ where: { meeting_id: minute.meeting_id, signature_required: true } });
+    const missing = required.filter((p) => p.status !== 'signed' && !p.absence_justification);
+    if (missing.length === 0) {
+      return await finalizeAndSyncMinuteInternal(minute.id, { req, userId });
+    }
+  } catch (err) {
+    console.warn('Auto-finalización y sincronización tras firma falló:', err.message);
+  }
+  return null;
+};
+
+const signInternal = wrap(async (req, res) => {
+  const minute = await StrategicMinuteVersion.findByPk(req.params.minuteId);
+  if (!minute || minute.status !== 'signing') throw Object.assign(new Error('El acta no está habilitada para firma.'), { statusCode: 409 });
+  const participant = await StrategicMeetingParticipant.findOne({ where: { id: req.body.participant_id, meeting_id: minute.meeting_id, user_id: req.user.id } });
+  if (!participant) throw Object.assign(new Error('No figura como participante interno de esta acta.'), { statusCode: 403 });
+  let signatureData = req.body.signature_data;
+  let method = 'drawn';
+  if (req.body.use_stored_signature) {
+    const stored = await StrategicUserSignature.findOne({ where: { user_id: req.user.id, active: true }, order: [['created_at', 'DESC']] });
+    if (!stored || !fs.existsSync(stored.storage_key)) throw Object.assign(new Error('No tiene una firma registrada disponible.'), { statusCode: 422 });
+    const storedMime = /\.jpe?g$/i.test(stored.storage_key) ? 'jpeg' : 'png';
+    signatureData = `data:image/${storedMime};base64,${fs.readFileSync(stored.storage_key).toString('base64')}`; method = 'stored';
+    await stored.update({ last_used_at: new Date() });
+  }
+  const signature = await storeSignature({ participant, minute, signatureData, signerUserId: req.user.id, method, verified: true, req });
+  await participant.update({ status: 'signed' });
+  const autoResult = await checkAndAutoFinalizeMinute(minute.id, req, req.user.id);
+  const msg = autoResult?.driveSync
+    ? `Firma registrada. ¡Todas las firmas se completaron! Acta formalizada y sincronizada en Drive como "${autoResult.driveSync.fileName}".`
+    : (autoResult ? 'Firma registrada. ¡Todas las firmas se completaron! El acta fue formalizada exitosamente.' : 'Firma registrada con trazabilidad SIAC.');
+  ok(res, { ...signature.toJSON(), auto_finalized: Boolean(autoResult) }, msg);
+});
+
+const registerUserSignature = wrap(async (req, res) => {
+  const parsed = parseDataUrl(req.body.signature_data); ensureDir(SIGNATURE_ROOT);
+  const filePath = path.join(SIGNATURE_ROOT, `user-${req.user.id}-${Date.now()}.${parsed.extension}`);
+  fs.writeFileSync(filePath, parsed.buffer, { flag: 'wx' });
+  await StrategicUserSignature.update({ active: false }, { where: { user_id: req.user.id, active: true } });
+  const signature = await StrategicUserSignature.create({ user_id: req.user.id, storage_key: filePath, sha256: sha256(parsed.buffer), consented_at: new Date() });
+  ok(res, { id: signature.id }, 'Firma privada registrada.');
+});
+
+const signExternal = wrap(async (req, res) => {
+  const access = await resolveStrategicSigningAccess(req.params.token, ['signing']);
+  const { minute } = access;
+  const participant = minute && await StrategicMeetingParticipant.findOne({ where: { id: req.body.participant_id, meeting_id: minute.meeting_id, signature_required: true } });
+  if (access.invitationVerified && participant?.id !== access.participant?.id) {
+    throw Object.assign(new Error('Este enlace de firma pertenece a otro participante.'), { statusCode: 403 });
+  }
+  if (participant?.participant_type === 'external' && req.body.privacy_accepted !== true) {
+    throw Object.assign(new Error('Debe aceptar la autorizacion de tratamiento de datos personales para firmar.'), { statusCode: 422 });
+  }
+  if (!participant) throw Object.assign(new Error('Participante no válido.'), { statusCode: 404 });
+  if (participant.status === 'signed') throw Object.assign(new Error('Este participante ya firmó el acta.'), { statusCode: 409 });
+  if (!access.invitationVerified && (participant.otp_attempts >= 5 || !participant.otp_expires_at || participant.otp_expires_at < new Date() || participant.otp_hash !== sha256(String(req.body.otp || '')))) {
+    await participant.increment('otp_attempts'); throw Object.assign(new Error('Código inválido o vencido.'), { statusCode: 422 });
+  }
+  // La identidad procede de SIAC/invitación y no se modifica desde el enlace público.
+  await participant.update({ email_verified_at: new Date(), otp_hash: null, otp_expires_at: null });
+  const signature = await storeSignature({
+    participant,
+    minute,
+    signatureData: req.body.signature_data,
+    signerUserId: participant.user_id,
+    method: participant.user_id ? 'qr_internal_drawn' : 'external_drawn',
+    verified: true,
+    privacyAccepted: participant.participant_type === 'external',
+    req
+  });
+  await participant.update({ status: 'signed' });
+  const autoResult = await checkAndAutoFinalizeMinute(minute.id, req, participant.user_id || null);
+  const msg = autoResult?.driveSync
+    ? `Firma electrónica registrada. ¡Todas las firmas se completaron! Acta formalizada y sincronizada en Drive como "${autoResult.driveSync.fileName}".`
+    : (autoResult ? 'Firma electrónica registrada. ¡Todas las firmas se completaron! El acta fue formalizada exitosamente.' : 'Firma electrónica registrada.');
+  ok(res, { id: signature.id, auto_finalized: Boolean(autoResult) }, msg);
+});
+
+const downloadMinuteWord = wrap(async (req, res) => {
+  const minute = await StrategicMinuteVersion.findByPk(req.params.minuteId);
+  if (!minute) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+  const buffer = await generateActaBuffer(minute.content);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', `attachment; filename="ACTA-${minute.meeting_id}-V${minute.version}.docx"`); res.send(buffer);
+});
+
+const finalizeMinute = wrap(async (req, res) => {
+  const { minute, driveSync } = await finalizeAndSyncMinuteInternal(req.params.minuteId, {
+    req,
+    userId: req.user.id,
+    justification: req.body.justification
+  });
   const successMsg = driveSync
     ? `Acta formalizada, notificada y sincronizada en Google Drive como "${driveSync.fileName}".`
     : 'Acta formalizada y notificada en SIAC. Sincronización con Google Drive programada.';
@@ -1592,8 +1950,33 @@ const uploadEvidence = wrap(async (req, res) => {
 
 const downloadEvidence = wrap(async (req, res) => {
   const evidence = await StrategicEvidence.findByPk(req.params.evidenceId);
-  if (!evidence || evidence.deleted_at || !fs.existsSync(evidence.storage_key)) throw Object.assign(new Error('Evidencia no encontrada.'), { statusCode: 404 });
-  res.download(evidence.storage_key, evidence.original_name);
+  if (!evidence || evidence.deleted_at) throw Object.assign(new Error('Evidencia no encontrada.'), { statusCode: 404 });
+  const fullPath = path.resolve(evidence.storage_key);
+  if (!fs.existsSync(fullPath)) throw Object.assign(new Error('El archivo físico de la evidencia no se encuentra en el servidor.'), { statusCode: 404 });
+
+  const ext = path.extname(evidence.original_name || '').toLowerCase();
+  const mimeMap = {
+    '.pdf': 'application/pdf',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.txt': 'text/plain',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.xls': 'application/vnd.ms-excel',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.doc': 'application/msword'
+  };
+  const mimeType = evidence.mime_type || mimeMap[ext] || 'application/octet-stream';
+
+  if (req.query.preview === 'true') {
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(evidence.original_name)}"`);
+    return res.sendFile(fullPath);
+  }
+  res.download(fullPath, evidence.original_name);
 });
 
 const retrySync = wrap(async (req, res) => {
@@ -1739,8 +2122,9 @@ module.exports = {
   applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, previewFieldSchema, confirmFieldSchema,
   downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, termDependencies, downloadTermDependencyTemplate,
   termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
-  listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, addActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
-  transitionActionPlan, saveMonitoring, createMeeting, updateMeeting, improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
+  listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
+  transitionActionPlan, saveMonitoring, createMeeting, updateMeeting,
+  improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
   uploadEvidence, downloadEvidence, retrySync, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
   previewHistorical, confirmHistorical, exportActionPlan, analytics, listAudit, listSyncJobs

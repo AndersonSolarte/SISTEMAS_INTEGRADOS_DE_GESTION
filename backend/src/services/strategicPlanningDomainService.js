@@ -115,13 +115,16 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
     transaction
   });
   const previous = created ? null : result.toJSON();
-  const progress = Math.max(0, Math.min(100, Number(payload.physical_progress || 0)));
+  const isPlanningStaff = ['administrador', 'planeacion_estrategica', 'planeacion_efectividad'].includes(req.user?.role);
+  const progress = isPlanningStaff && payload.physical_progress !== undefined && payload.physical_progress !== ''
+    ? Math.max(0, Math.min(999, Number(payload.physical_progress || 0)))
+    : Number(result.physical_progress || 0);
   await result.update({
     physical_progress: progress,
     achieved_value: payload.achieved_value || null,
     observations: payload.observations || null,
-    traffic_light: payload.traffic_light || null,
-    status: payload.status || 'submitted',
+    traffic_light: isPlanningStaff ? (payload.traffic_light || result.traffic_light) : result.traffic_light,
+    status: isPlanningStaff && payload.status ? payload.status : (result.status === 'approved' ? 'approved' : 'submitted'),
     version: created ? 1 : Number(result.version || 1) + 1,
     updated_by: req.user.id
   }, { transaction });

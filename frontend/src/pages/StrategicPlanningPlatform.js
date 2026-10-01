@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions,
-  DialogContent, DialogTitle, FormControlLabel, Grid, LinearProgress, MenuItem, Paper, Stack, Switch,
-  InputAdornment, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography
+  Checkbox, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, IconButton, LinearProgress, MenuItem, Paper, Stack, Switch,
+  InputAdornment, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
 import {
-  AccountTree, Add, Analytics, ArrowBack, AssignmentTurnedIn, CalendarMonth, CheckCircleOutline, CloudSync,
+  AccountTree, Add, Analytics, ArrowBack, AssignmentTurnedIn, CalendarMonth, Close, MoreTime, CheckCircleOutline, CloudSync,
   DeleteOutline, Description, Download, EditOutlined, Folder, GridView, LockOutlined, Payments, Search,
   Settings, SwapHoriz, TableRows, Timeline, UploadFile
 } from '@mui/icons-material';
@@ -136,7 +136,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [openField, setOpenField] = useState(false);
   const [levelForm, setLevelForm] = useState({ id: null, name: '' });
   const [elementForm, setElementForm] = useState({ id: null, level_id: '', parent_id: '', code: '', name: '', description: '' });
-  const [termForm, setTermForm] = useState({ id: null, year: '', starts_on: '', ends_on: '', status: 'planned' });
+  const [termForm, setTermForm] = useState({ id: null, year: '', starts_on: '', ends_on: '', status: 'planned', formulation_starts_on: '', formulation_ends_on: '', propagate_to_plans: false });
+  const [generalTimelineModal, setGeneralTimelineModal] = useState({ open: false, term: null, starts_on: '', ends_on: '', saving: false });
   const [fieldForm, setFieldForm] = useState({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '', catalog_type: '', list_source: 'manual', selected_level_id: '', selected_element_ids: [] });
   const [fieldSchemaPreview, setFieldSchemaPreview] = useState(null);
   const [replaceSchemaFields, setReplaceSchemaFields] = useState(false);
@@ -151,6 +152,11 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [dependencyToRemove, setDependencyToRemove] = useState(null);
   const [repositorySyncing, setRepositorySyncing] = useState(false);
   const [repositoryResult, setRepositoryResult] = useState(null);
+  const [deleteActionPlanCandidate, setDeleteActionPlanCandidate] = useState(null);
+  const [bulkDeleteCandidate, setBulkDeleteCandidate] = useState(null);
+  const [bulkDeleteConfirmText, setBulkDeleteConfirmText] = useState('');
+  const [editActionPlanCandidate, setEditActionPlanCandidate] = useState(null);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -382,21 +388,71 @@ export default function StrategicPlanningPlatform({ onBack }) {
   };
 
 
+  const openGeneralTimelineModal = (term) => {
+    setGeneralTimelineModal({
+      open: true,
+      term,
+      starts_on: term.metadata?.formulation_starts_on || `${term.year}-01-01`,
+      ends_on: term.metadata?.formulation_ends_on || `${term.year}-03-31`,
+      saving: false
+    });
+  };
+
+  const handleAddDaysToGeneralTimeline = (days) => {
+    const base = generalTimelineModal.ends_on ? new Date(generalTimelineModal.ends_on + 'T00:00:00') : new Date();
+    base.setDate(base.getDate() + days);
+    setGeneralTimelineModal((prev) => ({ ...prev, ends_on: base.toISOString().slice(0, 10) }));
+  };
+
+  const handleSetEndOfMonthGeneralTimeline = () => {
+    const now = generalTimelineModal.ends_on ? new Date(generalTimelineModal.ends_on + 'T00:00:00') : new Date();
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    setGeneralTimelineModal((prev) => ({ ...prev, ends_on: endOfMonth.toISOString().slice(0, 10) }));
+  };
+
+  const handleSaveGeneralTimeline = async () => {
+    if (!generalTimelineModal.ends_on) return enqueueSnackbar('Indique la fecha límite de cierre general.', { variant: 'warning' });
+    setGeneralTimelineModal((prev) => ({ ...prev, saving: true }));
+    try {
+      await strategicPlanningService.updateTerm(generalTimelineModal.term.id, {
+        formulation_starts_on: generalTimelineModal.starts_on,
+        formulation_ends_on: generalTimelineModal.ends_on,
+        propagate_to_plans: true,
+        justification: 'Ajuste general de plazo de formulación de la vigencia'
+      });
+      enqueueSnackbar(`Plazo general de la vigencia ${generalTimelineModal.term.year} actualizado y aplicado a los planes. Las prórrogas individuales mayores fueron respetadas.`, { variant: 'success' });
+      setGeneralTimelineModal({ open: false, term: null, starts_on: '', ends_on: '', saving: false });
+      await load();
+    } catch (err) {
+      enqueueSnackbar(err?.response?.data?.message || 'No fue posible actualizar el plazo general.', { variant: 'error' });
+      setGeneralTimelineModal((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
   const saveTerm = async () => {
     if (!termForm.year || !termForm.starts_on || !termForm.ends_on) return enqueueSnackbar('Complete el año y sus fechas.', { variant: 'warning' });
     setSaving(true);
     try {
-      const payload = { year: Number(termForm.year), name: `Año ${termForm.year}`, starts_on: termForm.starts_on, ends_on: termForm.ends_on, status: termForm.status };
+      const year = Number(termForm.year);
+      const payload = {
+        year,
+        name: `Año ${termForm.year}`,
+        starts_on: termForm.starts_on,
+        ends_on: termForm.ends_on,
+        status: termForm.status,
+        formulation_starts_on: termForm.formulation_starts_on || `${year}-01-01`,
+        formulation_ends_on: termForm.formulation_ends_on || `${year}-03-31`,
+        propagate_to_plans: Boolean(termForm.propagate_to_plans)
+      };
       if (termForm.id) await strategicPlanningService.updateTerm(termForm.id, { ...payload, justification: 'Edición desde configuración' });
       else {
-        const year = Number(termForm.year);
         await strategicPlanningService.createTerm(plan.id, { ...payload, periods: [
           { code: 'S1', name: 'Seguimiento 1', starts_on: `${year}-01-01`, ends_on: `${year}-06-30`, weight: 0.5, status: termForm.status },
           { code: 'S2', name: 'Seguimiento 2 / Cierre', starts_on: `${year}-07-01`, ends_on: `${year}-12-31`, weight: 0.5, status: termForm.status }
         ] });
       }
-      const wasEditing = Boolean(termForm.id); setOpenTerm(false); setTermForm({ id: null, year: '', starts_on: '', ends_on: '', status: 'planned' }); await load();
-      enqueueSnackbar(wasEditing ? 'Año actualizado.' : 'Año y periodos creados.', { variant: 'success' });
+      const wasEditing = Boolean(termForm.id); setOpenTerm(false); setTermForm({ id: null, year: '', starts_on: '', ends_on: '', status: 'planned', formulation_starts_on: '', formulation_ends_on: '', propagate_to_plans: false }); await load();
+      enqueueSnackbar(wasEditing ? 'Año y plazos actualizados.' : 'Año, plazos y periodos creados.', { variant: 'success' });
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar el año.', { variant: 'error' }); }
     finally { setSaving(false); }
   };
@@ -514,6 +570,70 @@ export default function StrategicPlanningPlatform({ onBack }) {
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'No fue posible sincronizar el repositorio con Drive.', { variant: 'error' });
     } finally { setRepositorySyncing(false); }
+  };
+
+  const confirmDeleteActionPlan = async () => {
+    if (!deleteActionPlanCandidate) return;
+    setSaving(true);
+    try {
+      await strategicPlanningService.deleteActionPlan(deleteActionPlanCandidate.id);
+      enqueueSnackbar(`Plan ${deleteActionPlanCandidate.code || ''} y dependencia retirados de la vigencia.`, { variant: 'success' });
+      setDeleteActionPlanCandidate(null);
+      await Promise.all([load(), refreshTermDependencies()]);
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar el plan.', { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmBulkDeleteActionPlans = async () => {
+    if (!bulkDeleteCandidate) return;
+    setBulkActionLoading(true);
+    try {
+      const response = await strategicPlanningService.bulkDeleteActionPlans(bulkDeleteCandidate.id);
+      enqueueSnackbar(response.message || `Se eliminaron los planes y dependencias de la vigencia ${bulkDeleteCandidate.year}.`, { variant: 'success' });
+      setBulkDeleteCandidate(null);
+      setBulkDeleteConfirmText('');
+      await Promise.all([load(), refreshTermDependencies()]);
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar los planes.', { variant: 'error' });
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleBulkCreateActionPlans = async () => {
+    if (!selectedActionTerm) return;
+    setBulkActionLoading(true);
+    try {
+      const response = await strategicPlanningService.bulkCreateActionPlans(selectedActionTerm.id);
+      enqueueSnackbar(response.message || `Planes creados exitosamente para la vigencia ${selectedActionTerm.year}.`, { variant: 'success' });
+      await load();
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible crear los planes masivamente.', { variant: 'error' });
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const confirmUpdateActionPlanMeta = async () => {
+    if (!editActionPlanCandidate) return;
+    setSaving(true);
+    try {
+      await strategicPlanningService.updateActionPlan(editActionPlanCandidate.id, {
+        code: editActionPlanCandidate.code,
+        title: editActionPlanCandidate.title,
+        responsible_user_id: editActionPlanCandidate.responsible_user_id
+      });
+      enqueueSnackbar('Plan de Acción actualizado correctamente.', { variant: 'success' });
+      setEditActionPlanCandidate(null);
+      await load();
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible actualizar el plan.', { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const selectLeader = (leader) => {
@@ -823,7 +943,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               <TableCell><Chip size="small" color={term.status === 'active' ? 'success' : term.status === 'archived' ? 'warning' : 'default'} label={TERM_STATUS_LABEL[term.status] || term.status} /></TableCell>
               <TableCell>{term.monitoringPeriods?.map((p) => p.code).join(' y ') || '—'}</TableCell>
               <TableCell>{term.status === 'archived' ? 'Historial protegido (archivado)' : 'Historial permanente'}</TableCell>
-              <TableCell><Button size="small" onClick={() => { setTermForm({ id: term.id, year: term.year, starts_on: term.starts_on, ends_on: term.ends_on, status: term.status }); setOpenTerm(true); }}>Editar</Button></TableCell>
+              <TableCell><Button size="small" onClick={() => { setTermForm({ id: term.id, year: term.year, starts_on: term.starts_on, ends_on: term.ends_on, status: term.status, formulation_starts_on: term.metadata?.formulation_starts_on || `${term.year}-01-01`, formulation_ends_on: term.metadata?.formulation_ends_on || `${term.year}-03-31`, propagate_to_plans: false }); setOpenTerm(true); }}>Editar</Button></TableCell>
             </TableRow>
           );
         })}</TableBody></Table></TableContainer></Paper>
@@ -900,6 +1020,102 @@ export default function StrategicPlanningPlatform({ onBack }) {
           </Box>}
         </Paper>
 
+        {/* BARRA DE VIGENCIA Y PLAZO GENERAL DE FORMULACIÓN (ETAPA 1) */}
+        {selectedActionTerm && (() => {
+          const generalStartsOn = selectedActionTerm.metadata?.formulation_starts_on || `${selectedActionTerm.year}-01-01`;
+          const generalEndsOn = selectedActionTerm.metadata?.formulation_ends_on || `${selectedActionTerm.year}-03-31`;
+          const todayIso = new Date().toISOString().slice(0, 10);
+          const isTermExpired = generalEndsOn && todayIso > generalEndsOn;
+          const isTermNotStarted = generalStartsOn && todayIso < generalStartsOn;
+          const isTermOpen = !isTermExpired && !isTermNotStarted;
+          const daysLeft = generalEndsOn ? Math.ceil((new Date(generalEndsOn + 'T23:59:59') - new Date()) / (1000 * 60 * 60 * 24)) : null;
+
+          return (
+            <Paper
+              variant="outlined"
+              sx={{
+                mt: 2,
+                p: { xs: 1.75, md: 2.25 },
+                borderRadius: 3.5,
+                borderColor: isTermExpired ? '#fed7aa' : '#bbf7d0',
+                bgcolor: isTermExpired ? '#fffbeb' : '#f0fdf4',
+                boxShadow: '0 4px 15px rgba(0,0,0,.03)'
+              }}
+            >
+              <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} gap={2}>
+                <Stack direction="row" alignItems="center" gap={1.5}>
+                  <Box
+                    sx={{
+                      width: 44,
+                      height: 44,
+                      flex: '0 0 44px',
+                      borderRadius: 2.5,
+                      bgcolor: isTermExpired ? '#fef3c7' : '#dcfce7',
+                      color: isTermExpired ? '#d97706' : '#16a34a',
+                      display: 'grid',
+                      placeItems: 'center'
+                    }}
+                  >
+                    {isTermExpired ? <LockOutlined /> : <CalendarMonth />}
+                  </Box>
+                  <Box>
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                      <Typography fontWeight={950} sx={{ fontSize: 15.5, color: '#0f172a' }}>
+                        Plazo General de Formulación (Etapa 1: Plan y actividades) · Vigencia {selectedActionTerm.year}
+                      </Typography>
+                      {isTermOpen && (
+                        <Chip
+                          size="small"
+                          label={`● Formulación Abierta · Vence ${generalEndsOn}${daysLeft !== null ? ` (quedan ${daysLeft} días)` : ''}`}
+                          sx={{ bgcolor: '#dcfce7', color: '#15803d', fontWeight: 800, fontSize: 11 }}
+                        />
+                      )}
+                      {isTermExpired && (
+                        <Chip
+                          size="small"
+                          label={`🔒 Plazo Vencido (${generalEndsOn})`}
+                          sx={{ bgcolor: '#fef3c7', color: '#b45309', fontWeight: 800, fontSize: 11 }}
+                        />
+                      )}
+                      {isTermNotStarted && (
+                        <Chip
+                          size="small"
+                          label={`⏳ Inicia el ${generalStartsOn}`}
+                          sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 800, fontSize: 11 }}
+                        />
+                      )}
+                    </Stack>
+                    <Typography variant="body2" color="#475569" sx={{ mt: 0.3, fontSize: 13 }}>
+                      Ventana oficial general para todas las dependencias: <strong>{generalStartsOn}</strong> hasta <strong>{generalEndsOn}</strong>.
+                      <span style={{ color: '#64748b', marginLeft: 6 }}>
+                        (Al ampliar este plazo general, se actualizan los planes de la vigencia respetando a los que ya tengan una prórroga individual superior).
+                      </span>
+                    </Typography>
+                  </Box>
+                </Stack>
+
+                <Button
+                  variant="contained"
+                  startIcon={<MoreTime />}
+                  onClick={() => openGeneralTimelineModal(selectedActionTerm)}
+                  sx={{
+                    height: 42,
+                    borderRadius: 2.25,
+                    textTransform: 'none',
+                    fontWeight: 900,
+                    px: 2.5,
+                    bgcolor: '#1e40af',
+                    '&:hover': { bgcolor: '#1d4ed8' },
+                    flexShrink: 0
+                  }}
+                >
+                  Programar / Ajustar Plazo General
+                </Button>
+              </Stack>
+            </Paper>
+          );
+        })()}
+
         {selectedActionTerm && <Paper variant="outlined" sx={{ mt: 2, p: { xs: 1.75, md: 2.25 }, borderRadius: 3.5, borderColor: '#bfdbfe', background: 'linear-gradient(110deg,#f8fbff 0%,#eff6ff 100%)' }}>
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
             <Stack direction="row" alignItems="flex-start" gap={1.5}>
@@ -909,9 +1125,31 @@ export default function StrategicPlanningPlatform({ onBack }) {
                 <Typography variant="body2" color="text.secondary">Organiza el año dentro de la carpeta de su PED y prepara todas las dependencias. La sincronización reutiliza carpetas y archivos existentes.</Typography>
               </Box>
             </Stack>
-            <Button variant="contained" startIcon={repositorySyncing ? <CircularProgress size={18} color="inherit" /> : <CloudSync />} disabled={repositorySyncing || !selectedActionUnits.length} onClick={syncActionRepository} sx={{ minWidth: 225, height: 46, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}>
-              {repositorySyncing ? 'Sincronizando…' : 'Sincronizar con Drive'}
-            </Button>
+            <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems="center" flexWrap="wrap">
+              <Button
+                variant="outlined"
+                color="primary"
+                disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
+                onClick={handleBulkCreateActionPlans}
+                sx={{ height: 44, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
+              >
+                {bulkActionLoading ? 'Generando…' : 'Generar todos los planes'}
+              </Button>
+              {selectedYearPlans.length > 0 && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
+                  onClick={() => { setBulkDeleteCandidate(selectedActionTerm); setBulkDeleteConfirmText(''); }}
+                  sx={{ height: 44, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
+                >
+                  Limpiar vigencia ({selectedYearPlans.length})
+                </Button>
+              )}
+              <Button variant="contained" startIcon={repositorySyncing ? <CircularProgress size={18} color="inherit" /> : <CloudSync />} disabled={repositorySyncing || !selectedActionUnits.length} onClick={syncActionRepository} sx={{ minWidth: 200, height: 44, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}>
+                {repositorySyncing ? 'Sincronizando…' : 'Sincronizar con Drive'}
+              </Button>
+            </Stack>
           </Stack>
           {!selectedActionUnits.length && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Configure por lo menos una dependencia para esta vigencia.</Typography>}
           {repositoryResult && <Alert severity={repositoryResult.files_deferred ? 'warning' : 'success'} sx={{ mt: 1.75, borderRadius: 2.25 }} action={<Button color="inherit" size="small" href={repositoryResult.folder_url} target="_blank" rel="noreferrer" sx={{ fontWeight: 900 }}>Abrir Drive</Button>}>
@@ -947,10 +1185,46 @@ export default function StrategicPlanningPlatform({ onBack }) {
               const actionPlan = selectedYearPlans.find((item) => String(item.catalog_item_id || item.organizationalUnit?.id) === String(unit.id));
               const suggestedLeader = unit.annualAssignment?.responsible;
               return <Paper key={unit.id} elevation={0} sx={{ p: 1.75, borderRadius: 2.75, border: '1px solid', borderColor: actionPlan ? '#bbf7d0' : '#e2e8f0', bgcolor: actionPlan ? '#f7fef9' : '#fff', display: 'flex', flexDirection: 'column', minHeight: 188 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}><Box sx={{ width: 38, height: 38, flex: '0 0 38px', borderRadius: 2, bgcolor: actionPlan ? '#dcfce7' : '#eff6ff', color: actionPlan ? '#15803d' : '#2563eb', display: 'grid', placeItems: 'center' }}><AccountTree fontSize="small" /></Box><Chip size="small" color={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.color || 'success') : 'default'} variant={actionPlan ? 'filled' : 'outlined'} label={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.label || 'Plan creado') : 'Pendiente'} sx={{ fontWeight: 850 }} /></Stack>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                  <Box sx={{ width: 38, height: 38, flex: '0 0 38px', borderRadius: 2, bgcolor: actionPlan ? '#dcfce7' : '#eff6ff', color: actionPlan ? '#15803d' : '#2563eb', display: 'grid', placeItems: 'center' }}>
+                    <AccountTree fontSize="small" />
+                  </Box>
+                  <Stack direction="row" alignItems="center" gap={0.3}>
+                    {actionPlan && (
+                      <>
+                        <Tooltip title="Editar datos del plan">
+                          <IconButton
+                            size="small"
+                            onClick={() => setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year })}
+                            sx={{ width: 28, height: 28, color: '#64748b', '&:hover': { bgcolor: '#eff6ff', color: '#2563eb' } }}
+                          >
+                            <EditOutlined sx={{ fontSize: 17 }} />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Eliminar plan y retirar dependencia">
+                          <IconButton
+                            size="small"
+                            onClick={() => setDeleteActionPlanCandidate(actionPlan)}
+                            sx={{ width: 28, height: 28, color: '#ef4444', '&:hover': { bgcolor: '#fef2f2', color: '#dc2626' } }}
+                          >
+                            <DeleteOutline sx={{ fontSize: 17 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </>
+                    )}
+                    <Chip size="small" color={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.color || 'success') : 'default'} variant={actionPlan ? 'filled' : 'outlined'} label={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.label || 'Plan creado') : 'Pendiente'} sx={{ fontWeight: 850 }} />
+                  </Stack>
+                </Stack>
                 <Typography fontWeight={950} mt={1.2} lineHeight={1.3}>{unit.name}</Typography><Typography variant="caption" color="text.secondary">{unit.code}</Typography>
                 <Box sx={{ flex: 1, mt: 1 }}>{actionPlan ? <><Typography variant="caption" color="text.secondary">{actionPlan.code} · {actionPlan.items?.length || 0} registros</Typography><Typography variant="caption" display="block" color="text.secondary" noWrap>{actionPlan.responsibleUser?.nombre || 'Sin líder asignado'}</Typography></> : <Typography variant="caption" color="text.secondary">{suggestedLeader ? `Responsable: ${suggestedLeader.name}` : 'Configure primero el responsable de esta vigencia.'}</Typography>}</Box>
-                {actionPlan ? <Stack direction="row" gap={0.75} mt={1.25}><Button fullWidth size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button><Button size="small" variant="outlined" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ minWidth: 42, borderRadius: 2 }}><SwapHoriz fontSize="small" /></Button></Stack> : <Button fullWidth size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ mt: 1.25, borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear Plan de Acción'}</Button>}
+                {actionPlan ? (
+                  <Stack direction="row" gap={0.75} mt={1.25}>
+                    <Button fullWidth size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>
+                    <Button size="small" variant="outlined" title="Cambiar responsable" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ minWidth: 42, borderRadius: 2 }}><SwapHoriz fontSize="small" /></Button>
+                  </Stack>
+                ) : (
+                  <Button fullWidth size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ mt: 1.25, borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear Plan de Acción'}</Button>
+                )}
               </Paper>;
             })}
           </Box> : <Box sx={{ bgcolor: '#f6f9fd' }}>
@@ -960,12 +1234,12 @@ export default function StrategicPlanningPlatform({ onBack }) {
               <Typography variant="caption" color="#718096">Vigencia {selectedActionTerm.year}</Typography>
             </Stack>
             <TableContainer sx={{ maxHeight: 650 }}>
-            <Table stickyHeader size="small" sx={{ minWidth: 1570, tableLayout: 'fixed', '& td, & th': { borderRight: '1px solid #e1e9f2' }, '& td:last-of-type, & th:last-of-type': { borderRight: 0 } }}>
+            <Table stickyHeader size="small" sx={{ minWidth: 1600, tableLayout: 'fixed', '& td, & th': { borderRight: '1px solid #e1e9f2' }, '& td:last-of-type, & th:last-of-type': { borderRight: 0 } }}>
               <TableHead>
                 <TableRow>
                   {[
                     ['Dependencia', 250], ['Código', 95], ['Responsable', 235], ['Cédula', 135], ['Cargo', 220],
-                    ['Correo', 245], ['Estado', 130], ['Registros', 100], ['Acción', 220]
+                    ['Correo', 245], ['Estado', 130], ['Registros', 90], ['Acción', 270]
                   ].map(([heading, width]) => <TableCell key={heading} align={['Registros', 'Acción'].includes(heading) ? 'center' : 'left'} sx={{ width, bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.055em', textTransform: 'uppercase', whiteSpace: 'nowrap', py: 1.45, borderBottom: '1px solid #173b73', borderRightColor: 'rgba(255,255,255,.16) !important' }}>{heading}</TableCell>)}
                 </TableRow>
               </TableHead>
@@ -984,7 +1258,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     <TableCell><Typography component={responsible.email || actionPlan?.responsibleUser?.email ? 'a' : 'span'} href={(responsible.email || actionPlan?.responsibleUser?.email) ? `mailto:${responsible.email || actionPlan?.responsibleUser?.email}` : undefined} fontSize={12.5} color="#315f9d" sx={{ textDecoration: 'none', '&:hover': { textDecoration: 'underline' }, wordBreak: 'break-word' }}>{responsible.email || actionPlan?.responsibleUser?.email || '—'}</Typography></TableCell>
                     <TableCell><Chip size="small" color={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.color || 'success') : 'default'} variant={actionPlan ? 'filled' : 'outlined'} label={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.label || 'Plan creado') : 'Pendiente'} sx={{ fontWeight: 850 }} /></TableCell>
                     <TableCell align="center"><Box sx={{ width: 32, height: 32, mx: 'auto', borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: actionPlan?.items?.length ? '#e8f2ff' : '#f1f5f9', color: actionPlan?.items?.length ? '#245ab5' : '#64748b', fontWeight: 950 }}>{actionPlan?.items?.length || 0}</Box></TableCell>
-                    <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>{actionPlan ? <Stack direction="row" justifyContent="center" gap={0.75}><Button size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ minWidth: 95, height: 36, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>{['owner_validation', 'formulation', 'adjustments'].includes(actionPlan.status) && <Button size="small" variant="contained" color="success" onClick={async () => { try { await strategicPlanningService.transition(actionPlan.id, { action: 'activate', comment: 'Plan ejecutado directamente desde la plataforma institucional' }); enqueueSnackbar(`Plan ${actionPlan.code} pasado a Ejecución Oficial.`, { variant: 'success' }); await load(); } catch (err) { enqueueSnackbar(err?.response?.data?.message || 'No fue posible activar el plan.', { variant: 'error' }); } }} sx={{ height: 36, borderRadius: 1.75, textTransform: 'none', fontWeight: 900, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}>Ejecutar</Button>}<Button size="small" variant="outlined" title="Cambiar responsable" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ minWidth: 40, width: 40, height: 36, borderRadius: 1.75 }}><SwapHoriz fontSize="small" /></Button></Stack> : <Button size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ minWidth: 160, height: 36, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear plan'}</Button>}</TableCell>
+                    <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>{actionPlan ? <Stack direction="row" justifyContent="center" alignItems="center" gap={0.5}><Button size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ minWidth: 85, height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>{['owner_validation', 'formulation', 'adjustments'].includes(actionPlan.status) && <Button size="small" variant="contained" color="success" onClick={async () => { try { await strategicPlanningService.transition(actionPlan.id, { action: 'activate', comment: 'Plan ejecutado directamente desde la plataforma institucional' }); enqueueSnackbar(`Plan ${actionPlan.code} pasado a Ejecución Oficial.`, { variant: 'success' }); await load(); } catch (err) { enqueueSnackbar(err?.response?.data?.message || 'No fue posible activar el plan.', { variant: 'error' }); } }} sx={{ height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}>Ejecutar</Button>}<Button size="small" variant="outlined" title="Editar datos del plan" onClick={() => setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year })} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0 }}><EditOutlined fontSize="small" /></Button><Button size="small" variant="outlined" title="Cambiar responsable" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0 }}><SwapHoriz fontSize="small" /></Button><Button size="small" variant="outlined" color="error" title="Eliminar plan" onClick={() => setDeleteActionPlanCandidate(actionPlan)} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0, borderColor: '#fca5a5', color: '#dc2626', '&:hover': { bgcolor: '#fef2f2', borderColor: '#ef4444' } }}><DeleteOutline fontSize="small" /></Button></Stack> : <Button size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ minWidth: 150, height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear plan'}</Button>}</TableCell>
                   </TableRow>;
                 })}
               </TableBody>
@@ -1161,96 +1435,30 @@ export default function StrategicPlanningPlatform({ onBack }) {
         <DialogTitle sx={{ px: 3, pt: 3, pb: 1 }}><Stack direction="row" gap={1.25} alignItems="center"><Box sx={{ width: 42, height: 42, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: '#fef2f2', color: '#dc2626' }}><DeleteOutline /></Box><Box><Typography variant="h6" fontWeight={950}>Eliminar PED en borrador</Typography><Typography variant="caption" color="text.secondary">Esta opción solo existe para borradores.</Typography></Box></Stack></DialogTitle>
         <DialogContent sx={{ px: 3, pt: '14px !important' }}><Typography>Se retirará <strong>{deleteCandidate?.name}</strong> de la lista de PED.</Typography><Paper variant="outlined" sx={{ p: 1.5, mt: 2, borderRadius: 2.5, bgcolor: '#f8fafc' }}><Typography variant="caption" color="text.secondary">PED QUE SE ELIMINARÁ</Typography><Typography fontWeight={900}>{deleteCandidate?.code}</Typography><Typography variant="body2" color="text.secondary">{deleteCandidate?.starts_on} → {deleteCandidate?.ends_on}</Typography></Paper><Alert severity="warning" sx={{ mt: 2 }}>Los PED activos, terminados o históricos están protegidos y nunca muestran esta opción.</Alert></DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}><Button onClick={() => setDeleteCandidate(null)} disabled={saving}>Conservar borrador</Button><Button color="error" variant="contained" startIcon={<DeleteOutline />} onClick={deleteDraftPlan} disabled={saving || deleteCandidate?.status !== 'draft'} sx={{ borderRadius: 2.25, fontWeight: 900 }}>{saving ? 'Eliminando…' : 'Sí, eliminar'}</Button></DialogActions>
-      </Dialog>
-
-      <Dialog open={Boolean(fieldSchemaPreview)} onClose={() => !saving && setFieldSchemaPreview(null)} fullWidth maxWidth="lg" PaperProps={{ sx: { borderRadius: 3.5, maxHeight: '92vh' } }}>
-        <DialogTitle sx={{ px: { xs: 2, md: 3 }, pt: 2.5, pb: 1 }}><Typography variant="h5" fontWeight={950}>Revise las columnas encontradas</Typography><Typography variant="body2" color="text.secondary" mt={0.5}>Hoja “{fieldSchemaPreview?.parsed_data?.sheet_name}”, encabezados en la fila {fieldSchemaPreview?.parsed_data?.header_row}. Nada se guardará hasta que pulse Crear tabla.</Typography></DialogTitle>
-        <DialogContent sx={{ px: { xs: 2, md: 3 }, pt: '14px !important' }}>
-          <Alert severity="info" sx={{ mb: 2 }}>Active únicamente las columnas que desea diligenciar. Puede cambiar sus nombres y tipos; “No.” se reconoce como consecutivo automático y no necesita crearlo.</Alert>
-          <Stack spacing={1.1}>
-            {(fieldSchemaPreview?.fields || []).map((field, index) => <Paper key={`${field.source_column}-${field.key}`} variant="outlined" sx={{ p: 1.4, borderRadius: 2.5, opacity: field.include && !field.system ? 1 : 0.62, bgcolor: field.include && !field.system ? '#fff' : '#f8fafc' }}>
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '125px minmax(220px,1.4fr) minmax(190px,1fr) minmax(160px,.8fr)' }, gap: 1.25, alignItems: 'center' }}>
-                <FormControlLabel control={<Switch checked={field.include && !field.system} disabled={field.system} onChange={(event) => updatePreviewField(index, { include: event.target.checked })} />} label={field.system ? 'Automático' : 'Usar campo'} />
-                <TextField size="small" label="Nombre visible" value={field.label} disabled={field.system || !field.include} onChange={(event) => updatePreviewField(index, { label: event.target.value })} />
-                <TextField size="small" select label="Tipo de información" value={field.data_type} disabled={field.system || !field.include} onChange={(event) => updatePreviewField(index, { data_type: event.target.value })}>{Object.entries(FIELD_TYPE_LABEL).filter(([value]) => value !== 'strategic_relation').map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField>
-                <Box><FormControlLabel control={<Switch checked={field.required === true} disabled={field.system || !field.include} onChange={(event) => updatePreviewField(index, { required: event.target.checked })} />} label="Obligatorio" />{field.sample_values?.length > 0 && <Typography variant="caption" color="text.secondary" display="block" noWrap title={field.sample_values.join(' · ')}>Ejemplo: {field.sample_values.join(' · ')}</Typography>}</Box>
-              </Box>
-            </Paper>)}
-          </Stack>
-          {!!activeFieldDefinitions.length && <Paper variant="outlined" sx={{ p: 1.5, mt: 2, borderRadius: 2.5, bgcolor: '#fffbeb', borderColor: '#fde68a' }}><FormControlLabel control={<Switch checked={replaceSchemaFields} onChange={(event) => setReplaceSchemaFields(event.target.checked)} />} label="Reemplazar el diseño actual por estas columnas" /><Typography variant="caption" color="text.secondary" display="block">Si lo deja desactivado, las columnas importadas se agregarán o actualizarán sin retirar las existentes. El historial ya diligenciado siempre se conserva.</Typography></Paper>}
-        </DialogContent>
-        <DialogActions sx={{ px: { xs: 2, md: 3 }, py: 2 }}><Button onClick={() => setFieldSchemaPreview(null)} disabled={saving}>Cancelar</Button><Button variant="contained" onClick={confirmFieldSchema} disabled={saving || !(fieldSchemaPreview?.fields || []).some((field) => field.include && !field.system)} sx={{ px: 3, borderRadius: 2.5, fontWeight: 900 }}>{saving ? 'Creando tabla…' : `Crear tabla con ${(fieldSchemaPreview?.fields || []).filter((field) => field.include && !field.system).length} campos`}</Button></DialogActions>
-      </Dialog>
-
-      <Dialog open={openField} onClose={() => setOpenField(false)} fullWidth maxWidth="md">
-        <DialogTitle fontWeight={900}>{fieldForm.id ? 'Editar campo del Plan de Acción' : 'Agregar campo al Plan de Acción'}</DialogTitle>
+      </Dialog><Dialog open={openTerm} onClose={() => setOpenTerm(false)} fullWidth maxWidth="sm">
+        <DialogTitle fontWeight={900}>{termForm.id ? 'Editar año del PED' : 'Agregar año al PED'}</DialogTitle>
         <DialogContent><Grid container spacing={2} mt={0.25}>
-          <Grid item xs={12} md={7}><TextField required fullWidth label="Nombre que verá el usuario" placeholder="Por ejemplo: Resultado esperado" value={fieldForm.label} onChange={(e) => { const label=e.target.value; setFieldForm({ ...fieldForm, label, key: fieldForm.id ? fieldForm.key : label.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'') }); }} /></Grid>
-          <Grid item xs={12} md={5}><TextField required fullWidth disabled={Boolean(fieldForm.id)} label="Código interno" value={fieldForm.key} onChange={(e) => setFieldForm({ ...fieldForm, key: e.target.value })} /></Grid>
-          <Grid item xs={12} md={7}><TextField required fullWidth select label="Tipo de información" value={fieldForm.data_type} onChange={(e) => setFieldForm({ ...fieldForm, data_type: e.target.value, catalog_type: ['catalog','catalog_multi'].includes(e.target.value) ? fieldForm.catalog_type : '', options_text: e.target.value === 'list' ? fieldForm.options_text : '', list_source: 'manual', selected_level_id: '', selected_element_ids: [] })}>{Object.entries(FIELD_TYPE_LABEL).map(([value,label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField></Grid>
-          <Grid item xs={12} md={5}><FormControlLabel control={<Switch checked={fieldForm.required} onChange={(e) => setFieldForm({ ...fieldForm, required: e.target.checked })} />} label="Campo obligatorio" /></Grid>
-          {fieldForm.data_type === 'list' && (() => {
-            const optionItems = fieldForm.options_text ? fieldForm.options_text.split('\n') : [''];
-            const updateOption = (index, value) => {
-              const parts = [...optionItems];
-              parts[index] = value;
-              setFieldForm({ ...fieldForm, options_text: parts.join('\n') });
-            };
-            const removeOption = (index) => {
-              const parts = optionItems.filter((_, i) => i !== index);
-              setFieldForm({ ...fieldForm, options_text: parts.length ? parts.join('\n') : '' });
-            };
-            const addOption = () => {
-              setFieldForm({ ...fieldForm, options_text: [...optionItems, ''].join('\n') });
-            };
-            return (
-              <Grid item xs={12}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.25}>
-                  <Typography fontWeight={900}>Opciones de la lista</Typography>
-                  <Button size="small" variant="outlined" startIcon={<Add />} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 800 }} onClick={addOption}>
-                    Agregar opción
-                  </Button>
-                </Stack>
-                <Stack gap={0.75}>
-                  {optionItems.map((opt, index) => (
-                    <Stack key={index} direction="row" alignItems="flex-start" gap={1}>
-                      <Box sx={{ width: 28, height: 28, mt: 0.5, borderRadius: '50%', bgcolor: '#e8f0fe', color: '#1d4ed8', display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 12, flexShrink: 0 }}>
-                        {index + 1}
-                      </Box>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        multiline
-                        minRows={2}
-                        placeholder={`Opción ${index + 1}...`}
-                        value={opt}
-                        onChange={(e) => updateOption(index, e.target.value)}
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                      />
-                      <Button
-                        size="small"
-                        color="error"
-                        variant="text"
-                        disabled={optionItems.length <= 1}
-                        onClick={() => removeOption(index)}
-                        sx={{ minWidth: 0, px: 1, mt: 0.5, borderRadius: 2 }}
-                      >
-                        ✕
-                      </Button>
-                    </Stack>
-                  ))}
-                </Stack>
-              </Grid>
-            );
-          })()}
-          {['catalog','catalog_multi'].includes(fieldForm.data_type) && <Grid item xs={12}><Alert severity="info" sx={{ mb: 1.25 }}>Use una tabla reutilizable cuando varias partes del PED deban compartir y actualizar las mismas opciones.</Alert><Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><TextField fullWidth select label="Tabla que alimentará este campo" value={fieldForm.catalog_type} onChange={(e) => setFieldForm({ ...fieldForm, catalog_type: e.target.value })} helperText="Los registros activos aparecerán automáticamente."><MenuItem value="">Seleccione una tabla</MenuItem>{catalogOptions.map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField><Button variant="outlined" startIcon={<Add />} onClick={() => setOpenCatalog(true)} sx={{ minWidth: 190, alignSelf: 'flex-start', minHeight: 56 }}>Crear nueva tabla</Button></Stack></Grid>}
-          {fieldForm.data_type === 'formula' && <Grid item xs={12}><TextField fullWidth label="Fórmula" placeholder="avance_periodo_1 + avance_periodo_2" value={fieldForm.formula} onChange={(e) => setFieldForm({ ...fieldForm, formula: e.target.value })} /></Grid>}
-          <Grid item xs={12}><Alert severity="info">Este campo se aplicará a los nuevos Planes de Acción del PED seleccionado. Las versiones anteriores conservarán su estructura.</Alert></Grid>
-        </Grid></DialogContent>
-        <DialogActions><Button onClick={() => setOpenField(false)}>Cancelar</Button><Button variant="contained" disabled={saving || !fieldForm.key.trim() || !fieldForm.label.trim()} onClick={saveField}>{saving ? 'Guardando…' : fieldForm.id ? 'Actualizar campo' : 'Crear campo'}</Button></DialogActions>
-      </Dialog>
+          <Grid item xs={12} md={6}><TextField required fullWidth type="number" label="Año" value={termForm.year} onChange={(e) => { const year = e.target.value; setTermForm({ ...termForm, year, starts_on: termForm.id ? termForm.starts_on : `${year}-01-01`, ends_on: termForm.id ? termForm.ends_on : `${year}-12-31`, formulation_starts_on: termForm.id ? termForm.formulation_starts_on : `${year}-01-01`, formulation_ends_on: termForm.id ? termForm.formulation_ends_on : `${year}-03-31` }); }} /></Grid>
+          <Grid item xs={12} md={6}><TextField select fullWidth label="Estado" value={termForm.status} onChange={(e) => setTermForm({ ...termForm, status: e.target.value })}><MenuItem value="planned">Programada</MenuItem><MenuItem value="active">Activa</MenuItem><MenuItem value="closed">Cerrada</MenuItem></TextField></Grid>
+          <Grid item xs={12} md={6}><TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha inicial vigencia" value={termForm.starts_on} onChange={(e) => setTermForm({ ...termForm, starts_on: e.target.value })} /></Grid>
+          <Grid item xs={12} md={6}><TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha final vigencia" value={termForm.ends_on} onChange={(e) => setTermForm({ ...termForm, ends_on: e.target.value })} /></Grid>
 
-      <Dialog open={openTerm} onClose={() => setOpenTerm(false)} fullWidth maxWidth="sm">
+          <Grid item xs={12}><Divider sx={{ my: 0.5 }} /><Typography variant="subtitle2" fontWeight={900} color="#1e293b" sx={{ mt: 0.5 }}>Plazo General de Formulación (Etapa 1: Plan y actividades)</Typography><Typography variant="caption" color="text.secondary" display="block">Ventana oficial por defecto en la que todas las dependencias formulan y registran sus actividades.</Typography></Grid>
+          <Grid item xs={12} md={6}><TextField fullWidth type="date" InputLabelProps={{ shrink: true }} label="Inicio formulación Etapa 1" value={termForm.formulation_starts_on || ''} onChange={(e) => setTermForm({ ...termForm, formulation_starts_on: e.target.value })} helperText="Por defecto: 01 de enero" /></Grid>
+          <Grid item xs={12} md={6}><TextField fullWidth type="date" InputLabelProps={{ shrink: true }} label="Cierre general Etapa 1" value={termForm.formulation_ends_on || ''} onChange={(e) => setTermForm({ ...termForm, formulation_ends_on: e.target.value })} helperText="Fecha límite general para todas las dependencias" /></Grid>
+          {termForm.id && (
+            <Grid item xs={12}>
+              <FormControlLabel
+                control={<Checkbox checked={Boolean(termForm.propagate_to_plans)} onChange={(e) => setTermForm({ ...termForm, propagate_to_plans: e.target.checked })} color="primary" />}
+                label={<Typography variant="body2" sx={{ fontSize: 13, color: '#334155', fontWeight: 600 }}>Sincronizar y aplicar estas fechas a todos los planes de acción de esta vigencia (excepto los que ya tienen prórroga individual)</Typography>}
+              />
+            </Grid>
+          )}
+
+          {!termForm.id && <Grid item xs={12}><Alert severity="info">Se crearán inicialmente dos periodos: Seguimiento 1 (enero–junio) y Seguimiento 2 / Cierre (julio–diciembre).</Alert></Grid>}
+        </Grid></DialogContent>
+        <DialogActions><Button onClick={() => setOpenTerm(false)}>Cancelar</Button><Button variant="contained" disabled={saving || !termForm.year || !termForm.starts_on || !termForm.ends_on} onClick={saveTerm}>{saving ? 'Guardando…' : termForm.id ? 'Actualizar año y plazos' : 'Crear año y plazos'}</Button></DialogActions>
+      </Dialog><Dialog open={openTerm} onClose={() => setOpenTerm(false)} fullWidth maxWidth="sm">
         <DialogTitle fontWeight={900}>{termForm.id ? 'Editar año del PED' : 'Agregar año al PED'}</DialogTitle>
         <DialogContent><Grid container spacing={2} mt={0.25}>
           <Grid item xs={12} md={6}><TextField required fullWidth type="number" label="Año" value={termForm.year} onChange={(e) => { const year = e.target.value; setTermForm({ ...termForm, year, starts_on: termForm.id ? termForm.starts_on : `${year}-01-01`, ends_on: termForm.id ? termForm.ends_on : `${year}-12-31` }); }} /></Grid>
@@ -1400,7 +1608,245 @@ export default function StrategicPlanningPlatform({ onBack }) {
         </Stack></DialogContent><DialogActions sx={{ px: 3, py: 2 }}><Button onClick={() => { setOpenPlan(false); setActionPlanCreationContext(null); }}>Cancelar</Button><Button variant="contained" disabled={saving || !form.responsible_user_id} onClick={createActionPlan} sx={{ px: 3, borderRadius: 2.25, fontWeight: 900 }}>{saving ? 'Creando…' : 'Crear Plan de Acción'}</Button></DialogActions>
       </Dialog>
       <Dialog open={Boolean(transfer)} onClose={() => setTransfer(null)} fullWidth maxWidth="sm"><DialogTitle fontWeight={900}>Transferir liderazgo del plan</DialogTitle><DialogContent><Stack gap={2} mt={1}><Alert severity="info">El plan seguirá anclado a la dependencia. Se cerrará la asignación anterior y se conservarán persona, cargo, fechas y motivo en el histórico.</Alert><Autocomplete options={leaders} value={leaders.find((leader) => String(leader.id) === String(transfer?.user_id)) || null} onChange={(_, leader) => setTransfer({ ...transfer, user_id: leader?.id || '' })} getOptionLabel={(leader) => `${leader.name} · ${leader.position || 'Sin cargo'} · ${leader.email}`} renderInput={(params) => <TextField {...params} label="Buscar nuevo responsable" />} /><TextField required multiline minRows={3} label="Motivo de la transferencia" value={transfer?.reason || ''} onChange={(e) => setTransfer({ ...transfer, reason: e.target.value })} /></Stack></DialogContent><DialogActions><Button onClick={() => setTransfer(null)}>Cancelar</Button><Button variant="contained" disabled={!transfer?.user_id || !transfer?.reason?.trim()} onClick={executeTransfer}>Confirmar transferencia</Button></DialogActions></Dialog>
-      <StrategicActionPlanEditor open={Boolean(editorPlanId)} planId={editorPlanId} platformPlan={plan} workflow={boot?.workflow} onClose={() => setEditorPlanId(null)} onChanged={load} />
+      {/* Diálogo para eliminar plan de acción individual */}
+      <Dialog
+        open={Boolean(deleteActionPlanCandidate)}
+        onClose={() => !saving && setDeleteActionPlanCandidate(null)}
+        fullWidth
+        maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3.5, overflow: 'hidden', boxShadow: '0 24px 70px rgba(15,23,42,.24)' } }}
+      >
+        <DialogContent sx={{ p: { xs: 2.5, sm: 3.25 } }}>
+          <Stack alignItems="center" textAlign="center" spacing={1.5}>
+            <Box sx={{ width: 54, height: 54, borderRadius: 2.5, display: 'grid', placeItems: 'center', bgcolor: '#fff1f2', color: '#be123c' }}>
+              <DeleteOutline sx={{ fontSize: 29 }} />
+            </Box>
+            <Box>
+              <Typography variant="h5" fontWeight={950} color="#172033">Eliminar Plan de Acción</Typography>
+              <Typography color="#52657b" mt={0.5}>Esta acción eliminará el plan de acción, sus actividades asociadas y retirará la dependencia de la vigencia (Paso 3).</Typography>
+            </Box>
+            <Paper variant="outlined" sx={{ width: '100%', p: 1.75, borderRadius: 2.5, borderColor: '#dbe4ef', bgcolor: '#f8fafc' }}>
+              <Typography fontWeight={950} color="#172033">{deleteActionPlanCandidate?.code || 'Plan de Acción'}</Typography>
+              <Typography variant="body2" color="text.secondary" mt={0.25}>{deleteActionPlanCandidate?.title}</Typography>
+              <Stack direction="row" justifyContent="center" gap={0.75} mt={1} flexWrap="wrap">
+                <Chip size="small" label={`Vigencia ${deleteActionPlanCandidate?.term?.year || ''}`} sx={{ fontWeight: 850, bgcolor: '#dbeafe', color: '#174ea6' }} />
+                <Chip size="small" label={`${deleteActionPlanCandidate?.items?.length || 0} actividades`} sx={{ fontWeight: 850 }} />
+              </Stack>
+            </Paper>
+            <Typography variant="caption" color="#dc2626" fontWeight={700}>
+              Esta acción no se puede deshacer.
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3.25, pb: 3, pt: 0, gap: 1 }}>
+          <Button fullWidth variant="outlined" disabled={saving} onClick={() => setDeleteActionPlanCandidate(null)} sx={{ minHeight: 44, borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>
+            Cancelar
+          </Button>
+          <Button fullWidth variant="contained" color="error" disabled={saving} onClick={confirmDeleteActionPlan} sx={{ minHeight: 44, borderRadius: 2, textTransform: 'none', fontWeight: 900, boxShadow: 'none' }}>
+            {saving ? 'Eliminando…' : 'Sí, eliminar plan y retirar dependencia'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Diálogo para limpiar vigencia / borrado masivo de planes */}
+      <Dialog
+        open={Boolean(bulkDeleteCandidate)}
+        onClose={() => !bulkActionLoading && setBulkDeleteCandidate(null)}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{ sx: { borderRadius: 3.5, overflow: 'hidden' } }}
+      >
+        <DialogTitle sx={{ px: 3, pt: 2.75, pb: 1 }}>
+          <Typography variant="h5" fontWeight={950} color="#dc2626">Limpiar vigencia {bulkDeleteCandidate?.year}</Typography>
+          <Typography variant="body2" color="text.secondary">Eliminación masiva de todos los planes de acción y retiro de dependencias de este año.</Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: '14px !important' }}>
+          <Stack spacing={2}>
+            <Alert severity="error" sx={{ borderRadius: 2.5 }}>
+              <strong>¡Advertencia!</strong> Se eliminarán todos los planes de acción correspondientes a la vigencia <strong>{bulkDeleteCandidate?.year}</strong> junto con sus actividades y se retirarán las dependencias configuradas en este año (Paso 3). Podrá volver a configurar dependencias y generar planes cuando lo desee.
+            </Alert>
+            <Typography variant="body2" color="#334155">
+              Para confirmar la eliminación, escriba la palabra <strong>ELIMINAR</strong> a continuación:
+            </Typography>
+            <TextField
+              fullWidth
+              autoFocus
+              size="small"
+              placeholder="ELIMINAR"
+              value={bulkDeleteConfirmText}
+              onChange={(e) => setBulkDeleteConfirmText(e.target.value)}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e2e8f0', gap: 1 }}>
+          <Button disabled={bulkActionLoading} onClick={() => setBulkDeleteCandidate(null)} sx={{ textTransform: 'none', fontWeight: 800 }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            disabled={bulkActionLoading || bulkDeleteConfirmText.trim().toUpperCase() !== 'ELIMINAR'}
+            onClick={confirmBulkDeleteActionPlans}
+            sx={{ minWidth: 180, borderRadius: 2.25, fontWeight: 900, textTransform: 'none' }}
+          >
+            {bulkActionLoading ? 'Eliminando planes…' : 'Confirmar y borrar todos'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Diálogo para editar metadatos del plan de acción */}
+      <Dialog
+        open={Boolean(editActionPlanCandidate)}
+        onClose={() => !saving && setEditActionPlanCandidate(null)}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{ sx: { borderRadius: 3.5 } }}
+      >
+        <DialogTitle sx={{ px: 3, pt: 2.75, pb: 1 }}>
+          <Typography variant="h5" fontWeight={950}>Editar Plan de Acción</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {editActionPlanCandidate?.unit_name} · Vigencia {editActionPlanCandidate?.year}
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: '14px !important' }}>
+          <Stack spacing={2}>
+            <TextField
+              label="Código del Plan"
+              value={editActionPlanCandidate?.code || ''}
+              onChange={(e) => setEditActionPlanCandidate({ ...editActionPlanCandidate, code: e.target.value })}
+              fullWidth
+              helperText="Código identificador institucional (ej. 2026-VICERREC)"
+            />
+            <TextField
+              label="Título o nombre del Plan"
+              value={editActionPlanCandidate?.title || ''}
+              onChange={(e) => setEditActionPlanCandidate({ ...editActionPlanCandidate, title: e.target.value })}
+              fullWidth
+            />
+            <Autocomplete
+              options={leaders}
+              value={leaders.find((l) => String(l.id) === String(editActionPlanCandidate?.responsible_user_id)) || null}
+              onChange={(_, leader) => setEditActionPlanCandidate({ ...editActionPlanCandidate, responsible_user_id: leader?.id || '' })}
+              getOptionLabel={(leader) => `${leader.document || 'Sin documento'} · ${leader.name} · ${leader.position || 'Sin cargo'}`}
+              renderInput={(params) => <TextField {...params} label="Líder responsable" />}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e2e8f0', gap: 1 }}>
+          <Button disabled={saving} onClick={() => setEditActionPlanCandidate(null)} sx={{ textTransform: 'none', fontWeight: 800 }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            disabled={saving || !editActionPlanCandidate?.title?.trim()}
+            onClick={confirmUpdateActionPlanMeta}
+            sx={{ px: 3, borderRadius: 2.25, fontWeight: 900, textTransform: 'none' }}
+          >
+            {saving ? 'Guardando…' : 'Guardar cambios'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* DIÁLOGO: AJUSTAR PLAZO GENERAL DE FORMULACIÓN DE LA VIGENCIA */}
+      <Dialog
+        open={Boolean(generalTimelineModal.open)}
+        onClose={() => !generalTimelineModal.saving && setGeneralTimelineModal({ open: false, term: null, starts_on: '', ends_on: '', saving: false })}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{ sx: { borderRadius: 3.5, p: 1 } }}
+      >
+        <DialogTitle sx={{ px: 3, pt: 2, pb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box>
+            <Typography variant="h6" fontWeight={900} color="#0f172a">
+              Plazo General de Formulación · Vigencia {generalTimelineModal.term?.year}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Etapa 1: Plan y actividades para todas las dependencias
+            </Typography>
+          </Box>
+          <IconButton
+            size="small"
+            onClick={() => !generalTimelineModal.saving && setGeneralTimelineModal({ open: false, term: null, starts_on: '', ends_on: '', saving: false })}
+            sx={{ color: '#64748b' }}
+          >
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, py: 2 }}>
+          <Stack spacing={2.5}>
+            <Alert severity="info" sx={{ borderRadius: 2, fontSize: 12.5 }}>
+              Al configurar esta fecha general, todos los planes de acción de la vigencia <strong>{generalTimelineModal.term?.year}</strong> se programarán con esta fecha límite. Si alguna dependencia ya cuenta con una <strong>prórroga individual con fecha superior</strong>, el sistema la respetará y no le recortará el tiempo.
+            </Alert>
+
+            {/* Atajos de ampliación rápida */}
+            <Box>
+              <Typography variant="caption" fontWeight={800} color="#475569" mb={0.75} display="block">
+                AMPLIACIÓN RÁPIDA DE TIEMPO (UN SOLO TOQUE):
+              </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap">
+                <Button size="small" variant="outlined" onClick={() => handleAddDaysToGeneralTimeline(7)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                  +7 Días
+                </Button>
+                <Button size="small" variant="outlined" onClick={() => handleAddDaysToGeneralTimeline(15)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                  +15 Días
+                </Button>
+                <Button size="small" variant="outlined" onClick={() => handleAddDaysToGeneralTimeline(30)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                  +30 Días
+                </Button>
+                <Button size="small" variant="outlined" onClick={handleSetEndOfMonthGeneralTimeline} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                  Hasta fin de mes
+                </Button>
+              </Stack>
+            </Box>
+
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="date"
+                  label="Fecha de inicio general"
+                  InputLabelProps={{ shrink: true }}
+                  value={generalTimelineModal.starts_on}
+                  onChange={(e) => setGeneralTimelineModal((prev) => ({ ...prev, starts_on: e.target.value }))}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="date"
+                  label="Fecha límite general (cierre)"
+                  InputLabelProps={{ shrink: true }}
+                  value={generalTimelineModal.ends_on}
+                  onChange={(e) => setGeneralTimelineModal((prev) => ({ ...prev, ends_on: e.target.value }))}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontWeight: 700 } }}
+                />
+              </Grid>
+            </Grid>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e2e8f0', gap: 1 }}>
+          <Button
+            onClick={() => setGeneralTimelineModal({ open: false, term: null, starts_on: '', ends_on: '', saving: false })}
+            disabled={generalTimelineModal.saving}
+            sx={{ textTransform: 'none', fontWeight: 700 }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveGeneralTimeline}
+            disabled={generalTimelineModal.saving || !generalTimelineModal.ends_on}
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, px: 3, bgcolor: '#1e40af', '&:hover': { bgcolor: '#1d4ed8' } }}
+          >
+            {generalTimelineModal.saving ? 'Guardando y aplicando…' : 'Guardar y Aplicar a Todos los Planes'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <StrategicActionPlanEditor open={Boolean(editorPlanId)} planId={editorPlanId} platformPlan={plan} workflow={boot?.workflow} onClose={() => setEditorPlanId(null)} onChanged={load} onPlanReplaced={setEditorPlanId} />
     </Stack>
   );
 }

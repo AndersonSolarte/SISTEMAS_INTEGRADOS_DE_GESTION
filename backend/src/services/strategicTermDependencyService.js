@@ -207,9 +207,16 @@ const addTermDependency = async ({ termId, dependencyName, document, userId }) =
 
 const removeTermDependency = async ({ termId, assignmentId, userId }) => sequelize.transaction(async (transaction) => {
   const assignment = await StrategicResponsibility.findOne({ where: { id: assignmentId, term_id: termId, action_plan_id: null, responsibility_type: 'reference_leader', status: 'active' }, transaction });
-  if (!assignment) throw Object.assign(new Error('Asignaci\u00f3n no encontrada.'), { statusCode: 404 });
-  const hasPlan = await StrategicActionPlan.count({ where: { term_id: termId, catalog_item_id: assignment.catalog_item_id, deleted_at: null }, transaction });
-  if (hasPlan) throw Object.assign(new Error('No puede retirar esta dependencia porque ya tiene un Plan de Acci\u00f3n en la vigencia.'), { statusCode: 409 });
+  if (!assignment) throw Object.assign(new Error('Asignación no encontrada.'), { statusCode: 404 });
+
+  // Si la dependencia tiene planes de acción activos en esta vigencia, eliminarlos en cascada
+  const plans = await StrategicActionPlan.findAll({ where: { term_id: termId, catalog_item_id: assignment.catalog_item_id, deleted_at: null }, transaction });
+  for (const plan of plans) {
+    await StrategicActionItem.update({ deleted_at: new Date() }, { where: { action_plan_id: plan.id, deleted_at: null }, transaction });
+    await StrategicResponsibility.update({ status: 'ended', ends_on: new Date().toISOString().slice(0, 10) }, { where: { action_plan_id: plan.id, status: 'active' }, transaction });
+    await plan.update({ deleted_at: new Date(), updated_by: userId }, { transaction });
+  }
+
   await assignment.update({ status: 'inactive', ends_on: new Date().toISOString().slice(0, 10), ended_by: userId }, { transaction });
   return { id: assignment.id };
 });

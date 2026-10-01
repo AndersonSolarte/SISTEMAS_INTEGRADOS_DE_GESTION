@@ -20,7 +20,7 @@ const {
 } = require('../constants/privacyPolicy');
 const { formatPersonName } = require('../utils/formatPersonName');
 const {
-  getCalendarConfiguration, normalizeAttendees, checkAvailability, saveCalendarEvent
+  getCalendarConfiguration, normalizeAttendees, checkAvailability, findAvailableSlots, saveCalendarEvent, cancelCalendarEvent
 } = require('../services/meetingCalendarService');
 const {
   getOAuthConfiguration, createAuthorizationUrl, readAuthorizationState,
@@ -264,6 +264,16 @@ const isMinutePrimaryResponsible = (user, minute) => {
   );
 };
 
+const canManageMinuteCalendar = (user, minute) => Boolean(
+  user
+  && minute
+  && (
+    isAdmin(user)
+    || (minute.created_by && Number(minute.created_by) === Number(user.id))
+    || isMinuteResponsible(user, minute)
+  )
+);
+
 const canAccessMinuteFullSignatures = async (user, minute) => {
   if (!user || !minute) return false;
   if (isAdmin(user)) return true;
@@ -355,11 +365,17 @@ const sendParticipantInvitations = async ({ minute, baseUrl }) => {
   }
   const reviewBuffer = await buildSignedMinutePdfBuffer(minute, { hideSignatures: true });
   const reviewAttachment = { filename: `${minute.code}-PARA-REVISION.pdf`, content: reviewBuffer, contentType: 'application/pdf' };
-  const summary = { sent: 0, failed: 0 };
+  const pendingParticipants = (minute.participants || []).filter((item) => item.status !== 'signed');
+  const summary = {
+    sent: 0,
+    failed: 0,
+    pending: pendingParticipants.length,
+    skipped_signed: (minute.participants || []).length - pendingParticipants.length
+  };
   const rootId = minuteRootMessageId(minute.code);
   const responsible = await resolveMinutePrimaryResponsible(minute);
 
-  for (const participant of (minute.participants || []).filter((item) => item.status !== 'signed')) {
+  for (const participant of pendingParticipants) {
     const invitationToken = crypto.randomBytes(32).toString('base64url');
     const signingUrl = `${baseUrl}/firmar-acta-reunion/${invitationToken}`;
     const email = buildSigningInvitationEmail({ participant, minute, signingUrl, responsible });
@@ -683,14 +699,14 @@ const restoreAllMinutes = wrap(async (req, res) => {
   });
 });
 
-const normalizeContent = (body, user, document, existingContent = {}) => ({
+const normalizeContent = (body, document, existingContent = {}) => ({
   header: { codigo: document.codigo || 'COM-ID-FR-002', version: document.version || '1', fecha: formatDate(document.fecha_creacion) },
   titulo: clean(body.titulo, 120),
-  responsables: clean(body.responsables || user.dependencia, 1500),
+  responsables: clean(body.responsables, 1500),
   responsable_document: clean(body.responsable_document, 100),
   responsable_role: clean(body.responsable_role, 220),
   responsables_data: Array.isArray(body.responsables_data) ? body.responsables_data : null,
-  dependencia: clean(body.dependencia || user.dependencia, 500),
+  dependencia: clean(body.dependencia, 500),
   lugar: clean(body.lugar, 500),
   fecha: clean(body.fecha, 50),
   horario: clean(body.horario, 100),
@@ -710,11 +726,12 @@ const saveDraft = wrap(async (req, res) => {
     ? req.body.responsables_data
     : null;
   const primaryDoc = clean(req.body.responsable_document || rawResponsablesData?.find((r) => r.is_primary)?.document || rawResponsablesData?.[0]?.document, 100);
-  if (!primaryDoc) throw Object.assign(new Error('Consulte al responsable mediante su cédula.'), { statusCode: 422 });
-  const responsibleUser = await User.findOne({ where: { username: primaryDoc, estado: 'activo' }, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] });
-  if (!responsibleUser) throw Object.assign(new Error('El responsable seleccionado ya no está disponible en SIAC.'), { statusCode: 422 });
+  const responsibleUser = primaryDoc
+    ? await User.findOne({ where: { username: primaryDoc, estado: 'activo' }, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] })
+    : null;
+  if (primaryDoc && !responsibleUser) throw Object.assign(new Error('El responsable seleccionado ya no está disponible en SIAC.'), { statusCode: 422 });
 
-  const allResponsables = [{
+  const allResponsables = responsibleUser ? [{
     id: responsibleUser.id,
     user_id: responsibleUser.id,
     username: responsibleUser.username,
@@ -727,9 +744,9 @@ const saveDraft = wrap(async (req, res) => {
     cargo: responsibleUser.cargo,
     role_title: responsibleUser.cargo,
     is_primary: true
-  }];
+  }] : [];
 
-  if (rawResponsablesData && rawResponsablesData.length > 1) {
+  if (responsibleUser && rawResponsablesData && rawResponsablesData.length > 1) {
     for (const coResp of rawResponsablesData) {
       const coDoc = clean(coResp.document, 100);
       if (coDoc && coDoc !== responsibleUser.username && !allResponsables.some((r) => r.document === coDoc)) {
@@ -770,21 +787,24 @@ const saveDraft = wrap(async (req, res) => {
   }
 
   const participants = placeResponsibleFirst(Array.isArray(req.body.participants) ? req.body.participants : [], allResponsables);
-  if (participants.length < 2) {
-    throw Object.assign(new Error('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".'), { statusCode: 422 });
-  }
-  if (!clean(req.body.responsables)) throw Object.assign(new Error('Consulte y seleccione el responsable de la reunión.'), { statusCode: 422 });
-  if (!clean(req.body.titulo, 120)) throw Object.assign(new Error('El título corto del acta es obligatorio.'), { statusCode: 422 });
-  if (!clean(req.body.dependencia)) throw Object.assign(new Error('La dependencia que cita es obligatoria.'), { statusCode: 422 });
-  if (!clean(req.body.lugar)) throw Object.assign(new Error('Seleccione o escriba el lugar de la reunión.'), { statusCode: 422 });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean(req.body.fecha, 50))) throw Object.assign(new Error('Seleccione una fecha válida para la reunión.'), { statusCode: 422 });
-  if (!/^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(clean(req.body.horario, 100))) throw Object.assign(new Error('La hora de inicio y finalización son obligatorias.'), { statusCode: 422 });
+  const hasDraftData = Boolean(
+    primaryDoc ||
+    clean(req.body.titulo, 120) ||
+    clean(req.body.dependencia, 500) ||
+    clean(req.body.lugar, 500) ||
+    clean(req.body.fecha, 50) ||
+    clean(req.body.horario, 100) ||
+    richPlainText(req.body.objetivo) ||
+    richPlainText(req.body.desarrollo) ||
+    richPlainText(req.body.conclusiones) ||
+    participants.length
+  );
+  if (!hasDraftData) throw Object.assign(new Error('Diligencie al menos un campo para guardar el borrador.'), { statusCode: 422 });
+  // El borrador admite contenido parcial. Las reglas de obligatoriedad se
+  // verifican de forma autoritativa al publicar el acta para firmas.
   if (participants.some((participant) => !clean(participant.name, 240) || !clean(participant.email, 254))) throw Object.assign(new Error('Todos los participantes deben tener nombre y correo.'), { statusCode: 422 });
   const participantKeys = participants.map((participant) => clean(participant.document || participant.email, 254).toLowerCase()).filter(Boolean);
   if (new Set(participantKeys).size !== participantKeys.length) throw Object.assign(new Error('Hay participantes repetidos en el acta.'), { statusCode: 422 });
-  if (!richPlainText(req.body.objetivo)) throw Object.assign(new Error('El objetivo de la reunión es obligatorio.'), { statusCode: 422 });
-  if (!richPlainText(req.body.desarrollo)) throw Object.assign(new Error('El desarrollo de la reunión es obligatorio.'), { statusCode: 422 });
-  if (!richPlainText(req.body.conclusiones)) throw Object.assign(new Error('Las conclusiones o compromisos son obligatorios.'), { statusCode: 422 });
 
   const minute = await sequelize.transaction(async (transaction) => {
     let row = req.body.id ? await DigitalMeetingMinute.findByPk(req.body.id, { transaction }) : null;
@@ -803,9 +823,9 @@ const saveDraft = wrap(async (req, res) => {
       ...req.body,
       responsables: isRevisionDraft
         ? row.content?.responsables
-        : (clean(req.body.responsables, 1500) || formatPersonName(responsibleUser.nombre)),
-      responsable_document: isRevisionDraft ? row.content?.responsable_document : responsibleUser.username,
-      responsable_role: isRevisionDraft ? row.content?.responsable_role : responsibleUser.cargo,
+        : (clean(req.body.responsables, 1500) || (responsibleUser ? formatPersonName(responsibleUser.nombre) : '')),
+      responsable_document: isRevisionDraft ? row.content?.responsable_document : (responsibleUser?.username || ''),
+      responsable_role: isRevisionDraft ? row.content?.responsable_role : (responsibleUser?.cargo || ''),
       responsables_data: isRevisionDraft ? row.content?.responsables_data : allResponsables.map((r) => ({
         user_id: r.id || null,
         document: r.username || r.document,
@@ -815,8 +835,8 @@ const saveDraft = wrap(async (req, res) => {
         role_title: r.cargo || r.role_title,
         is_primary: Boolean(r.is_primary)
       })),
-      dependencia: clean(req.body.dependencia, 500) || responsibleUser.dependencia
-    }, req.user, document, row?.content || {});
+      dependencia: clean(req.body.dependencia, 500) || responsibleUser?.dependencia || ''
+    }, document, row?.content || {});
     if (!row) {
       const code = `ACTA-${new Date().getFullYear()}-${Date.now().toString().slice(-9)}`;
       row = await DigitalMeetingMinute.create({ documento_id: document.id, code, content, content_hash: contentHash(content), created_by: req.user.id, updated_by: req.user.id }, { transaction });
@@ -917,11 +937,29 @@ const publish = wrap(async (req, res) => {
     : await canAccessMinuteFullSignatures(req.user, minute);
   if (!authorized) throw Object.assign(new Error('No tiene permiso para publicar esta acta.'), { statusCode: 403 });
   if (minute.status !== 'draft') throw Object.assign(new Error('El acta debe estar en borrador antes de enviarse a firmas.'), { statusCode: 409 });
+  const content = minute.content || {};
+  const responsibleData = Array.isArray(content.responsables_data) ? content.responsables_data : [];
+  const requiredContentMissing = (
+    !clean(content.responsables, 1500) ||
+    !clean(content.responsable_document, 100) ||
+    !responsibleData.length ||
+    !clean(content.titulo, 120) ||
+    !clean(content.dependencia, 500) ||
+    !clean(content.lugar, 500) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(clean(content.fecha, 50)) ||
+    !/^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(clean(content.horario, 100)) ||
+    !richPlainText(Array.isArray(content.objetivo) ? content.objetivo.join(' ') : content.objetivo) ||
+    !richPlainText(Array.isArray(content.desarrollo) ? content.desarrollo.join(' ') : content.desarrollo) ||
+    !richPlainText(Array.isArray(content.conclusiones) ? content.conclusiones.join(' ') : content.conclusiones)
+  );
+  if (requiredContentMissing) {
+    throw Object.assign(new Error('Complete todos los campos obligatorios del acta antes de enviarla para firmas.'), { statusCode: 422 });
+  }
   if (!minute.participants?.length || minute.participants.length < 2) {
     throw Object.assign(new Error('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".'), { statusCode: 422 });
   }
-  if (minute.participants.some((participant) => !participant.email)) {
-    throw Object.assign(new Error('Todos los participantes deben tener correo para habilitar las firmas.'), { statusCode: 422 });
+  if (minute.participants.some((participant) => !clean(participant.name, 240) || !clean(participant.email, 254))) {
+    throw Object.assign(new Error('Todos los participantes deben tener nombre y correo para habilitar las firmas.'), { statusCode: 422 });
   }
   const token = crypto.randomBytes(32).toString('base64url');
   const updatedContent = {
@@ -1050,7 +1088,15 @@ const resendInvitations = wrap(async (req, res) => {
   if (minute.status !== 'signing') throw Object.assign(new Error('Solo se pueden reenviar invitaciones de un acta que está en firmas.'), { statusCode: 409 });
   const invitations = await sendParticipantInvitations({ minute, baseUrl: publicFrontend(req) });
   if (!invitations.sent && invitations.failed) throw Object.assign(new Error('No fue posible enviar las invitaciones. Verifique el servicio de correo.'), { statusCode: 503 });
-  res.json({ success: true, message: invitations.failed ? `Se reenviaron ${invitations.sent} invitaciones; ${invitations.failed} no pudieron enviarse.` : `Se reenviaron ${invitations.sent} invitación(es) pendiente(s).`, data: invitations });
+  const signedNotice = invitations.skipped_signed
+    ? ` ${invitations.skipped_signed} participante(s) que ya firmaron no recibieron otro correo.`
+    : '';
+  const message = !invitations.pending
+    ? 'Todos los participantes ya firmaron. No fue necesario reenviar invitaciones.'
+    : invitations.failed
+      ? `Se reenviaron ${invitations.sent} invitaciones pendientes; ${invitations.failed} no pudieron enviarse.${signedNotice}`
+      : `Se reenviaron ${invitations.sent} invitación(es) únicamente a quienes siguen pendientes.${signedNotice}`;
+  res.json({ success: true, message, data: invitations });
 });
 
 const publicMinute = wrap(async (req, res) => {
@@ -1342,12 +1388,15 @@ const sendFinalMinute = wrap(async (req, res) => {
 const loadMinuteForCalendar = async (req) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id);
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
-  if (!isMinutePrimaryResponsible(req.user, minute)) {
-    throw Object.assign(new Error('Solo el Responsable Principal puede programar la siguiente reunión.'), { statusCode: 403 });
+  if (!canManageMinuteCalendar(req.user, minute)) {
+    throw Object.assign(new Error('Solo el creador, los responsables del acta o un administrador pueden programar la siguiente reunión.'), { statusCode: 403 });
   }
-  const organizer = await resolveMinutePrimaryResponsible(minute);
+  const organizer = {
+    name: formatPersonName(req.user.nombre || 'Organizador de la reunión'),
+    email: clean(req.user.email, 254).toLowerCase()
+  };
   if (!organizer?.email) {
-    throw Object.assign(new Error('El Responsable Principal no tiene un correo institucional registrado.'), { statusCode: 422 });
+    throw Object.assign(new Error('Su usuario no tiene un correo institucional registrado para organizar la reunión.'), { statusCode: 422 });
   }
   return { minute, organizer };
 };
@@ -1454,6 +1503,38 @@ const getCalendarSchedule = wrap(async (req, res) => {
   });
 });
 
+const listUpcomingCalendarSchedules = wrap(async (req, res) => {
+  const organizerEmail = clean(req.user?.email, 254).toLowerCase();
+  const schedules = await DigitalMeetingSchedule.findAll({
+    where: {
+      organizer_email: organizerEmail,
+      created_by: req.user.id,
+      status: 'scheduled',
+      end_at: { [Op.gte]: new Date() }
+    },
+    include: [{
+      model: DigitalMeetingMinute,
+      as: 'minute',
+      required: true,
+      attributes: ['id', 'code', 'content', 'deleted_at'],
+      where: { deleted_at: null }
+    }],
+    order: [['start_at', 'ASC']],
+    limit: 50
+  });
+  res.json({
+    success: true,
+    data: schedules.map((schedule) => ({
+      ...schedule.toJSON(),
+      minute: {
+        id: schedule.minute.id,
+        code: schedule.minute.code,
+        title: clean(schedule.minute.content?.titulo || schedule.summary, 240)
+      }
+    }))
+  });
+});
+
 const prepareCalendarError = (error) => {
   if (error.statusCode) return error;
   if (['CALENDAR_NOT_CONFIGURED', 'CALENDAR_OAUTH_NOT_CONFIGURED'].includes(error.code)) error.statusCode = 503;
@@ -1469,9 +1550,10 @@ const prepareCalendarError = (error) => {
 };
 
 const calendarAvailability = wrap(async (req, res) => {
-  const { organizer } = await loadMinuteForCalendar(req);
+  const { minute, organizer } = await loadMinuteForCalendar(req);
   const attendees = normalizeAttendees(req.body.attendees);
   try {
+    const existing = await DigitalMeetingSchedule.findOne({ where: { minute_id: minute.id } });
     const { connection, connected } = await loadCalendarConnection(req.user.id, organizer.email);
     if (!connected) throw Object.assign(new Error('Conecte su cuenta institucional de Google Calendar antes de consultar disponibilidad.'), { code: 'CALENDAR_NOT_CONNECTED' });
     const authClient = createConnectedOAuthClient(connection);
@@ -1481,10 +1563,38 @@ const calendarAvailability = wrap(async (req, res) => {
       attendees,
       startAt: req.body.start_at,
       endAt: req.body.end_at,
+      ignoreBusyRange: existing?.google_event_id && existing.status !== 'cancelled'
+        ? { startAt: existing.start_at, endAt: existing.end_at }
+        : null,
       authClient
     });
     await connection.update({ last_used_at: new Date(), last_error: null });
     res.json({ success: true, data: { organizer, availability } });
+  } catch (error) {
+    throw prepareCalendarError(error);
+  }
+});
+
+const calendarSuggestions = wrap(async (req, res) => {
+  const { minute, organizer } = await loadMinuteForCalendar(req);
+  const { connection, connected } = await loadCalendarConnection(req.user.id, organizer.email);
+  if (!connected) throw Object.assign(new Error('Conecte su cuenta institucional de Google Calendar antes de buscar horarios.'), { statusCode: 409 });
+  try {
+    const existing = await DigitalMeetingSchedule.findOne({ where: { minute_id: minute.id } });
+    const suggestions = await findAvailableSlots({
+      organizerEmail: organizer.email,
+      organizerName: organizer.name,
+      attendees: normalizeAttendees(req.body.attendees),
+      startAt: req.body.start_at,
+      endAt: req.body.end_at,
+      days: req.body.days,
+      ignoreBusyRange: existing?.google_event_id && existing.status !== 'cancelled'
+        ? { startAt: existing.start_at, endAt: existing.end_at }
+        : null,
+      authClient: createConnectedOAuthClient(connection)
+    });
+    await connection.update({ last_used_at: new Date(), last_error: null });
+    res.json({ success: true, data: suggestions });
   } catch (error) {
     throw prepareCalendarError(error);
   }
@@ -1500,6 +1610,7 @@ const saveCalendarSchedule = wrap(async (req, res) => {
     throw Object.assign(new Error('La siguiente reunión debe programarse en una fecha y hora futuras.'), { statusCode: 422 });
   }
   const existing = await DigitalMeetingSchedule.findOne({ where: { minute_id: minute.id } });
+  const isUpdatingExistingEvent = Boolean(existing?.google_event_id && existing.status !== 'cancelled');
   const { connection, connected } = await loadCalendarConnection(req.user.id, organizer.email);
   if (!connected) throw Object.assign(new Error('Conecte su cuenta institucional de Google Calendar antes de programar la reunión.'), { statusCode: 409 });
   const authClient = createConnectedOAuthClient(connection);
@@ -1511,6 +1622,9 @@ const saveCalendarSchedule = wrap(async (req, res) => {
       attendees,
       startAt: req.body.start_at,
       endAt: req.body.end_at,
+      ignoreBusyRange: isUpdatingExistingEvent
+        ? { startAt: existing.start_at, endAt: existing.end_at }
+        : null,
       authClient
     });
   } catch (error) {
@@ -1530,7 +1644,7 @@ const saveCalendarSchedule = wrap(async (req, res) => {
       organizerEmail: organizer.email,
       minuteId: minute.id,
       minuteCode: minute.code,
-      eventId: existing?.google_event_id,
+      eventId: isUpdatingExistingEvent ? existing.google_event_id : null,
       summary,
       description: clean(req.body.description || `Seguimiento del acta ${minute.code}.`, 4000),
       location: clean(req.body.location, 500),
@@ -1560,7 +1674,7 @@ const saveCalendarSchedule = wrap(async (req, res) => {
       : await DigitalMeetingSchedule.create({ ...values, minute_id: minute.id, created_by: req.user.id });
     res.json({
       success: true,
-      message: existing ? 'La siguiente reunión fue actualizada en Google Calendar.' : 'La siguiente reunión fue programada en Google Calendar.',
+      message: isUpdatingExistingEvent ? 'La siguiente reunión fue actualizada en Google Calendar.' : 'La siguiente reunión fue programada en Google Calendar.',
       data: { schedule: schedule.toJSON(), availability }
     });
   } catch (error) {
@@ -1568,6 +1682,34 @@ const saveCalendarSchedule = wrap(async (req, res) => {
     if (!error.statusCode) error.statusCode = 502;
     if (error.statusCode === 502) error.message = `Google Calendar no pudo programar la reunión: ${error.message}`;
     throw error;
+  }
+});
+
+const cancelCalendarSchedule = wrap(async (req, res) => {
+  const { minute, organizer } = await loadMinuteForCalendar(req);
+  const schedule = await DigitalMeetingSchedule.findOne({ where: { minute_id: minute.id } });
+  if (!schedule || schedule.status === 'cancelled') {
+    throw Object.assign(new Error('Esta reunión ya no está programada.'), { statusCode: 404 });
+  }
+  const { connection, connected } = await loadCalendarConnection(req.user.id, organizer.email);
+  if (!connected) {
+    throw Object.assign(new Error('Conecte su cuenta de Google Calendar antes de cancelar la reunión.'), { statusCode: 409 });
+  }
+  try {
+    await cancelCalendarEvent({
+      eventId: schedule.google_event_id,
+      authClient: createConnectedOAuthClient(connection)
+    });
+    await schedule.update({ status: 'cancelled', last_error: null, updated_by: req.user.id });
+    await connection.update({ last_used_at: new Date(), last_error: null });
+    res.json({
+      success: true,
+      message: 'La reunión fue cancelada en Google Calendar y se notificó a los invitados.',
+      data: { id: schedule.id, minute_id: minute.id, status: 'cancelled' }
+    });
+  } catch (error) {
+    await schedule.update({ last_error: clean(error.message, 2000), updated_by: req.user.id }).catch(() => {});
+    throw prepareCalendarError(error);
   }
 });
 
@@ -1603,12 +1745,14 @@ const updateComments = wrap(async (req, res) => {
 
 module.exports = {
   calendarAvailability,
+  calendarSuggestions,
   calendarOAuthCallback,
   deleteMinute,
   downloadPdf,
   downloadWord,
   getConfig,
   getCalendarSchedule,
+  listUpcomingCalendarSchedules,
   googleSigningAccess,
   getMinute,
   getSigningAccess,
@@ -1623,6 +1767,7 @@ module.exports = {
   restoreMinute,
   saveDraft,
   saveCalendarSchedule,
+  cancelCalendarSchedule,
   startCalendarConnection,
   disconnectCalendar,
   sendFinalMinute,
@@ -1632,6 +1777,7 @@ module.exports = {
   _internals: {
     buildPrivacyPolicyEmailSection,
     buildSigningInvitationEmail,
+    canManageMinuteCalendar,
     formatDependencyOfficeLocation,
     hasSameParticipantMembership,
     isMinutePrimaryResponsible,

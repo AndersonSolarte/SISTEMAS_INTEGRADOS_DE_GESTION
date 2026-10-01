@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import {
   Add, ArrowBack, ArrowForward, CalendarMonth, Close, ContentCopy, DeleteOutline, Download, EditNote, Email, PersonSearch,
-  QrCode2, Refresh, Save, Send, ViewSidebar, Visibility
+  HelpOutline, QrCode2, Refresh, Save, Send, ViewSidebar, Visibility
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import meetingMinuteService from '../../services/meetingMinuteService';
@@ -135,7 +135,7 @@ const MeetingPreview = ({ document, form, signatures = [], previewType = 'origin
   const responsablesArray = (Array.isArray(form.responsables_data) && form.responsables_data.length > 0)
     ? form.responsables_data
     : (typeof form.responsables === 'string' && form.responsables.trim()
-      ? form.responsables.split('\n').map((l) => l.replace(/^[•\-\*\s]+/, '').trim()).filter(Boolean).map((line, idx) => {
+      ? form.responsables.split('\n').map((l) => l.replace(/^[•*\s-]+/, '').trim()).filter(Boolean).map((line, idx) => {
         const match = line.match(/^([^(]+)(?:\((.*)\))?$/);
         return { name: match ? match[1].trim() : line, role_title: match ? (match[2] || '').trim() : '', is_primary: idx === 0 };
       })
@@ -250,7 +250,7 @@ const MeetingPreview = ({ document, form, signatures = [], previewType = 'origin
 };
 
 export default function MeetingMinuteFormDialog({ open, document, user, onClose }) {
-  const { enqueueSnackbar } = useSnackbar();
+  const { enqueueSnackbar, closeSnackbar } = useSnackbar();
   const [form, setForm] = useState(() => emptyForm(user));
   const [responsablesList, setResponsablesList] = useState([]);
   const [minutes, setMinutes] = useState([]);
@@ -280,9 +280,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const localChangeVersionRef = useRef(0);
   const failedAutoSaveVersionRef = useRef(null);
   const participantsDirtyRef = useRef(false);
+  const participantGuidanceShownRef = useRef(false);
+  const guideSnackbarKeyRef = useRef(null);
+  const guideAnimationRef = useRef(null);
   const removedParticipantKeysRef = useRef(new Set());
   const locked = form.status !== 'draft';
-  const hasSignatures = signatures.length > 0;
   const allSigned = Boolean(form.participants.length) && form.participants.every((participant) => participant.status === 'signed');
   const pendingCount = useMemo(() => (form.participants || []).filter((p) => p.status !== 'signed').length, [form.participants]);
 
@@ -305,15 +307,6 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     (userDoc && form.responsable_document && String(form.responsable_document).trim().toLowerCase() === userDoc) ||
     (userEmail && form.responsable_email && String(form.responsable_email).trim().toLowerCase() === userEmail)
   );
-  const primaryResponsible = (Array.isArray(responsablesList) && responsablesList.find((responsible) => responsible.is_primary))
-    || responsablesList[0]
-    || (Array.isArray(form.responsables_data) && form.responsables_data.find((responsible) => responsible.is_primary))
-    || form.responsables_data?.[0];
-  const isPrimaryResponsible = Boolean(primaryResponsible && (
-    (userDoc && primaryResponsible.document && String(primaryResponsible.document).trim().toLowerCase() === userDoc)
-    || (userId && primaryResponsible.user_id && Number(primaryResponsible.user_id) === userId)
-    || (userEmail && primaryResponsible.email && String(primaryResponsible.email).trim().toLowerCase() === userEmail)
-  ));
   const isAdminUser = Boolean(
     user?.role === 'admin' ||
     user?.role === 'administrador' ||
@@ -324,8 +317,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   // Mantener la misma regla del servidor: estar autenticado no concede por sí solo
   // permiso para modificar actas de otros usuarios.
   const canManageMinute = Boolean(!form.id || isCreator || isResponsible || isAdminUser);
+  const canManageCalendar = Boolean(form.id && (isCreator || isResponsible || isAdminUser));
   const canRevise = Boolean(form.id && ['signing', 'signed'].includes(form.status) && isResponsible);
   const canEdit = Boolean(canManageMinute && !locked && (!form.revision_required || isResponsible));
+  const showManualDraftSave = Boolean(canEdit && ['pending', 'error'].includes(saveStatus));
   const canManageParticipants = Boolean(canEdit && !form.revision_required);
   const canSendFinal = Boolean(isCreator || isResponsible || isAdminUser);
 
@@ -398,6 +393,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   };
   useEffect(() => {
     if (!open) return;
+    guideAnimationRef.current?.cancel?.();
+    guideAnimationRef.current = null;
+    if (guideSnackbarKeyRef.current) closeSnackbar(guideSnackbarKeyRef.current);
+    guideSnackbarKeyRef.current = null;
+    participantGuidanceShownRef.current = false;
     hasUnsavedChangesRef.current = false;
     localChangeVersionRef.current = 0;
     failedAutoSaveVersionRef.current = null;
@@ -416,7 +416,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setExternalMode(false);
     loadMinutes();
     loadMeetingPlaces();
-  }, [open, user]);
+  }, [open, user, closeSnackbar]);
 
   const markUnsavedChanges = ({ participants = false } = {}) => {
     hasUnsavedChangesRef.current = true;
@@ -432,6 +432,15 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setForm((previous) => ({ ...previous, [key]: value }));
   };
   const openMinute = async (id) => {
+    setFieldErrors({});
+    participantGuidanceShownRef.current = false;
+    guideAnimationRef.current?.cancel?.();
+    guideAnimationRef.current = null;
+    if (guideSnackbarKeyRef.current) closeSnackbar(guideSnackbarKeyRef.current);
+    guideSnackbarKeyRef.current = null;
+    setCandidate(null);
+    setDocumentNumber('');
+    setExternalMode(false);
     if (!id) {
       hasUnsavedChangesRef.current = false;
       localChangeVersionRef.current = 0;
@@ -439,9 +448,12 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       participantsDirtyRef.current = false;
       removedParticipantKeysRef.current.clear();
       setSaveStatus('saved');
-      setFieldErrors({});
       setForm(emptyForm(user));
       setResponsablesList([]);
+      setSignatures([]);
+      setQr(null);
+      setResponsibleDocument('');
+      setResponsibleCandidate(null);
       return;
     }
     setLoading(true);
@@ -573,7 +585,37 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setCandidate(null);
     try {
       const response = await meetingMinuteService.lookupParticipant(documentNumber.trim());
-      setCandidate(response.data);
+      const person = response.data;
+      if (!person?.email) {
+        enqueueSnackbar('El usuario no tiene correo institucional para la firma.', { variant: 'warning' });
+        return;
+      }
+      const doc = String(person.document || '').trim().toLowerCase();
+      const email = String(person.email || '').trim().toLowerCase();
+      const alreadyAdded = form.participants.some((participant) => {
+        const participantDoc = String(participant.document || '').trim().toLowerCase();
+        const participantEmail = String(participant.email || '').trim().toLowerCase();
+        return (person.id && String(participant.user_id) === String(person.id))
+          || (doc && participantDoc === doc)
+          || (email && participantEmail === email);
+      });
+      if (alreadyAdded) {
+        enqueueSnackbar('La persona ya está agregada al acta.', { variant: 'info' });
+        return;
+      }
+      setField('participants', [...form.participants, {
+        user_id: person.id,
+        document: person.document,
+        name: formatPersonName(person.name),
+        email: person.email,
+        organization: person.organization,
+        role_title: person.role_title,
+        status: 'invited'
+      }]);
+      setDocumentNumber('');
+      if (guideSnackbarKeyRef.current) closeSnackbar(guideSnackbarKeyRef.current);
+      guideSnackbarKeyRef.current = null;
+      enqueueSnackbar(`${formatPersonName(person.name)} fue agregado.`, { variant: 'success' });
     } catch (error) {
       if (error.response?.status === 404) {
         setExternalDraft({ document: documentNumber.trim(), name: '', email: '', organization: '', role_title: '' });
@@ -772,19 +814,21 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     sanitizeRichHtml(value || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim()
   );
 
+  // Un borrador representa cualquier avance del usuario. No debe exigir que el
+  // acta este completa; esa validacion corresponde exclusivamente al envio.
   const hasSavableData = () => Boolean(
-    responsablesList.length &&
-    form.responsables &&
-    form.titulo &&
-    form.dependencia &&
-    form.lugar &&
-    form.fecha &&
-    form.hora_inicio &&
-    form.hora_fin &&
-    hasRichTextValue(form.objetivo) &&
-    hasRichTextValue(form.desarrollo) &&
-    hasRichTextValue(form.conclusiones) &&
-    form.participants.length >= 2
+    form.id ||
+    responsablesList.length ||
+    String(form.titulo || '').trim() ||
+    String(form.dependencia || '').trim() ||
+    String(form.lugar || '').trim() ||
+    String(form.fecha || '').trim() ||
+    String(form.hora_inicio || '').trim() ||
+    String(form.hora_fin || '').trim() ||
+    hasRichTextValue(form.objetivo) ||
+    hasRichTextValue(form.desarrollo) ||
+    hasRichTextValue(form.conclusiones) ||
+    form.participants.length
   );
 
   const validateRequiredFields = () => {
@@ -802,6 +846,27 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       participants: form.participants.length < 2
     };
   };
+
+  useEffect(() => {
+    if (!open || locked) return;
+    if (form.participants.length < 2) {
+      participantGuidanceShownRef.current = false;
+      return;
+    }
+    if (participantGuidanceShownRef.current) return;
+    participantGuidanceShownRef.current = true;
+    const remainingErrors = validateRequiredFields();
+    const readyToSend = !Object.entries(remainingErrors).some(([key, missing]) => key !== 'participants' && missing);
+    if (guideSnackbarKeyRef.current) closeSnackbar(guideSnackbarKeyRef.current);
+    guideSnackbarKeyRef.current = enqueueSnackbar(
+      readyToSend
+        ? 'Ya cuenta con al menos dos participantes. Si no agregará más personas, el acta está lista para enviar a firmas.'
+        : 'Ya cuenta con el mínimo de dos participantes. Si no agregará más personas, continúe con los campos pendientes del acta.',
+      { variant: readyToSend ? 'success' : 'info', autoHideDuration: 11000 }
+    );
+    // Se evalúa al cruzar el mínimo de participantes; los demás cambios no deben repetir el aviso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, locked, form.participants.length]);
 
   const focusFirstInvalidField = (errors) => {
     const order = [
@@ -836,15 +901,12 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       if (!automatic) enqueueSnackbar('Esta acta está en modo consulta. Solo el creador, los responsables asignados o un administrador pueden editarla.', { variant: 'warning' });
       return null;
     }
-    const validationErrors = validateRequiredFields();
-    if (Object.values(validationErrors).some(Boolean)) {
-      if (!automatic) {
-        setFieldErrors(validationErrors);
-        focusFirstInvalidField(validationErrors);
-        enqueueSnackbar('Complete los campos obligatorios marcados en rojo.', { variant: 'warning' });
-      }
+    if (!hasSavableData()) {
+      if (!automatic) enqueueSnackbar('Diligencie al menos un campo para guardar el borrador.', { variant: 'warning' });
       return null;
     }
+    // Guardar un avance parcial no debe mostrar como errores los campos que aun
+    // faltan. Se marcaran en rojo solamente al intentar enviar para firmas.
     setFieldErrors({});
     const changeVersionAtStart = localChangeVersionRef.current;
     const participantsChangedAtStart = participantsDirtyRef.current;
@@ -924,12 +986,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   };
 
   const publish = async () => {
-    if (!responsablesList.length || !form.responsables) {
-      enqueueSnackbar('Consulte y seleccione primero al responsable de la reunión.', { variant: 'warning' });
-      return;
-    }
-    if (form.participants.length < 2) {
-      enqueueSnackbar('Debe haber al menos dos participantes en la reunión (responsables y/o participantes convocados).', { variant: 'warning' });
+    const validationErrors = validateRequiredFields();
+    if (Object.values(validationErrors).some(Boolean)) {
+      setFieldErrors(validationErrors);
+      focusFirstInvalidField(validationErrors);
+      enqueueSnackbar('Complete el acta antes de enviarla. Revise los campos marcados en rojo.', { variant: 'warning' });
       return;
     }
     const row = await save({ quiet: true });
@@ -1058,6 +1119,75 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     finally { setLoading(false); }
   };
 
+  const guideErrors = validateRequiredFields();
+  const guideSteps = [
+    { key: 'responsables', label: 'Responsable Principal', target: 'responsible-document-field', instruction: 'Digite la cédula del responsable y pulse “Consultar” para asignarlo al acta.' },
+    { key: 'titulo', label: 'Título corto', target: 'meeting-titulo-field', instruction: 'Escriba un nombre breve que permita identificar y encontrar fácilmente esta acta.' },
+    { key: 'dependencia', label: 'Dependencia que cita', target: 'meeting-dependencia-field', instruction: 'Confirme o escriba la dependencia que está convocando la reunión.' },
+    { key: 'lugar', label: 'Lugar', target: 'meeting-lugar-field', instruction: 'Seleccione una ubicación sugerida o escriba el lugar donde se realizará la reunión.' },
+    { key: 'fecha', label: 'Fecha', target: 'meeting-fecha-field', instruction: 'Seleccione la fecha en que se realiza la reunión.' },
+    { key: 'hora_inicio', label: 'Hora de inicio', target: 'meeting-hora-inicio-field', instruction: 'Indique la hora real de inicio de la reunión.' },
+    { key: 'hora_fin', label: 'Hora de finalización', target: 'meeting-hora-fin-field', instruction: 'Indique la hora prevista o real de finalización.' },
+    { key: 'objetivo', label: 'Objetivo', target: 'meeting-objetivo-field', instruction: 'Describa de manera concreta el propósito de la reunión.' },
+    { key: 'desarrollo', label: 'Desarrollo', target: 'meeting-desarrollo-field', instruction: 'Registre los temas tratados y los aspectos relevantes de la reunión.' },
+    { key: 'conclusiones', label: 'Conclusiones y compromisos', target: 'meeting-conclusiones-field', instruction: 'Registre las decisiones, responsables o compromisos acordados.' },
+    { key: 'participants', label: 'Participantes', target: 'meeting-participants-section', instruction: 'Agregue como mínimo dos personas contando responsables y participantes convocados.' }
+  ];
+  const missingGuideSteps = guideSteps.filter(({ key }) => guideErrors[key]);
+  const nextGuideStep = missingGuideSteps[0] || null;
+  const guideInfo = form.status === 'draft'
+    ? saveStatus === 'saving'
+      ? { title: 'Guardando sus cambios', message: 'Espere un momento. El autoguardado está registrando el avance del acta.' }
+      : missingGuideSteps.length
+        ? {
+            title: 'Continúe completando el acta',
+            message: nextGuideStep.instruction,
+            focusMissing: true
+          }
+        : { title: 'El acta está lista para firmas', message: 'Revise la vista previa y use “Habilitar y enviar invitaciones” en la parte superior.' }
+    : ['signing', 'signed'].includes(form.status) && !allSigned
+      ? { title: 'Firmas en proceso', message: `Actualice las firmas para consultar el avance. Aún hay ${pendingCount} firma${pendingCount === 1 ? '' : 's'} pendiente${pendingCount === 1 ? '' : 's'}; si es necesario puede reenviar las invitaciones desde la parte superior.` }
+      : form.status === 'distributed'
+        ? { title: 'Proceso finalizado', message: 'El acta firmada ya fue enviada a los participantes. Como paso final, descargue la copia oficial desde “Descargar PDF”. Después, si lo necesita, puede programar la siguiente sesión.' }
+        : { title: 'Firmas completadas', message: 'Todos firmaron. Use “Enviar acta firmada” en la parte superior para distribuir la copia final.' };
+
+  const followGuide = () => {
+    if (guideSnackbarKeyRef.current) closeSnackbar(guideSnackbarKeyRef.current);
+    guideSnackbarKeyRef.current = null;
+    if (guideInfo.focusMissing && nextGuideStep) {
+      setFieldErrors(guideErrors);
+      focusFirstInvalidField(guideErrors);
+      window.setTimeout(() => {
+        const target = window.document.getElementById(nextGuideStep.target);
+        if (!target) return;
+        guideAnimationRef.current?.cancel?.();
+        guideAnimationRef.current = target.animate?.([
+          { boxShadow: '0 0 0 0 rgba(22,163,74,0)', transform: 'scale(1)' },
+          { boxShadow: '0 0 0 8px rgba(22,163,74,0.28)', transform: 'scale(1.012)' },
+          { boxShadow: '0 0 0 0 rgba(22,163,74,0)', transform: 'scale(1)' }
+        ], { duration: 2200, iterations: 4, easing: 'ease-in-out' });
+        guideSnackbarKeyRef.current = enqueueSnackbar(`Siguiente paso: ${nextGuideStep.instruction}`, { variant: 'success', autoHideDuration: 12000 });
+      }, 260);
+      return;
+    }
+    const targetId = form.status === 'draft'
+      ? 'meeting-publish-button'
+      : ['signing', 'signed'].includes(form.status) && !allSigned
+        ? 'meeting-refresh-signatures-button'
+        : allSigned && form.status !== 'distributed'
+          ? 'meeting-send-final-button'
+          : 'meeting-download-button';
+    const target = window.document.getElementById(targetId);
+    target?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    guideAnimationRef.current?.cancel?.();
+    guideAnimationRef.current = target?.animate?.([
+      { boxShadow: '0 0 0 0 rgba(22,163,74,0)', transform: 'scale(1)' },
+      { boxShadow: '0 0 0 9px rgba(22,163,74,0.3)', transform: 'scale(1.025)' },
+      { boxShadow: '0 0 0 0 rgba(22,163,74,0)', transform: 'scale(1)' }
+    ], { duration: 2300, iterations: 4, easing: 'ease-in-out' });
+    guideSnackbarKeyRef.current = enqueueSnackbar(guideInfo.message, { variant: 'success', autoHideDuration: 12000 });
+  };
+
   return <>
     <Dialog open={open} onClose={handleClose} fullScreen PaperProps={{ sx: { bgcolor: '#f4f7fb', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' } }}>
       <DialogTitle sx={{ px: { xs: 2, md: 4 }, py: 1.5, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff', flexShrink: 0 }}>
@@ -1161,7 +1291,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} mb={2}>
                 <Typography fontWeight={900}>Actas de reunión</Typography>
                 <Stack direction="row" alignItems="center" gap={1}>
-                  <Button variant="outlined" onClick={() => { hasUnsavedChangesRef.current = false; localChangeVersionRef.current = 0; failedAutoSaveVersionRef.current = null; participantsDirtyRef.current = false; removedParticipantKeysRef.current.clear(); setSaveStatus('saved'); setFieldErrors({}); setForm(emptyForm(user)); setResponsablesList([]); setSignatures([]); setQr(null); setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button>
+                  <Button variant="outlined" onClick={() => openMinute('')} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button>
                   <Tooltip title={layoutMode === 'split' ? 'Expandir formulario a pantalla completa' : 'Restaurar vista dividida (50/50)'}>
                     <IconButton
                       size="small"
@@ -1556,28 +1686,38 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 })}
               </Stack>
             </Paper>
-            {isPrimaryResponsible && (form.id ? (
-              <MeetingCalendarScheduler
+            <Box id="meeting-calendar-section">
+              {canManageCalendar ? (
+                <MeetingCalendarScheduler
                 minuteId={form.id}
                 minuteTitle={form.titulo}
                 defaultLocation={form.lugar}
                 participants={form.participants}
                 responsibles={responsablesList}
-              />
-            ) : (
-              <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3, borderColor: '#93c5fd', bgcolor: '#f8fbff' }}>
-                <Stack direction="row" gap={1} alignItems="center" mb={1}>
-                  <CalendarMonth color="primary" />
-                  <Typography fontWeight={900}>3. Programar siguiente reunión</Typography>
+                lookupParticipantByDocument={meetingMinuteService.lookupParticipant}
+                dialogMode
+                />
+              ) : (
+                <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, borderColor: '#93c5fd', bgcolor: '#f8fbff' }}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" gap={1.5}>
+                  <Stack direction="row" alignItems="center" gap={1.25}>
+                    <Box sx={{ width: 46, height: 46, borderRadius: 2.5, display: 'grid', placeItems: 'center', bgcolor: '#dbeafe', color: '#1d4ed8' }}><CalendarMonth /></Box>
+                    <Box>
+                      <Typography fontWeight={900}>Programar siguiente sesión</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {!responsablesList.length
+                          ? 'Opcional · Asigne al Responsable Principal para habilitar Calendar.'
+                          : 'Opcional · Disponible para el creador, responsables y administradores del acta.'}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                  <Button disabled variant="contained" startIcon={<CalendarMonth />} sx={{ borderRadius: 2.5, px: 2.5, textTransform: 'none', fontWeight: 900 }}>
+                    Abrir Calendar
+                  </Button>
                 </Stack>
-                <Alert severity="info">
-                  Primero guarde el acta. Después podrá consultar la disponibilidad y programar la siguiente reunión en Google Calendar desde este mismo espacio.
-                </Alert>
-                <Typography variant="body2" color="text.secondary" mt={1}>
-                  Esta opción es voluntaria y no se incluirá en el acta ni en el PDF.
-                </Typography>
-              </Paper>
-            ))}
+                </Paper>
+              )}
+            </Box>
           </Stack>
           <Paper
             variant="outlined"
@@ -1668,7 +1808,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                       }
                     }}
                   >
-                    <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={(e) => setDownloadAnchorEl(e.currentTarget)} variant="outlined">
+                    <Button id="meeting-download-button" fullWidth startIcon={<Download />} disabled={!form.id} onClick={(e) => setDownloadAnchorEl(e.currentTarget)} variant="outlined">
                       Descargar PDF
                     </Button>
                     {canRevise && (
@@ -1676,7 +1816,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                         Ajustar y volver a firmar
                       </Button>
                     )}
-                    <Button fullWidth startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">
+                    <Button id="meeting-refresh-signatures-button" fullWidth startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">
                       Actualizar firmas
                     </Button>
                   </Box>
@@ -1711,14 +1851,17 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                       </Button>
                     )}
                     {form.status === 'signing' && !allSigned && (
-                      <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">
-                        Reenviar invitaciones
-                      </Button>
+                      <Tooltip title={`Enviar nuevamente el correo solo a ${pendingCount} participante${pendingCount === 1 ? '' : 's'} pendiente${pendingCount === 1 ? '' : 's'}`}>
+                        <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">
+                          Reenviar solo a pendientes
+                        </Button>
+                      </Tooltip>
                     )}
                     {canSendFinal && (
                       <Tooltip title={!allSigned ? `Se habilitará cuando todos los participantes hayan firmado (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'})` : 'Enviar versión final del acta con firmas a todos los participantes'}>
                         <Box component="span" sx={{ display: 'flex', width: '100%' }}>
                           <Button
+                            id="meeting-send-final-button"
                             fullWidth
                             startIcon={<Send />}
                             disabled={loading || !allSigned}
@@ -1735,11 +1878,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </Box>
                 </Stack>
               ) : (
-                /* Modo Borrador (Draft) - 3 botones equilibrados en 1 sola fila */
+                /* Acciones principales del borrador. El guardado manual permanece en el pie. */
                 <Box
                   sx={{
                     display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', sm: canEdit ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))' },
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(auto-fit, minmax(180px, 1fr))' },
                     gap: 1,
                     width: '100%',
                     '& .MuiButton-root': {
@@ -1764,13 +1907,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                       Editar acta
                     </Button>
                   )}
-                  <Tooltip title={!additionalParticipants.length ? 'Debe agregar al menos 1 participante adicional en la sección 2' : ''}>
+                  <Tooltip title="Validar el acta completa, habilitar firmas y enviar las invitaciones">
                     <Box component="span" sx={{ display: 'flex', width: '100%' }}>
                       <Button
+                        id="meeting-publish-button"
                         fullWidth
                         startIcon={<Email />}
                         onClick={publish}
-                        disabled={loading || !additionalParticipants.length}
+                        disabled={loading || autoSaving}
                         variant="contained"
                         sx={{ fontWeight: 850 }}
                       >
@@ -1818,72 +1962,39 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       <DialogActions sx={{
         px: { xs: 1.5, md: 4 }, py: 1.25, bgcolor: '#fff',
         borderTop: '1px solid #dbe5f0', flexShrink: 0,
-        justifyContent: 'space-between', flexWrap: 'wrap', gap: 1,
+        justifyContent: 'space-between', gap: 1,
         boxShadow: '0 -8px 24px rgba(30,64,175,.06)'
       }}>
-        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" useFlexGap>
-          <Button disabled={loading || autoSaving} onClick={handleClose}>Cerrar</Button>
-          {layoutMode === 'form' && (
-            <Button startIcon={<Visibility />} onClick={() => setLayoutMode('preview')} sx={{ textTransform: 'none', fontWeight: 800 }}>
-              Ver vista previa
+        <Button disabled={loading || autoSaving} onClick={handleClose}>Cerrar</Button>
+        <Stack direction="row" alignItems="center" gap={1}>
+          <Button
+            variant="outlined"
+            color="success"
+            startIcon={<HelpOutline />}
+            onClick={followGuide}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 850,
+              animation: 'guidePulse 3s ease-in-out infinite',
+              '@keyframes guidePulse': {
+                '0%, 100%': { boxShadow: '0 0 0 0 rgba(22,163,74,0)' },
+                '50%': { boxShadow: '0 0 0 8px rgba(22,163,74,0.2)' }
+              }
+            }}
+          >
+            ¿Qué sigue?
+          </Button>
+          {showManualDraftSave && (
+            <Button
+              variant="outlined"
+              startIcon={saveStatus === 'error' ? <Refresh /> : <Save />}
+              disabled={loading || autoSaving}
+              onClick={() => save()}
+              color={saveStatus === 'error' ? 'error' : 'primary'}
+              sx={{ textTransform: 'none', fontWeight: 850 }}
+            >
+              Guardar borrador
             </Button>
-          )}
-          {layoutMode === 'preview' && (
-            <Button startIcon={<EditNote />} onClick={() => setLayoutMode('form')} sx={{ textTransform: 'none', fontWeight: 800 }}>
-              Volver al formulario
-            </Button>
-          )}
-        </Stack>
-        <Stack direction="row" alignItems="center" justifyContent="flex-end" gap={1} flexWrap="wrap" useFlexGap sx={{ ml: 'auto' }}>
-          {locked && form.id && (
-            <Button variant="outlined" startIcon={<Download />} onClick={(event) => setDownloadAnchorEl(event.currentTarget)} disabled={loading} sx={{ textTransform: 'none', fontWeight: 850 }}>
-              Descargar PDF
-            </Button>
-          )}
-          {form.status === 'signing' && (
-            <Button variant="outlined" startIcon={<Refresh />} onClick={() => openMinute(form.id)} disabled={loading} sx={{ textTransform: 'none', fontWeight: 850 }}>
-              Actualizar firmas
-            </Button>
-          )}
-          {form.status === 'signing' && !allSigned && (
-            <Button variant="outlined" startIcon={<Email />} onClick={resendInvitations} disabled={loading} sx={{ textTransform: 'none', fontWeight: 850 }}>
-              Reenviar invitaciones
-            </Button>
-          )}
-          {canSendFinal && (
-            <Tooltip title={!allSigned ? `Disponible cuando todos hayan firmado (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'})` : 'Enviar el acta firmada a todos los participantes'}>
-              <Box component="span">
-                <Button variant={allSigned ? 'contained' : 'outlined'} color="success" startIcon={<Send />} onClick={sendFinal} disabled={loading || !allSigned} sx={{ textTransform: 'none', fontWeight: 900 }}>
-                  {form.status === 'distributed' ? 'Reenviar acta firmada' : 'Enviar acta firmada'}
-                </Button>
-              </Box>
-            </Tooltip>
-          )}
-          {canEdit && !locked && (
-            <>
-              <Button
-                variant="outlined"
-                startIcon={(loading || autoSaving) ? <CircularProgress size={16} color="inherit" /> : <Save />}
-                disabled={loading || autoSaving}
-                onClick={() => save()}
-                sx={{ px: { xs: 1.5, sm: 2.5 }, textTransform: 'none', fontWeight: 850 }}
-              >
-                Guardar borrador
-              </Button>
-              <Tooltip title={!additionalParticipants.length ? 'Agregue al menos un participante adicional para enviar el acta a firmas' : 'Guardar, habilitar firmas y enviar las invitaciones'}>
-                <Box component="span">
-                  <Button
-                    variant="contained"
-                    startIcon={<Email />}
-                    disabled={loading || autoSaving || !additionalParticipants.length}
-                    onClick={publish}
-                    sx={{ px: { xs: 1.5, sm: 3 }, textTransform: 'none', fontWeight: 900 }}
-                  >
-                    Enviar para firmas
-                  </Button>
-                </Box>
-              </Tooltip>
-            </>
           )}
         </Stack>
       </DialogActions>
