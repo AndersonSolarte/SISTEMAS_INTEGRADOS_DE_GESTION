@@ -85,6 +85,7 @@ const ensureStrategicPlanningColumns = async () => {
   if (catalogDescription?.name && String(catalogDescription.name.type || '').toUpperCase() !== 'TEXT') {
     await qi.changeColumn('pei_catalog_items', 'name', { type: DataTypes.TEXT, allowNull: false });
   }
+  await ensureColumn('pei_terms', 'metadata', { type: DataTypes.JSONB, allowNull: false, defaultValue: {} });
   await ensureColumn('pei_responsibilities', 'action_plan_id', { type: DataTypes.UUID, allowNull: true });
   await ensureColumn('pei_responsibilities', 'position_catalog_item_id', { type: DataTypes.UUID, allowNull: true });
   await ensureColumn('pei_responsibilities', 'predecessor_id', { type: DataTypes.UUID, allowNull: true });
