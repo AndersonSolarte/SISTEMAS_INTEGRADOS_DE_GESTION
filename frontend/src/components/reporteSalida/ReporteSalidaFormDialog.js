@@ -1913,7 +1913,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   };
 
   const disableSubmit = submitting || validationIssues.length > 0;
-  const shouldShowOptionalPersonalAttachment = !isSalidaMultiple && category === 'personales' && subtype === 'diligencia_personal';
+  const shouldShowOptionalPersonalAttachment = !isSalidaMultiple
+    && category === 'personales'
+    && ['diligencia_personal', 'compensatorio'].includes(subtype);
   const shouldShowAdjuntoSection = Boolean(subtype) && (category === 'propias_cargo' || category === 'salud' || REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype) || shouldShowOptionalPersonalAttachment);
   const isSaludAdjuntoSection = category === 'salud' && shouldShowAdjuntoSection;
   const hideAdjuntoUploadByDeclaration = isSaludAdjuntoSection && noCuentaAdjuntoSalud;

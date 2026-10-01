@@ -1443,6 +1443,55 @@ const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
   }
 ]);
 
+const GROUP_APPROVAL_STAGE_BY_PURPOSE = {
+  reporte_salida_approve_proyeccion_social_grupo: 'pendiente_aprobacion_proyeccion_social',
+  reporte_salida_approve_jefe_grupo: 'pendiente_aprobacion_jefe',
+  reporte_salida_approve_vice_academica_grupo: 'pendiente_aprobacion_vicerrectoria_academica',
+  reporte_salida_approve_gh_grupo: 'pendiente_aprobacion_gestion_humana',
+  reporte_salida_approve_sst_grupo: 'pendiente_aprobacion_sst',
+  reporte_salida_approve_grupo: 'pendiente_aprobacion_gestion_humana'
+};
+
+const getPendingGroupSolicitudesForPayload = (solicitudes, payload = {}) => {
+  const expectedState = GROUP_APPROVAL_STAGE_BY_PURPOSE[payload.purpose];
+  if (!expectedState) return [];
+
+  let pending = (Array.isArray(solicitudes) ? solicitudes : [])
+    .filter((solicitud) => solicitud.estado === expectedState);
+
+  if (payload.purpose === 'reporte_salida_approve_jefe_grupo' && payload.jefe_email) {
+    const targetEmail = normalizeEmail(payload.jefe_email);
+    pending = pending.filter((solicitud) => {
+      const jefeEmail = normalizeEmail(solicitud.jefe_snapshot?.email);
+      const dependenciaEmail = normalizeEmail(getDependencyEmail(
+        solicitud.datos_formulario?.laboral?.dependencia || solicitud.solicitante_snapshot?.dependencia || ''
+      ));
+      return jefeEmail === targetEmail || dependenciaEmail === targetEmail;
+    });
+  }
+
+  return pending;
+};
+
+const INDIVIDUAL_APPROVAL_STAGE = {
+  proyeccion_social: { estado: 'pendiente_aprobacion_proyeccion_social', tokenColumn: 'aprobacion_proyeccion_social_token_hash' },
+  jefe: { estado: 'pendiente_aprobacion_jefe', tokenColumn: 'aprobacion_jefe_token_hash' },
+  vicerrectoria_academica: { estado: 'pendiente_aprobacion_vicerrectoria_academica', tokenColumn: 'aprobacion_vicerrectoria_token_hash' },
+  rectoria: { estado: 'pendiente_aprobacion_rectoria', tokenColumn: 'aprobacion_rectoria_token_hash' },
+  gestion_humana: { estado: 'pendiente_aprobacion_gestion_humana', tokenColumn: 'aprobacion_gh_token_hash' },
+  sst: { estado: 'pendiente_aprobacion_sst', tokenColumn: 'aprobacion_sst_token_hash' }
+};
+
+const isActiveIndividualApprovalLink = (solicitud, payload, token) => {
+  if (payload?.purpose !== 'reporte_salida_approve') return false;
+  const stage = INDIVIDUAL_APPROVAL_STAGE[payload?.stage];
+  return Boolean(
+    stage
+    && solicitud?.estado === stage.estado
+    && solicitud?.[stage.tokenColumn] === hashToken(token)
+  );
+};
+
 const getWorkflowRejectionRecipients = (solicitud) => {
   const recipients = new Set();
   const datos = solicitud?.datos_formulario || {};
@@ -1566,12 +1615,24 @@ const sendControlledCopyRejectionEmail = async ({ solicitudes, actorName, actorR
       `
     });
 
-    return await sendInstitutionalEmail({
+    const attachments = (await Promise.all(list.map(async (solicitud) => {
+      try {
+        return await buildReporteSalidaPdfAttachment(solicitud);
+      } catch (error) {
+        console.error(`[sendControlledCopyRejectionEmail] No se pudo generar el PDF rechazado ${solicitud.consecutivo}:`, error);
+        return null;
+      }
+    }))).filter(Boolean);
+
+    const result = await sendInstitutionalEmail({
       to: toRecipients,
       subject,
       text: `La solicitud ${consecutivoLabel} fue marcada como no aprobada por ${actorDisplay}. Motivo: ${justificacion}`,
-      html
+      html,
+      attachments
     });
+    list.forEach(deleteSupportFile);
+    return result;
   } catch (err) {
     console.error('Error enviando correo de no aprobacion con copia controlada:', err);
     return { success: false, error: err.message };
@@ -2581,6 +2642,30 @@ const deleteSupportFile = (solicitud) => {
         console.error(`[deleteSupportFile] Error al eliminar soporte: ${err.message}`);
       }
     }
+    ReporteSalidaAdjunto.destroy({ where: { storage_key: safeFilename } })
+      .then((deletedRows) => {
+        if (deletedRows) console.log(`[deleteSupportFile] Soporte temporal eliminado de la base de datos: ${safeFilename}`);
+      })
+      .catch((err) => console.error(`[deleteSupportFile] Error al eliminar soporte de la base de datos: ${err.message}`));
+  }
+
+  const reportBase = String(solicitud?.consecutivo || solicitud?.id || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  if (reportBase) {
+    const generatedDir = path.resolve(__dirname, '../../uploads/reporte-salida');
+    [
+      `REPORTE-SALIDA-${reportBase}-FR-002-digital.pdf`,
+      `REPORTE-SALIDA-${reportBase}-Oficio-Salida.pdf`,
+      `${reportBase}-FR-002-diligenciado.docx`
+    ].forEach((filename) => {
+      const generatedPath = path.join(generatedDir, filename);
+      if (!fs.existsSync(generatedPath)) return;
+      try {
+        fs.unlinkSync(generatedPath);
+        console.log(`[deleteSupportFile] Documento temporal eliminado del servidor: ${filename}`);
+      } catch (err) {
+        console.error(`[deleteSupportFile] Error al eliminar documento temporal: ${err.message}`);
+      }
+    });
   }
 };
 
@@ -4821,6 +4906,9 @@ const verDocumentoPdfDesdeCorreo = async (req, res) => {
     if (!solicitud) {
       return res.status(404).send('Solicitud no encontrada.');
     }
+    if (!isActiveIndividualApprovalLink(solicitud, payload, req.params.token)) {
+      return res.status(410).send('Este enlace ya fue procesado y el documento temporal ya no está disponible desde esta etapa.');
+    }
     const pdfAttachment = await ensureReporteSalidaPdf(solicitud);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${pdfAttachment.filename}"`);
@@ -4841,6 +4929,9 @@ const verSoporteDesdeCorreo = async (req, res) => {
     const solicitud = await ReporteSalidaSolicitud.findOne({ where: { consecutivo: payload.consecutivo } });
     if (!solicitud) {
       return res.status(404).send('Solicitud no encontrada.');
+    }
+    if (!isActiveIndividualApprovalLink(solicitud, payload, req.params.token)) {
+      return res.status(410).send('Este enlace ya fue procesado y el soporte temporal ya no está disponible desde esta etapa.');
     }
     const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
     if (!supportAttachment) {
@@ -4882,6 +4973,12 @@ const verDocumentoPdfGrupoDesdeCorreo = async (req, res) => {
     if (!leaderSol) {
       return res.status(404).send('Solicitud grupal no encontrada.');
     }
+    const groupSolicitudes = await ReporteSalidaSolicitud.findAll({
+      where: { datos_formulario: { [Op.contains]: { grupo_id: payload.grupo_id } } }
+    });
+    if (!getPendingGroupSolicitudesForPayload(groupSolicitudes, payload).length) {
+      return res.status(410).send('Este enlace ya fue procesado y el documento temporal ya no está disponible desde esta etapa.');
+    }
     const pdfAttachment = await ensureReporteSalidaPdf(leaderSol);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${pdfAttachment.filename}"`);
@@ -4910,6 +5007,12 @@ const verSoporteGrupoDesdeCorreo = async (req, res) => {
     });
     if (!leaderSol) {
       return res.status(404).send('Solicitud grupal no encontrada.');
+    }
+    const groupSolicitudes = await ReporteSalidaSolicitud.findAll({
+      where: { datos_formulario: { [Op.contains]: { grupo_id: payload.grupo_id } } }
+    });
+    if (!getPendingGroupSolicitudesForPayload(groupSolicitudes, payload).length) {
+      return res.status(410).send('Este enlace ya fue procesado y el soporte temporal ya no está disponible desde esta etapa.');
     }
     const supportAttachment = await buildReporteSalidaSupportAttachment(leaderSol);
     if (!supportAttachment) {
@@ -5072,6 +5175,12 @@ const renderReporteSalidaReviewPage = ({
       align-items: center;
       gap: 8px;
     }
+    .ui-icon {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+      stroke: currentColor;
+    }
     .tramite-banner .badge-desc {
       font-size: 12.5px;
       margin-top: 4px;
@@ -5137,7 +5246,7 @@ const renderReporteSalidaReviewPage = ({
     textarea { width: 100%; padding: 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; margin-top: 6px; font-family: inherit; font-size: 14px; box-sizing: border-box; min-height: 90px; }
     textarea:focus { outline: none; border-color: #2563eb; }
     .actions { display: flex; gap: 14px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
-    button { border: 0; border-radius: 8px; padding: 13px 30px; font-size: 14.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; min-width: 190px; text-align: center; }
+    button { border: 0; border-radius: 8px; padding: 13px 30px; font-size: 14.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; min-width: 190px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; text-align: center; }
     button.ok { background: #166534; color: #fff; box-shadow: 0 4px 12px rgba(22,101,52,0.25); }
     button.ok:hover { background: #15803d; }
     button.bad { background: #b91c1c; color: #fff; box-shadow: 0 4px 12px rgba(185,28,28,0.25); }
@@ -5162,7 +5271,10 @@ const renderReporteSalidaReviewPage = ({
       
       <!-- Banner Normativo del Permiso / Salida -->
       <div class="tramite-banner">
-        <div class="badge-title">📋 ${escapeHtml(bannerTitulo)}</div>
+        <div class="badge-title">
+          <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"></rect><path d="M9 4.5V3h6v1.5"></path><path d="M9 9h6M9 13h6M9 17h4"></path></svg>
+          ${escapeHtml(bannerTitulo)}
+        </div>
         <div class="badge-desc">${escapeHtml(bannerSubtitulo)}</div>
       </div>
 
@@ -5171,11 +5283,13 @@ const renderReporteSalidaReviewPage = ({
         <div class="docs-title">Documentos asociados al trámite:</div>
         <div class="docs-btns">
           <a href="${pdfViewUrl}" target="_blank" class="doc-btn btn-pdf" title="Ver documento oficial en PDF">
-            📄 Ver Formato / Oficio PDF
+            <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6M8 13h8M8 17h8"></path></svg>
+            Ver Formato / Oficio PDF
           </a>
           ${hasAttachment ? `
             <a href="${supportViewUrl}" target="_blank" class="doc-btn btn-soporte" title="Ver archivo soporte adjuntado">
-              📎 Ver Soporte Adjunto
+              <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+              Ver Soporte Adjunto
             </a>
           ` : ''}
         </div>
@@ -5222,8 +5336,8 @@ const renderReporteSalidaReviewPage = ({
         <label class="obs-label">Observaciones de la actuación (opcional si aprueba, obligatoria si rechaza):</label>
         <textarea name="observacion" maxlength="1200" placeholder="Escriba aquí sus observaciones..."></textarea>
         <div class="actions">
-          <button type="submit" name="accion" value="aprobar" class="ok">✓ Dar visto bueno / Aprobar</button>
-          <button type="submit" name="accion" value="rechazar" class="bad">✕ No aprobar / Rechazar</button>
+          <button type="submit" name="accion" value="aprobar" class="ok"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>Dar visto bueno / Aprobar</button>
+          <button type="submit" name="accion" value="rechazar" class="bad"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>No aprobar / Rechazar</button>
         </div>
       </form>
     </div>
@@ -5296,6 +5410,7 @@ const aprobarDesdeCorreo = async (req, res) => {
     }
 
     const tokenHash = hashToken(req.params.token);
+    const approvalObservation = sanitizeText(req.body?.observacion, 1200);
     if (payload.stage === 'jefe') {
       const initialApprovalVia = String(req.body?.via || req.query?.via || '').trim().toLowerCase() === 'dependencia' ? 'dependencia' : 'jefe';
       const isBlocked = await isDependencyApprovalBlocked(solicitud);
@@ -5394,7 +5509,7 @@ const aprobarDesdeCorreo = async (req, res) => {
           ? (initialApprovalVia === 'dependencia' ? 'visto_bueno_dependencia' : 'visto_bueno_jefe')
           : (initialApprovalVia === 'dependencia' ? 'aprobada_dependencia' : 'aprobada_jefe'),
         initialApprovalActor,
-        { via: initialApprovalVia }
+        { via: initialApprovalVia, ...(approvalObservation ? { observacion: approvalObservation } : {}) }
       );
       const skippedTrace = [
         ...(skippedVicerrectoria ? [{
@@ -5553,7 +5668,7 @@ const aprobarDesdeCorreo = async (req, res) => {
           ? { aprobacion_rectoria_token_hash: hashToken(nextToken) }
           : { aprobacion_gh_token_hash: hashToken(nextToken) }),
         trazabilidad: [
-          ...appendTrace(solicitud, 'aprobada_vicerrectoria_academica', { nombre: vicerrectoriaName, email: vicerrectoriaEmail, role: 'vicerrectoria' }),
+          ...appendTrace(solicitud, 'aprobada_vicerrectoria_academica', { nombre: vicerrectoriaName, email: vicerrectoriaEmail, role: 'vicerrectoria' }, approvalObservation ? { observacion: approvalObservation } : {}),
           ...(skipRectoriaAfterVicerrectoria ? [{
             event: 'aprobada_rectoria',
             actor: { nombre: 'Rectoria', email: RECTORIA_EMAIL, role: 'rectoria' },
@@ -5658,7 +5773,7 @@ const aprobarDesdeCorreo = async (req, res) => {
         rectoria_aprobado_at: new Date(),
         aprobacion_rectoria_token_hash: null,
         aprobacion_gh_token_hash: hashToken(ghToken),
-        trazabilidad: appendTrace(solicitud, 'aprobada_rectoria', { nombre: 'Rectoria', email: RECTORIA_EMAIL, role: 'rectoria' })
+        trazabilidad: appendTrace(solicitud, 'aprobada_rectoria', { nombre: 'Rectoria', email: RECTORIA_EMAIL, role: 'rectoria' }, approvalObservation ? { observacion: approvalObservation } : {})
       }, {
         where: {
           id: solicitud.id,
@@ -5752,7 +5867,7 @@ const aprobarDesdeCorreo = async (req, res) => {
         proyeccion_social_aprobado_at: new Date(),
         aprobacion_proyeccion_social_token_hash: null,
         [nextTokenColumn]: hashToken(nextToken),
-        trazabilidad: appendTrace(solicitud, 'aprobada_proyeccion_social', { nombre: psName, email: psEmail, role: 'proyeccion_social' })
+        trazabilidad: appendTrace(solicitud, 'aprobada_proyeccion_social', { nombre: psName, email: psEmail, role: 'proyeccion_social' }, approvalObservation ? { observacion: approvalObservation } : {})
       }, {
         where: {
           id: solicitud.id,
@@ -5854,7 +5969,7 @@ const aprobarDesdeCorreo = async (req, res) => {
         ['1_2_dias', '3_mas_dias'].includes(solicitud.datos_formulario?.salida?.duracionTipo);
       const now = new Date();
       const rectoriaDelegatedUpdate = (isRectoriaDelegated && !solicitud.rectoria_aprobado_at) ? { rectoria_aprobado_at: now } : {};
-      const baseGhTrace = appendTrace(solicitud, 'aprobada_gestion_humana', null);
+      const baseGhTrace = appendTrace(solicitud, 'aprobada_gestion_humana', null, approvalObservation ? { observacion: approvalObservation } : {});
       const ghTraceWithDelegation = (isRectoriaDelegated && !solicitud.rectoria_aprobado_at) ? [
         ...baseGhTrace,
         {
@@ -6024,7 +6139,7 @@ const aprobarDesdeCorreo = async (req, res) => {
         estado: 'finalizada',
         finalizado_at: new Date(),
         aprobacion_sst_token_hash: null,
-        trazabilidad: appendTrace(solicitud, 'aprobada_sst', { nombre: 'Seguridad y Salud en el Trabajo', role: 'sst' })
+        trazabilidad: appendTrace(solicitud, 'aprobada_sst', { nombre: 'Seguridad y Salud en el Trabajo', role: 'sst' }, approvalObservation ? { observacion: approvalObservation } : {})
       }, {
         where: {
           id: solicitud.id,
@@ -8949,6 +9064,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
 
     const { grupo_id, purpose } = payload;
     const tokenHash = hashToken(req.params.token);
+    const approvalObservation = sanitizeText(req.body?.justificacion, 1200);
 
     const solicitudes = await ReporteSalidaSolicitud.findAll({
       where: {
@@ -8972,6 +9088,18 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
     }
 
     if (req.method === 'GET') {
+      const pendingForCurrentLink = getPendingGroupSolicitudesForPayload(solicitudes, payload);
+      if (!pendingForCurrentLink.length) {
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud ya procesada',
+          message: 'La actuación correspondiente a este enlace ya fue procesada previamente.',
+          solicitud: solicitudes[0],
+          nextStep: 'No es necesario realizar ninguna acción adicional desde este enlace.'
+        });
+      }
+
       const leaderSol = solicitudes.find(s => s.datos_formulario?.is_leader === true) || solicitudes[0];
       const leaderNombre = leaderSol?.solicitante_snapshot?.nombre || '';
       const salida = leaderSol?.datos_formulario?.salida || {};
@@ -9085,6 +9213,15 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
       font-weight: 900;
       letter-spacing: 0.02em;
       text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ui-icon {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+      stroke: currentColor;
     }
     .tramite-banner .badge-desc {
       font-size: 12.5px;
@@ -9155,7 +9292,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
     textarea { width: 100%; padding: 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; margin-top: 6px; font-family: inherit; font-size: 14px; box-sizing: border-box; min-height: 90px; }
     textarea:focus { outline: none; border-color: #2563eb; }
     .actions { display: flex; gap: 14px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
-    button { border: 0; border-radius: 8px; padding: 13px 30px; font-size: 14.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; min-width: 190px; text-align: center; }
+    button { border: 0; border-radius: 8px; padding: 13px 30px; font-size: 14.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; min-width: 190px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; text-align: center; }
     button.ok { background: #166534; color: #fff; box-shadow: 0 4px 12px rgba(22,101,52,0.25); }
     button.ok:hover { background: #15803d; }
     button.bad { background: #b91c1c; color: #fff; box-shadow: 0 4px 12px rgba(185,28,28,0.25); }
@@ -9180,7 +9317,10 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
 
       <!-- Banner Normativo del Permiso / Salida Grupal -->
       <div class="tramite-banner">
-        <div class="badge-title">📋 ${escapeHtml(bannerTitulo)}</div>
+        <div class="badge-title">
+          <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"></rect><path d="M9 4.5V3h6v1.5"></path><path d="M9 9h6M9 13h6M9 17h4"></path></svg>
+          ${escapeHtml(bannerTitulo)}
+        </div>
         <div class="badge-desc">${escapeHtml(bannerSubtitulo)}</div>
       </div>
 
@@ -9189,11 +9329,13 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         <div class="docs-title">Documentos asociados a la salida grupal:</div>
         <div class="docs-btns">
           <a href="${pdfViewUrl}" target="_blank" class="doc-btn btn-pdf" title="Ver documento oficial de la salida grupal en PDF">
-            📄 Ver Formato / Oficio PDF
+            <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6M8 13h8M8 17h8"></path></svg>
+            Ver Formato / Oficio PDF
           </a>
           ${hasAttachment ? `
             <a href="${supportViewUrl}" target="_blank" class="doc-btn btn-soporte" title="Ver archivo soporte adjuntado">
-              📎 Ver Soporte Adjunto
+              <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+              Ver Soporte Adjunto
             </a>
           ` : ''}
         </div>
@@ -9247,14 +9389,29 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         <label class="obs-label">Observaciones de la actuación (opcional si aprueba, obligatoria si rechaza):</label>
         <textarea name="justificacion" maxlength="1200" placeholder="Escriba aquí sus observaciones..."></textarea>
         <div class="actions">
-          <button type="submit" name="accion" value="aprobar" class="ok">✓ Dar visto bueno / Autorizar</button>
-          <button type="submit" name="accion" value="rechazar" class="bad">✕ No autorizar salida</button>
+          <button type="submit" name="accion" value="aprobar" class="ok"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>Dar visto bueno / Autorizar</button>
+          <button type="submit" name="accion" value="rechazar" class="bad"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>No autorizar salida</button>
         </div>
       </form>
     </div>
   </main>
 </body>
 </html>`);
+    }
+
+    if (req.body?.accion === 'rechazar') {
+      if (!approvalObservation) {
+        return renderApprovalPage({
+          res,
+          status: 400,
+          tone: 'warning',
+          title: 'Observación obligatoria',
+          message: 'Debe indicar el motivo por el cual no autoriza la salida grupal.',
+          solicitud: solicitudes[0],
+          nextStep: 'Regrese al enlace original e ingrese la observación antes de rechazar.'
+        });
+      }
+      return procesarRechazoGrupo(req, res);
     }
 
 
@@ -9281,7 +9438,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
           proyeccion_social_aprobado_at: now,
           aprobacion_proyeccion_social_token_hash: null,
           aprobacion_jefe_token_hash: jefeTokenHash,
-          trazabilidad: appendTrace(sol, 'aprobada_proyeccion_social', null, { via: 'correo_grupo' })
+          trazabilidad: appendTrace(sol, 'aprobada_proyeccion_social', null, { via: 'correo_grupo', ...(approvalObservation ? { observacion: approvalObservation } : {}) })
         }, {
           where: { id: sol.id }
         });
@@ -9398,7 +9555,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
           jefe_aprobado_at: now,
           aprobacion_jefe_token_hash: null,
           ...(requiresVicerrectoria ? { aprobacion_vicerrectoria_token_hash: nextTokenHash } : (isNationalOrInternational ? { aprobacion_sst_token_hash: nextTokenHash } : { aprobacion_gh_token_hash: nextTokenHash })),
-          trazabilidad: appendTrace(sol, 'aprobada_jefe', null, { via: 'correo_grupo', jefe_email: targetJefeEmail })
+          trazabilidad: appendTrace(sol, 'aprobada_jefe', null, { via: 'correo_grupo', jefe_email: targetJefeEmail, ...(approvalObservation ? { observacion: approvalObservation } : {}) })
         }, {
           where: { id: sol.id }
         });
@@ -9527,7 +9684,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
             : isNationalOrInternational
               ? { aprobacion_sst_token_hash: nextTokenHash }
               : { aprobacion_gh_token_hash: nextTokenHash }),
-          trazabilidad: appendTrace(sol, 'aprobada_vicerrectoria', null, { via: 'correo_grupo' })
+          trazabilidad: appendTrace(sol, 'aprobada_vicerrectoria', null, { via: 'correo_grupo', ...(approvalObservation ? { observacion: approvalObservation } : {}) })
         }, {
           where: { id: sol.id }
         });
@@ -9628,7 +9785,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
             gestion_humana_aprobado_at: now,
             aprobacion_gh_token_hash: null,
             aprobacion_sst_token_hash: sstTokenHash,
-            trazabilidad: appendTrace(sol, 'aprobada_gestion_humana', null, { via: 'correo_grupo' })
+            trazabilidad: appendTrace(sol, 'aprobada_gestion_humana', null, { via: 'correo_grupo', ...(approvalObservation ? { observacion: approvalObservation } : {}) })
           }, {
             where: { id: sol.id }
           });
@@ -9662,7 +9819,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
           gestion_humana_aprobado_at: now,
           finalizado_at: now,
           aprobacion_gh_token_hash: null,
-          trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null, { via: 'correo_grupo' })
+          trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null, { via: 'correo_grupo', ...(approvalObservation ? { observacion: approvalObservation } : {}) })
         }, {
           where: { id: solicitud.id }
         });
@@ -9728,7 +9885,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
           estado: 'finalizada',
           finalizado_at: now,
           aprobacion_sst_token_hash: null,
-          trazabilidad: appendTrace(solicitud, 'aprobada_sst', null, { via: 'correo_grupo' })
+          trazabilidad: appendTrace(solicitud, 'aprobada_sst', null, { via: 'correo_grupo', ...(approvalObservation ? { observacion: approvalObservation } : {}) })
         }, {
           where: { id: solicitud.id }
         });
@@ -9847,7 +10004,7 @@ const mostrarFormularioRechazoGrupo = async (req, res) => {
       });
     }
 
-    const pendientes = solicitudes.filter(s => s.estado?.startsWith('pendiente_'));
+    const pendientes = getPendingGroupSolicitudesForPayload(solicitudes, payload);
     if (!pendientes.length) {
       return renderApprovalPage({
         res,
@@ -9932,7 +10089,7 @@ const procesarRechazoGrupo = async (req, res) => {
       });
     }
 
-    const pendientes = solicitudes.filter(s => s.estado?.startsWith('pendiente_'));
+    const pendientes = getPendingGroupSolicitudesForPayload(solicitudes, payload);
     if (!pendientes.length) {
       return renderApprovalPage({
         res,

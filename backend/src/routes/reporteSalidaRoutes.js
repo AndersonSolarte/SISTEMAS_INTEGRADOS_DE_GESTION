@@ -67,18 +67,25 @@ const { ROLES } = require('../constants/roles');
 
 const SEGUIMIENTO_REPORTE_MODULE_KEYS = ['recurso_humano_reporte_salida', 'seguimiento_reportes_rrhh', 'recurso_humano_seguimiento'];
 
-router.get('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
-router.post('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
-router.get('/rechazar/:token', publicLimiter, mostrarFormularioRechazo);
-router.post('/rechazar/:token', publicLimiter, procesarRechazo);
-router.get('/documento/:token', publicLimiter, verDocumentoPdfDesdeCorreo);
-router.get('/soporte/:token', publicLimiter, verSoporteDesdeCorreo);
-router.get('/aprobar-grupo/:token', publicLimiter, aprobarGrupoDesdeCorreo);
-router.post('/aprobar-grupo/:token', publicLimiter, aprobarGrupoDesdeCorreo);
-router.get('/rechazar-grupo/:token', publicLimiter, mostrarFormularioRechazoGrupo);
-router.post('/rechazar-grupo/:token', publicLimiter, procesarRechazoGrupo);
-router.get('/documento-grupo/:token', publicLimiter, verDocumentoPdfGrupoDesdeCorreo);
-router.get('/soporte-grupo/:token', publicLimiter, verSoporteGrupoDesdeCorreo);
+const noStorePublicResponse = (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+};
+
+router.get('/aprobar/:token', publicLimiter, noStorePublicResponse, aprobarDesdeCorreo);
+router.post('/aprobar/:token', publicLimiter, noStorePublicResponse, aprobarDesdeCorreo);
+router.get('/rechazar/:token', publicLimiter, noStorePublicResponse, mostrarFormularioRechazo);
+router.post('/rechazar/:token', publicLimiter, noStorePublicResponse, procesarRechazo);
+router.get('/documento/:token', publicLimiter, noStorePublicResponse, verDocumentoPdfDesdeCorreo);
+router.get('/soporte/:token', publicLimiter, noStorePublicResponse, verSoporteDesdeCorreo);
+router.get('/aprobar-grupo/:token', publicLimiter, noStorePublicResponse, aprobarGrupoDesdeCorreo);
+router.post('/aprobar-grupo/:token', publicLimiter, noStorePublicResponse, aprobarGrupoDesdeCorreo);
+router.get('/rechazar-grupo/:token', publicLimiter, noStorePublicResponse, mostrarFormularioRechazoGrupo);
+router.post('/rechazar-grupo/:token', publicLimiter, noStorePublicResponse, procesarRechazoGrupo);
+router.get('/documento-grupo/:token', publicLimiter, noStorePublicResponse, verDocumentoPdfGrupoDesdeCorreo);
+router.get('/soporte-grupo/:token', publicLimiter, noStorePublicResponse, verSoporteGrupoDesdeCorreo);
 router.get('/public/verificar/:id', verificarReportePublico);
 router.get('/config', auth, getFeatureConfig);
 router.patch('/config', auth, updateFeatureConfig);
@@ -105,6 +112,7 @@ router.post('/upload-adjunto', auth, upload.single('adjunto'), async (req, res) 
       origen: 'formulario',
       metadata: { persistido_en_base_datos: true }
     });
+    await fs.promises.unlink(req.file.path).catch(() => {});
     return res.json({
       success: true,
       filename: req.file.filename,

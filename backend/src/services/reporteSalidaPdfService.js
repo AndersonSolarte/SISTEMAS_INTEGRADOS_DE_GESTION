@@ -2061,6 +2061,13 @@ const buildPdfBuffer = async (solicitud) => {
           'visto_bueno_dependencia': 'Visto bueno de Dependencia',
           'rechazada_jefe': 'Rechazada por Jefe Inmediato',
           'rechazada_dependencia': 'Rechazada por Dependencia',
+          'aprobada_proyeccion_social': 'Aprobación de Proyección Social',
+          'rechazada_proyeccion_social': 'Rechazada por Proyección Social',
+          'aprobada_vicerrectoria': 'Aprobación de Vicerrectoría',
+          'aprobada_vicerrectoria_academica': 'Aprobación de Vicerrectoría Académica',
+          'rechazada_vicerrectoria_academica': 'Rechazada por Vicerrectoría Académica',
+          'aprobada_rectoria': 'Aprobación de Rectoría',
+          'rechazada_rectoria': 'Rechazada por Rectoría',
           'correo_gestion_humana_enviado': 'Notificación a Gestión del Talento Humano',
           'correo_gestion_humana_error': 'Error al notificar a Gestión del Talento Humano',
           'aprobada_gestion_humana': 'Aprobación de Gestión del Talento Humano',
@@ -2069,6 +2076,7 @@ const buildPdfBuffer = async (solicitud) => {
           'correo_sst_error': 'Error al notificar a SST',
           'aprobada_sst': 'Visto bueno de SST',
           'rechazada_sst': 'Rechazada por SST',
+          'rechazada_grupo': 'Salida grupal rechazada',
           'notificacion_final_enviada': 'Notificación final enviada',
           'reposicion_cumplida': 'Reposición marcada como cumplida',
           'reposicion_incumplida': 'Reposición marcada como incumplida',
@@ -2087,6 +2095,7 @@ const buildPdfBuffer = async (solicitud) => {
         trazabilidad.forEach(t => {
           const dateStr = t.at ? formatDateTime(t.at) : '';
           const eventStr = traceEventLabels[t.event] || t.event;
+          const detail = t.detail && typeof t.detail === 'object' ? t.detail : {};
           
           let actorStr = t.actor?.nombre || t.actor?.username || '';
           if (!actorStr) {
@@ -2106,10 +2115,10 @@ const buildPdfBuffer = async (solicitud) => {
           }
           
           let detailStr = '';
-          if (t.motivo) detailStr = t.motivo;
-          if (t.observacion) detailStr = t.observacion;
-          if (t.error) detailStr = `Error: ${t.error}`;
-          if (t.justificacion) detailStr = `Justificación: ${t.justificacion}`;
+          if (detail.motivo || t.motivo) detailStr = detail.motivo || t.motivo;
+          if (detail.observacion || t.observacion) detailStr = detail.observacion || t.observacion;
+          if (detail.error || t.error) detailStr = `Error: ${detail.error || t.error}`;
+          if (detail.justificacion || t.justificacion) detailStr = `Justificación: ${detail.justificacion || t.justificacion}`;
 
           if (!detailStr) {
             if (t.event.includes('radicada')) detailStr = 'Se registró la solicitud en el sistema.';
