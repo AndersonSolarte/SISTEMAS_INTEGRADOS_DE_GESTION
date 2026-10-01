@@ -22,15 +22,22 @@ const getOAuthConfiguration = () => {
     1500
   );
   const allowedDomain = clean(process.env.MEETING_CALENDAR_ALLOWED_DOMAIN || 'unicesmag.edu.co', 200).toLowerCase();
+  const productionRedirectInvalid = process.env.NODE_ENV === 'production' && (
+    !/^https:\/\//i.test(redirectUri)
+    || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/|$)/i.test(redirectUri)
+  );
+  const configured = Boolean(clientId && clientSecret && redirectUri && !productionRedirectInvalid);
   return {
     clientId,
     clientSecret,
     redirectUri,
     allowedDomain,
-    configured: Boolean(clientId && clientSecret && redirectUri),
-    message: clientId && clientSecret && redirectUri
-      ? 'La conexión individual con Google Calendar está configurada.'
-      : 'Falta configurar el cliente OAuth de Google Calendar en el servidor.'
+    configured,
+    message: productionRedirectInvalid
+      ? 'MEETING_CALENDAR_OAUTH_REDIRECT_URI debe usar la URL HTTPS pública del servidor; localhost no es válido en producción.'
+      : configured
+        ? 'La conexión individual con Google Calendar está configurada.'
+        : 'Falta configurar el cliente OAuth de Google Calendar en el servidor.'
   };
 };
 
