@@ -2208,11 +2208,24 @@ function GestionInformacion() {
   const [total, setTotal] = useState(0);
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [importElapsedSeconds, setImportElapsedSeconds] = useState(0);
   const [clearing, setClearing] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [clearCredentials, setClearCredentials] = useState({ identifier: '', password: '' });
   const [databaseCenterTab, setDatabaseCenterTab] = useState('backup');
   const [databaseDataView, setDatabaseDataView] = useState('import');
+
+  useEffect(() => {
+    if (!importing) {
+      setImportElapsedSeconds(0);
+      return undefined;
+    }
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setImportElapsedSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [importing]);
 
   const [selectedCard, setSelectedCard] = useState(null);
   const [financialPanel, setFinancialPanel] = useState('hub');
@@ -2489,6 +2502,7 @@ function GestionInformacion() {
   const flujoVariableChartRefs = useRef({});
   const autoFilterCatalogSignatureRef = useRef({});
   const statsFiltersModeRef = useRef({});
+  const caracterizacionProgramsTouchedRef = useRef(false);
   const getSectionFilterMode = useCallback((sectionKey) => statsFiltersModeRef.current?.[sectionKey] || 'auto', []);
   const setSectionFilterMode = useCallback((sectionKey, mode) => {
     statsFiltersModeRef.current = {
@@ -3085,6 +3099,30 @@ function GestionInformacion() {
   }, [enqueueSnackbar, menuView, poblacionalPanel, selectedCard, statSection]);
 
   useEffect(() => {
+    const isAutoMode = getSectionFilterMode('caracterizacion') === 'auto';
+    const years = (caracterizacionCatalogs.anios || []).map(String).sort((a, b) => Number(b) - Number(a));
+    const latestYear = years[0] || '';
+    const latestPeriod = (caracterizacionCatalogs.periodos || [])
+      .map((item) => String(item?.label || item || ''))
+      .filter((label) => latestYear && label.startsWith(`${latestYear}-`))
+      .sort((a, b) => Number(b.split('-')[1] || 0) - Number(a.split('-')[1] || 0))[0] || '';
+    const programs = caracterizacionCatalogs.programas || [];
+    if (!latestYear || !latestPeriod) return;
+
+    setStatsFiltersBySection((prev) => {
+      const current = prev.caracterizacion || initialStatsFilters;
+      const next = {
+        ...current,
+        programas: caracterizacionProgramsTouchedRef.current ? current.programas : [...programs],
+        anios: isAutoMode ? [latestYear] : current.anios,
+        periodos: isAutoMode ? [latestPeriod] : current.periodos
+      };
+      if (JSON.stringify(current) === JSON.stringify(next)) return prev;
+      return { ...prev, caracterizacion: next };
+    });
+  }, [caracterizacionCatalogs, getSectionFilterMode]);
+
+  useEffect(() => {
     if (menuView === 'estadistica' && selectedCard === 'registros_calificados_acreditacion') {
       fetchRegistrosCalificadosDashboard();
     }
@@ -3245,6 +3283,25 @@ function GestionInformacion() {
   const resetActiveStatsFilters = useCallback(() => {
     const currentSection = statSection;
     setSectionFilterMode(currentSection, 'auto');
+    if (currentSection === 'caracterizacion') {
+      caracterizacionProgramsTouchedRef.current = false;
+      const years = (caracterizacionCatalogs.anios || []).map(String).sort((a, b) => Number(b) - Number(a));
+      const latestYear = years[0] || '';
+      const latestPeriod = (caracterizacionCatalogs.periodos || [])
+        .map((item) => String(item?.label || item || ''))
+        .filter((label) => latestYear && label.startsWith(`${latestYear}-`))
+        .sort((a, b) => Number(b.split('-')[1] || 0) - Number(a.split('-')[1] || 0))[0] || '';
+      setStatsFiltersBySection((prev) => ({
+        ...prev,
+        caracterizacion: {
+          ...initialStatsFilters,
+          programas: [...(caracterizacionCatalogs.programas || [])],
+          anios: latestYear ? [latestYear] : [],
+          periodos: latestPeriod ? [latestPeriod] : []
+        }
+      }));
+      return;
+    }
     setStatsFiltersBySection((prev) => ({
       ...prev,
       [currentSection]: currentSection === 'caracterizacion'
@@ -3260,7 +3317,7 @@ function GestionInformacion() {
           periodosDisponibles
         })
     }));
-  }, [aniosDisponibles, facultadesDisponibles, periodosDisponibles, programasDisponibles, setSectionFilterMode, statSection]);
+  }, [aniosDisponibles, caracterizacionCatalogs, facultadesDisponibles, periodosDisponibles, programasDisponibles, setSectionFilterMode, statSection]);
 
   const normalizeStatsFiltersWithCatalog = useCallback((filters, catalog) => {
     const safeCatalog = catalog || { programas: [], facultades: [], anios: [], periodos: [] };
@@ -3277,6 +3334,7 @@ function GestionInformacion() {
   useEffect(() => {
     if (!seriesRows.length) return;
     const sectionKey = activePoblacionalSection?.key;
+    if (sectionKey === 'caracterizacion') return;
     const activeCatalog = sectionCatalogs[sectionKey] || { programas: [], anios: [], periodos: [] };
     const nextSignature = JSON.stringify({
       section: sectionKey,
@@ -4522,6 +4580,9 @@ function GestionInformacion() {
         if (nextSection) {
           const isAnalyticsSection = REPORT_SECTIONS.some((s) => s.key === nextSection);
           setSectionFilterMode(nextSection, 'auto');
+          if (nextSection === 'caracterizacion') {
+            caracterizacionProgramsTouchedRef.current = false;
+          }
           autoFilterCatalogSignatureRef.current = {
             ...autoFilterCatalogSignatureRef.current,
             [nextSection]: ''
@@ -4566,7 +4627,7 @@ function GestionInformacion() {
       const fallbackMessage = error?.code === 'ECONNABORTED'
         ? 'La importacion excedio el tiempo de espera. Intenta con un archivo mas pequeno o vuelve a intentar.'
         : (!error?.response
-            ? 'No hubo respuesta del servidor durante la importacion. Verifica conexion/API e intenta de nuevo.'
+            ? 'La conexion se cerro antes de recibir la confirmacion. Revisa el historial de cargas antes de reintentar; la importacion pudo completarse o revertirse de forma segura.'
             : `Error al importar (HTTP ${status || 'desconocido'}).`);
       enqueueSnackbar(backendMessage || fallbackMessage, { variant: 'error' });
     } finally {
@@ -7565,7 +7626,10 @@ const renderCategoryBars = (items = [], options = {}) => {
               placeholder="Buscar programa..."
               options={caracterizacionProgramOptions}
               value={selectedCaracterizacionPrograms}
-              onChange={(nextValues) => handleMultiFilterChange('programas', nextValues)}
+              onChange={(nextValues) => {
+                caracterizacionProgramsTouchedRef.current = true;
+                handleMultiFilterChange('programas', nextValues);
+              }}
               accentColor="#3155a6"
               disabled={caracterizacionCatalogsLoading}
             />
@@ -17599,13 +17663,15 @@ const renderCategoryBars = (items = [], options = {}) => {
                     <Box><Typography sx={{ color: '#0f172a', fontWeight: 900 }}>Importar y verificar</Typography><Typography variant="caption" sx={{ color: '#64748b' }}>Procesa el archivo y revisa el resultado.</Typography></Box>
                   </Stack>
                   <Stack spacing={1.2} sx={{ flex: 1, justifyContent: 'flex-end' }}>
-                    <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: isSelectionValid && importFile ? '#ecfdf5' : '#f8fafc', border: `1px solid ${isSelectionValid && importFile ? '#bbf7d0' : '#e2e8f0'}` }}>
-                      <Typography variant="caption" sx={{ color: isSelectionValid && importFile ? '#166534' : '#64748b', fontWeight: 800 }}>
-                        {isSelectionValid && importFile ? 'Todo listo para iniciar la importación.' : 'Completa la selección y adjunta un archivo.'}
+                    <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: importing ? '#eff6ff' : (isSelectionValid && importFile ? '#ecfdf5' : '#f8fafc'), border: `1px solid ${importing ? '#bfdbfe' : (isSelectionValid && importFile ? '#bbf7d0' : '#e2e8f0')}` }}>
+                      <Typography variant="caption" sx={{ color: importing ? '#1d4ed8' : (isSelectionValid && importFile ? '#166534' : '#64748b'), fontWeight: 800 }}>
+                        {importing
+                          ? `Archivo recibido. Procesando ${formatNumber(importElapsedSeconds)} s. No cierres esta ventana.`
+                          : (isSelectionValid && importFile ? 'Todo listo para iniciar la importación.' : 'Completa la selección y adjunta un archivo.')}
                       </Typography>
                     </Box>
                     <Button variant="contained" size="large" onClick={handleImport} disabled={!isSelectionValid || !importFile || importing} sx={{ py: 1.35, fontWeight: 900 }}>
-                      {importing ? 'Importando...' : 'Importar información'}
+                      {importing ? `Procesando... ${formatNumber(importElapsedSeconds)} s` : 'Importar información'}
                     </Button>
                 <Button
                   variant="outlined"

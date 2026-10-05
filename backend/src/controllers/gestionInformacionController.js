@@ -109,19 +109,21 @@ const clearDatasetStorage = async ({
   poblacionalConfig = null,
   saberProConfig = null,
   recursoHumanoConfig = null,
-  internacionalizacionConfig = null
+  internacionalizacionConfig = null,
+  transaction = null
 }) => {
   const where = { categoria };
   if (subcategoria) where.subcategoria = subcategoria;
+  const queryOptions = transaction ? { transaction } : {};
 
-  const deleted = await Estadistica.destroy({ where });
-  const deletedLogs = await GestionInformacionCarga.destroy({ where });
+  const deleted = await Estadistica.destroy({ where, ...queryOptions });
+  const deletedLogs = await GestionInformacionCarga.destroy({ where, ...queryOptions });
 
   if (categoria === 'Poblacional') {
     clearAllPoblacionalCaches();
     if (poblacionalConfig) {
       if (poblacionalConfig.model) {
-        await poblacionalConfig.model.destroy({ where: {} });
+        await poblacionalConfig.model.destroy({ where: {}, ...queryOptions });
       } else if (Array.isArray(poblacionalConfig.models) && poblacionalConfig.models.length > 0) {
         await Promise.all(poblacionalConfig.models.map((model) => model.destroy({ where: {} })));
       }
@@ -1522,6 +1524,12 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
     label: 'Caracterizacion',
     model: PoblacionalCaracterizacion,
     headers: POBLACIONAL_TEMPLATE_HEADERS.Caracterizacion,
+    exactMap: {
+      // Estas dos columnas coexisten en la fuente y solo se diferencian por
+      // mayusculas. No deben pasar por normalizeHeader porque colisionarian.
+      ingresos_familiares: ['ingresos_familiares'],
+      ingresos_familiares_2: ['INGRESOS_FAMILIARES']
+    },
     map: {
       anio: ['AÑO', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO', 'PERIODO'],
       periodo: ['PERIODO'],
@@ -2293,6 +2301,14 @@ const POBLACIONAL_SERIES_UNIQUE_COUNT_CONFIG = {
     programColumn: 'programa',
     dependencyColumn: 'facultad',
     genderColumn: 'genero_biologico'
+  },
+  Caracterizacion: {
+    table: 'poblacional_caracterizacion',
+    docColumn: 'no_identificacion',
+    sourcePeriodColumn: 'periodo',
+    programColumn: 'programa',
+    dependencyColumn: 'departamento_residencia',
+    genderColumn: 'genero'
   }
 };
 
@@ -3145,8 +3161,8 @@ const normalizeGenero = (value) => {
   const text = String(value || '').trim().toUpperCase();
   if (!text) return 'SIN INFORMACION';
   if (text.includes('NO BIN')) return 'NO BINARIO';
-  if (text === 'F') return 'FEMENINO';
-  if (text === 'M') return 'MASCULINO';
+  if (['F', 'MUJER', 'MUJERES'].includes(text)) return 'FEMENINO';
+  if (['M', 'HOMBRE', 'HOMBRES'].includes(text)) return 'MASCULINO';
   if (text.includes('FEM')) return 'FEMENINO';
   if (text.includes('MAS')) return 'MASCULINO';
   return text;
@@ -3280,35 +3296,16 @@ const getCaracterizacionActiveLoadScope = async () => {
     return caracterizacionActiveLoadScopeCache.data;
   }
 
-  const latestLoads = await PoblacionalCaracterizacion.sequelize.query(`
-    SELECT total_cargados
-    FROM gestion_informacion_cargas
-    WHERE categoria = 'Poblacional'
-      AND subcategoria = 'Caracterizacion'
-      AND estado IN ('exitoso', 'parcial')
-      AND total_cargados > 0
-    ORDER BY id DESC
-    LIMIT 1
+  // La importacion reemplaza completamente esta subbase. El alcance correcto es
+  // por tanto el contenido real de la tabla, no los ultimos N ids inferidos desde
+  // el historial de cargas (ese calculo omitia ajustes directos y cargas parciales).
+  const countRows = await PoblacionalCaracterizacion.sequelize.query(`
+    SELECT COUNT(*)::bigint AS total_cargados
+    FROM poblacional_caracterizacion
   `, { type: QueryTypes.SELECT });
-  const latestLoadSize = Number(latestLoads[0]?.total_cargados || 0);
-  if (!latestLoadSize) {
-    const data = { minId: null, totalCargados: 0 };
-    caracterizacionActiveLoadScopeCache = { createdAt: now, data };
-    return data;
-  }
-
-  const thresholdRows = await PoblacionalCaracterizacion.sequelize.query(`
-    SELECT MIN(id)::integer AS min_id
-    FROM (
-      SELECT id
-      FROM poblacional_caracterizacion
-      ORDER BY id DESC
-      LIMIT :latestLoadSize
-    ) latest_rows
-  `, { replacements: { latestLoadSize }, type: QueryTypes.SELECT });
   const data = {
-    minId: Number(thresholdRows[0]?.min_id || 0) || null,
-    totalCargados: latestLoadSize
+    minId: null,
+    totalCargados: Number(countRows[0]?.total_cargados || 0)
   };
   caracterizacionActiveLoadScopeCache = { createdAt: now, data };
   return data;
@@ -3333,6 +3330,10 @@ const mapPoblacionalRecord = (row, config) => {
   const payload = {};
   Object.entries(config.map).forEach(([field, aliases]) => {
     payload[field] = pickValue(normalizedRow, aliases);
+  });
+  Object.entries(config.exactMap || {}).forEach(([field, aliases]) => {
+    const exactKey = aliases.find((alias) => Object.prototype.hasOwnProperty.call(row, alias));
+    payload[field] = exactKey ? repairImportedText(row[exactKey]) : null;
   });
   return payload;
 };
@@ -6004,8 +6005,7 @@ const getEstadisticas = async (req, res) => {
       const activeLoadScope = await getCaracterizacionActiveLoadScope();
       const normalizedProgramas = Array.from(new Set(programas.map((item) => normalizeComparableText(item)).filter(Boolean)));
       const cacheKey = JSON.stringify({
-        mode: 'latest-active-load-v3',
-        activeLoadMinId: activeLoadScope.minId,
+        mode: 'full-current-base-v4',
         programas: [...normalizedProgramas].sort(),
         anios: [...aniosList].sort((a, b) => a - b),
         periodos: [...periodos].sort()
@@ -6041,14 +6041,13 @@ const getEstadisticas = async (req, res) => {
       }
       if (aniosList.length) {
         replacements.anios = aniosList;
-        normalizedFilters.push('anio IN (:anios)');
+        normalizedFilters.push(`(${derivedAnioSql}) IN (:anios)`);
       }
       if (periodos.length) {
-        replacements.rawPeriodos = periodos.map((periodLabel) => {
-          const [year, slot] = String(periodLabel || '').split('-');
-          return `${year} ${slot === '2' ? 'IIP' : 'IP'}`.trim().toUpperCase();
-        });
-        normalizedFilters.push("UPPER(BTRIM(COALESCE(periodo, ''))) IN (:rawPeriodos)");
+        replacements.periodos = periodos;
+        normalizedFilters.push(`(
+          (${derivedAnioSql})::text || '-' || (${periodOrderSql})::text
+        ) IN (:periodos)`);
       }
 
       // PostgreSQL devuelve solamente los agregados. Antes se transferían las 118.886 filas
@@ -6060,8 +6059,8 @@ const getEstadisticas = async (req, res) => {
             ${periodOrderSql} AS period_order,
             CASE
               WHEN UPPER(BTRIM(COALESCE(genero, ''))) LIKE '%NO BIN%' THEN 'NO BINARIO'
-              WHEN UPPER(BTRIM(COALESCE(genero, ''))) = 'F' OR UPPER(BTRIM(COALESCE(genero, ''))) LIKE '%FEM%' THEN 'FEMENINO'
-              WHEN UPPER(BTRIM(COALESCE(genero, ''))) = 'M' OR UPPER(BTRIM(COALESCE(genero, ''))) LIKE '%MAS%' THEN 'MASCULINO'
+              WHEN UPPER(BTRIM(COALESCE(genero, ''))) IN ('F', 'MUJER', 'MUJERES') OR UPPER(BTRIM(COALESCE(genero, ''))) LIKE '%FEM%' THEN 'FEMENINO'
+              WHEN UPPER(BTRIM(COALESCE(genero, ''))) IN ('M', 'HOMBRE', 'HOMBRES') OR UPPER(BTRIM(COALESCE(genero, ''))) LIKE '%MAS%' THEN 'MASCULINO'
               ELSE COALESCE(NULLIF(UPPER(BTRIM(genero)), ''), 'SIN INFORMACION')
             END AS genero_label,
             CASE
@@ -7346,6 +7345,7 @@ const downloadTemplate = async (req, res) => {
 };
 
 const importFromExcel = async (req, res) => {
+  let caracterizacionTransaction = null;
   try {
     const categoria = resolveCategoria(req.body?.categoria || req.query?.categoria);
     const fixedSubcategoriaRaw = normalizeText(req.body?.subcategoria || req.query?.subcategoria);
@@ -7379,6 +7379,7 @@ const importFromExcel = async (req, res) => {
       || categoria === 'Recurso Humano'
       || categoria === DATASET_CATEGORIES.internacionalizacion
       || (categoria === 'Poblacional' && poblacionalConfig?.label === 'Matriculados')
+      || (categoria === 'Poblacional' && poblacionalConfig?.label === 'Caracterizacion')
       || (categoria === 'Poblacional'
         && poblacionalConfig?.customImport === 'contexto_externo'
         && contextoCargaConfig?.onlyType === 'serie')
@@ -7388,7 +7389,7 @@ const importFromExcel = async (req, res) => {
     if (isCsvUpload && !allowsCsvStreaming) {
       return res.status(400).json({
         success: false,
-        message: 'El formato CSV solo esta habilitado para Georreferencia, Autoevaluacion, Recurso Humano, Internacionalizacion, Matriculados y Contexto Externo (listas de series).'
+        message: 'El formato CSV solo esta habilitado para Georreferencia, Autoevaluacion, Recurso Humano, Internacionalizacion, Matriculados, Caracterizacion y Contexto Externo (listas de series).'
       });
     }
 
@@ -9702,11 +9703,16 @@ const importFromExcel = async (req, res) => {
       });
     }
 
+    const isCaracterizacionImport = categoria === 'Poblacional' && poblacionalConfig?.label === 'Caracterizacion';
+    if (isCaracterizacionImport) {
+      caracterizacionTransaction = await PoblacionalCaracterizacion.sequelize.transaction();
+    }
     if (categoria === 'Poblacional' && poblacionalConfig) {
       await clearDatasetStorage({
         categoria: 'Poblacional',
         subcategoria: poblacionalConfig.label,
-        poblacionalConfig
+        poblacionalConfig,
+        transaction: caracterizacionTransaction
       });
     }
     if (categoria === 'Saber Pro' && saberProConfig?.label) {
@@ -9739,6 +9745,8 @@ const importFromExcel = async (req, res) => {
     const matriculadosStatsBatch = [];
     const matriculadosResolveCache = new Map();
     const MATRICULADOS_IMPORT_BATCH_SIZE = 3000;
+    const caracterizacionDetailBatch = [];
+    const CARACTERIZACION_IMPORT_BATCH_SIZE = 3000;
     const resolveMatriculadosUbicacionCached = async (params = {}) => {
       const cacheKey = JSON.stringify({
         pais: normalizeText(params.pais),
@@ -9775,6 +9783,17 @@ const importFromExcel = async (req, res) => {
           hooks: false
         });
         matriculadosStatsBatch.length = 0;
+      }
+    };
+    const flushCaracterizacionImportBatches = async () => {
+      if (!isCaracterizacionImport) return;
+      if (caracterizacionDetailBatch.length > 0) {
+        await poblacionalConfig.model.bulkCreate(caracterizacionDetailBatch, {
+          validate: false,
+          hooks: false,
+          transaction: caracterizacionTransaction
+        });
+        caracterizacionDetailBatch.length = 0;
       }
     };
     if (isMatriculadosImport) {
@@ -9902,12 +9921,14 @@ const importFromExcel = async (req, res) => {
 
         // Normaliza PERIODO "IP"/"IIP"/"1"/"2"/"3" → "1" o "2"
         // SNIES usa código 1=primer período, 3=segundo período (salta el 2)
-        if (payload.semestre) {
+        // Caracterizacion usa SEMESTRE como nivel cursado (1..10 o estados
+        // como "Retirado"); no debe reducirse al periodo academico 1/2.
+        if (payload.semestre && !isCaracterizacionImport) {
           const rawSem = String(payload.semestre);
           payload.semestre = /\b(2|3|II|IIP)\b/i.test(rawSem) ? '2' : '1';
         }
         const anio = parseAnio(payload.anio || row['AÑO']);
-        const periodo = normalizeText(payload.semestre);
+        const periodo = normalizeText(isCaracterizacionImport ? payload.periodo : payload.semestre);
         const programa = normalizeText(payload.programa);
         const conteo = toNumber(payload.conteo ?? payload.cantidad);
         const valor = conteo === null ? 1 : conteo;
@@ -9977,6 +9998,15 @@ const importFromExcel = async (req, res) => {
           result.importados += 1;
           if (matriculadosDetailBatch.length >= MATRICULADOS_IMPORT_BATCH_SIZE) {
             await flushMatriculadosImportBatches();
+          }
+          continue;
+        }
+
+        if (isCaracterizacionImport) {
+          caracterizacionDetailBatch.push(detailPayload);
+          result.importados += 1;
+          if (caracterizacionDetailBatch.length >= CARACTERIZACION_IMPORT_BATCH_SIZE) {
+            await flushCaracterizacionImportBatches();
           }
           continue;
         }
@@ -10242,6 +10272,9 @@ const importFromExcel = async (req, res) => {
       // Limpiar caché del dashboard geo
       matriculadosGeoDashboardCache.clear();
     }
+    if (isCaracterizacionImport) {
+      await flushCaracterizacionImportBatches();
+    }
     if (categoria === 'Poblacional') {
       poblacionalSeriesCache.clear();
       if (poblacionalConfig?.label === 'Caracterizacion') {
@@ -10268,7 +10301,14 @@ const importFromExcel = async (req, res) => {
       estado,
       detalle,
       creado_por: req.user?.id || null
-    });
+    }, caracterizacionTransaction ? { transaction: caracterizacionTransaction } : undefined);
+
+    if (caracterizacionTransaction) {
+      await caracterizacionTransaction.commit();
+      caracterizacionTransaction = null;
+      clearCaracterizacionCaches();
+      poblacionalSeriesCache.clear();
+    }
 
     return res.json({
       success: true,
@@ -10276,6 +10316,14 @@ const importFromExcel = async (req, res) => {
       data: result
     });
   } catch (error) {
+    if (caracterizacionTransaction) {
+      try {
+        await caracterizacionTransaction.rollback();
+      } catch (rollbackError) {
+        console.error('Error al revertir la importacion de caracterizacion:', rollbackError);
+      }
+      caracterizacionTransaction = null;
+    }
     console.error('Error al importar base de gestión de información:', error);
     const detail =
       error?.original?.detail ||
