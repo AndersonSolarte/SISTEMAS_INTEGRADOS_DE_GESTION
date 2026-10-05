@@ -5,20 +5,20 @@ import {
   InputAdornment, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
 import {
-  AccountTree, Add, Analytics, ArrowBack, AssignmentTurnedIn, CalendarMonth, Close, MoreTime, CheckCircleOutline, CloudSync,
-  DeleteOutline, Description, Download, EditOutlined, Folder, GridView, LockOutlined, Payments, Search,
-  Settings, SwapHoriz, TableRows, Timeline, UploadFile
+  AccessTimeOutlined, Add, Analytics, ArrowBack, AssessmentOutlined, AssignmentOutlined, CalendarTodayOutlined, Close, MoreTime, CheckCircleOutline, CloudSync, CorporateFare,
+  DeleteOutline, Description, Download, EditOutlined, FolderOutlined, GridView, LockOutlined, Payments, Search,
+  SettingsOutlined, SwapHoriz, TableRows, Timeline, UploadFile, ViewWeekOutlined
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import strategicPlanningService from '../services/strategicPlanningService';
 import StrategicActionPlanEditor from './StrategicActionPlanEditor';
 
 const SPACES = [
-  { key: 'configuration', label: '1. PED', icon: <Settings /> },
-  { key: 'planning', label: '2. Campos', icon: <AccountTree /> },
-  { key: 'references', label: '3. Dependencias', icon: <AssignmentTurnedIn /> },
-  { key: 'actions', label: '4. Planes de Acción', icon: <AssignmentTurnedIn /> },
-  { key: 'monitoring', label: 'Informes', icon: <Timeline /> },
+  { key: 'configuration', label: '1. PED', icon: <SettingsOutlined /> },
+  { key: 'planning', label: '2. Campos', icon: <ViewWeekOutlined /> },
+  { key: 'references', label: '3. Dependencias', icon: <CorporateFare /> },
+  { key: 'actions', label: '4. Planes de Acción', icon: <AssignmentOutlined /> },
+  { key: 'monitoring', label: 'Informes', icon: <AssessmentOutlined /> },
   { key: 'budget', label: 'Presupuesto', icon: <Payments /> },
   { key: 'analytics', label: 'Resultados', icon: <Analytics /> }
 ];
@@ -53,7 +53,7 @@ const FIELD_TYPE_LABEL = {
 
 const SectionHeader = ({ step, title, description, action }) => (
   <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2} mb={2.5}>
-    <Box>{step && <Typography variant="overline" color="primary" fontWeight={900} letterSpacing={1}>{`PASO ${step} DE 4`}</Typography>}<Typography variant="h5" fontWeight={900}>{title}</Typography>{description && <Typography color="text.secondary" mt={0.25}>{description}</Typography>}</Box>
+    <Box><Typography variant="h5" fontWeight={900}>{title}</Typography>{description && <Typography color="text.secondary" mt={0.25} fontSize={13.5}>{description}</Typography>}</Box>
     {action}
   </Stack>
 );
@@ -765,9 +765,9 @@ export default function StrategicPlanningPlatform({ onBack }) {
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
           <Box>
             {onBack && <Button onClick={onBack} startIcon={<ArrowBack />} sx={{ mb: 1.5, color: 'white', border: '1px solid rgba(255,255,255,.45)', borderRadius: 3, textTransform: 'none', fontWeight: 800 }}>Volver a submódulos</Button>}
-            <Chip label="NUEVA PLATAFORMA · INDEPENDIENTE" sx={{ mb: 1.5, ml: onBack ? { xs: 0, sm: 1 } : 0, color: 'white', border: '1px solid rgba(255,255,255,.4)', fontWeight: 800 }} />
+
             <Typography sx={{ fontSize: { xs: 24, sm: 28, lg: 32 }, lineHeight: 1.15, fontWeight: 950, maxWidth: 1050 }}>Gestión, Seguimiento y Evaluación de la Planeación Estratégica Institucional</Typography>
-            <Typography sx={{ mt: 1, opacity: .9, fontSize: { xs: 14, sm: 16 } }}>{pedWorkspaceOpen ? `${plan.name} · Fuente oficial SIAC · Expediente definitivo en Drive` : 'Cree un nuevo PED o continúe trabajando en uno existente.'}</Typography>
+
           </Box>
         </Stack>
       </Paper>
@@ -894,8 +894,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
               <Typography variant="caption" color="text.secondary">{plan.code}</Typography>
             </Box>
             {[
-              ['Inicio', plan.starts_on, <CalendarMonth fontSize="small" />],
-              ['Finaliza', plan.ends_on, <CalendarMonth fontSize="small" />],
+              ['Inicio', plan.starts_on, <CalendarTodayOutlined fontSize="small" />],
+              ['Finaliza', plan.ends_on, <CalendarTodayOutlined fontSize="small" />],
               ['Vigencias', actionTerms.length, <Timeline fontSize="small" />]
             ].map(([label, value, icon]) => <Box key={label} sx={{ px: 1.5, py: 1.25, borderRadius: 2.5, bgcolor: '#fafcff', border: '1px solid #e5eaf2', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}><Stack direction="row" alignItems="center" gap={0.6} color="#5b75a5">{icon}<Typography variant="caption" fontWeight={800} textTransform="uppercase">{label}</Typography></Stack><Typography mt={0.35} fontWeight={900} fontSize={16}>{value}</Typography></Box>)}
           </Box>
@@ -995,10 +995,10 @@ export default function StrategicPlanningPlatform({ onBack }) {
       </Box>}
 
       {pedWorkspaceOpen && space === 'actions' && <Box>
-        <SectionHeader step="4" title="Planes de Acción por vigencia" description="Seleccione primero un año. Después cree o abra el plan de cada dependencia." />
+        <SectionHeader title="Planes de Acción por vigencia" />
 
         <Paper variant="outlined" sx={{ p: { xs: 1.75, md: 2.25 }, borderRadius: 3.5, borderColor: '#dbe3ee', bgcolor: '#fff' }}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={2}><Box><Typography variant="h6" fontWeight={950}>1. Seleccione el año de ejecución</Typography><Typography variant="body2" color="text.secondary">Cada vigencia conserva sus propios Planes de Acción.</Typography></Box><Chip variant="outlined" color="primary" label={`${actionTerms.length} vigencias`} sx={{ fontWeight: 850 }} /></Stack>
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={2}><Typography variant="h6" fontWeight={950}>1. Seleccione el año de ejecución</Typography><Chip variant="outlined" color="primary" label={`${actionTerms.length} vigencias`} sx={{ fontWeight: 850 }} /></Stack>
           {!actionTerms.length ? <Alert severity="warning">Este PED no tiene años configurados.</Alert> : <Box sx={{ display: { xs: 'flex', md: 'grid' }, gridTemplateColumns: { md: 'repeat(auto-fit,minmax(175px,1fr))' }, gap: 1.25, overflowX: { xs: 'auto', md: 'visible' }, pb: { xs: 1, md: 0 } }}>
             {actionTerms.map((term) => {
               const yearDependencies = termDependencies.filter((item) => String(item.term_id) === String(term.id));
@@ -1013,7 +1013,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               const selected = String(term.id) === String(selectedActionTerm?.id);
               const percentage = expectedPlansCount ? Math.min(100, (createdPlansCount / expectedPlansCount) * 100) : 0;
               return <Paper key={term.id} component="button" type="button" onClick={() => { setSelectedActionTermId(term.id); setDependencySearch(''); setRepositoryResult(null); }} elevation={0} sx={{ appearance: 'none', font: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: { xs: 190, md: 0 }, p: 1.6, borderRadius: 2.75, border: '1px solid', borderColor: selected ? '#2563eb' : '#dce3ed', bgcolor: selected ? '#eff6ff' : '#fff', boxShadow: selected ? '0 8px 20px rgba(37,99,235,.12)' : 'none', transition: 'all .2s', '&:hover': { borderColor: '#60a5fa', transform: 'translateY(-2px)' } }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start"><Box><Typography variant="caption" color={selected ? 'primary' : 'text.secondary'} fontWeight={900}>VIGENCIA</Typography><Typography sx={{ fontSize: 26, lineHeight: 1.1, fontWeight: 950 }}>{term.year}</Typography></Box><Box sx={{ width: 34, height: 34, borderRadius: 2, bgcolor: selected ? '#2563eb' : '#f1f5f9', color: selected ? '#fff' : '#64748b', display: 'grid', placeItems: 'center' }}><CalendarMonth fontSize="small" /></Box></Stack>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start"><Box><Typography variant="caption" color={selected ? 'primary' : 'text.secondary'} fontWeight={900}>VIGENCIA</Typography><Typography sx={{ fontSize: 26, lineHeight: 1.1, fontWeight: 950 }}>{term.year}</Typography></Box><Box sx={{ width: 34, height: 34, borderRadius: 2, bgcolor: selected ? '#2563eb' : '#f1f5f9', color: selected ? '#fff' : '#64748b', display: 'grid', placeItems: 'center' }}><CalendarTodayOutlined sx={{ fontSize: 17 }} /></Box></Stack>
                 <Stack direction="row" justifyContent="space-between" alignItems="center" mt={1.5} mb={0.7}><Typography variant="caption" fontWeight={850}>{createdPlansCount} de {expectedPlansCount} planes</Typography><Chip size="small" color={term.status === 'active' ? 'success' : 'default'} label={TERM_STATUS_LABEL[term.status] || term.status} sx={{ height: 21, fontSize: 11 }} /></Stack><LinearProgress variant="determinate" value={percentage} sx={{ height: 6, borderRadius: 10, bgcolor: '#e2e8f0' }} />
               </Paper>;
             })}
@@ -1056,40 +1056,40 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       placeItems: 'center'
                     }}
                   >
-                    {isTermExpired ? <LockOutlined /> : <CalendarMonth />}
+                    {isTermExpired ? <LockOutlined sx={{ fontSize: 20 }} /> : <AccessTimeOutlined sx={{ fontSize: 20 }} />}
                   </Box>
                   <Box>
                     <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                      <Typography fontWeight={950} sx={{ fontSize: 15.5, color: '#0f172a' }}>
-                        Plazo General de Formulación (Etapa 1: Plan y actividades) · Vigencia {selectedActionTerm.year}
+                      <Typography fontWeight={950} sx={{ fontSize: 15, color: '#0f172a' }}>
+                        Plazo General de Formulación · Vigencia {selectedActionTerm.year}
                       </Typography>
                       {isTermOpen && (
                         <Chip
                           size="small"
-                          label={`● Formulación Abierta · Vence ${generalEndsOn}${daysLeft !== null ? ` (quedan ${daysLeft} días)` : ''}`}
-                          sx={{ bgcolor: '#dcfce7', color: '#15803d', fontWeight: 800, fontSize: 11 }}
+                          icon={<CheckCircleOutline sx={{ fontSize: '14px !important', color: '#15803d !important' }} />}
+                          label={`Formulación Abierta · Vence ${generalEndsOn}${daysLeft !== null ? ` (${daysLeft} días restantes)` : ''}`}
+                          sx={{ bgcolor: '#dcfce7', color: '#15803d', fontWeight: 800, fontSize: 11, pl: 0.5 }}
                         />
                       )}
                       {isTermExpired && (
                         <Chip
                           size="small"
-                          label={`🔒 Plazo Vencido (${generalEndsOn})`}
-                          sx={{ bgcolor: '#fef3c7', color: '#b45309', fontWeight: 800, fontSize: 11 }}
+                          icon={<LockOutlined sx={{ fontSize: '13px !important', color: '#b45309 !important' }} />}
+                          label={`Plazo Vencido (${generalEndsOn})`}
+                          sx={{ bgcolor: '#fef3c7', color: '#b45309', fontWeight: 800, fontSize: 11, pl: 0.5 }}
                         />
                       )}
                       {isTermNotStarted && (
                         <Chip
                           size="small"
-                          label={`⏳ Inicia el ${generalStartsOn}`}
-                          sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 800, fontSize: 11 }}
+                          icon={<AccessTimeOutlined sx={{ fontSize: '13px !important', color: '#475569 !important' }} />}
+                          label={`Inicia el ${generalStartsOn}`}
+                          sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 800, fontSize: 11, pl: 0.5 }}
                         />
                       )}
                     </Stack>
-                    <Typography variant="body2" color="#475569" sx={{ mt: 0.3, fontSize: 13 }}>
-                      Ventana oficial general para todas las dependencias: <strong>{generalStartsOn}</strong> hasta <strong>{generalEndsOn}</strong>.
-                      <span style={{ color: '#64748b', marginLeft: 6 }}>
-                        (Al ampliar este plazo general, se actualizan los planes de la vigencia respetando a los que ya tengan una prórroga individual superior).
-                      </span>
+                    <Typography variant="body2" color="#64748b" sx={{ mt: 0.2, fontSize: 12.5 }}>
+                      Periodo oficial: <strong>{generalStartsOn}</strong> al <strong>{generalEndsOn}</strong>
                     </Typography>
                   </Box>
                 </Stack>
@@ -1119,10 +1119,10 @@ export default function StrategicPlanningPlatform({ onBack }) {
         {selectedActionTerm && <Paper variant="outlined" sx={{ mt: 2, p: { xs: 1.75, md: 2.25 }, borderRadius: 3.5, borderColor: '#bfdbfe', background: 'linear-gradient(110deg,#f8fbff 0%,#eff6ff 100%)' }}>
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
             <Stack direction="row" alignItems="flex-start" gap={1.5}>
-              <Box sx={{ width: 44, height: 44, flex: '0 0 44px', borderRadius: 2.5, bgcolor: '#dbeafe', color: '#1d4ed8', display: 'grid', placeItems: 'center' }}><Folder /></Box>
+              <Box sx={{ width: 40, height: 40, flex: '0 0 40px', borderRadius: 2, bgcolor: '#eff6ff', color: '#2563eb', display: 'grid', placeItems: 'center' }}><FolderOutlined sx={{ fontSize: 22 }} /></Box>
               <Box>
-                <Typography fontWeight={950}>Repositorio de Planes de Acción {selectedActionTerm.year}</Typography>
-                <Typography variant="body2" color="text.secondary">Organiza el año dentro de la carpeta de su PED y prepara todas las dependencias. La sincronización reutiliza carpetas y archivos existentes.</Typography>
+                <Typography fontWeight={900} fontSize={15}>Repositorio Digital {selectedActionTerm.year}</Typography>
+                <Typography variant="caption" color="text.secondary">Expediente en Google Drive</Typography>
               </Box>
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems="center" flexWrap="wrap">
@@ -1161,8 +1161,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
           <Box sx={{ px: { xs: 1.75, md: 2.5 }, py: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
             <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ lg: 'center' }} gap={1.5}>
               <Box>
-                <Typography variant="h6" fontWeight={950}>2. Dependencias de la vigencia {selectedActionTerm.year}</Typography>
-                <Typography variant="body2" color="text.secondary">Seleccione una dependencia para crear o gestionar su Plan de Acción.</Typography>
+                <Typography variant="h6" fontWeight={950}>2. Dependencias ({visibleActionUnits.length})</Typography>
+
               </Box>
               <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} gap={1} sx={{ width: { xs: '100%', lg: 'auto' } }}>
                 <TextField
@@ -1184,10 +1184,39 @@ export default function StrategicPlanningPlatform({ onBack }) {
             {visibleActionUnits.map((unit) => {
               const actionPlan = selectedYearPlans.find((item) => String(item.catalog_item_id || item.organizationalUnit?.id) === String(unit.id));
               const suggestedLeader = unit.annualAssignment?.responsible;
-              return <Paper key={unit.id} elevation={0} sx={{ p: 1.75, borderRadius: 2.75, border: '1px solid', borderColor: actionPlan ? '#bbf7d0' : '#e2e8f0', bgcolor: actionPlan ? '#f7fef9' : '#fff', display: 'flex', flexDirection: 'column', minHeight: 188 }}>
+              return <Paper
+                key={unit.id}
+                elevation={0}
+                onClick={() => {
+                  if (actionPlan) {
+                    setEditorPlanId(actionPlan.id);
+                  } else if (selectedActionTerm.status !== 'closed') {
+                    openActionPlanCreation(selectedActionTerm, unit);
+                  }
+                }}
+                sx={{
+                  p: 1.75,
+                  borderRadius: 2.75,
+                  border: '1.5px solid',
+                  borderColor: actionPlan ? '#bbf7d0' : '#e2e8f0',
+                  bgcolor: actionPlan ? '#f7fef9' : '#fff',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 188,
+                  cursor: 'pointer',
+                  position: 'relative',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': {
+                    borderColor: actionPlan ? '#16a34a' : '#2563eb',
+                    boxShadow: actionPlan ? '0 10px 24px -4px rgba(22, 163, 74, 0.18)' : '0 10px 24px -4px rgba(37, 99, 235, 0.16)',
+                    transform: 'translateY(-2px)',
+                    bgcolor: actionPlan ? '#f0fdf4' : '#f8fafc'
+                  }
+                }}
+              >
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-                  <Box sx={{ width: 38, height: 38, flex: '0 0 38px', borderRadius: 2, bgcolor: actionPlan ? '#dcfce7' : '#eff6ff', color: actionPlan ? '#15803d' : '#2563eb', display: 'grid', placeItems: 'center' }}>
-                    <AccountTree fontSize="small" />
+                  <Box sx={{ width: 36, height: 36, flex: '0 0 36px', borderRadius: 2, bgcolor: actionPlan ? '#eff6ff' : '#f8fafc', color: actionPlan ? '#1e40af' : '#64748b', border: '1px solid', borderColor: actionPlan ? '#bfdbfe' : '#e2e8f0', display: 'grid', placeItems: 'center' }}>
+                    <CorporateFare sx={{ fontSize: 20 }} />
                   </Box>
                   <Stack direction="row" alignItems="center" gap={0.3}>
                     {actionPlan && (
@@ -1195,7 +1224,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                         <Tooltip title="Editar datos del plan">
                           <IconButton
                             size="small"
-                            onClick={() => setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year })}
+                            onClick={(e) => { e.stopPropagation(); setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year }); }}
                             sx={{ width: 28, height: 28, color: '#64748b', '&:hover': { bgcolor: '#eff6ff', color: '#2563eb' } }}
                           >
                             <EditOutlined sx={{ fontSize: 17 }} />
@@ -1204,7 +1233,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                         <Tooltip title="Eliminar plan y retirar dependencia">
                           <IconButton
                             size="small"
-                            onClick={() => setDeleteActionPlanCandidate(actionPlan)}
+                            onClick={(e) => { e.stopPropagation(); setDeleteActionPlanCandidate(actionPlan); }}
                             sx={{ width: 28, height: 28, color: '#ef4444', '&:hover': { bgcolor: '#fef2f2', color: '#dc2626' } }}
                           >
                             <DeleteOutline sx={{ fontSize: 17 }} />
@@ -1219,11 +1248,11 @@ export default function StrategicPlanningPlatform({ onBack }) {
                 <Box sx={{ flex: 1, mt: 1 }}>{actionPlan ? <><Typography variant="caption" color="text.secondary">{actionPlan.code} · {actionPlan.items?.length || 0} registros</Typography><Typography variant="caption" display="block" color="text.secondary" noWrap>{actionPlan.responsibleUser?.nombre || 'Sin líder asignado'}</Typography></> : <Typography variant="caption" color="text.secondary">{suggestedLeader ? `Responsable: ${suggestedLeader.name}` : 'Configure primero el responsable de esta vigencia.'}</Typography>}</Box>
                 {actionPlan ? (
                   <Stack direction="row" gap={0.75} mt={1.25}>
-                    <Button fullWidth size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>
-                    <Button size="small" variant="outlined" title="Cambiar responsable" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ minWidth: 42, borderRadius: 2 }}><SwapHoriz fontSize="small" /></Button>
+                    <Button fullWidth size="small" variant="contained" onClick={(e) => { e.stopPropagation(); setEditorPlanId(actionPlan.id); }} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>
+                    <Button size="small" variant="outlined" title="Cambiar responsable" onClick={(e) => { e.stopPropagation(); setTransfer({ plan: actionPlan, user_id: '', reason: '' }); }} sx={{ minWidth: 42, borderRadius: 2 }}><SwapHoriz fontSize="small" /></Button>
                   </Stack>
                 ) : (
-                  <Button fullWidth size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ mt: 1.25, borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear Plan de Acción'}</Button>
+                  <Button fullWidth size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={(e) => { e.stopPropagation(); openActionPlanCreation(selectedActionTerm, unit); }} sx={{ mt: 1.25, borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear Plan de Acción'}</Button>
                 )}
               </Paper>;
             })}
@@ -1249,16 +1278,27 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   const responsible = unit.annualAssignment?.responsible || {};
                   const responsibleName = responsible.name || actionPlan?.responsibleUser?.nombre || 'Sin responsable';
                   const initials = responsibleName === 'Sin responsable' ? '—' : responsibleName.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
-                  return <TableRow key={unit.id} hover sx={{ bgcolor: '#ffffff', '&:nth-of-type(even)': { bgcolor: '#f9fbfe' }, '&:hover': { bgcolor: '#eef6ff !important' }, '& td': { py: 1.45, borderBottom: '1px solid #dfe7f0', verticalAlign: 'middle' } }}>
-                    <TableCell><Stack direction="row" alignItems="center" gap={1.15}><Box sx={{ width: 34, height: 34, flex: '0 0 34px', borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: actionPlan ? '#dcfce7' : '#e8f2ff', color: actionPlan ? '#15803d' : '#2563eb' }}><AccountTree sx={{ fontSize: 19 }} /></Box><Box minWidth={0}><Typography fontWeight={900} fontSize={13.5} lineHeight={1.25} title={unit.name}>{unit.name}</Typography><Typography variant="caption" color="text.secondary" noWrap display="block" title={responsible.dependency || ''}>{responsible.dependency || 'Unidad institucional'}</Typography></Box></Stack></TableCell>
+                  return <TableRow
+                    key={unit.id}
+                    hover
+                    onClick={() => {
+                      if (actionPlan) {
+                        setEditorPlanId(actionPlan.id);
+                      } else if (selectedActionTerm.status !== 'closed') {
+                        openActionPlanCreation(selectedActionTerm, unit);
+                      }
+                    }}
+                    sx={{ cursor: 'pointer', bgcolor: '#ffffff', '&:nth-of-type(even)': { bgcolor: '#f9fbfe' }, '&:hover': { bgcolor: '#eef6ff !important' }, '& td': { py: 1.45, borderBottom: '1px solid #dfe7f0', verticalAlign: 'middle' } }}
+                  >
+                    <TableCell><Stack direction="row" alignItems="center" gap={1.15}><Box sx={{ width: 32, height: 32, flex: '0 0 32px', borderRadius: 1.75, display: 'grid', placeItems: 'center', bgcolor: actionPlan ? '#eff6ff' : '#f8fafc', color: actionPlan ? '#1e40af' : '#64748b', border: '1px solid', borderColor: actionPlan ? '#bfdbfe' : '#e2e8f0' }}><CorporateFare sx={{ fontSize: 18 }} /></Box><Box minWidth={0}><Typography fontWeight={900} fontSize={13.5} lineHeight={1.25} title={unit.name}>{unit.name}</Typography><Typography variant="caption" color="text.secondary" noWrap display="block" title={responsible.dependency || ''}>{responsible.dependency || 'Unidad institucional'}</Typography></Box></Stack></TableCell>
                     <TableCell><Chip size="small" label={unit.code || '—'} sx={{ height: 25, bgcolor: '#edf3fa', color: '#425b78', fontWeight: 900, borderRadius: 1.5 }} /></TableCell>
                     <TableCell><Stack direction="row" alignItems="center" gap={1}><Box sx={{ width: 31, height: 31, flex: '0 0 31px', borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: '#e9edff', color: '#455db5', fontWeight: 950, fontSize: 10.5 }}>{initials}</Box><Typography fontWeight={850} fontSize={12.8} lineHeight={1.3}>{responsibleName}</Typography></Stack></TableCell>
                     <TableCell sx={{ fontFamily: 'monospace', fontWeight: 750, color: '#42566f' }}>{responsible.document || '—'}</TableCell>
                     <TableCell><Typography fontSize={12.8} lineHeight={1.35}>{responsible.position || actionPlan?.responsibleUser?.cargo || '—'}</Typography></TableCell>
-                    <TableCell><Typography component={responsible.email || actionPlan?.responsibleUser?.email ? 'a' : 'span'} href={(responsible.email || actionPlan?.responsibleUser?.email) ? `mailto:${responsible.email || actionPlan?.responsibleUser?.email}` : undefined} fontSize={12.5} color="#315f9d" sx={{ textDecoration: 'none', '&:hover': { textDecoration: 'underline' }, wordBreak: 'break-word' }}>{responsible.email || actionPlan?.responsibleUser?.email || '—'}</Typography></TableCell>
+                    <TableCell><Typography component={responsible.email || actionPlan?.responsibleUser?.email ? 'a' : 'span'} href={(responsible.email || actionPlan?.responsibleUser?.email) ? `mailto:${responsible.email || actionPlan?.responsibleUser?.email}` : undefined} onClick={(e) => e.stopPropagation()} fontSize={12.5} color="#315f9d" sx={{ textDecoration: 'none', '&:hover': { textDecoration: 'underline' }, wordBreak: 'break-word' }}>{responsible.email || actionPlan?.responsibleUser?.email || '—'}</Typography></TableCell>
                     <TableCell><Chip size="small" color={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.color || 'success') : 'default'} variant={actionPlan ? 'filled' : 'outlined'} label={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.label || 'Plan creado') : 'Pendiente'} sx={{ fontWeight: 850 }} /></TableCell>
                     <TableCell align="center"><Box sx={{ width: 32, height: 32, mx: 'auto', borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: actionPlan?.items?.length ? '#e8f2ff' : '#f1f5f9', color: actionPlan?.items?.length ? '#245ab5' : '#64748b', fontWeight: 950 }}>{actionPlan?.items?.length || 0}</Box></TableCell>
-                    <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>{actionPlan ? <Stack direction="row" justifyContent="center" alignItems="center" gap={0.5}><Button size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ minWidth: 85, height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>{['owner_validation', 'formulation', 'adjustments'].includes(actionPlan.status) && <Button size="small" variant="contained" color="success" onClick={async () => { try { await strategicPlanningService.transition(actionPlan.id, { action: 'activate', comment: 'Plan ejecutado directamente desde la plataforma institucional' }); enqueueSnackbar(`Plan ${actionPlan.code} pasado a Ejecución Oficial.`, { variant: 'success' }); await load(); } catch (err) { enqueueSnackbar(err?.response?.data?.message || 'No fue posible activar el plan.', { variant: 'error' }); } }} sx={{ height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}>Ejecutar</Button>}<Button size="small" variant="outlined" title="Editar datos del plan" onClick={() => setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year })} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0 }}><EditOutlined fontSize="small" /></Button><Button size="small" variant="outlined" title="Cambiar responsable" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0 }}><SwapHoriz fontSize="small" /></Button><Button size="small" variant="outlined" color="error" title="Eliminar plan" onClick={() => setDeleteActionPlanCandidate(actionPlan)} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0, borderColor: '#fca5a5', color: '#dc2626', '&:hover': { bgcolor: '#fef2f2', borderColor: '#ef4444' } }}><DeleteOutline fontSize="small" /></Button></Stack> : <Button size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ minWidth: 150, height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear plan'}</Button>}</TableCell>
+                    <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>{actionPlan ? <Stack direction="row" justifyContent="center" alignItems="center" gap={0.5}><Button size="small" variant="contained" onClick={(e) => { e.stopPropagation(); setEditorPlanId(actionPlan.id); }} sx={{ minWidth: 85, height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>{['owner_validation', 'formulation', 'adjustments'].includes(actionPlan.status) && <Button size="small" variant="contained" color="success" onClick={async (e) => { e.stopPropagation(); try { await strategicPlanningService.transition(actionPlan.id, { action: 'activate', comment: 'Plan ejecutado directamente desde la plataforma institucional' }); enqueueSnackbar(`Plan ${actionPlan.code} pasado a Ejecución Oficial.`, { variant: 'success' }); await load(); } catch (err) { enqueueSnackbar(err?.response?.data?.message || 'No fue posible activar el plan.', { variant: 'error' }); } }} sx={{ height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}>Ejecutar</Button>}<Button size="small" variant="outlined" title="Editar datos del plan" onClick={(e) => { e.stopPropagation(); setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year }); }} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0 }}><EditOutlined fontSize="small" /></Button><Button size="small" variant="outlined" title="Cambiar responsable" onClick={(e) => { e.stopPropagation(); setTransfer({ plan: actionPlan, user_id: '', reason: '' }); }} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0 }}><SwapHoriz fontSize="small" /></Button><Button size="small" variant="outlined" color="error" title="Eliminar plan" onClick={(e) => { e.stopPropagation(); setDeleteActionPlanCandidate(actionPlan); }} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0, borderColor: '#fca5a5', color: '#dc2626', '&:hover': { bgcolor: '#fef2f2', borderColor: '#ef4444' } }}><DeleteOutline fontSize="small" /></Button></Stack> : <Button size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={(e) => { e.stopPropagation(); openActionPlanCreation(selectedActionTerm, unit); }} sx={{ minWidth: 150, height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear plan'}</Button>}</TableCell>
                   </TableRow>;
                 })}
               </TableBody>
@@ -1410,7 +1450,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
             </Stack>
           );
         })()}
-        {!!syncJobs.length && <Alert severity="success" icon={<Folder />} sx={{ mt: 2 }}>Las evidencias se conservan y se sincronizan automáticamente con el expediente institucional.</Alert>}
+        {!!syncJobs.length && <Alert severity="success" icon={<FolderOutlined />} sx={{ mt: 2 }}>Las evidencias se conservan y se sincronizan automáticamente con el expediente institucional.</Alert>}
         <StepNavigation onBack={() => setSpace('actions')} onNext={() => setSpace('analytics')} nextLabel="Ver resultados" />
       </Box>}
 
@@ -1753,85 +1793,259 @@ export default function StrategicPlanningPlatform({ onBack }) {
         onClose={() => !generalTimelineModal.saving && setGeneralTimelineModal({ open: false, term: null, starts_on: '', ends_on: '', saving: false })}
         fullWidth
         maxWidth="sm"
-        PaperProps={{ sx: { borderRadius: 3.5, p: 1 } }}
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: 'hidden',
+            boxShadow: '0 24px 60px -12px rgba(15, 23, 42, 0.22)',
+            border: '1px solid #e2e8f0'
+          }
+        }}
       >
-        <DialogTitle sx={{ px: 3, pt: 2, pb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Box>
-            <Typography variant="h6" fontWeight={900} color="#0f172a">
-              Plazo General de Formulación · Vigencia {generalTimelineModal.term?.year}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Etapa 1: Plan y actividades para todas las dependencias
-            </Typography>
-          </Box>
+        <DialogTitle
+          sx={{
+            px: { xs: 2.5, sm: 3 },
+            py: 2.25,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            borderBottom: '1px solid #f1f5f9',
+            bgcolor: '#ffffff'
+          }}
+        >
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 42,
+                height: 42,
+                borderRadius: 2,
+                bgcolor: '#eff6ff',
+                color: '#2563eb',
+                border: '1px solid #dbeafe',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0
+              }}
+            >
+              <AccessTimeOutlined sx={{ fontSize: 22 }} />
+            </Box>
+            <Box>
+              <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 17, lineHeight: 1.25 }}>
+                Plazo General de Formulación · Vigencia {generalTimelineModal.term?.year}
+              </Typography>
+              <Typography variant="caption" color="#64748b" sx={{ fontSize: 12.5, display: 'block', mt: 0.2 }}>
+                Etapa 1: Programación oficial para todas las dependencias
+              </Typography>
+            </Box>
+          </Stack>
           <IconButton
             size="small"
             onClick={() => !generalTimelineModal.saving && setGeneralTimelineModal({ open: false, term: null, starts_on: '', ends_on: '', saving: false })}
-            sx={{ color: '#64748b' }}
+            sx={{
+              color: '#94a3b8',
+              borderRadius: 1.75,
+              '&:hover': { bgcolor: '#f1f5f9', color: '#334155' }
+            }}
           >
             <Close fontSize="small" />
           </IconButton>
         </DialogTitle>
-        <DialogContent sx={{ px: 3, py: 2 }}>
+
+        <DialogContent sx={{ px: { xs: 2.5, sm: 3 }, py: 2.5, bgcolor: '#ffffff' }}>
           <Stack spacing={2.5}>
-            <Alert severity="info" sx={{ borderRadius: 2, fontSize: 12.5 }}>
-              Al configurar esta fecha general, todos los planes de acción de la vigencia <strong>{generalTimelineModal.term?.year}</strong> se programarán con esta fecha límite. Si alguna dependencia ya cuenta con una <strong>prórroga individual con fecha superior</strong>, el sistema la respetará y no le recortará el tiempo.
-            </Alert>
+            {/* Aviso institucional informativo */}
+            <Box
+              sx={{
+                p: 1.75,
+                borderRadius: 2.25,
+                bgcolor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                gap: 1.5,
+                alignItems: 'flex-start'
+              }}
+            >
+              <CheckCircleOutline sx={{ color: '#2563eb', fontSize: 19, mt: 0.2, flexShrink: 0 }} />
+              <Typography sx={{ fontSize: 12.5, color: '#475569', lineHeight: 1.55 }}>
+                Al configurar esta fecha, todos los planes de acción de la vigencia <strong>{generalTimelineModal.term?.year}</strong> se actualizarán con este plazo. Si alguna dependencia cuenta con una <strong>prórroga individual mayor</strong>, su plazo se mantendrá protegido y no se recortará.
+              </Typography>
+            </Box>
 
             {/* Atajos de ampliación rápida */}
-            <Box>
-              <Typography variant="caption" fontWeight={800} color="#475569" mb={0.75} display="block">
-                AMPLIACIÓN RÁPIDA DE TIEMPO (UN SOLO TOQUE):
+            <Box sx={{ p: 1.75, borderRadius: 2.25, bgcolor: '#f8fafc', border: '1px solid #f1f5f9' }}>
+              <Typography
+                variant="caption"
+                sx={{
+                  display: 'block',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: '#64748b',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.6px',
+                  mb: 1
+                }}
+              >
+                Extensión rápida del plazo de cierre:
               </Typography>
-              <Stack direction="row" spacing={1} flexWrap="wrap">
-                <Button size="small" variant="outlined" onClick={() => handleAddDaysToGeneralTimeline(7)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap gap={1}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => handleAddDaysToGeneralTimeline(7)}
+                  sx={{
+                    borderRadius: 1.75,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    px: 1.6,
+                    py: 0.5,
+                    bgcolor: '#ffffff',
+                    borderColor: '#cbd5e1',
+                    color: '#334155',
+                    '&:hover': { bgcolor: '#eff6ff', borderColor: '#2563eb', color: '#1d4ed8' }
+                  }}
+                >
                   +7 Días
                 </Button>
-                <Button size="small" variant="outlined" onClick={() => handleAddDaysToGeneralTimeline(15)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => handleAddDaysToGeneralTimeline(15)}
+                  sx={{
+                    borderRadius: 1.75,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    px: 1.6,
+                    py: 0.5,
+                    bgcolor: '#ffffff',
+                    borderColor: '#cbd5e1',
+                    color: '#334155',
+                    '&:hover': { bgcolor: '#eff6ff', borderColor: '#2563eb', color: '#1d4ed8' }
+                  }}
+                >
                   +15 Días
                 </Button>
-                <Button size="small" variant="outlined" onClick={() => handleAddDaysToGeneralTimeline(30)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => handleAddDaysToGeneralTimeline(30)}
+                  sx={{
+                    borderRadius: 1.75,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    px: 1.6,
+                    py: 0.5,
+                    bgcolor: '#ffffff',
+                    borderColor: '#cbd5e1',
+                    color: '#334155',
+                    '&:hover': { bgcolor: '#eff6ff', borderColor: '#2563eb', color: '#1d4ed8' }
+                  }}
+                >
                   +30 Días
                 </Button>
-                <Button size="small" variant="outlined" onClick={handleSetEndOfMonthGeneralTimeline} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleSetEndOfMonthGeneralTimeline}
+                  sx={{
+                    borderRadius: 1.75,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    px: 1.6,
+                    py: 0.5,
+                    bgcolor: '#ffffff',
+                    borderColor: '#cbd5e1',
+                    color: '#334155',
+                    '&:hover': { bgcolor: '#eff6ff', borderColor: '#2563eb', color: '#1d4ed8' }
+                  }}
+                >
                   Hasta fin de mes
                 </Button>
               </Stack>
             </Box>
 
+            {/* Inputs de fechas */}
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="date"
-                  label="Fecha de inicio general"
-                  InputLabelProps={{ shrink: true }}
-                  value={generalTimelineModal.starts_on}
-                  onChange={(e) => setGeneralTimelineModal((prev) => ({ ...prev, starts_on: e.target.value }))}
-                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                />
+                <Box>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 750, color: '#334155', mb: 0.75 }}>
+                    Fecha de inicio general
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="date"
+                    InputLabelProps={{ shrink: true }}
+                    value={generalTimelineModal.starts_on}
+                    onChange={(e) => setGeneralTimelineModal((prev) => ({ ...prev, starts_on: e.target.value }))}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 2,
+                        bgcolor: '#ffffff',
+                        fontSize: 13.5
+                      }
+                    }}
+                  />
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: 11.5, display: 'block', mt: 0.5 }}>
+                    Inicio de la etapa de formulación
+                  </Typography>
+                </Box>
               </Grid>
               <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="date"
-                  label="Fecha límite general (cierre)"
-                  InputLabelProps={{ shrink: true }}
-                  value={generalTimelineModal.ends_on}
-                  onChange={(e) => setGeneralTimelineModal((prev) => ({ ...prev, ends_on: e.target.value }))}
-                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontWeight: 700 } }}
-                />
+                <Box>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 750, color: '#334155', mb: 0.75 }}>
+                    Fecha límite general (cierre)
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="date"
+                    InputLabelProps={{ shrink: true }}
+                    value={generalTimelineModal.ends_on}
+                    onChange={(e) => setGeneralTimelineModal((prev) => ({ ...prev, ends_on: e.target.value }))}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 2,
+                        bgcolor: '#ffffff',
+                        fontWeight: 800,
+                        fontSize: 13.5
+                      }
+                    }}
+                  />
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: 11.5, display: 'block', mt: 0.5 }}>
+                    Límite para concertar actividades
+                  </Typography>
+                </Box>
               </Grid>
             </Grid>
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e2e8f0', gap: 1 }}>
+
+        <DialogActions
+          sx={{
+            px: { xs: 2.5, sm: 3 },
+            py: 2,
+            borderTop: '1px solid #f1f5f9',
+            bgcolor: '#f8fafc',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+        >
           <Button
             onClick={() => setGeneralTimelineModal({ open: false, term: null, starts_on: '', ends_on: '', saving: false })}
             disabled={generalTimelineModal.saving}
-            sx={{ textTransform: 'none', fontWeight: 700 }}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 700,
+              fontSize: 13,
+              color: '#64748b',
+              borderRadius: 1.75,
+              px: 2,
+              '&:hover': { bgcolor: '#f1f5f9', color: '#1e293b' }
+            }}
           >
             Cancelar
           </Button>
@@ -1839,7 +2053,18 @@ export default function StrategicPlanningPlatform({ onBack }) {
             variant="contained"
             onClick={handleSaveGeneralTimeline}
             disabled={generalTimelineModal.saving || !generalTimelineModal.ends_on}
-            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, px: 3, bgcolor: '#1e40af', '&:hover': { bgcolor: '#1d4ed8' } }}
+            startIcon={generalTimelineModal.saving ? <CircularProgress size={16} color="inherit" /> : <CheckCircleOutline sx={{ fontSize: 18 }} />}
+            sx={{
+              borderRadius: 2,
+              textTransform: 'none',
+              fontWeight: 800,
+              fontSize: 13,
+              px: 2.75,
+              py: 0.9,
+              bgcolor: '#1e40af',
+              boxShadow: '0 2px 8px rgba(30,64,175,0.22)',
+              '&:hover': { bgcolor: '#1d4ed8', boxShadow: '0 4px 12px rgba(30,64,175,0.30)' }
+            }}
           >
             {generalTimelineModal.saving ? 'Guardando y aplicando…' : 'Guardar y Aplicar a Todos los Planes'}
           </Button>

@@ -47,7 +47,7 @@ const STATUS_CONFIG = {
   preliminary_minutes: { label: 'Acta Preliminar', color: 'warning', bg: '#fef3c7', fg: '#92400e' },
   technical_review: { label: 'Revisión Técnica', color: 'warning', bg: '#fef3c7', fg: '#92400e' },
   adjustments: { label: 'En Ajustes', color: 'error', bg: '#fee2e2', fg: '#991b1b' },
-  owner_validation: { label: 'En Revisión / Firmas', color: 'warning', bg: '#fef3c7', fg: '#b45309' },
+  owner_validation: { label: 'En Revisión y Retroalimentación', color: 'warning', bg: '#fef3c7', fg: '#b45309' },
   active: { label: 'En Ejecución Oficial', color: 'success', bg: '#dcfce7', fg: '#15803d' },
   monitoring: { label: 'En Seguimiento', color: 'primary', bg: '#e0e7ff', fg: '#4338ca' },
   closed: { label: 'Cerrado', color: 'default', bg: '#f1f5f9', fg: '#64748b' }
@@ -637,7 +637,7 @@ export default function PlanAccionConsulta() {
                 <Stack direction="row" alignItems="center" spacing={1} mb={1.2}>
                   <WarningIcon sx={{ color: '#d97706', fontSize: 22 }} />
                   <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#92400e' }}>
-                    Pendientes de Revisión y Firma ({pendingReviewPlans.length})
+                    Planes en Revisión y Retroalimentación ({pendingReviewPlans.length})
                   </Typography>
                 </Stack>
                 <Stack spacing={1.5}>
@@ -657,7 +657,7 @@ export default function PlanAccionConsulta() {
                         <Stack spacing={0.6} sx={{ flex: 1 }}>
                           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                             <Chip size="small" label={plan.code} sx={{ bgcolor: '#d97706', color: '#fff', fontWeight: 900 }} />
-                            <Chip size="small" label="Requiere su revisión o firma" sx={{ bgcolor: '#fef3c7', color: '#b45309', fontWeight: 800 }} />
+                            <Chip size="small" label="Revisión y retroalimentación" sx={{ bgcolor: '#fef3c7', color: '#b45309', fontWeight: 800 }} />
                             <Chip size="small" icon={<CalendarMonthIcon sx={{ fontSize: 14 }} />} label={`Vigencia ${plan.term?.year || '—'}`} sx={{ bgcolor: '#fff', color: '#78350f', fontWeight: 700 }} />
                           </Stack>
                           <Typography sx={{ fontSize: 17, fontWeight: 900, color: '#1e293b' }}>
@@ -682,7 +682,7 @@ export default function PlanAccionConsulta() {
                             '&:hover': { bgcolor: '#f59e0b' }
                           }}
                         >
-                          Revisar y Validar Plan
+                          Revisar Plan y Acta
                         </Button>
                       </Stack>
                     </Paper>
@@ -879,9 +879,9 @@ export default function PlanAccionConsulta() {
                 color="inherit"
                 startIcon={<EditNoteIcon />}
                 onClick={() => setAdjustmentsModalOpen(true)}
-                sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, fontSize: 12 }}
+                sx={{ textTransform: 'none', fontWeight: 850, borderRadius: 2, fontSize: 12, borderColor: '#d97706', color: '#92400e', '&:hover': { bgcolor: 'rgba(217,119,6,0.08)' } }}
               >
-                Solicitar Ajustes
+                Devolver con observaciones a Planeación
               </Button>
               {latestMinute && (
                 <Button
@@ -898,10 +898,10 @@ export default function PlanAccionConsulta() {
           }
         >
           <Typography sx={{ fontWeight: 850, fontSize: 14, color: '#92400e' }}>
-            Plan de Acción formulado en etapa de validación y firmas
+            Plan de Acción en Revisión y Retroalimentación (Etapa Transitoria)
           </Typography>
           <Typography sx={{ fontSize: 12.5, color: '#b45309', mt: 0.2 }}>
-            Revise las actividades concertadas y el Acta COM-IF-FR-002. Puede solicitar ajustes o proceder a la firma.
+            Revise las actividades concertadas y el Acta COM-IF-FR-002. Si requiere modificaciones, devuélvalo con sus observaciones a Planeación y Efectividad (el plan saldrá temporalmente de su bandeja mientras es ajustado). Si está conforme, proceda a la firma del acta.
           </Typography>
         </Alert>
       ) : (

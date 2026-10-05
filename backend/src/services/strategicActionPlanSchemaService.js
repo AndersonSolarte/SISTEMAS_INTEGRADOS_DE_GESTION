@@ -22,8 +22,16 @@ const captureActionPlanSchema = async (strategicPlanId, transaction = null) => {
       order: [['position', 'ASC']], transaction
     })
   ]);
-  const fields = fieldRows.map(plain);
-  const catalogTypes = [...new Set(fields.map((field) => field.validation_rules?.catalog_type).filter(Boolean))];
+  const fields = fieldRows.map(plain).map((field) => {
+    if (['responsible', 'responsable_de_ejecucion', 'co_responsibles'].includes(field.key) && !field.validation_rules?.catalog_type) {
+      return { ...field, validation_rules: { ...(field.validation_rules || {}), catalog_type: 'organizational_unit' } };
+    }
+    return field;
+  });
+  const catalogTypes = [...new Set([
+    'organizational_unit',
+    ...fields.map((field) => field.validation_rules?.catalog_type).filter(Boolean)
+  ])];
   const catalogRows = catalogTypes.length ? await StrategicCatalogItem.findAll({
     where: { strategic_plan_id: plan.id, catalog_type: { [Op.in]: catalogTypes }, active: true },
     order: [['catalog_type', 'ASC'], ['name', 'ASC']], transaction

@@ -15,7 +15,7 @@ const {
   StrategicAuditEvent, User
 } = require('../models');
 const { generateActaBuffer } = require('../services/actaExportService');
-const { generateStrategicMinutePdf } = require('../services/strategicMinutePdfService');
+const { generateStrategicMinutePdf, ensureMinuteFinalPdfBuffer } = require('../services/strategicMinutePdfService');
 const { generatePlanAccionBuffer } = require('../services/planAccionExportService');
 const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
@@ -674,8 +674,22 @@ const getMyActionPlans = wrap(async (req, res) => {
     return ok(res, []);
   }
 
+  const isPlanningStaff = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user?.role);
+
+  const whereClause = { id: { [Op.in]: planIds }, deleted_at: null };
+  if (!isPlanningStaff) {
+    whereClause[Op.or] = [
+      { status: { [Op.in]: ['owner_validation', 'active', 'monitoring', 'closed'] } },
+      sequelize.literal(`EXISTS (
+        SELECT 1 FROM pei_meetings pm
+        JOIN pei_minute_versions pmv ON pmv.meeting_id = pm.id
+        WHERE pm.action_plan_id = "StrategicActionPlan"."id" AND pmv.status = 'signing'
+      )`)
+    ];
+  }
+
   const plans = await StrategicActionPlan.findAll({
-    where: { id: { [Op.in]: planIds }, deleted_at: null },
+    where: whereClause,
     include: [
       {
         model: StrategicTerm, as: 'term',
@@ -717,8 +731,11 @@ const getMyActionPlans = wrap(async (req, res) => {
     const latestMinute = (latestMeeting?.minuteVersions || []).sort((a, b) => Number(b.version) - Number(a.version))[0] || null;
     const isSigning = latestMinute?.status === 'signing';
     const isFinalized = latestMinute?.status === 'finalized' || latestMeeting?.status === 'formalized';
-    const isActive = plain.status === 'active' || plain.status === 'monitoring';
-    const isOwnerValidation = plain.status === 'owner_validation' || isSigning;
+    const effectiveStatus = (plain.status === 'convocation' || plain.status === 'formulation' || plain.status === 'preliminary_minutes') && isSigning
+      ? 'owner_validation'
+      : plain.status;
+    const isActive = effectiveStatus === 'active' || effectiveStatus === 'monitoring';
+    const isOwnerValidation = effectiveStatus === 'owner_validation' || isSigning;
 
     const myParticipant = (latestMeeting?.participants || []).find((p) => (
       String(p.user_id) === String(userId) ||
@@ -730,6 +747,7 @@ const getMyActionPlans = wrap(async (req, res) => {
 
     return {
       ...plain,
+      status: effectiveStatus,
       is_responsible: String(plain.responsible_user_id) === String(userId),
       can_execute: isActive,
       needs_review: isOwnerValidation && !mySignature,
@@ -777,9 +795,29 @@ const getActionPlan = wrap(async (req, res) => {
     if (replacement) error.data = { replacement_plan_id: replacement.id, replacement_code: replacement.code };
     throw error;
   }
-  const storedSchema = actionPlan.metadata?.form_schema;
-  actionPlan.setDataValue('form_schema', storedSchema || await captureActionPlanSchema(actionPlan.term.strategic_plan_id));
-  actionPlan.setDataValue('schema_is_snapshot', Boolean(storedSchema));
+  let activeSchema = actionPlan.metadata?.form_schema;
+  const hasOrgUnits = Array.isArray(activeSchema?.catalogs) && activeSchema.catalogs.some((c) => c.catalog_type === 'organizational_unit');
+  if (!activeSchema || !hasOrgUnits) {
+    const freshSchema = await captureActionPlanSchema(actionPlan.term.strategic_plan_id);
+    activeSchema = {
+      ...(activeSchema || freshSchema),
+      catalogs: freshSchema.catalogs,
+      levels: activeSchema?.levels?.length ? activeSchema.levels : freshSchema.levels,
+      elements: activeSchema?.elements?.length ? activeSchema.elements : freshSchema.elements,
+      fields: freshSchema.fields
+    };
+    actionPlan.metadata = { ...(actionPlan.metadata || {}), form_schema: activeSchema };
+    await actionPlan.update({ metadata: actionPlan.metadata });
+  } else if (Array.isArray(activeSchema?.fields)) {
+    activeSchema.fields = activeSchema.fields.map((f) => {
+      if (['responsible', 'responsable_de_ejecucion', 'co_responsibles'].includes(f.key) && !f.validation_rules?.catalog_type) {
+        return { ...f, validation_rules: { ...(f.validation_rules || {}), catalog_type: 'organizational_unit' } };
+      }
+      return f;
+    });
+  }
+  actionPlan.setDataValue('form_schema', activeSchema);
+  actionPlan.setDataValue('schema_is_snapshot', Boolean(actionPlan.metadata?.form_schema));
   for (const meeting of actionPlan.meetings || []) {
     for (const minute of meeting.minuteVersions || []) {
       for (const signature of minute.signatures || []) {
@@ -1178,6 +1216,200 @@ const transitionActionPlan = wrap(async (req, res) => {
   const updated = await transitionPlan({ req, actionPlan, action: req.body.action, comment: req.body.comment, metadata: req.body.metadata });
   if (updated.status === 'active') {
     await refreshActionRepository(updated.term_id, req, 'plan_activated');
+    try {
+      // 1. Cargar el plan completo con actividades, seguimientos y vigencia
+      const fullPlan = await StrategicActionPlan.findByPk(actionPlan.id, {
+        include: [
+          { model: StrategicTerm, as: 'term', include: [{ model: StrategicMonitoringPeriod, as: 'monitoringPeriods' }] },
+          { model: StrategicCatalogItem, as: 'organizationalUnit' },
+          {
+            model: StrategicActionItem, as: 'items',
+            where: { deleted_at: null }, required: false,
+            include: [{
+              model: StrategicMonitoringResult, as: 'monitoringResults', required: false,
+              include: [{ model: StrategicMonitoringPeriod, as: 'period' }]
+            }]
+          }
+        ]
+      });
+
+      // 2. Obtener la última reunión y versión del acta
+      const latestMeeting = await StrategicMeeting.findOne({
+        where: { action_plan_id: actionPlan.id },
+        order: [['starts_at', 'DESC'], ['created_at', 'DESC']],
+        include: [{ model: StrategicMinuteVersion, as: 'minuteVersions' }]
+      });
+      const latestMinute = (latestMeeting?.minuteVersions || []).sort((a, b) => Number(b.version) - Number(a.version))[0] || null;
+
+      // Si el acta estaba en firmas o revisión, formalizarla al activar la ejecución
+      if (latestMinute && latestMinute.status !== 'finalized') {
+        await latestMinute.update({
+          status: 'finalized',
+          finalized_at: new Date(),
+          finalized_by: req.user.id
+        });
+        if (latestMeeting && latestMeeting.status !== 'formalized') {
+          await latestMeeting.update({ status: 'formalized' });
+        }
+      }
+
+      // 3. Generar el PDF del Acta COM-IF-FR-002
+      let minutePdfBuffer = null;
+      if (latestMinute) {
+        try {
+          minutePdfBuffer = await ensureMinuteFinalPdfBuffer(latestMinute);
+        } catch (errMinute) {
+          console.warn('transitionActionPlan: No se pudo generar PDF del acta:', errMinute.message);
+        }
+      }
+
+      // 4. Generar el archivo de Excel oficial DIR-PE-FR-003
+      let excelBuffer = null;
+      try {
+        const activities = (fullPlan?.items || []).map((item) => {
+          const sorted = [...(item.monitoringResults || [])].sort((a, b) => (a.period?.position || 0) - (b.period?.position || 0));
+          return {
+            objetivo_estrategico: item.custom_values?.strategic_objective || '',
+            lineamiento_estrategico: item.custom_values?.guideline || '',
+            actividad: item.activity,
+            tipo_indicador: item.indicator_type,
+            fecha_inicio: item.starts_on,
+            fecha_fin: item.ends_on,
+            indicador: item.indicator,
+            meta: item.target,
+            responsable: fullPlan?.organizationalUnit?.name,
+            corresponsable: (item.co_responsibles || []).join(', '),
+            avance_ip: sorted[0]?.physical_progress,
+            observaciones_ip: sorted[0]?.observations,
+            avance_iip: sorted[1]?.physical_progress,
+            observaciones_iip: sorted[1]?.observations
+          };
+        });
+        excelBuffer = await generatePlanAccionBuffer({
+          planData: { anio: fullPlan?.term?.year, codigoPlan: fullPlan?.code, responsable: fullPlan?.organizationalUnit?.name },
+          actividades: activities,
+          corresponsabilidades: []
+        });
+      } catch (errExcel) {
+        console.warn('transitionActionPlan: No se pudo generar Excel del plan:', errExcel.message);
+      }
+
+      // 5. Preparar adjuntos para los correos institucionales
+      const attachments = [];
+      if (minutePdfBuffer) {
+        attachments.push({
+          filename: `Acta_COM-IF-FR-002_${actionPlan.code}.pdf`,
+          content: minutePdfBuffer,
+          contentType: 'application/pdf'
+        });
+      }
+      if (excelBuffer) {
+        attachments.push({
+          filename: `DIR-PE-FR-003_${actionPlan.code}_${fullPlan?.term?.year || ''}.xlsx`,
+          content: excelBuffer,
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+      }
+
+      // 6. Obtener correo de Rectoría
+      const rectorUser = await User.findOne({
+        where: {
+          [Op.or]: [
+            { cargo: { [Op.iLike]: '%rector%' } },
+            { email: { [Op.iLike]: '%rectoria%' } }
+          ],
+          estado: 'activo'
+        }
+      });
+      const rectorEmail = process.env.RECTORIA_EMAIL || rectorUser?.email || 'rectoria@unicesmag.edu.co';
+
+      // 7. Obtener usuario responsable
+      const responsibleUser = actionPlan.responsible_user_id
+        ? await User.findByPk(actionPlan.responsible_user_id)
+        : null;
+
+      // 8. Envío de correo a Rectoría con Acta y Excel
+      if (rectorEmail) {
+        const rectorIntro = `
+          <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#1e3a8a;">NOTIFICACIÓN A RECTORÍA · PLAN DE ACCIÓN APROBADO</p>
+          <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) Señor(a) Rector(a),</p>
+          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Efectividad</strong> se complace en informarle que se ha formalizado y aprobado el <strong>Plan de Acción Institucional</strong> para su inicio de ejecución oficial.</p>
+        `;
+        const rectorBody = `
+          <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;color:#1e293b;">
+              <tr><td style="padding:4px 0;width:140px;color:#64748b;"><strong>Plan de Acción:</strong></td><td style="padding:4px 0;font-weight:700;">${escapeHtml(actionPlan.code)}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Dependencia:</strong></td><td style="padding:4px 0;font-weight:700;">${escapeHtml(fullPlan?.organizationalUnit?.name || 'Dependencia')}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Vigencia:</strong></td><td style="padding:4px 0;">${escapeHtml(String(fullPlan?.term?.year || ''))}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Responsable:</strong></td><td style="padding:4px 0;">${escapeHtml(responsibleUser?.nombre || 'No asignado')}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Actividades:</strong></td><td style="padding:4px 0;">${fullPlan?.items?.length || 0} actividades concertadas</td></tr>
+            </table>
+          </div>
+          <div style="margin:18px 0;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;color:#166534;font-size:13px;">
+            <p style="margin:0 0 4px;font-weight:800;">✓ Documentación institucional adjunta</p>
+            <p style="margin:0;line-height:1.5;">Se adjuntan al presente correo el <strong>Acta de Concertación COM-IF-FR-002</strong> debidamente firmada y el formato oficial del <strong>Plan de Acción DIR-PE-FR-003 en Excel</strong> para su conocimiento y control institucional.</p>
+          </div>
+        `;
+        const rectorHtml = renderInstitutionalTemplate({
+          title: `Plan de Acción Aprobado e Inicio de Ejecución · ${actionPlan.code}`,
+          introHtml: rectorIntro,
+          bodyHtml: rectorBody
+        });
+        await sendStrategicPlanningEmail({
+          to: rectorEmail,
+          subject: `Plan de Acción Aprobado e Inicio de Ejecución - ${actionPlan.code} (${fullPlan?.organizationalUnit?.name || ''})`,
+          text: `Estimado(a) Rector(a), se ha aprobado e iniciado la ejecución oficial del Plan de Acción ${actionPlan.code} para ${fullPlan?.organizationalUnit?.name}. Se adjuntan Acta COM-IF-FR-002 y formato Excel DIR-PE-FR-003.`,
+          html: rectorHtml,
+          attachments
+        });
+      }
+
+      // 9. Envío de correo al Responsable / Líder de Proceso con Acta y Excel
+      if (responsibleUser?.email) {
+        const respIntro = `
+          <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#15803d;">PLAN DE ACCIÓN APROBADO · INICIO DE EJECUCIÓN OFICIAL</p>
+          <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) <strong>${escapeHtml(responsibleUser.nombre || 'Líder')}</strong>,</p>
+          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Efectividad</strong> le informa que su <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> ha sido aprobado formalmente y ha pasado a la fase de <strong>Ejecución Oficial</strong>.</p>
+        `;
+        const respBody = `
+          <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;color:#1e293b;">
+              <tr><td style="padding:4px 0;width:140px;color:#64748b;"><strong>Plan de Acción:</strong></td><td style="padding:4px 0;font-weight:700;">${escapeHtml(actionPlan.code)}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Dependencia:</strong></td><td style="padding:4px 0;font-weight:700;">${escapeHtml(fullPlan?.organizationalUnit?.name || 'Dependencia')}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Vigencia:</strong></td><td style="padding:4px 0;">${escapeHtml(String(fullPlan?.term?.year || ''))}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Actividades a cumplir:</strong></td><td style="padding:4px 0;">${fullPlan?.items?.length || 0} actividades</td></tr>
+            </table>
+          </div>
+          <div style="margin:18px 0;padding:14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;color:#1e40af;font-size:13px;">
+            <p style="margin:0 0 6px;font-weight:800;">✓ Módulo Plan de Acción habilitado para la vigencia</p>
+            <p style="margin:0;line-height:1.5;">El plan permanecerá activo en su plataforma durante todo el periodo de ejecución configurado para que reporte avances semestrales y cargue las evidencias correspondientes. Al finalizar la vigencia y concluir el cierre del plan, el ciclo finalizará formalmente.</p>
+          </div>
+          <div style="margin:14px 0;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;color:#166534;font-size:13px;">
+            <p style="margin:0;">Se adjuntan al presente correo el <strong>Acta de Concertación COM-IF-FR-002</strong> debidamente firmada y el formato oficial en <strong>Excel DIR-PE-FR-003</strong> como constancia institucional.</p>
+          </div>
+        `;
+        const respHtml = renderInstitutionalTemplate({
+          title: `Plan de Acción Aprobado · Inicio de Ejecución Oficial · ${actionPlan.code}`,
+          introHtml: respIntro,
+          bodyHtml: respBody
+        });
+        await sendStrategicPlanningEmail({
+          to: responsibleUser.email,
+          subject: `Plan de Acción Aprobado - Inicio de Ejecución Oficial (${actionPlan.code})`,
+          text: `Estimado(a) ${responsibleUser.nombre}, su Plan de Acción ${actionPlan.code} ha sido aprobado e inicia su fase de Ejecución Oficial. Se adjuntan Acta COM-IF-FR-002 y formato Excel DIR-PE-FR-003.`,
+          html: respHtml,
+          attachments
+        });
+      }
+
+      await audit(req, 'action_plan.activation_emails', 'action_plan', actionPlan.id, null, {
+        rector_email: rectorEmail,
+        responsible_email: responsibleUser?.email || null,
+        attachments_count: attachments.length
+      }, 'Correos de activación enviados a Rectoría y Responsable con Acta PDF y Excel');
+    } catch (errActivationNotify) {
+      console.error('transitionActionPlan: Error en notificación de activación:', errActivationNotify);
+    }
   }
   ok(res, updated, 'Transición registrada.');
 });
@@ -1430,6 +1662,24 @@ const publishMinute = wrap(async (req, res) => {
   const meeting = await StrategicMeeting.findByPk(minute.meeting_id, {
     include: [{ model: StrategicMeetingParticipant, as: 'participants' }]
   });
+  if (meeting?.action_plan_id) {
+    const actionPlan = await StrategicActionPlan.findByPk(meeting.action_plan_id);
+    if (actionPlan && !['owner_validation', 'active', 'monitoring', 'closed'].includes(actionPlan.status)) {
+      const prevStatus = actionPlan.status;
+      await actionPlan.update({ status: 'owner_validation', updated_by: req.user.id });
+      await StrategicWorkflowEvent.create({
+        action_plan_id: actionPlan.id,
+        from_state: prevStatus,
+        to_state: 'owner_validation',
+        action: 'submit_owner_validation',
+        comment: 'Acta habilitada para firmas. El Plan de Acción entra en etapa transitoria de revisión y retroalimentación del responsable.',
+        performed_by: req.user.id,
+        ip_address: requestMeta(req).ip_address,
+        session_id: requestMeta(req).session_id
+      });
+      await audit(req, 'action_plan.submit_owner_validation', 'action_plan', actionPlan.id, { status: prevStatus }, { status: 'owner_validation' }, 'Envío automático a firmas y revisión del responsable');
+    }
+  }
   const invitees = (meeting?.participants || []).filter((participant) => (
     participant.signature_required
     && participant.status !== 'signed'

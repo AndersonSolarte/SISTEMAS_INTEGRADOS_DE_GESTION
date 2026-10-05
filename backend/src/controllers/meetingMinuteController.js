@@ -7,7 +7,8 @@ const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const {
   DigitalMeetingMinute, DigitalMeetingParticipant, DigitalMeetingSignature,
-  DigitalMeetingSchedule, GoogleCalendarConnection, Documento, User
+  DigitalMeetingSchedule, GoogleCalendarConnection, Documento, User,
+  PoblacionalMatriculado, PoblacionalCaracterizacion
 } = require('../models');
 const {
   getMeetingMinuteFeatureState, isMeetingMinuteDocument, setMeetingMinuteFeatureState
@@ -561,6 +562,114 @@ const lookupParticipant = wrap(async (req, res) => {
   const user = await User.findOne({ where: { username: document, estado: 'activo' }, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] });
   if (!user) throw Object.assign(new Error('No se encontró una persona activa con esa cédula.'), { statusCode: 404 });
   res.json({ success: true, data: { id: user.id, document: user.username, name: formatPersonName(user.nombre), email: user.email, organization: user.dependencia, role_title: user.cargo } });
+});
+
+const searchParticipants = wrap(async (req, res) => {
+  const query = clean(req.query.query, 100).replace(/\s+/g, ' ');
+  if (query.length < 2) {
+    throw Object.assign(new Error('Digite al menos dos caracteres del nombre o la cédula.'), { statusCode: 422 });
+  }
+
+  const normalizeSearch = (value) => value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const normalizedQuery = normalizeSearch(query);
+  const tokens = normalizedQuery.split(' ').filter(Boolean).slice(0, 6);
+  const normalizedName = sequelize.fn(
+    'translate',
+    sequelize.fn('lower', sequelize.col('nombre')),
+    'áéíóúüñ',
+    'aeiouun'
+  );
+  const nameTokens = tokens.map((token) => sequelize.where(normalizedName, { [Op.like]: `%${token}%` }));
+  const users = await User.findAll({
+    where: {
+      estado: 'activo',
+      [Op.or]: [
+        { username: { [Op.iLike]: `%${query}%` } },
+        sequelize.where(normalizedName, { [Op.like]: `%${normalizedQuery}%` }),
+        { [Op.and]: nameTokens }
+      ]
+    },
+    attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'],
+    order: [['nombre', 'ASC']],
+    limit: 12
+  });
+
+  const data = users.map((user) => ({
+    id: user.id,
+    document: user.username,
+    name: formatPersonName(user.nombre),
+    email: user.email,
+    organization: user.dependencia,
+    role_title: user.cargo
+  }));
+  res.json({ success: true, data });
+});
+
+const lookupEnrolledStudent = wrap(async (req, res) => {
+  const document = clean(req.query.document, 80);
+  const normalizedDocument = document.replace(/[^a-zA-Z0-9]/g, '');
+  if (!normalizedDocument) {
+    throw Object.assign(new Error('Digite la cédula o identificación del estudiante.'), { statusCode: 422 });
+  }
+
+  const normalizedColumnMatch = (column) => sequelize.where(
+    sequelize.fn('regexp_replace', sequelize.col(column), '[^a-zA-Z0-9]', '', 'g'),
+    normalizedDocument
+  );
+  const matriculado = await PoblacionalMatriculado.findOne({
+    where: normalizedColumnMatch('numero_documento'),
+    attributes: [
+      'numero_documento', 'codigo_estudiante', 'primer_nombre', 'segundo_nombre',
+      'primer_apellido', 'segundo_apellido', 'programa', 'facultad', 'anio', 'semestre'
+    ],
+    order: [['anio', 'DESC'], ['id', 'DESC']],
+    raw: true
+  });
+
+  if (!matriculado) {
+    return res.json({ success: true, found: false, data: null });
+  }
+
+  const [systemUser, characterization] = await Promise.all([
+    User.findOne({
+      where: { [Op.and]: [normalizedColumnMatch('username'), { estado: 'activo' }] },
+      attributes: ['email'],
+      raw: true
+    }),
+    PoblacionalCaracterizacion.findOne({
+      where: normalizedColumnMatch('no_identificacion'),
+      attributes: ['correo_electronico'],
+      order: [['anio', 'DESC'], ['id', 'DESC']],
+      raw: true
+    })
+  ]);
+
+  const name = [
+    matriculado.primer_nombre,
+    matriculado.segundo_nombre,
+    matriculado.primer_apellido,
+    matriculado.segundo_apellido
+  ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  const program = clean(matriculado.programa || matriculado.facultad, 220);
+  const email = clean(systemUser?.email || characterization?.correo_electronico, 254).toLowerCase();
+
+  return res.json({
+    success: true,
+    found: true,
+    data: {
+      document: clean(matriculado.numero_documento, 80) || document,
+      name: formatPersonName(name),
+      email,
+      organization: program ? `Universidad CESMAG · ${program}` : 'Universidad CESMAG',
+      role_title: 'Estudiante',
+      student_code: clean(matriculado.codigo_estudiante, 80),
+      program,
+      academic_period: [matriculado.anio, matriculado.semestre].filter(Boolean).join('-')
+    }
+  });
 });
 
 const listMeetingLocations = wrap(async (_req, res) => {
@@ -1447,10 +1556,75 @@ const calendarOAuthCallback = async (req, res) => {
   })();
   const respond = (success, message) => {
     const safeMessage = escapeHtml(message);
+    const safeFrontendOrigin = escapeHtml(frontendOrigin);
     const eventPayload = JSON.stringify({ type: 'siac-calendar-oauth', success }).replace(/</g, '\\u003c');
+    const pageTitle = success ? 'Calendar conectado' : 'No fue posible conectar Calendar';
+    const pageDescription = success
+      ? 'La autorización se completó correctamente. Ya puede programar y consultar reuniones desde SIAC.'
+      : 'No se pudo completar la autorización. Regrese a SIAC e inténtelo nuevamente.';
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
     res.setHeader('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'`);
-    return res.status(success ? 200 : 400).send(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Google Calendar</title></head><body style="font-family:Arial,sans-serif;padding:32px;text-align:center"><h2>${success ? 'Calendar conectado' : 'No fue posible conectar Calendar'}</h2><p>${safeMessage}</p><p>Puede cerrar esta ventana y regresar a SIAC.</p><script nonce="${nonce}">if(window.opener){window.opener.postMessage(${eventPayload},${JSON.stringify(frontendOrigin)});}setTimeout(function(){window.close();},900);</script></body></html>`);
+    return res.status(success ? 200 : 400).send(`<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${pageTitle} | SIAC</title>
+  <style>
+    :root{color-scheme:light;--blue:#2563eb;--blue-dark:#173c8f;--surface:#fff;--text:#16233b;--muted:#64748b;--line:#dbe7f7;--success:#10b981;--success-soft:#ecfdf5;--error:#ef4444;--error-soft:#fff1f2}
+    *{box-sizing:border-box}
+    html,body{min-height:100%;margin:0}
+    body{display:grid;place-items:center;padding:24px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--text);background:radial-gradient(circle at top left,#dbeafe 0,transparent 42%),linear-gradient(145deg,#f8fbff 0%,#eef4ff 100%)}
+    .shell{width:min(100%,560px);overflow:hidden;border:1px solid rgba(148,163,184,.28);border-radius:28px;background:var(--surface);box-shadow:0 28px 70px rgba(30,64,175,.18)}
+    .brand{display:flex;align-items:center;gap:12px;padding:20px 24px;color:#fff;background:linear-gradient(120deg,var(--blue-dark),#315fe4)}
+    .brand-mark{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:rgba(255,255,255,.16);font-weight:800}
+    .brand strong{display:block;font-size:17px}.brand span{display:block;margin-top:2px;font-size:12px;opacity:.82}
+    .content{padding:38px 34px 32px;text-align:center}
+    .status-icon{display:grid;place-items:center;width:76px;height:76px;margin:0 auto 22px;border-radius:50%;font-size:38px;font-weight:800;color:${success ? '#047857' : '#b91c1c'};background:${success ? 'var(--success-soft)' : 'var(--error-soft)'};box-shadow:0 0 0 10px ${success ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)'} }
+    h1{margin:0;font-size:28px;line-height:1.2;letter-spacing:-.025em}
+    .description{max-width:440px;margin:12px auto 24px;color:var(--muted);font-size:15px;line-height:1.6}
+    .account{display:flex;align-items:center;justify-content:center;gap:10px;padding:14px 16px;border:1px solid ${success ? '#a7f3d0' : '#fecdd3'};border-radius:14px;color:${success ? '#047857' : '#b91c1c'};background:${success ? 'var(--success-soft)' : 'var(--error-soft)'};font-size:14px;font-weight:700;overflow-wrap:anywhere}
+    .actions{display:grid;gap:12px;margin-top:26px}
+    button,a{display:flex;align-items:center;justify-content:center;min-height:48px;padding:12px 20px;border-radius:14px;font:inherit;font-weight:750;text-decoration:none;cursor:pointer}
+    button{border:0;color:#fff;background:linear-gradient(120deg,var(--blue),#4f46e5);box-shadow:0 10px 24px rgba(37,99,235,.22)}
+    button:hover{filter:brightness(1.04)}
+    a{border:1px solid var(--line);color:var(--blue);background:#fff}
+    .hint{margin:18px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+    @media(max-width:520px){body{padding:14px}.shell{border-radius:22px}.content{padding:32px 22px 26px}h1{font-size:24px}}
+  </style>
+</head>
+<body>
+  <main class="shell" aria-labelledby="result-title">
+    <header class="brand"><div class="brand-mark">S</div><div><strong>SIAC</strong><span>Sistema Integrado de Aseguramiento de la Calidad</span></div></header>
+    <section class="content">
+      <div class="status-icon" aria-hidden="true">${success ? '&#10003;' : '!'}</div>
+      <h1 id="result-title">${pageTitle}</h1>
+      <p class="description">${pageDescription}</p>
+      <div class="account">${safeMessage}</div>
+      <div class="actions">
+        <button id="return-button" type="button">Volver a SIAC</button>
+        <a href="${safeFrontendOrigin}">Abrir SIAC en esta ventana</a>
+      </div>
+      <p class="hint" id="close-hint">${success ? 'Esta ventana se cerrará automáticamente en 5 segundos.' : 'Puede cerrar esta ventana después de regresar a SIAC.'}</p>
+    </section>
+  </main>
+  <script nonce="${nonce}">
+    (function(){
+      var payload=${eventPayload};
+      var target=${JSON.stringify(frontendOrigin)};
+      var button=document.getElementById('return-button');
+      var hint=document.getElementById('close-hint');
+      if(window.opener){window.opener.postMessage(payload,target);}
+      function returnToSiac(){
+        if(window.opener){window.opener.focus();window.close();}
+        setTimeout(function(){if(!window.closed){window.location.replace(target);}},180);
+      }
+      button.addEventListener('click',returnToSiac);
+      ${success ? `var seconds=5;var timer=setInterval(function(){seconds-=1;if(seconds<=0){clearInterval(timer);returnToSiac();return;}hint.textContent='Esta ventana se cerrará automáticamente en '+seconds+' segundo'+(seconds===1?'':'s')+'.';},1000);` : ''}
+    }());
+  </script>
+</body>
+</html>`);
   };
 
   try {
@@ -1758,7 +1932,9 @@ module.exports = {
   getSigningAccess,
   listMeetingLocations,
   listMinutes,
+  lookupEnrolledStudent,
   lookupParticipant,
+  searchParticipants,
   publicMinute,
   publish,
   reopenForEditing,

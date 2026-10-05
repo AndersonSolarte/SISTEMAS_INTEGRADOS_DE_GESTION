@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import {
   Add, ArrowBack, ArrowForward, CalendarMonth, Close, ContentCopy, DeleteOutline, Download, EditNote, Email, PersonSearch,
-  HelpOutline, QrCode2, Refresh, Save, Send, ViewSidebar, Visibility
+  HelpOutline, QrCode2, Refresh, Save, School, Send, ViewSidebar, Visibility
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import meetingMinuteService from '../../services/meetingMinuteService';
@@ -259,9 +259,13 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [candidate, setCandidate] = useState(null);
   const [responsibleDocument, setResponsibleDocument] = useState('');
   const [responsibleCandidate, setResponsibleCandidate] = useState(null);
+  const [responsibleOptions, setResponsibleOptions] = useState([]);
+  const [responsibleSearchOpen, setResponsibleSearchOpen] = useState(false);
   const [searchingResponsible, setSearchingResponsible] = useState(false);
   const [externalMode, setExternalMode] = useState(false);
   const [externalDraft, setExternalDraft] = useState({ document: '', name: '', email: '', organization: '', role_title: '' });
+  const [externalStudentResult, setExternalStudentResult] = useState(null);
+  const [lookingUpExternalStudent, setLookingUpExternalStudent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [qr, setQr] = useState(null);
@@ -391,6 +395,38 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       setLoadingMeetingPlaces(false);
     }
   };
+  useEffect(() => {
+    const query = responsibleDocument.trim();
+    if (!open || !canManageParticipants || responsibleCandidate || query.length < 2) {
+      setResponsibleOptions([]);
+      setResponsibleSearchOpen(false);
+      return undefined;
+    }
+
+    let active = true;
+    const timer = setTimeout(async () => {
+      setSearchingResponsible(true);
+      try {
+        const response = await meetingMinuteService.searchParticipants(query);
+        if (!active) return;
+        const matches = Array.isArray(response.data) ? response.data : [];
+        setResponsibleOptions(matches);
+        setResponsibleSearchOpen(matches.length > 0);
+      } catch (_) {
+        if (!active) return;
+        setResponsibleOptions([]);
+        setResponsibleSearchOpen(false);
+      } finally {
+        if (active) setSearchingResponsible(false);
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [open, canManageParticipants, responsibleDocument, responsibleCandidate]);
+
   useEffect(() => {
     if (!open) return;
     guideAnimationRef.current?.cancel?.();
@@ -651,8 +687,18 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setSearchingResponsible(true);
     setResponsibleCandidate(null);
     try {
-      const response = await meetingMinuteService.lookupParticipant(responsibleDocument.trim());
-      setResponsibleCandidate(response.data);
+      const response = await meetingMinuteService.searchParticipants(responsibleDocument.trim());
+      const matches = Array.isArray(response.data) ? response.data : [];
+      setResponsibleOptions(matches);
+      if (matches.length === 1) {
+        setResponsibleCandidate(matches[0]);
+        setResponsibleDocument(`${formatPersonName(matches[0].name)} · CC ${matches[0].document}`);
+        setResponsibleSearchOpen(false);
+      } else if (matches.length > 1) {
+        setResponsibleSearchOpen(true);
+      } else {
+        enqueueSnackbar('No se encontraron personas activas con ese nombre o cédula.', { variant: 'info' });
+      }
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'No se encontró el responsable.', { variant: 'error' });
     } finally {
@@ -704,6 +750,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
 
     setResponsibleCandidate(null);
     setResponsibleDocument('');
+    setResponsibleOptions([]);
+    setResponsibleSearchOpen(false);
     enqueueSnackbar(newResp.is_primary ? 'Responsable Principal asignado.' : 'Co-responsable agregado.', { variant: 'success' });
   };
 
@@ -768,7 +816,49 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setField('participants', [...form.participants, { ...external, name: formatPersonName(external.name), user_id: null, status: 'invited', external: true }]);
     setExternalMode(false);
     setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
+    setExternalStudentResult(null);
     setDocumentNumber('');
+  };
+
+  const lookupExternalStudent = async () => {
+    const document = String(externalDraft.document || '').trim();
+    if (!document) {
+      enqueueSnackbar('Digite la cédula o identificación del estudiante.', { variant: 'warning' });
+      return;
+    }
+
+    setLookingUpExternalStudent(true);
+    setExternalStudentResult(null);
+    try {
+      const response = await meetingMinuteService.lookupEnrolledStudent(document);
+      if (!response?.found || !response.data) {
+        setExternalStudentResult({ found: false });
+        enqueueSnackbar('No se encontró en Matriculados. Puede completar los datos manualmente.', { variant: 'info' });
+        return;
+      }
+
+      const student = response.data;
+      setExternalDraft({
+        document: student.document || document,
+        name: student.name || '',
+        email: student.email || '',
+        organization: student.organization || 'Universidad CESMAG',
+        role_title: 'Estudiante'
+      });
+      setExternalStudentResult({
+        found: true,
+        studentCode: student.student_code || '',
+        program: student.program || '',
+        academicPeriod: student.academic_period || '',
+        hasEmail: Boolean(student.email)
+      });
+      enqueueSnackbar('Datos del estudiante precargados desde Matriculados.', { variant: 'success' });
+    } catch (error) {
+      setExternalStudentResult({ found: false, error: true });
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible consultar la base de Matriculados.', { variant: 'error' });
+    } finally {
+      setLookingUpExternalStudent(false);
+    }
   };
 
   const removeParticipant = (index) => {
@@ -1121,7 +1211,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
 
   const guideErrors = validateRequiredFields();
   const guideSteps = [
-    { key: 'responsables', label: 'Responsable Principal', target: 'responsible-document-field', instruction: 'Digite la cédula del responsable y pulse “Consultar” para asignarlo al acta.' },
+    { key: 'responsables', label: 'Responsable Principal', target: 'responsible-document-field', instruction: 'Busque por nombre o cédula, seleccione la persona correcta y asígnela al acta.' },
     { key: 'titulo', label: 'Título corto', target: 'meeting-titulo-field', instruction: 'Escriba un nombre breve que permita identificar y encontrar fácilmente esta acta.' },
     { key: 'dependencia', label: 'Dependencia que cita', target: 'meeting-dependencia-field', instruction: 'Confirme o escriba la dependencia que está convocando la reunión.' },
     { key: 'lugar', label: 'Lugar', target: 'meeting-lugar-field', instruction: 'Seleccione una ubicación sugerida o escriba el lugar donde se realizará la reunión.' },
@@ -1435,33 +1525,87 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               <Typography fontWeight={900} mb={2}>1. Información de la reunión</Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1.5 }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ gridColumn: '1 / -1' }}>
-                  <TextField
-                    id="responsible-document-field"
-                    disabled={!canManageParticipants}
+                  <Autocomplete
+                    freeSolo
                     fullWidth
-                    error={Boolean(fieldErrors.responsables)}
-                    label={responsablesList.length === 0 ? "Cédula del Responsable Principal *" : "Cédula de responsable o co-responsable"}
-                    placeholder="Ingrese cédula y presione Consultar"
-                    value={responsibleDocument}
-                    onChange={(e) => {
-                      setResponsibleDocument(e.target.value.replace(/[^0-9A-Za-z-]/g, ''));
-                      setResponsibleCandidate(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        lookupResponsible();
+                    disabled={!canManageParticipants}
+                    open={responsibleSearchOpen && responsibleOptions.length > 0}
+                    onOpen={() => responsibleOptions.length > 0 && setResponsibleSearchOpen(true)}
+                    onClose={() => setResponsibleSearchOpen(false)}
+                    options={responsibleOptions}
+                    value={null}
+                    inputValue={responsibleDocument}
+                    loading={searchingResponsible}
+                    filterOptions={(options) => options}
+                    getOptionLabel={(option) => typeof option === 'string'
+                      ? option
+                      : `${formatPersonName(option.name)} · CC ${option.document}`}
+                    isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
+                    onInputChange={(_, value, reason) => {
+                      if (reason === 'input') {
+                        setResponsibleDocument(value.slice(0, 100));
+                        setResponsibleCandidate(null);
+                      } else if (reason === 'clear') {
+                        setResponsibleDocument('');
+                        setResponsibleCandidate(null);
+                        setResponsibleOptions([]);
                       }
                     }}
+                    onChange={(_, option) => {
+                      if (option && typeof option !== 'string') {
+                        setResponsibleCandidate(option);
+                        setResponsibleDocument(`${formatPersonName(option.name)} · CC ${option.document}`);
+                        setResponsibleOptions([]);
+                        setResponsibleSearchOpen(false);
+                      }
+                    }}
+                    noOptionsText="No se encontraron coincidencias"
+                    loadingText="Buscando personas..."
+                    renderOption={(props, option) => {
+                      const { key, ...optionProps } = props;
+                      return (
+                        <Box component="li" key={key} {...optionProps} sx={{ alignItems: 'flex-start !important', py: '10px !important' }}>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Stack direction="row" gap={0.75} alignItems="center" flexWrap="wrap">
+                              <Typography variant="body2" fontWeight={900}>{formatPersonName(option.name)}</Typography>
+                              <Chip size="small" label={`CC ${option.document}`} variant="outlined" sx={{ height: 20, fontSize: 10.5 }} />
+                            </Stack>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              {[option.role_title, option.organization].filter(Boolean).join(' · ') || 'Sin cargo o dependencia registrados'}
+                            </Typography>
+                            {option.email && <Typography variant="caption" color="text.secondary">{option.email}</Typography>}
+                          </Box>
+                        </Box>
+                      );
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        id="responsible-document-field"
+                        error={Boolean(fieldErrors.responsables)}
+                        label={responsablesList.length === 0 ? 'Responsable Principal *' : 'Responsable o co-responsable'}
+                        placeholder="Escriba nombre o cédula"
+                        helperText="Escriba al menos 2 caracteres y seleccione una coincidencia."
+                        InputProps={{
+                          ...params.InputProps,
+                          endAdornment: (
+                            <>
+                              {searchingResponsible ? <CircularProgress color="inherit" size={18} /> : null}
+                              {params.InputProps.endAdornment}
+                            </>
+                          )
+                        }}
+                      />
+                    )}
                   />
                   <Button
-                    disabled={!canManageParticipants || searchingResponsible || !responsibleDocument}
+                    disabled={!canManageParticipants || searchingResponsible || responsibleDocument.trim().length < 2 || Boolean(responsibleCandidate)}
                     variant="outlined"
                     startIcon={searchingResponsible ? <CircularProgress size={16} /> : <PersonSearch />}
                     onClick={lookupResponsible}
                     sx={{ minWidth: 135, textTransform: 'none', fontWeight: 800 }}
                   >
-                    Consultar
+                    Buscar
                   </Button>
                 </Stack>
 
@@ -1532,7 +1676,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </Typography>
                   {responsablesList.length === 0 ? (
                     <Alert severity="info" sx={{ borderRadius: 2 }}>
-                      Consulte la cédula para asignar al <strong>Responsable Principal</strong> de la reunión.
+                      Busque por nombre o cédula para asignar al <strong>Responsable Principal</strong> de la reunión.
                     </Alert>
                   ) : (
                     <Stack gap={1}>

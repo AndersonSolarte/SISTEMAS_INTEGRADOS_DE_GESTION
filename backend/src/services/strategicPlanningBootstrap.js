@@ -22,8 +22,8 @@ const DEFAULT_FIELDS = [
   ['ends_on', 'Fecha fin', 'date', true],
   ['indicator', 'Indicador', 'long_text', true],
   ['target', 'Meta', 'text', true],
-  ['responsible', 'Responsable de ejecución', 'catalog', true],
-  ['co_responsibles', 'Corresponsables', 'catalog_multi', false],
+  ['responsible', 'Responsable de ejecución', 'catalog', true, { catalog_type: 'organizational_unit' }],
+  ['co_responsibles', 'Corresponsables', 'catalog_multi', false, { catalog_type: 'organizational_unit' }],
   ['progress_s1', 'Avance primer periodo', 'percentage', false],
   ['observations_s1', 'Observaciones primer periodo', 'long_text', false],
   ['progress_s2', 'Avance segundo periodo', 'percentage', false],
@@ -53,6 +53,8 @@ const DEFAULT_WORKFLOW = {
     { action: 'submit_technical_review', from: 'preliminary_minutes', to: 'technical_review' },
     { action: 'request_adjustments', from: 'technical_review', to: 'adjustments' },
     { action: 'resubmit_technical_review', from: 'adjustments', to: 'technical_review' },
+    { action: 'submit_owner_validation', from: 'convocation', to: 'owner_validation' },
+    { action: 'submit_owner_validation', from: 'meeting_scheduled', to: 'owner_validation' },
     { action: 'submit_owner_validation', from: 'formulation', to: 'owner_validation' },
     { action: 'submit_owner_validation', from: 'preliminary_minutes', to: 'owner_validation' },
     { action: 'submit_owner_validation', from: 'technical_review', to: 'owner_validation' },
@@ -176,7 +178,7 @@ const ensureStrategicPlanningDefaults = async () => {
   await reconcilePlanTerms(plan);
 
 
-  for (const [position, [key, label, dataType, required]] of DEFAULT_FIELDS.entries()) {
+  for (const [position, [key, label, dataType, required, defaultValidation]] of DEFAULT_FIELDS.entries()) {
     await StrategicFieldDefinition.findOrCreate({
       where: { strategic_plan_id: plan.id, key, configuration_version: 1 },
       defaults: {
@@ -187,7 +189,7 @@ const ensureStrategicPlanningDefaults = async () => {
         required,
         position: position + 1,
         configuration_version: 1,
-        validation_rules: dataType === 'percentage' ? { min: 0, max: 100 } : {},
+        validation_rules: defaultValidation || (dataType === 'percentage' ? { min: 0, max: 100 } : {}),
         formula: key === 'total_progress' ? 'progress_s1 + progress_s2' : null
       }
     });

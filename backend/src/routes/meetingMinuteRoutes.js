@@ -13,6 +13,8 @@ router.get('/calendar-connection/callback', publicLimiter, controller.calendarOA
 router.get('/config', auth, controller.getConfig);
 router.patch('/config', auth, controller.updateConfig);
 router.get('/participants/lookup', auth, controller.lookupParticipant);
+router.get('/participants/search', auth, controller.searchParticipants);
+router.get('/students/lookup', auth, controller.lookupEnrolledStudent);
 router.get('/locations', auth, controller.listMeetingLocations);
 router.get('/calendar/upcoming', auth, controller.listUpcomingCalendarSchedules);
 router.get('/', auth, controller.listMinutes);
