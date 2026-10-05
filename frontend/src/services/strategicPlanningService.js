@@ -43,6 +43,7 @@ const strategicPlanningService = {
   getMyActionPlans: () => api.get(`${root}/my-action-plans`).then(data),
   getActionPlan: (id) => api.get(`${root}/action-plans/${id}`, { timeout: 30000 }).then(data),
   exportActionPlan: (id) => api.get(`${root}/action-plans/${id}/export`, { responseType: 'blob', timeout: 60000 }).then((response) => response.data),
+  syncDriveExcel: (id) => api.post(`${root}/action-plans/${id}/sync-drive-excel`).then(data),
   createActionPlan: (payload) => api.post(`${root}/action-plans`, payload).then(data),
   updateActionPlan: (id, payload) => api.patch(`${root}/action-plans/${id}`, payload).then(data),
   updateStage1Timeline: (id, payload) => api.put(`${root}/action-plans/${id}/stage1-timeline`, payload).then(data),

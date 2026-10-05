@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import {
   Add, ArrowBack, ArrowForward, CalendarMonth, Close, ContentCopy, DeleteOutline, Download, EditNote, Email, PersonSearch,
-  HelpOutline, QrCode2, Refresh, Save, School, Send, ViewSidebar, Visibility
+  HelpOutline, QrCode2, Refresh, Save, Send, ViewSidebar, Visibility
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import meetingMinuteService from '../../services/meetingMinuteService';
@@ -27,6 +27,16 @@ const today = () => localDate();
 const formatDate = (value) => {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value || '';
+};
+const formatSentenceCase = (value) => {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const letters = text.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/g, '');
+  if (letters && letters === letters.toLocaleUpperCase('es')) {
+    const lower = text.toLocaleLowerCase('es');
+    return lower.charAt(0).toLocaleUpperCase('es') + lower.slice(1);
+  }
+  return text;
 };
 const MEETING_PLACES = [
   'Sala de Rectoría',
@@ -111,10 +121,12 @@ const syncParticipantsWithResponsables = (currentParticipants = [], newResponsab
       id: existing?.id || undefined,
       user_id: r.user_id || existing?.user_id || null,
       document: r.document || existing?.document || '',
-      name: formatPersonName(r.name || existing?.name || ''),
-      email: r.email || existing?.email || '',
-      organization: r.organization || existing?.organization || '',
-      role_title: r.role_title || existing?.role_title || (idx === 0 ? 'Responsable Principal' : 'Co-responsable'),
+      // Si la persona ya estaba en participantes, se promueve el mismo registro.
+      // Sus datos editados no deben desaparecer al asignarla como responsable.
+      name: formatPersonName(existing?.name || r.name || ''),
+      email: existing?.email || r.email || '',
+      organization: existing?.organization || r.organization || '',
+      role_title: existing?.role_title || r.role_title || (idx === 0 ? 'Responsable Principal' : 'Co-responsable'),
       status: existing?.status || 'invited'
     };
   });
@@ -173,7 +185,7 @@ const MeetingPreview = ({ document, form, signatures = [], previewType = 'origin
           >
             {responsablesArray.map((r, i) => {
               const isPrimary = Boolean(r.is_primary) || i === 0;
-              const roleOrg = [r.role_title, r.organization].filter(Boolean).join(' · ');
+              const roleOrg = [r.role_title, r.organization].map(formatSentenceCase).filter(Boolean).join(' · ');
               return (
                 <Box
                   key={i}
@@ -222,10 +234,13 @@ const MeetingPreview = ({ document, form, signatures = [], previewType = 'origin
       {form.participants.map((participant, index) => {
         const signature = signatureByParticipant.get(String(participant.id));
         const isSigned = signed.has(String(participant.id)) || participant.status === 'signed';
-        const roleLabel = !participant.user_id && participant.organization ? [participant.organization, participant.role_title].filter(Boolean).join(' · ') : (participant.role_title || participant.organization || '');
+        const roleLabel = [participant.organization, participant.role_title]
+          .map(formatSentenceCase)
+          .filter(Boolean)
+          .join(' · ');
         const showGraphic = previewType !== 'copia' && Boolean(signature?.signature_preview);
         return (
-          <Box key={participant.id || participant.user_id || index} sx={{ display: 'grid', gridTemplateColumns: '45px 1.5fr 1fr 150px', borderBottom: '1px solid #111' }}>
+          <Box key={participant.id || participant.user_id || index} sx={{ display: 'grid', gridTemplateColumns: '45px 1.5fr 1fr 150px', borderBottom: '1px solid #111', fontSize: 11.5, lineHeight: 1.35 }}>
             <Box sx={{ p: 0.6, textAlign: 'center', fontWeight: 800 }}>{index + 1}</Box>
             <Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{formatPersonName(participant.name)}</Box>
             <Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{roleLabel}</Box>
@@ -255,19 +270,15 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [responsablesList, setResponsablesList] = useState([]);
   const [minutes, setMinutes] = useState([]);
   const [signatures, setSignatures] = useState([]);
-  const [documentNumber, setDocumentNumber] = useState('');
-  const [candidate, setCandidate] = useState(null);
   const [responsibleDocument, setResponsibleDocument] = useState('');
   const [responsibleCandidate, setResponsibleCandidate] = useState(null);
   const [responsibleOptions, setResponsibleOptions] = useState([]);
   const [responsibleSearchOpen, setResponsibleSearchOpen] = useState(false);
   const [searchingResponsible, setSearchingResponsible] = useState(false);
-  const [externalMode, setExternalMode] = useState(false);
   const [externalDraft, setExternalDraft] = useState({ document: '', name: '', email: '', organization: '', role_title: '' });
   const [externalStudentResult, setExternalStudentResult] = useState(null);
   const [lookingUpExternalStudent, setLookingUpExternalStudent] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [searching, setSearching] = useState(false);
   const [qr, setQr] = useState(null);
   const [confirmAdjust, setConfirmAdjust] = useState(false);
   const [minuteToDelete, setMinuteToDelete] = useState(null);
@@ -283,6 +294,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const hasUnsavedChangesRef = useRef(false);
   const localChangeVersionRef = useRef(0);
   const failedAutoSaveVersionRef = useRef(null);
+  const saveRequestRef = useRef(null);
   const participantsDirtyRef = useRef(false);
   const participantGuidanceShownRef = useRef(false);
   const guideSnackbarKeyRef = useRef(null);
@@ -445,11 +457,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setResponsablesList([]);
     setSignatures([]);
     setQr(null);
-    setCandidate(null);
-    setDocumentNumber('');
     setResponsibleDocument('');
     setResponsibleCandidate(null);
-    setExternalMode(false);
+    setExternalStudentResult(null);
+    setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
     loadMinutes();
     loadMeetingPlaces();
   }, [open, user, closeSnackbar]);
@@ -474,9 +485,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     guideAnimationRef.current = null;
     if (guideSnackbarKeyRef.current) closeSnackbar(guideSnackbarKeyRef.current);
     guideSnackbarKeyRef.current = null;
-    setCandidate(null);
-    setDocumentNumber('');
-    setExternalMode(false);
+    setExternalStudentResult(null);
     if (!id) {
       hasUnsavedChangesRef.current = false;
       localChangeVersionRef.current = 0;
@@ -615,73 +624,6 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     };
   }, [open, form.id, layoutMode, loading]);
 
-  const lookup = async () => {
-    if (!documentNumber.trim()) return;
-    setSearching(true);
-    setCandidate(null);
-    try {
-      const response = await meetingMinuteService.lookupParticipant(documentNumber.trim());
-      const person = response.data;
-      if (!person?.email) {
-        enqueueSnackbar('El usuario no tiene correo institucional para la firma.', { variant: 'warning' });
-        return;
-      }
-      const doc = String(person.document || '').trim().toLowerCase();
-      const email = String(person.email || '').trim().toLowerCase();
-      const alreadyAdded = form.participants.some((participant) => {
-        const participantDoc = String(participant.document || '').trim().toLowerCase();
-        const participantEmail = String(participant.email || '').trim().toLowerCase();
-        return (person.id && String(participant.user_id) === String(person.id))
-          || (doc && participantDoc === doc)
-          || (email && participantEmail === email);
-      });
-      if (alreadyAdded) {
-        enqueueSnackbar('La persona ya está agregada al acta.', { variant: 'info' });
-        return;
-      }
-      setField('participants', [...form.participants, {
-        user_id: person.id,
-        document: person.document,
-        name: formatPersonName(person.name),
-        email: person.email,
-        organization: person.organization,
-        role_title: person.role_title,
-        status: 'invited'
-      }]);
-      setDocumentNumber('');
-      if (guideSnackbarKeyRef.current) closeSnackbar(guideSnackbarKeyRef.current);
-      guideSnackbarKeyRef.current = null;
-      enqueueSnackbar(`${formatPersonName(person.name)} fue agregado.`, { variant: 'success' });
-    } catch (error) {
-      if (error.response?.status === 404) {
-        setExternalDraft({ document: documentNumber.trim(), name: '', email: '', organization: '', role_title: '' });
-        setExternalMode(true);
-        enqueueSnackbar('La persona no está registrada. Puede agregarla únicamente a esta acta.', { variant: 'info' });
-      } else {
-        enqueueSnackbar(error.response?.data?.message || 'No se encontró la cédula.', { variant: 'error' });
-      }
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const addParticipant = () => {
-    if (!candidate) return;
-    if (!candidate.email) return enqueueSnackbar('El usuario no tiene correo institucional para la firma.', { variant: 'warning' });
-    const doc = String(candidate.document || '').trim().toLowerCase();
-    const email = String(candidate.email || '').trim().toLowerCase();
-    if (form.participants.some((participant) => {
-      const pDoc = String(participant.document || '').trim().toLowerCase();
-      const pEmail = String(participant.email || '').trim().toLowerCase();
-      return (candidate.id && String(participant.user_id) === String(candidate.id)) || (doc && pDoc === doc) || (email && pEmail === email);
-    })) {
-      return enqueueSnackbar('La persona ya está agregada.', { variant: 'info' });
-    }
-    setField('participants', [...form.participants, { user_id: candidate.id, document: candidate.document, name: formatPersonName(candidate.name), email: candidate.email, organization: candidate.organization, role_title: candidate.role_title, status: 'invited' }]);
-    setCandidate(null);
-    setDocumentNumber('');
-  };
-
   const lookupResponsible = async () => {
     if (!responsibleDocument.trim()) return;
     setSearchingResponsible(true);
@@ -810,20 +752,31 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
 
   const addExternalParticipant = () => {
     const external = Object.fromEntries(Object.entries(externalDraft).map(([key, value]) => [key, String(value || '').trim()]));
+    if (!externalStudentResult || externalStudentResult.error) return enqueueSnackbar('Consulte primero la identificación para validar si pertenece a una persona institucional o estudiante.', { variant: 'warning' });
     if (!external.document || !external.name || !external.email || !external.role_title) return enqueueSnackbar('Complete cédula, nombre, correo y cargo.', { variant: 'warning' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(external.email)) return enqueueSnackbar('Digite un correo válido.', { variant: 'warning' });
-    if (form.participants.some((participant) => String(participant.document || '').toLowerCase() === external.document.toLowerCase() || String(participant.email || '').toLowerCase() === external.email.toLowerCase())) return enqueueSnackbar('La persona ya está agregada.', { variant: 'info' });
-    setField('participants', [...form.participants, { ...external, name: formatPersonName(external.name), user_id: null, status: 'invited', external: true }]);
-    setExternalMode(false);
+    const normalizedDocument = external.document.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    const normalizedEmail = external.email.toLowerCase();
+    if (form.participants.some((participant) => (
+      String(participant.document || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === normalizedDocument
+      || String(participant.email || '').trim().toLowerCase() === normalizedEmail
+    ))) return enqueueSnackbar('La persona ya está agregada.', { variant: 'info' });
+    const isInstitutional = externalStudentResult.kind === 'institutional';
+    setField('participants', [...form.participants, {
+      ...external,
+      name: formatPersonName(external.name),
+      user_id: isInstitutional ? (externalStudentResult.institutionalId || null) : null,
+      status: 'invited',
+      external: !isInstitutional
+    }]);
     setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
     setExternalStudentResult(null);
-    setDocumentNumber('');
   };
 
   const lookupExternalStudent = async () => {
     const document = String(externalDraft.document || '').trim();
     if (!document) {
-      enqueueSnackbar('Digite la cédula o identificación del estudiante.', { variant: 'warning' });
+      enqueueSnackbar('Digite la cédula o identificación de la persona.', { variant: 'warning' });
       return;
     }
 
@@ -832,29 +785,72 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     try {
       const response = await meetingMinuteService.lookupEnrolledStudent(document);
       if (!response?.found || !response.data) {
-        setExternalStudentResult({ found: false });
-        enqueueSnackbar('No se encontró en Matriculados. Puede completar los datos manualmente.', { variant: 'info' });
+        setExternalStudentResult({ found: false, kind: 'external' });
+        enqueueSnackbar('No pertenece a usuarios institucionales ni aparece en Matriculados. Puede completar los datos como externo.', { variant: 'info' });
         return;
       }
 
-      const student = response.data;
+      const person = response.data;
+      if (response.kind === 'institutional' || response.kind === 'dual') {
+        const normalizedDocument = String(person.document || document).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const normalizedEmail = String(person.email || '').trim().toLowerCase();
+        const alreadyAdded = form.participants.some((participant) => (
+          (person.id && String(participant.user_id) === String(person.id))
+          || String(participant.document || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === normalizedDocument
+          || String(participant.email || '').trim().toLowerCase() === normalizedEmail
+        ));
+        if (alreadyAdded) {
+          setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
+          setExternalStudentResult(null);
+          enqueueSnackbar('La persona institucional ya está agregada al acta.', { variant: 'info' });
+          return;
+        }
+
+        setExternalDraft({
+          document: person.document || document,
+          name: person.name || '',
+          email: person.email || '',
+          organization: person.organization || '',
+          role_title: person.role_title || ''
+        });
+        setExternalStudentResult({
+          found: true,
+          kind: 'institutional',
+          institutionalId: person.id || null,
+          alsoStudent: Boolean(response.also_student),
+          missingEmail: !person.email,
+          institutionalProfile: person,
+          studentOptions: Array.isArray(response.student_options) ? response.student_options : []
+        });
+        enqueueSnackbar(
+          response.also_student
+            ? 'La persona aparece como institucional y estudiante. Seleccione cómo participa en esta acta.'
+            : 'Datos institucionales precargados. Puede revisarlos y modificarlos antes de agregar la persona.',
+          { variant: 'success' }
+        );
+        return;
+      }
+
+      const student = person;
       setExternalDraft({
         document: student.document || document,
         name: student.name || '',
         email: student.email || '',
-        organization: student.organization || 'Universidad CESMAG',
+        organization: student.organization || '',
         role_title: 'Estudiante'
       });
       setExternalStudentResult({
         found: true,
+        kind: 'student',
         studentCode: student.student_code || '',
         program: student.program || '',
         academicPeriod: student.academic_period || '',
-        hasEmail: Boolean(student.email)
+        hasEmail: Boolean(student.email),
+        studentOptions: Array.isArray(response.student_options) ? response.student_options : [student]
       });
       enqueueSnackbar('Datos del estudiante precargados desde Matriculados.', { variant: 'success' });
     } catch (error) {
-      setExternalStudentResult({ found: false, error: true });
+      setExternalStudentResult({ found: false, kind: 'unknown', error: true });
       enqueueSnackbar(error.response?.data?.message || 'No fue posible consultar la base de Matriculados.', { variant: 'error' });
     } finally {
       setLookingUpExternalStudent(false);
@@ -995,6 +991,13 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       if (!automatic) enqueueSnackbar('Diligencie al menos un campo para guardar el borrador.', { variant: 'warning' });
       return null;
     }
+    // Evita que dos autoguardados modifiquen simultaneamente los responsables
+    // y participantes. Si habia una escritura en curso, el siguiente ciclo
+    // guardara cualquier cambio que haya quedado pendiente.
+    if (saveRequestRef.current) {
+      if (automatic) return null;
+      try { await saveRequestRef.current; } catch (_) {}
+    }
     // Guardar un avance parcial no debe mostrar como errores los campos que aun
     // faltan. Se marcaran en rojo solamente al intentar enviar para firmas.
     setFieldErrors({});
@@ -1014,7 +1017,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         participants_changed: participantsChangedAtStart,
         removed_participant_keys: removedParticipantKeysAtStart
       };
-      const response = await meetingMinuteService.save(requestPayload);
+      const activeRequest = meetingMinuteService.save(requestPayload);
+      saveRequestRef.current = activeRequest;
+      const response = await activeRequest;
+      if (saveRequestRef.current === activeRequest) saveRequestRef.current = null;
       const row = response.data;
       const noNewerLocalChanges = localChangeVersionRef.current === changeVersionAtStart;
       removedParticipantKeysAtStart.forEach((key) => removedParticipantKeysRef.current.delete(key));
@@ -1039,6 +1045,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       if (!quiet) enqueueSnackbar(form.status === 'draft' ? 'Borrador del acta guardado.' : 'Cambios del acta guardados exitosamente.', { variant: 'success' });
       return row;
     } catch (error) {
+      saveRequestRef.current = null;
       setSaveStatus('error');
       if (automatic) {
         failedAutoSaveVersionRef.current = changeVersionAtStart;
@@ -1163,7 +1170,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         setQr(null);
         setResponsibleDocument('');
         setResponsibleCandidate(null);
-        setExternalMode(false);
+        setExternalStudentResult(null);
       }
       setMinuteToDelete(null);
       await loadMinutes();
@@ -1583,9 +1590,9 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                         {...params}
                         id="responsible-document-field"
                         error={Boolean(fieldErrors.responsables)}
-                        label={responsablesList.length === 0 ? 'Responsable Principal *' : 'Responsable o co-responsable'}
-                        placeholder="Escriba nombre o cédula"
-                        helperText="Escriba al menos 2 caracteres y seleccione una coincidencia."
+                        label={responsablesList.length === 0 ? 'Nombre o cédula del Responsable Principal *' : 'Nombre o cédula del responsable'}
+                        placeholder="Escriba al menos 2 caracteres"
+                        helperText="Busque por nombre, apellido o cédula y seleccione una persona de la lista."
                         InputProps={{
                           ...params.InputProps,
                           endAdornment: (
@@ -1605,7 +1612,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     onClick={lookupResponsible}
                     sx={{ minWidth: 135, textTransform: 'none', fontWeight: 800 }}
                   >
-                    Buscar
+                    Buscar persona
                   </Button>
                 </Stack>
 
@@ -1785,16 +1792,213 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   <Chip size="small" color="warning" label="Al menos 2 participantes requeridos" sx={{ fontWeight: 850 }} />
                 )}
               </Stack>
-              {form.participants.length < 2 && (
-                <Alert severity="warning" sx={{ my: 1.5, borderRadius: 2 }}>
-                  <strong>Participantes requeridos:</strong> Para habilitar firmas y generar el acta debe haber al menos dos participantes en la reunión (responsables y/o participantes convocados).
-                </Alert>
-              )}
               {form.revision_required && <Alert severity="info" sx={{ my: 1.5, borderRadius: 2 }}>Los responsables y participantes quedaron fijados desde el primer envío a firmas. En esta revisión solo puede modificar el contenido del acta.</Alert>}
-              {canManageParticipants && <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><TextField fullWidth size="small" label="Cédula" value={documentNumber} onChange={(e) => { setDocumentNumber(e.target.value.replace(/[^0-9A-Za-z-]/g, '')); setCandidate(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookup(); } }} /><Button variant="outlined" startIcon={searching ? <CircularProgress size={16} /> : <PersonSearch />} disabled={searching || !documentNumber} onClick={lookup} sx={{ minWidth: 125, textTransform: 'none', fontWeight: 800 }}>Consultar</Button></Stack>}
-              {candidate && <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2, bgcolor: '#f8fbff' }}><Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}><Box><Typography fontWeight={850}>{formatPersonName(candidate.name)}</Typography><Typography variant="body2" color="text.secondary">{candidate.role_title} · {candidate.organization}</Typography><Typography variant="caption">{candidate.email}</Typography></Box><Button variant="contained" startIcon={<Add />} onClick={addParticipant}>Agregar</Button></Stack></Paper>}
-              {!externalMode && canManageParticipants && <Button startIcon={<Add />} onClick={() => { setExternalDraft({ document: documentNumber, name: '', email: '', organization: '', role_title: '' }); setExternalMode(true); }} sx={{ mt: 1, textTransform: 'none', fontWeight: 800 }}>Agregar participante externo</Button>}
-              {externalMode && canManageParticipants && <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2.5, bgcolor: '#f8fbff' }}><Typography fontWeight={850} mb={1}>Participante externo para esta acta</Typography><Alert severity="info" sx={{ mb: 1.5 }}>Al recibir el código, esta persona también recibirá la política institucional y deberá aceptar el tratamiento de datos antes de firmar.</Alert><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1 }}><TextField size="small" label="Cédula o identificación" value={externalDraft.document} onChange={(e) => setExternalDraft((old) => ({ ...old, document: e.target.value }))} /><TextField size="small" label="Nombre completo" value={externalDraft.name} onChange={(e) => setExternalDraft((old) => ({ ...old, name: e.target.value }))} /><TextField size="small" type="email" label="Correo empresarial o personal" value={externalDraft.email} onChange={(e) => setExternalDraft((old) => ({ ...old, email: e.target.value }))} /><TextField size="small" label="Cargo" value={externalDraft.role_title} onChange={(e) => setExternalDraft((old) => ({ ...old, role_title: e.target.value }))} /><TextField size="small" label="Empresa o entidad (opcional)" value={externalDraft.organization} onChange={(e) => setExternalDraft((old) => ({ ...old, organization: e.target.value }))} sx={{ gridColumn: { sm: '1 / -1' } }} /></Box><Stack direction="row" justifyContent="flex-end" gap={1} mt={1.25}><Button onClick={() => setExternalMode(false)}>Cancelar</Button><Button variant="contained" startIcon={<Add />} onClick={addExternalParticipant}>Agregar al acta</Button></Stack></Paper>}
+              {canManageParticipants && (
+                <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2.5, bgcolor: '#f8fbff' }}>
+                  <Stack direction="row" alignItems="center" gap={1} mb={1}>
+                    <PersonSearch color="primary" />
+                    <Box>
+                      <Typography fontWeight={850}>Buscar participante</Typography>
+                    </Box>
+                  </Stack>
+
+                  <Stack direction={{ xs: 'column', sm: 'row' }} alignItems="stretch" gap={1} mb={1}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="Cédula o identificación"
+                      value={externalDraft.document}
+                      onChange={(e) => {
+                        const nextDocument = e.target.value;
+                        setExternalDraft((old) => externalStudentResult?.found
+                          ? { document: nextDocument, name: '', email: '', organization: '', role_title: '' }
+                          : { ...old, document: nextDocument });
+                        setExternalStudentResult(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          lookupExternalStudent();
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="outlined"
+                      startIcon={lookingUpExternalStudent ? <CircularProgress size={16} /> : <PersonSearch />}
+                      disabled={lookingUpExternalStudent || !String(externalDraft.document || '').trim()}
+                      onClick={lookupExternalStudent}
+                      sx={{
+                        minWidth: { xs: '100%', sm: 140 },
+                        height: 40,
+                        flexShrink: 0,
+                        whiteSpace: 'nowrap',
+                        textTransform: 'none',
+                        fontWeight: 800
+                      }}
+                    >
+                      Buscar
+                    </Button>
+                  </Stack>
+
+                  {externalStudentResult?.institutionalProfile && externalStudentResult.studentOptions?.length > 0 && (
+                    <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5, borderRadius: 2, borderColor: '#93c5fd', bgcolor: '#f8fbff' }}>
+                      <Typography variant="body2" fontWeight={850} mb={1}>
+                        Esta persona tiene dos vinculaciones. ¿Cómo participa en esta acta?
+                      </Typography>
+                      <ToggleButtonGroup
+                        exclusive
+                        fullWidth
+                        size="small"
+                        color="primary"
+                        value={externalStudentResult.kind}
+                        onChange={(_, selectedKind) => {
+                          if (!selectedKind) return;
+                          if (selectedKind === 'institutional') {
+                            const profile = externalStudentResult.institutionalProfile;
+                            setExternalDraft({
+                              document: profile.document || externalDraft.document,
+                              name: profile.name || '',
+                              email: profile.email || '',
+                              organization: profile.organization || '',
+                              role_title: profile.role_title || ''
+                            });
+                            setExternalStudentResult((old) => ({
+                              ...old,
+                              kind: 'institutional',
+                              missingEmail: !profile.email
+                            }));
+                            return;
+                          }
+                          const profile = externalStudentResult.studentOptions[0];
+                          setExternalDraft({
+                            document: profile.document || externalDraft.document,
+                            name: profile.name || '',
+                            email: profile.email || '',
+                            organization: profile.program || profile.organization || '',
+                            role_title: 'Estudiante'
+                          });
+                          setExternalStudentResult((old) => ({
+                            ...old,
+                            kind: 'student',
+                            studentCode: profile.student_code || '',
+                            program: profile.program || profile.organization || '',
+                            academicPeriod: profile.academic_period || '',
+                            hasEmail: Boolean(profile.email),
+                            missingEmail: false
+                          }));
+                        }}
+                      >
+                        <ToggleButton value="institutional" sx={{ fontWeight: 800, textTransform: 'none' }}>
+                          Colaborador institucional
+                        </ToggleButton>
+                        <ToggleButton value="student" sx={{ fontWeight: 800, textTransform: 'none' }}>
+                          Estudiante
+                        </ToggleButton>
+                      </ToggleButtonGroup>
+                    </Paper>
+                  )}
+
+                  {externalStudentResult?.found && externalStudentResult.kind === 'student' && (
+                    <Alert
+                      severity="success"
+                      sx={{ mb: 1, py: 0, fontSize: 12.5, '& .MuiAlert-icon': { py: 0.65 }, '& .MuiAlert-message': { py: 0.65 } }}
+                    >
+                      <strong>Estudiante encontrado.</strong>
+                      {externalStudentResult.program ? ` ${formatSentenceCase(externalStudentResult.program)}` : ''}
+                      {externalStudentResult.studentCode ? ` · ${externalStudentResult.studentCode}` : ''}
+                      {!externalStudentResult.hasEmail && ' · Complete el correo.'}
+                    </Alert>
+                  )}
+                  {externalStudentResult?.kind === 'student' && externalStudentResult.studentOptions?.length > 1 && (
+                    <Autocomplete
+                      fullWidth
+                      size="small"
+                      sx={{ mb: 1.5 }}
+                      options={externalStudentResult.studentOptions}
+                      value={externalStudentResult.studentOptions.find((option) => (
+                        String(option.student_code || '') === String(externalStudentResult.studentCode || '')
+                        && String(option.program || '') === String(externalStudentResult.program || '')
+                      )) || externalStudentResult.studentOptions[0]}
+                      isOptionEqualToValue={(option, value) => (
+                        String(option.student_code || '') === String(value.student_code || '')
+                        && String(option.program || '') === String(value.program || '')
+                      )}
+                      getOptionLabel={(option) => [
+                        option.program || 'Programa sin registrar',
+                        option.student_code ? `Código ${option.student_code}` : '',
+                        option.academic_period ? `Periodo ${option.academic_period}` : ''
+                      ].filter(Boolean).join(' · ')}
+                      onChange={(_, option) => {
+                        if (!option) return;
+                        setExternalDraft((old) => ({
+                          ...old,
+                          document: option.document || old.document,
+                          name: option.name || old.name,
+                          email: option.email || old.email,
+                          organization: option.program || option.organization || '',
+                          role_title: 'Estudiante'
+                        }));
+                        setExternalStudentResult((old) => ({
+                          ...old,
+                          studentCode: option.student_code || '',
+                          program: option.program || option.organization || '',
+                          academicPeriod: option.academic_period || '',
+                          hasEmail: Boolean(option.email)
+                        }));
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Seleccione el programa académico"
+                          helperText="La persona registra más de un programa en Matriculados."
+                        />
+                      )}
+                    />
+                  )}
+                  {externalStudentResult?.found && externalStudentResult.kind === 'institutional' && (
+                    <Alert
+                      severity={externalStudentResult.missingEmail ? 'warning' : 'success'}
+                      sx={{ mb: 1, py: 0, fontSize: 12.5, '& .MuiAlert-icon': { py: 0.65 }, '& .MuiAlert-message': { py: 0.65 } }}
+                    >
+                      <strong>Usuario institucional encontrado.</strong>
+                      {externalStudentResult.missingEmail ? ' Complete el correo.' : ' Puede editar los datos.'}
+                    </Alert>
+                  )}
+                  {externalStudentResult && !externalStudentResult.found && (
+                    <Alert severity={externalStudentResult.error ? 'error' : 'warning'} sx={{ mb: 1.5 }}>
+                      {externalStudentResult.error
+                        ? 'No fue posible validar la identificación. Intente nuevamente antes de agregarla.'
+                        : 'No pertenece a usuarios institucionales ni aparece en Matriculados. Complete los datos manualmente para agregarla como externa.'}
+                    </Alert>
+                  )}
+
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1 }}>
+                    <TextField size="small" label="Nombre completo" value={externalDraft.name} onChange={(e) => setExternalDraft((old) => ({ ...old, name: e.target.value }))} />
+                    <TextField size="small" type="email" label="Correo empresarial o personal" value={externalDraft.email} onChange={(e) => setExternalDraft((old) => ({ ...old, email: e.target.value }))} />
+                    <TextField
+                      size="small"
+                      label="Cargo"
+                      value={externalDraft.role_title}
+                      onChange={(e) => setExternalDraft((old) => ({ ...old, role_title: e.target.value }))}
+                    />
+                    <TextField size="small" label="Empresa, entidad o programa (opcional)" value={externalDraft.organization} onChange={(e) => setExternalDraft((old) => ({ ...old, organization: e.target.value }))} />
+                  </Box>
+                  <Stack direction="row" justifyContent="flex-end" gap={1} mt={1.25}>
+                    <Button onClick={() => {
+                      setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
+                      setExternalStudentResult(null);
+                    }}>Limpiar</Button>
+                    <Button
+                      variant="contained"
+                      startIcon={<Add />}
+                      disabled={!externalStudentResult || externalStudentResult.error}
+                      onClick={addExternalParticipant}
+                    >
+                      Agregar al acta
+                    </Button>
+                  </Stack>
+                </Paper>
+              )}
               <Stack gap={1} mt={2}>
                 {form.participants.map((participant, index) => {
                   const pDoc = String(participant.document || '').toLowerCase();

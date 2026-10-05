@@ -114,22 +114,44 @@ const hasSameParticipantMembership = (currentParticipants = [], requestedPartici
   const requested = requestedParticipants.map(participantMembershipKey).filter(Boolean).sort();
   return current.length === requested.length && current.every((key, index) => key === requested[index]);
 };
+const formatSentenceCase = (value = '') => {
+  const text = clean(value, 500).replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const letters = text.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/g, '');
+  if (letters && letters === letters.toLocaleUpperCase('es')) {
+    const lower = text.toLocaleLowerCase('es');
+    return lower.charAt(0).toLocaleUpperCase('es') + lower.slice(1);
+  }
+  return text;
+};
 const participantRoleLabel = (participant = {}) => {
   const role = clean(participant.role_title, 220);
   const organization = clean(participant.organization, 240);
-  return !participant.user_id && organization ? [organization, role].filter(Boolean).join(' · ') : (role || organization);
+  return [organization, role].map(formatSentenceCase).filter(Boolean).join(' · ');
 };
 const placeResponsibleFirst = (participants = [], responsible = {}) => {
   const responsiblesList = Array.isArray(responsible) ? responsible : [responsible];
-  const respParticipants = responsiblesList.filter(Boolean).map((r) => ({
-    user_id: r.id || r.user_id || null,
-    document: clean(r.username || r.document, 100),
-    name: clean(r.nombre || r.name, 240),
-    email: clean(r.email, 254).toLowerCase(),
-    organization: clean(r.dependencia || r.organization, 240),
-    role_title: clean(r.cargo || r.role_title, 220),
-    status: 'invited'
-  }));
+  const respParticipants = responsiblesList.filter(Boolean).map((r) => {
+    const responsibleDocument = clean(r.username || r.document, 100);
+    const responsibleEmail = clean(r.email, 254).toLowerCase();
+    const existing = participants.find((participant) => {
+      const key = participantIdentity(participant);
+      return (responsibleDocument && key.document === responsibleDocument.toLowerCase())
+        || (responsibleEmail && key.email === responsibleEmail);
+    });
+
+    return {
+      user_id: r.id || r.user_id || existing?.user_id || null,
+      document: responsibleDocument || clean(existing?.document, 100),
+      // Promover a responsable no crea otra persona ni descarta los datos que
+      // el usuario ya habia revisado o editado en el formulario.
+      name: clean(existing?.name || r.nombre || r.name, 240),
+      email: clean(existing?.email || r.email, 254).toLowerCase(),
+      organization: clean(existing?.organization || r.dependencia || r.organization, 240),
+      role_title: clean(existing?.role_title || r.cargo || r.role_title, 220),
+      status: existing?.status || 'invited'
+    };
+  });
   const seen = new Set();
   const uniqueResponsibles = [];
   for (const resp of respParticipants) {
@@ -610,65 +632,105 @@ const searchParticipants = wrap(async (req, res) => {
 
 const lookupEnrolledStudent = wrap(async (req, res) => {
   const document = clean(req.query.document, 80);
-  const normalizedDocument = document.replace(/[^a-zA-Z0-9]/g, '');
+  const normalizedDocument = document.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   if (!normalizedDocument) {
-    throw Object.assign(new Error('Digite la cédula o identificación del estudiante.'), { statusCode: 422 });
+    throw Object.assign(new Error('Digite la cédula o identificación de la persona.'), { statusCode: 422 });
   }
 
   const normalizedColumnMatch = (column) => sequelize.where(
-    sequelize.fn('regexp_replace', sequelize.col(column), '[^a-zA-Z0-9]', '', 'g'),
+    sequelize.fn('lower', sequelize.fn('regexp_replace', sequelize.col(column), '[^a-zA-Z0-9]', '', 'g')),
     normalizedDocument
   );
-  const matriculado = await PoblacionalMatriculado.findOne({
+  const pickSingleEmail = (...values) => {
+    for (const value of values) {
+      const candidates = String(value || '')
+        .split(/[\s,;|/]+/)
+        .map((candidate) => candidate.trim().toLowerCase())
+        .filter(Boolean);
+      const validEmail = candidates.find((candidate) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate));
+      if (validEmail) return clean(validEmail, 254);
+    }
+    return '';
+  };
+  const institutionalUser = await User.findOne({
+    where: { [Op.and]: [normalizedColumnMatch('username'), { estado: 'activo' }] },
+    attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'],
+    raw: true
+  });
+
+  const matriculados = await PoblacionalMatriculado.findAll({
     where: normalizedColumnMatch('numero_documento'),
     attributes: [
       'numero_documento', 'codigo_estudiante', 'primer_nombre', 'segundo_nombre',
       'primer_apellido', 'segundo_apellido', 'programa', 'facultad', 'anio', 'semestre'
     ],
     order: [['anio', 'DESC'], ['id', 'DESC']],
+    limit: 50,
     raw: true
   });
-
-  if (!matriculado) {
-    return res.json({ success: true, found: false, data: null });
-  }
-
-  const [systemUser, characterization] = await Promise.all([
-    User.findOne({
-      where: { [Op.and]: [normalizedColumnMatch('username'), { estado: 'activo' }] },
-      attributes: ['email'],
-      raw: true
-    }),
-    PoblacionalCaracterizacion.findOne({
+  const characterization = matriculados.length > 0
+    ? await PoblacionalCaracterizacion.findOne({
       where: normalizedColumnMatch('no_identificacion'),
       attributes: ['correo_electronico'],
       order: [['anio', 'DESC'], ['id', 'DESC']],
       raw: true
     })
-  ]);
+    : null;
+  const institutionalEmail = pickSingleEmail(institutionalUser?.email);
+  const studentEmail = pickSingleEmail(institutionalEmail, characterization?.correo_electronico);
+  const uniquePrograms = new Map();
+  matriculados.forEach((matriculado) => {
+    const program = clean(matriculado.programa || matriculado.facultad, 220);
+    const studentCode = clean(matriculado.codigo_estudiante, 80);
+    const key = (program || studentCode || 'sin-programa').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (uniquePrograms.has(key)) return;
+    const name = [
+      matriculado.primer_nombre,
+      matriculado.segundo_nombre,
+      matriculado.primer_apellido,
+      matriculado.segundo_apellido
+    ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    uniquePrograms.set(key, {
+      document: clean(matriculado.numero_documento, 80) || document,
+      name: formatPersonName(name),
+      email: studentEmail,
+      organization: program,
+      role_title: 'Estudiante',
+      student_code: studentCode,
+      program,
+      academic_period: [matriculado.anio, matriculado.semestre].filter(Boolean).join('-')
+    });
+  });
+  const studentOptions = Array.from(uniquePrograms.values());
 
-  const name = [
-    matriculado.primer_nombre,
-    matriculado.segundo_nombre,
-    matriculado.primer_apellido,
-    matriculado.segundo_apellido
-  ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-  const program = clean(matriculado.programa || matriculado.facultad, 220);
-  const email = clean(systemUser?.email || characterization?.correo_electronico, 254).toLowerCase();
+  if (institutionalUser) {
+    return res.json({
+      success: true,
+      found: true,
+      kind: studentOptions.length > 0 ? 'dual' : 'institutional',
+      also_student: studentOptions.length > 0,
+      student_options: studentOptions,
+      data: {
+        id: institutionalUser.id,
+        document: clean(institutionalUser.username, 80),
+        name: formatPersonName(institutionalUser.nombre),
+        email: pickSingleEmail(institutionalEmail, characterization?.correo_electronico),
+        organization: clean(institutionalUser.dependencia, 240),
+        role_title: clean(institutionalUser.cargo, 220)
+      }
+    });
+  }
+
+  if (studentOptions.length === 0) {
+    return res.json({ success: true, found: false, data: null });
+  }
 
   return res.json({
     success: true,
     found: true,
-    data: {
-      document: clean(matriculado.numero_documento, 80) || document,
-      name: formatPersonName(name),
-      email,
-      organization: program ? `Universidad CESMAG · ${program}` : 'Universidad CESMAG',
-      role_title: 'Estudiante',
-      student_code: clean(matriculado.codigo_estudiante, 80),
-      program,
-      academic_period: [matriculado.anio, matriculado.semestre].filter(Boolean).join('-')
-    }
+    kind: 'student',
+    data: studentOptions[0],
+    student_options: studentOptions
   });
 });
 
@@ -895,7 +957,38 @@ const saveDraft = wrap(async (req, res) => {
     }
   }
 
-  const participants = placeResponsibleFirst(Array.isArray(req.body.participants) ? req.body.participants : [], allResponsables);
+  const requestedParticipants = placeResponsibleFirst(Array.isArray(req.body.participants) ? req.body.participants : [], allResponsables);
+  const participants = await Promise.all(requestedParticipants.map(async (participant) => {
+    const participantDocument = clean(participant.document, 100);
+    const normalizedDocument = participantDocument.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    if (!normalizedDocument) return participant;
+
+    const institutionalUser = await User.findOne({
+      where: {
+        [Op.and]: [
+          sequelize.where(
+            sequelize.fn('lower', sequelize.fn('regexp_replace', sequelize.col('username'), '[^a-zA-Z0-9]', '', 'g')),
+            normalizedDocument
+          ),
+          { estado: 'activo' }
+        ]
+      },
+      attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'],
+      raw: true
+    });
+    if (!institutionalUser) return participant;
+
+    return {
+      ...participant,
+      user_id: institutionalUser.id,
+      document: institutionalUser.username,
+      name: formatPersonName(clean(participant.name, 240) || institutionalUser.nombre),
+      email: (clean(participant.email, 254) || clean(institutionalUser.email, 254)).toLowerCase(),
+      organization: clean(participant.organization, 240) || clean(institutionalUser.dependencia, 240),
+      role_title: clean(participant.role_title, 220) || clean(institutionalUser.cargo, 220),
+      external: false
+    };
+  }));
   const hasDraftData = Boolean(
     primaryDoc ||
     clean(req.body.titulo, 120) ||
@@ -912,7 +1005,10 @@ const saveDraft = wrap(async (req, res) => {
   // El borrador admite contenido parcial. Las reglas de obligatoriedad se
   // verifican de forma autoritativa al publicar el acta para firmas.
   if (participants.some((participant) => !clean(participant.name, 240) || !clean(participant.email, 254))) throw Object.assign(new Error('Todos los participantes deben tener nombre y correo.'), { statusCode: 422 });
-  const participantKeys = participants.map((participant) => clean(participant.document || participant.email, 254).toLowerCase()).filter(Boolean);
+  const participantKeys = participants.map((participant) => {
+    const documentKey = clean(participant.document, 100).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    return documentKey || clean(participant.email, 254).toLowerCase();
+  }).filter(Boolean);
   if (new Set(participantKeys).size !== participantKeys.length) throw Object.assign(new Error('Hay participantes repetidos en el acta.'), { statusCode: 422 });
 
   const minute = await sequelize.transaction(async (transaction) => {

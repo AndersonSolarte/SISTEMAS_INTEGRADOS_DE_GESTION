@@ -10,6 +10,16 @@ const printer = new PdfPrinter({
 
 const logoPath = path.join(__dirname, '..', 'assets', 'logo_formatos.jpg');
 const logo = fs.existsSync(logoPath) ? `data:image/jpeg;base64,${fs.readFileSync(logoPath).toString('base64')}` : null;
+const formatSentenceCase = (value = '') => {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const letters = text.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/g, '');
+  if (letters && letters === letters.toLocaleUpperCase('es')) {
+    const lower = text.toLocaleLowerCase('es');
+    return lower.charAt(0).toLocaleUpperCase('es') + lower.slice(1);
+  }
+  return text;
+};
 const borderLayout = {
   hLineWidth: () => 0.7,
   vLineWidth: () => 0.7,
@@ -243,7 +253,12 @@ const generateMeetingMinutePdf = async (payload = {}, options = {}) => {
     } else {
       signatureCell = { text: participant.firma || 'Pendiente', alignment: 'center', color: '#64748b', bold: true, fontSize: 8.5 };
     }
-    return [{ text: String(index + 1), alignment: 'center', bold: true }, formatPersonName(participant.nombre || ''), participant.cargo || '', signatureCell];
+    return [
+      { text: String(index + 1), alignment: 'center', bold: true, fontSize: 9.5 },
+      { text: formatPersonName(participant.nombre || ''), fontSize: 9.5 },
+      { text: formatSentenceCase(participant.cargo || ''), fontSize: 9.5 },
+      signatureCell
+    ];
   });
   const definition = {
     pageSize: 'LETTER',

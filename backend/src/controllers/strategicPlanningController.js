@@ -33,7 +33,7 @@ const {
 const { captureActionPlanSchema } = require('../services/strategicActionPlanSchemaService');
 const { improveStrategicMinuteText, generateStrategicMinuteSummary } = require('../services/strategicMinuteWritingService');
 const { validateAdministrativeActDate } = require('../services/strategicPlanDateValidationService');
-const { syncActionPlanRepositoryTerm } = require('../services/actionPlanRepositoryDriveService');
+const { syncActionPlanRepositoryTerm, syncSinglePlanOfficialWorkbook, buildOfficialWorkbook } = require('../services/actionPlanRepositoryDriveService');
 const { PRIVACY_POLICY_NOTICE, PRIVACY_POLICY_URL, PRIVACY_POLICY_VERSION } = require('../constants/privacyPolicy');
 
 const PLANNING_DEPARTMENT_NAME = 'Dirección de Planeación y Aseguramiento de la Calidad';
@@ -836,6 +836,9 @@ const getActionPlan = wrap(async (req, res) => {
       }
     }
   }
+  if (!actionPlan.metadata?.drive_sync?.official_file_id) {
+    syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
+  }
   ok(res, actionPlan);
 });
 
@@ -1150,6 +1153,7 @@ const addActionItem = wrap(async (req, res) => {
   await ensureActionPlanSchemaSnapshot(actionPlan);
   const item = await saveActionItem({ req, actionPlan, payload: req.body });
   await refreshActionRepository(actionPlan.term_id, req, 'activity_created');
+  syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
   res.status(201); ok(res, item);
 });
 
@@ -1180,6 +1184,9 @@ const confirmDynamicItems = wrap(async (req, res) => {
   }
   const batch = await confirmDynamicActionItems({ importId: req.params.importId, req });
   await refreshActionRepository(batch.term_id, req, 'activities_imported');
+  if (importRecord?.action_plan_id) {
+    syncSinglePlanOfficialWorkbook(importRecord.action_plan_id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
+  }
   ok(res, batch, 'Carga masiva confirmada correctamente.');
 });
 
@@ -1191,6 +1198,7 @@ const updateActionItem = wrap(async (req, res) => {
   await ensureActionPlanSchemaSnapshot(actionPlan);
   const updated = await saveActionItem({ req, actionPlan, payload: req.body, item });
   await refreshActionRepository(actionPlan.term_id, req, 'activity_updated');
+  syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
   ok(res, updated);
 });
 
@@ -1202,6 +1210,9 @@ const deleteActionItem = wrap(async (req, res) => {
   const previous = item.toJSON(); await item.update({ deleted_at: new Date(), status: 'deleted', updated_by: req.user.id });
   await audit(req, 'action_item.soft_delete', 'action_item', item.id, previous, item.toJSON(), req.body?.justification);
   await refreshActionRepository(actionPlan?.term_id, req, 'activity_deleted');
+  if (item.action_plan_id) {
+    syncSinglePlanOfficialWorkbook(item.action_plan_id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
+  }
   ok(res, null, 'Actividad eliminada lógicamente.');
 });
 
@@ -1411,6 +1422,7 @@ const transitionActionPlan = wrap(async (req, res) => {
       console.error('transitionActionPlan: Error en notificación de activación:', errActivationNotify);
     }
   }
+  syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
   ok(res, updated, 'Transición registrada.');
 });
 
@@ -2341,19 +2353,43 @@ const confirmHistorical = wrap(async (req, res) => {
 });
 
 const exportActionPlan = wrap(async (req, res) => {
-  const actionPlan = await StrategicActionPlan.findByPk(req.params.id, { include: [
-    { model: StrategicTerm, as: 'term', include: [{ model: StrategicMonitoringPeriod, as: 'monitoringPeriods' }] },
-    { model: StrategicCatalogItem, as: 'organizationalUnit' },
-    { model: StrategicActionItem, as: 'items', where: { deleted_at: null }, required: false, include: [{ model: StrategicMonitoringResult, as: 'monitoringResults', required: false, include: [{ model: StrategicMonitoringPeriod, as: 'period' }] }] }
-  ] });
-  if (!actionPlan) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
-  const activities = (actionPlan.items || []).map((item) => {
-    const sorted = [...(item.monitoringResults || [])].sort((a, b) => (a.period?.position || 0) - (b.period?.position || 0));
-    return { objetivo_estrategico: item.custom_values?.strategic_objective || '', lineamiento_estrategico: item.custom_values?.guideline || '', actividad: item.activity, tipo_indicador: item.indicator_type, fecha_inicio: item.starts_on, fecha_fin: item.ends_on, indicador: item.indicator, meta: item.target, responsable: actionPlan.organizationalUnit?.name, corresponsable: (item.co_responsibles || []).join(', '), avance_ip: sorted[0]?.physical_progress, observaciones_ip: sorted[0]?.observations, avance_iip: sorted[1]?.physical_progress, observaciones_iip: sorted[1]?.observations };
+  const actionPlan = await StrategicActionPlan.findByPk(req.params.id, {
+    include: [
+      {
+        model: StrategicTerm, as: 'term',
+        include: [
+          { model: StrategicPlan, as: 'strategicPlan' },
+          { model: StrategicMonitoringPeriod, as: 'monitoringPeriods' }
+        ]
+      },
+      { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      {
+        model: StrategicActionItem, as: 'items',
+        where: { deleted_at: null },
+        required: false,
+        include: [
+          {
+            model: StrategicMonitoringResult, as: 'monitoringResults',
+            required: false,
+            include: [{ model: StrategicMonitoringPeriod, as: 'period' }]
+          }
+        ]
+      }
+    ]
   });
-  const buffer = await generatePlanAccionBuffer({ planData: { anio: actionPlan.term.year, codigoPlan: actionPlan.code, responsable: actionPlan.organizationalUnit?.name }, actividades: activities, corresponsabilidades: [] });
+  if (!actionPlan) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
+  const buffer = await buildOfficialWorkbook(actionPlan);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', `attachment; filename="DIR-PE-FR-003_${actionPlan.code}_${actionPlan.term.year}.xlsx"`); res.send(buffer);
+  res.setHeader('Content-Disposition', `attachment; filename="DIR-PE-FR-003_${actionPlan.code}_${actionPlan.term?.year || ''}.xlsx"`);
+  res.send(buffer);
+});
+
+const syncPlanDriveExcel = wrap(async (req, res) => {
+  const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
+  if (!actionPlan) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+  const result = await syncSinglePlanOfficialWorkbook(actionPlan.id);
+  await audit(req, 'action_plan.sync_drive_excel', 'action_plan', actionPlan.id, null, result, 'Sincronización manual de Plan de Acción Oficial DIR-PE-FR-003 en Drive');
+  ok(res, result, 'Plan de acción sincronizado exitosamente con Google Drive.');
 });
 
 const analytics = wrap(async (req, res) => {
@@ -2377,5 +2413,5 @@ module.exports = {
   improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
   uploadEvidence, downloadEvidence, retrySync, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
-  previewHistorical, confirmHistorical, exportActionPlan, analytics, listAudit, listSyncJobs
+  previewHistorical, confirmHistorical, exportActionPlan, syncPlanDriveExcel, analytics, listAudit, listSyncJobs
 };

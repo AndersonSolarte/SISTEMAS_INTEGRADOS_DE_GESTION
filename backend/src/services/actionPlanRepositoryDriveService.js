@@ -6,7 +6,7 @@ const { google } = require('googleapis');
 const {
   StrategicPlan, StrategicTerm, StrategicActionPlan, StrategicActionItem,
   StrategicCatalogItem, StrategicMonitoringPeriod, StrategicMonitoringResult,
-  StrategicEvidence, StrategicMeeting, StrategicMinuteVersion
+  StrategicEvidence, StrategicMeeting, StrategicMinuteVersion, StrategicElement
 } = require('../models');
 const { generatePlanAccionBuffer } = require('./planAccionExportService');
 const { listTermDependencies } = require('./strategicTermDependencyService');
@@ -255,21 +255,48 @@ const buildRepositoryPeriods = (term) => {
 };
 
 const buildOfficialWorkbook = async (actionPlan) => {
+  const planId = actionPlan.term?.strategic_plan_id || actionPlan.term?.strategicPlan?.id;
+  const [catalogItems, elements] = await Promise.all([
+    planId ? StrategicCatalogItem.findAll({ where: { strategic_plan_id: planId }, attributes: ['id', 'code', 'name'], raw: true }).catch(() => []) : [],
+    planId ? StrategicElement.findAll({ where: { strategic_plan_id: planId }, attributes: ['id', 'code', 'name'], raw: true }).catch(() => []) : []
+  ]);
+  const catalogMap = new Map(catalogItems.map((c) => [String(c.id), c.name]));
+  const elementMap = new Map(elements.map((e) => [String(e.id), `${e.code ? e.code + ' ' : ''}${e.name}`]));
+
   const activities = (actionPlan.items || []).map((item) => {
     const sorted = [...(item.monitoringResults || [])].sort((a, b) => (a.period?.position || 0) - (b.period?.position || 0));
+
+    const rawObj = item.custom_values?.strategic_objective || item.custom_values?.objetivo_estrategico || '';
+    const objText = elementMap.get(String(rawObj)) || rawObj;
+
+    const rawGuide = item.custom_values?.strategic_guideline || item.custom_values?.guideline || item.custom_values?.lineamiento_estrategico || '';
+    const guideText = elementMap.get(String(rawGuide)) || rawGuide;
+
+    const rawCo = item.co_responsibles || [];
+    const coList = Array.isArray(rawCo) ? rawCo : (typeof rawCo === 'string' && rawCo.trim() ? [rawCo] : []);
+    const resolvedCo = coList.map((val) => catalogMap.get(String(val)) || val).filter(Boolean).join(', ');
+
     return {
-      objetivo_estrategico: item.custom_values?.strategic_objective || '',
-      lineamiento_estrategico: item.custom_values?.guideline || '', actividad: item.activity,
-      tipo_indicador: item.indicator_type, fecha_inicio: item.starts_on, fecha_fin: item.ends_on,
-      indicador: item.indicator, meta: item.target, responsable: actionPlan.organizationalUnit?.name,
-      corresponsable: (item.co_responsibles || []).join(', '), avance_ip: sorted[0]?.physical_progress,
-      observaciones_ip: sorted[0]?.observations, avance_iip: sorted[1]?.physical_progress,
+      objetivo_estrategico: objText,
+      lineamiento_estrategico: guideText,
+      actividad: item.activity,
+      tipo_indicador: item.indicator_type,
+      fecha_inicio: item.starts_on,
+      fecha_fin: item.ends_on,
+      indicador: item.indicator,
+      meta: item.target,
+      responsable: actionPlan.organizationalUnit?.name,
+      corresponsable: resolvedCo,
+      avance_ip: sorted[0]?.physical_progress,
+      observaciones_ip: sorted[0]?.observations,
+      avance_iip: sorted[1]?.physical_progress,
       observaciones_iip: sorted[1]?.observations
     };
   });
   return generatePlanAccionBuffer({
     planData: { anio: actionPlan.term.year, codigoPlan: actionPlan.code, responsable: actionPlan.organizationalUnit?.name },
-    actividades: activities, corresponsabilidades: []
+    actividades: activities,
+    corresponsabilidades: []
   });
 };
 
@@ -469,8 +496,135 @@ const syncActionPlanRepositoryTerm = async (termId) => {
   };
 };
 
+const syncSinglePlanOfficialWorkbook = async (actionPlanId) => {
+  const actionPlan = await StrategicActionPlan.findByPk(actionPlanId, {
+    include: [
+      {
+        model: StrategicTerm, as: 'term',
+        include: [
+          { model: StrategicPlan, as: 'strategicPlan' },
+          { model: StrategicMonitoringPeriod, as: 'monitoringPeriods' }
+        ]
+      },
+      { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      {
+        model: StrategicActionItem, as: 'items',
+        where: { deleted_at: null },
+        required: false,
+        include: [
+          {
+            model: StrategicMonitoringResult, as: 'monitoringResults',
+            required: false,
+            include: [{ model: StrategicMonitoringPeriod, as: 'period' }]
+          }
+        ]
+      }
+    ]
+  });
+
+  if (!actionPlan || !actionPlan.term) {
+    throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+  }
+
+  const term = actionPlan.term;
+  const plan = term.strategicPlan;
+  const rootId = process.env[ROOT_ENV] || plan?.drive_root_id || process.env.SIAC_PEI_DRIVE_ROOT_ID;
+  if (!rootId) {
+    return {
+      synchronized: false,
+      skipped: true,
+      reason: 'No hay carpeta raíz de Google Drive configurada.'
+    };
+  }
+
+  let drive;
+  try {
+    drive = buildActionRepositoryDriveClient();
+    await verifyRepositoryRoot(drive, rootId);
+  } catch (err) {
+    console.warn('[Drive Auto-sync warning]:', err.message);
+    return {
+      synchronized: false,
+      error: err.message
+    };
+  }
+
+  const counters = {
+    folders_created: 0, folders_updated: 0, folders_existing: 0,
+    files_created: 0, files_updated: 0, files_unchanged: 0
+  };
+
+  const pedFolderName = buildPedFolderName(plan);
+  const pedFolder = await ensureFolder(drive, {
+    parentId: rootId,
+    name: pedFolderName,
+    key: `action-repository:ped:${term.strategic_plan_id}`
+  }, counters);
+
+  const yearFolder = await ensureFolder(drive, {
+    parentId: pedFolder,
+    name: `PLANES DE ACCIÓN ${term.year}`,
+    key: `action-repository:term:${term.id}`,
+    legacyParentIds: [rootId]
+  }, counters);
+
+  const unitCode = actionPlan.organizationalUnit?.code || actionPlan.code;
+  const unitName = actionPlan.organizationalUnit?.name || actionPlan.title;
+  const unitScope = `${term.id}:${actionPlan.catalog_item_id || actionPlan.id}`;
+
+  const planFolder = await ensureFolder(drive, {
+    parentId: yearFolder,
+    name: compactFolderName(unitCode, unitName, 44),
+    key: `action-repository:unit:${unitScope}`
+  }, counters);
+
+  const officialFolder = await ensureFolder(drive, {
+    parentId: planFolder,
+    name: 'PLAN DE ACCIÓN OFICIAL DIR-PE-FR-003',
+    key: `action-repository:official:${unitScope}`
+  }, counters);
+
+  const workbook = await buildOfficialWorkbook(actionPlan);
+  const fileName = `DIR-PE-FR-003_${actionPlan.code}_${term.year}.xlsx`;
+  const fileHash = contentHash(workbook);
+
+  const driveFileId = await upsertFile(drive, {
+    parentId: officialFolder,
+    name: fileName,
+    key: `action-repository:official-file:${actionPlan.id}`,
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: workbook,
+    hash: fileHash
+  }, counters);
+
+  const driveSync = {
+    official_file_id: driveFileId,
+    official_file_name: fileName,
+    folder_id: officialFolder,
+    folder_name: 'PLAN DE ACCIÓN OFICIAL DIR-PE-FR-003',
+    synced_at: new Date().toISOString(),
+    hash: fileHash
+  };
+
+  actionPlan.metadata = {
+    ...(actionPlan.metadata || {}),
+    drive_sync: driveSync
+  };
+  await actionPlan.update({ metadata: actionPlan.metadata });
+
+  return {
+    synchronized: true,
+    fileId: driveFileId,
+    fileName,
+    folderId: officialFolder,
+    folderUrl: `https://drive.google.com/drive/folders/${officialFolder}`,
+    syncedAt: driveSync.synced_at
+  };
+};
+
 module.exports = {
   syncActionPlanRepositoryTerm,
+  syncSinglePlanOfficialWorkbook,
   repositoryName,
   compactFolderName,
   compactFileName,

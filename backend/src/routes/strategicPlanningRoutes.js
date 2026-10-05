@@ -62,6 +62,7 @@ router.delete('/action-plans/:id/items/:itemId', permit('pei_formular'), c.delet
 router.post('/action-plans/:id/transitions', permit(), c.transitionActionPlan);
 router.post('/action-plans/:id/transfer-leader', permit('pei_formular'), c.transferLeader);
 router.get('/action-plans/:id/export', permit(), c.exportActionPlan);
+router.post('/action-plans/:id/sync-drive-excel', permit('pei_formular'), c.syncPlanDriveExcel);
 router.put('/action-items/:itemId/monitoring/:periodId', permit('pei_seguimiento'), c.saveMonitoring);
 
 router.post('/action-plans/:id/meetings', permit('pei_formular'), c.createMeeting);

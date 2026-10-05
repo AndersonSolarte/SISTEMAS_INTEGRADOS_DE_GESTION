@@ -8,9 +8,9 @@ import {
 import {
   Add, ArrowBack, AssignmentTurnedIn, AttachFile, AutoAwesome, CheckCircle, CheckCircleOutline,
   Close, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Event,
-  AccessTime, CalendarMonth, History, LockOutlined, MoreTime, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, OpenInNew,
+  AccessTime, CalendarMonth, Folder, History, LockOutlined, MoreTime, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, OpenInNew,
   PersonSearch, PictureAsPdf as PdfIcon, PlayArrow, PriorityHigh, QrCode2, Refresh, Save, Search, Send,
-  TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility
+  Sync, TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../context/AuthContext';
@@ -180,6 +180,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [syncingMinute, setSyncingMinute] = useState(false);
   // eslint-disable-next-line no-unused-vars
   const [lastDriveSync, setLastDriveSync] = useState(null);
+  const [previewPlanModalOpen, setPreviewPlanModalOpen] = useState(false);
+  const [previewPlanSearch, setPreviewPlanSearch] = useState('');
+  const [syncingDriveExcel, setSyncingDriveExcel] = useState(false);
+  const autoSyncedTabRef = useRef(false);
 
   // Minute preview state (COM-IF-FR-002)
   const [editingActa, setEditingActa] = useState(false);
@@ -226,6 +230,21 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   }, [planId, platformPlan?.id, enqueueSnackbar, onPlanReplaced]);
 
   useEffect(() => { if (open) load(); }, [open, load]);
+
+  useEffect(() => {
+    if (tab === 'export' && planId && !autoSyncedTabRef.current) {
+      autoSyncedTabRef.current = true;
+      setSyncingDriveExcel(true);
+      strategicPlanningService.syncDriveExcel(planId)
+        .then(() => load(false))
+        .catch((err) => console.warn('[Auto-sync Drive]:', err?.message))
+        .finally(() => setSyncingDriveExcel(false));
+    }
+  }, [tab, planId, load]);
+
+  useEffect(() => {
+    autoSyncedTabRef.current = false;
+  }, [detail?.items?.length]);
 
   const locations = useMemo(() => (platformPlan?.catalogItems || []).filter((entry) => entry.catalog_type === 'meeting_location' && entry.active), [platformPlan?.catalogItems]);
 
@@ -503,10 +522,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const activeFields = rawFields.length > 0 ? rawFields : DEFAULT_ACTIVITY_FIELDS;
 
-  const hasDependencia = Boolean(detail?.dependency_id || detail?.dependency_name || activePed?.dependency_name || detail?.academic_unit || detail?.organizationalUnit?.name);
-  const hasMeetingDate = Boolean(activeMeeting?.starts_at || meeting?.starts_at);
-  const hasActivities = Boolean(detail?.items && detail.items.length > 0);
-  const hasLeader = Boolean(detail?.responsible || detail?.leader_name || detail?.owner?.name);
   const activityFields = activeFields.filter((field) => field.data_type !== 'formula' && !ACTIVITY_FORM_EXCLUDED_KEYS.has(field.key));
   const recordColumns = activeFields;
   const recordValue = (row, field) => {
@@ -547,6 +562,22 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     setItem({ ...item, custom_values: customValues });
   };
   const availableTransitions = useMemo(() => (workflow?.transitions || []).filter((entry) => entry.from === detail?.status), [workflow, detail?.status]);
+
+  const filteredPreviewItems = useMemo(() => {
+    const items = detail?.items || [];
+    if (!previewPlanSearch.trim()) return items;
+    const q = previewPlanSearch.toLowerCase();
+    return items.filter((row) => {
+      if (row.code?.toLowerCase().includes(q)) return true;
+      if (row.activity?.toLowerCase().includes(q)) return true;
+      if (row.indicator?.toLowerCase().includes(q)) return true;
+      if (row.target?.toLowerCase().includes(q)) return true;
+      return recordColumns.some((col) => {
+        const val = recordValue(row, col);
+        return String(val || '').toLowerCase().includes(q);
+      });
+    });
+  }, [detail?.items, previewPlanSearch, recordColumns]);
 
   const fieldValue = (field) => {
     const direct = { activity: item.activity, indicator_type: item.indicator_type, starts_on: item.starts_on, ends_on: item.ends_on, indicator: item.indicator, target: item.target, co_responsibles: item.co_responsibles };
@@ -979,6 +1010,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible programar la reunión.', { variant: 'error' }); }
     finally { setSaving(false); }
   };
+  // eslint-disable-next-line no-unused-vars
   const generateMinute = async (meetingId) => {
     try {
       await strategicPlanningService.createMinute(meetingId, { content: {
@@ -1151,6 +1183,20 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const exportPlan = async () => {
     try { const blob = await strategicPlanningService.exportActionPlan(planId); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `DIR-PE-FR-003_${detail.code}_${detail.term?.year}.xlsx`; anchor.click(); URL.revokeObjectURL(url); }
     catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible exportar el formato.', { variant: 'error' }); }
+  };
+  const handleSyncDriveExcel = async () => {
+    if (!planId) return;
+    setSyncingDriveExcel(true);
+    try {
+      const resp = await strategicPlanningService.syncDriveExcel(planId);
+      enqueueSnackbar(resp?.message || 'Plan de Acción Oficial DIR-PE-FR-003 sincronizado con Drive.', { variant: 'success' });
+      await load(false);
+    } catch (err) {
+      console.error('Error sincronizando con Drive:', err);
+      enqueueSnackbar(err.response?.data?.message || err.message || 'No fue posible sincronizar con Google Drive.', { variant: 'error' });
+    } finally {
+      setSyncingDriveExcel(false);
+    }
   };
   const downloadDynamicTemplate = async () => {
     try {
@@ -2221,78 +2267,204 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
             {/* TAB 3: EXPORTACIÓN INSTITUCIONAL */}
             {tab === 'export' && (
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1.2fr' }, gap: 3 }}>
-                <Paper variant="outlined" sx={{ p: 3.5, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-                  <Stack direction="row" spacing={1.5} alignItems="center" mb={2.5}>
-                    <CheckCircleOutline sx={{ color: '#6f9fd7', fontSize: 26 }} />
-                    <Box>
-                      <Typography variant="h6" fontWeight={900} color="#0f172a">Chequeo de Salida</Typography>
-                      <Typography variant="body2" color="#64748b">Validaciones requeridas antes de formalizar el Plan y el Acta.</Typography>
+              <Stack spacing={3}>
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: { xs: 3, md: 4 },
+                    borderRadius: 3.5,
+                    bgcolor: '#ffffff',
+                    borderColor: '#cbd5e1',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
+                  }}
+                >
+                  <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'flex-start' }} gap={2.5} mb={3}>
+                    <Stack direction="row" spacing={2} alignItems="flex-start">
+                      <Box
+                        sx={{
+                          width: 52,
+                          height: 52,
+                          borderRadius: 2.5,
+                          bgcolor: '#ecfdf5',
+                          border: '1px solid #a7f3d0',
+                          display: 'grid',
+                          placeItems: 'center',
+                          color: '#059669',
+                          flexShrink: 0
+                        }}
+                      >
+                        <ExcelIcon sx={{ fontSize: 30 }} />
+                      </Box>
+                      <Box>
+                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap mb={0.5}>
+                          <Typography variant="h6" fontWeight={900} color="#0f172a" sx={{ fontSize: { xs: 18, md: 20 } }}>
+                            Plan de Acción Oficial DIR-PE-FR-003
+                          </Typography>
+                          <Chip
+                            label="Formato Normativo Institucional"
+                            size="small"
+                            sx={{ fontWeight: 800, bgcolor: '#e0f2fe', color: '#0369a1', fontSize: 11.5 }}
+                          />
+                        </Stack>
+                        <Typography variant="body2" color="#64748b">
+                          Matriz institucional oficial en formato Excel (.xlsx).
+                        </Typography>
+                      </Box>
+                    </Stack>
+
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="stretch">
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        startIcon={<Visibility />}
+                        onClick={() => setPreviewPlanModalOpen(true)}
+                        sx={{
+                          height: 44,
+                          px: 2.5,
+                          borderRadius: 2.5,
+                          fontWeight: 850,
+                          textTransform: 'none',
+                          borderColor: '#3b82f6',
+                          color: '#1d4ed8',
+                          '&:hover': { borderColor: '#1d4ed8', bgcolor: '#eff6ff' }
+                        }}
+                      >
+                        Previsualizar Plan de Acción
+                      </Button>
+                      <Button
+                        variant="contained"
+                        startIcon={<Download />}
+                        onClick={exportPlan}
+                        sx={{
+                          height: 44,
+                          px: 2.5,
+                          borderRadius: 2.5,
+                          fontWeight: 900,
+                          textTransform: 'none',
+                          bgcolor: '#16a34a',
+                          '&:hover': { bgcolor: '#15803d' }
+                        }}
+                      >
+                        Exportar DIR-PE-FR-003 (.xlsx)
+                      </Button>
+                    </Stack>
+                  </Stack>
+
+                  {/* CHIPS RESUMEN METADATOS EN TIEMPO REAL */}
+                  <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2.5, border: '1px solid #e2e8f0', mb: 3 }}>
+                    <Box sx={{ minWidth: 160 }}>
+                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Actividades formuladas</Typography>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 16 }}>{detail?.items?.length || 0} registradas</Typography>
+                    </Box>
+                    <Box sx={{ minWidth: 180 }}>
+                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Dependencia / Unidad</Typography>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>{detail?.organizationalUnit?.name || detail?.title || '—'}</Typography>
+                    </Box>
+                    <Box sx={{ minWidth: 120 }}>
+                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Vigencia</Typography>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>{detail?.term?.year || '—'}</Typography>
+                    </Box>
+                    <Box sx={{ minWidth: 130 }}>
+                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Código</Typography>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>{detail?.code || '—'}</Typography>
+                    </Box>
+                    <Box sx={{ minWidth: 160 }}>
+                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Estado en el Flujo</Typography>
+                      <Typography sx={{ fontWeight: 900, color: '#2563eb', fontSize: 14 }}>{STATUS_LABELS[detail?.status] || detail?.status}</Typography>
                     </Box>
                   </Stack>
 
-                  <Stack spacing={1.5}>
-                    {[
-                      { ok: hasDependencia, label: 'Dependencia / Unidad registrada en la vigencia' },
-                      { ok: hasMeetingDate, label: 'Fecha de reunión de concertación definida' },
-                      { ok: hasActivities, label: `Al menos una actividad cargada (${detail.items?.length || 0} registradas)` },
-                      { ok: hasLeader, label: 'Líder / Responsable institucional asignado' }
-                    ].map((check, i) => (
-                      <Paper key={i} variant="outlined" sx={{ p: 2, borderRadius: 2.5, border: check.ok ? '1px solid #bbf7d0' : '1px solid #fed7aa', bgcolor: check.ok ? '#f0fdf4' : '#fff7ed', display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <CheckCircle sx={{ color: check.ok ? '#16a34a' : '#f97316', fontSize: 20 }} />
-                        <Typography fontWeight={700} color={check.ok ? '#15803d' : '#c2410c'} sx={{ fontSize: 13.5 }}>
-                          {check.label}
-                        </Typography>
-                      </Paper>
-                    ))}
-                  </Stack>
+                  {/* SECCIÓN SINCRONIZACIÓN AUTOMÁTICA EN GOOGLE DRIVE */}
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 2.5,
+                      borderRadius: 3,
+                      bgcolor: '#f0fdf4',
+                      borderColor: '#bbf7d0'
+                    }}
+                  >
+                    <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
+                      <Stack direction="row" spacing={2} alignItems="center">
+                        <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: '#ffffff', border: '1px solid #86efac', display: 'grid', placeItems: 'center', color: '#16a34a', flexShrink: 0 }}>
+                          <Folder sx={{ fontSize: 26 }} />
+                        </Box>
+                        <Box>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                            <Typography fontWeight={900} color="#14532d" sx={{ fontSize: 15 }}>
+                              Carpeta Drive: PLAN DE ACCIÓN OFICIAL DIR-PE-FR-003
+                            </Typography>
+                            <Chip
+                              label="100% Automático"
+                              size="small"
+                              sx={{
+                                fontWeight: 800,
+                                bgcolor: '#dcfce7',
+                                color: '#15803d',
+                                fontSize: 11
+                              }}
+                            />
+                          </Stack>
+                          <Typography variant="body2" color="#166534" sx={{ mt: 0.25, fontSize: 13 }}>
+                            <strong>DIR-PE-FR-003_{detail?.code}_{detail?.term?.year}.xlsx</strong>
+                            {detail?.metadata?.drive_sync?.synced_at && (
+                              <span> · Actualizado: {new Date(detail.metadata.drive_sync.synced_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            )}
+                          </Typography>
+                        </Box>
+                      </Stack>
+
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        {syncingDriveExcel ? (
+                          <Chip
+                            icon={<CircularProgress size={16} color="inherit" />}
+                            label="Sincronizando con Drive..."
+                            size="medium"
+                            sx={{
+                              fontWeight: 800,
+                              bgcolor: '#e0f2fe',
+                              color: '#0369a1',
+                              height: 38,
+                              borderRadius: 2.5
+                            }}
+                          />
+                        ) : (
+                          <Chip
+                            icon={<CheckCircle sx={{ color: '#16a34a !important', fontSize: 20 }} />}
+                            label="Sincronizado automáticamente"
+                            size="medium"
+                            sx={{
+                              fontWeight: 800,
+                              bgcolor: '#dcfce7',
+                              color: '#15803d',
+                              height: 38,
+                              borderRadius: 2.5,
+                              px: 0.5
+                            }}
+                          />
+                        )}
+                        <Tooltip title="Actualización manual opcional">
+                          <IconButton
+                            size="small"
+                            disabled={syncingDriveExcel}
+                            onClick={handleSyncDriveExcel}
+                            sx={{
+                              width: 38,
+                              height: 38,
+                              bgcolor: '#ffffff',
+                              border: '1px solid #86efac',
+                              color: '#15803d',
+                              '&:hover': { bgcolor: '#ecfdf5' }
+                            }}
+                          >
+                            <Sync sx={{ fontSize: 20 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    </Stack>
+                  </Paper>
                 </Paper>
-
-                <Paper variant="outlined" sx={{ p: 3.5, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-                  <Typography variant="h6" fontWeight={900} color="#0f172a" mb={0.5}>Formatos Institucionales Oficiales</Typography>
-                  <Typography variant="body2" color="#64748b" mb={3}>
-                    Descargue las versiones finales ajustadas a la normativa institucional de la Universidad CESMAG.
-                  </Typography>
-
-                  <Stack spacing={2}>
-                    <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={2}>
-                        <Box>
-                          <Typography fontWeight={900} color="#0f172a">Plan de Acción Oficial DIR-PE-FR-003</Typography>
-                          <Typography variant="body2" color="#64748b">Matriz institucional en formato Excel (.xlsx) con todas las actividades e indicadores.</Typography>
-                        </Box>
-                        <Button variant="contained" startIcon={<Download />} onClick={exportPlan} sx={{ minWidth: 200, height: 44, borderRadius: 2.5, fontWeight: 900, textTransform: 'none' }}>
-                          Exportar DIR-PE-FR-003
-                        </Button>
-                      </Stack>
-                    </Paper>
-
-                    <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={2}>
-                        <Box>
-                          <Typography fontWeight={900} color="#0f172a">Acta de Concertación COM-IF-FR-002</Typography>
-                          <Typography variant="body2" color="#64748b">Formato oficial de Registro de Asistencia y Reunión institucional.</Typography>
-                        </Box>
-                        <Button variant="outlined" startIcon={<Description />} disabled={!activeMeeting} onClick={() => generateMinute(activeMeeting?.id)} sx={{ minWidth: 200, height: 44, borderRadius: 2.5, fontWeight: 900, textTransform: 'none' }}>
-                          Generar Acta Word
-                        </Button>
-                      </Stack>
-                    </Paper>
-
-                    <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={2}>
-                        <Box>
-                          <Typography fontWeight={900} color="#0f172a">Plantilla Dinámica Excel por PED</Typography>
-                          <Typography variant="body2" color="#64748b">Plantilla estructurada automáticamente según los campos activos de este PED.</Typography>
-                        </Box>
-                        <Button variant="outlined" startIcon={<InsertDriveFile />} onClick={downloadDynamicTemplate} sx={{ minWidth: 200, height: 44, borderRadius: 2.5, fontWeight: 900, textTransform: 'none' }}>
-                          Plantilla Dinámica
-                        </Button>
-                      </Stack>
-                    </Paper>
-                  </Stack>
-                </Paper>
-              </Box>
+              </Stack>
             )}
 
             {/* TAB 4: FLUJO Y SEGUIMIENTOS S1/S2 */}
@@ -3647,6 +3819,190 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             </Stack>
           )}
         </DialogContent>
+      </Dialog>
+
+      {/* DIÁLOGO: PREVISUALIZACIÓN OFICIAL EN TIEMPO REAL DEL PLAN DE ACCIÓN */}
+      <Dialog
+        open={previewPlanModalOpen}
+        onClose={() => setPreviewPlanModalOpen(false)}
+        maxWidth="xl"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3.5,
+            height: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            bgcolor: '#f8fafc'
+          }
+        }}
+      >
+        <DialogTitle sx={{ p: 2.5, bgcolor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: '#ecfdf5', border: '1px solid #a7f3d0', display: 'grid', placeItems: 'center', color: '#059669', flexShrink: 0 }}>
+                <ExcelIcon sx={{ fontSize: 26 }} />
+              </Box>
+              <Box>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Typography variant="h6" fontWeight={900} color="#0f172a" sx={{ fontSize: 17 }}>
+                    Plan de Acción DIR-PE-FR-003 · Previsualización Oficial
+                  </Typography>
+                  <Chip
+                    label={`Vigencia ${detail?.term?.year || ''}`}
+                    size="small"
+                    sx={{ fontWeight: 800, bgcolor: '#dbeafe', color: '#1e40af', fontSize: 11 }}
+                  />
+                  <Chip
+                    label="Tiempo Real"
+                    size="small"
+                    sx={{ fontWeight: 800, bgcolor: '#dcfce7', color: '#15803d', fontSize: 11 }}
+                  />
+                </Stack>
+                <Typography variant="body2" color="#64748b" sx={{ fontSize: 13, mt: 0.25 }}>
+                  {detail?.organizationalUnit?.name || detail?.title} · Código: <strong>{detail?.code}</strong> · Total actividades: <strong>{detail?.items?.length || 0}</strong>
+                </Typography>
+              </Box>
+            </Stack>
+
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <TextField
+                size="small"
+                placeholder="Buscar actividad, indicador..."
+                value={previewPlanSearch}
+                onChange={(e) => setPreviewPlanSearch(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Search sx={{ color: '#94a3b8', fontSize: 20 }} />
+                    </InputAdornment>
+                  ),
+                  sx: { borderRadius: 2, bgcolor: '#f8fafc', fontSize: 13, width: { xs: 200, sm: 260 } }
+                }}
+              />
+              <Button
+                variant="contained"
+                startIcon={<Download />}
+                onClick={exportPlan}
+                sx={{
+                  borderRadius: 2.5,
+                  fontWeight: 850,
+                  textTransform: 'none',
+                  bgcolor: '#16a34a',
+                  '&:hover': { bgcolor: '#15803d' },
+                  height: 38
+                }}
+              >
+                Exportar Excel
+              </Button>
+              <IconButton onClick={() => setPreviewPlanModalOpen(false)} sx={{ color: '#64748b' }}>
+                <Close />
+              </IconButton>
+            </Stack>
+          </Stack>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 2.5, flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <Paper variant="outlined" sx={{ flex: 1, borderRadius: 3, bgcolor: '#ffffff', borderColor: '#b4c6e7', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {/* ENCABEZADO INSTITUCIONAL OFICIAL */}
+            <Box sx={{ bgcolor: '#ffffff', borderBottom: '1px solid #cbd5e1', py: 1, px: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <img
+                src="/Encabezado_correos.png"
+                alt="Universidad CESMAG"
+                style={{ maxHeight: 54, maxWidth: '100%', objectFit: 'contain' }}
+              />
+            </Box>
+
+            {/* TIRA INSTITUCIONAL FILA 5 EXCEL */}
+            <Box sx={{ p: 1.25, px: 2.5, bgcolor: '#d9e2f3', borderBottom: '2px solid #2f5597', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+              <Typography sx={{ fontWeight: 900, fontSize: 13, color: '#1f3864', letterSpacing: 0.5 }}>
+                {`${detail?.code || 'RXX'}_ ${(detail?.organizationalUnit?.name || detail?.title || 'PLAN DE ACCIÓN').toUpperCase()}`}
+              </Typography>
+              <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#2f5597' }}>
+                FORMATO OFICIAL DIR-PE-FR-003 · VERSIÓN 5 (17/10/2024)
+              </Typography>
+            </Box>
+
+            <TableContainer sx={{ flex: 1, maxHeight: 'calc(90vh - 220px)' }}>
+              <Table stickyHeader size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ bgcolor: '#2f5597', color: '#ffffff', fontWeight: 900, fontSize: 12, minWidth: 80, zIndex: 3, position: 'sticky', left: 0, borderRight: '1px solid #ffffff' }}>
+                      No.
+                    </TableCell>
+                    {recordColumns.map((col) => {
+                      const isResp = col.key === 'responsables' || col.key === 'responsable';
+                      const isCorresp = col.key === 'corresponsables' || col.key === 'corresponsable';
+                      const headerBg = isResp ? '#c00000' : isCorresp ? '#800000' : '#2f5597';
+                      return (
+                        <TableCell key={col.key} sx={{ bgcolor: headerBg, color: '#ffffff', fontWeight: 900, fontSize: 12, minWidth: 160, whiteSpace: 'nowrap', borderRight: '1px solid #ffffff' }}>
+                          {col.label?.toUpperCase() || col.key}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredPreviewItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={recordColumns.length + 1} align="center" sx={{ py: 8 }}>
+                        <Typography color="#64748b" fontWeight={700}>
+                          {previewPlanSearch ? 'No se encontraron actividades que coincidan con la búsqueda.' : 'No hay actividades registradas en el Plan de Acción todavía.'}
+                        </Typography>
+                        <Typography variant="caption" color="#94a3b8">
+                          Las actividades creadas en la Etapa 1 se reflejan aquí de forma inmediata.
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredPreviewItems.map((row, idx) => (
+                      <TableRow key={row.id || idx} hover sx={{ '&:hover': { filter: 'brightness(0.97)' } }}>
+                        <TableCell sx={{ position: 'sticky', left: 0, bgcolor: '#d9e2f3', fontWeight: 900, color: '#1f3864', fontSize: 12.5, zIndex: 1, borderRight: '1px solid #b4c6e7', textAlign: 'center' }}>
+                          {idx + 1}
+                        </TableCell>
+                        {recordColumns.map((field) => {
+                          const isResp = field.key === 'responsables' || field.key === 'responsable';
+                          const isCorresp = field.key === 'corresponsables' || field.key === 'corresponsable';
+                          const isWhiteCol = isResp || isCorresp;
+                          return (
+                            <TableCell
+                              key={field.key}
+                              sx={{
+                                bgcolor: isWhiteCol ? '#ffffff' : '#edf3fc',
+                                maxWidth: 340,
+                                whiteSpace: 'normal',
+                                fontSize: 12.5,
+                                color: '#1e293b',
+                                verticalAlign: 'top',
+                                py: 1.25,
+                                borderRight: '1px solid #e2e8f0'
+                              }}
+                            >
+                              {recordValue(row, field)}
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2, px: 3, bgcolor: '#ffffff', borderTop: '1px solid #e2e8f0', justifyContent: 'space-between' }}>
+          <Typography variant="caption" color="#64748b" fontWeight={600}>
+            Mostrando {filteredPreviewItems.length} de {detail?.items?.length || 0} actividades · Universidad CESMAG
+          </Typography>
+          <Button
+            onClick={() => setPreviewPlanModalOpen(false)}
+            variant="outlined"
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}
+          >
+            Cerrar
+          </Button>
+        </DialogActions>
       </Dialog>
     </Dialog>
   );
