@@ -182,8 +182,15 @@ export default function MeetingCalendarScheduler({
           force: false
         });
         if (active) setAvailability(response.data?.availability || []);
-      } catch (_) {
-        if (active) setAvailability(null);
+      } catch (error) {
+        if (active) {
+          setAvailability(null);
+          if (error?.response?.data?.data?.connection_invalid) {
+            setConnection({ connected: false });
+            setSlotSuggestions([]);
+            setShowCommonSchedule(false);
+          }
+        }
       } finally {
         if (active) setAutoChecking(false);
       }
@@ -207,6 +214,15 @@ export default function MeetingCalendarScheduler({
     setAvailability(null);
     setSlotSuggestions([]);
     if (['date', 'start', 'end', 'attendees'].includes(key)) setShowCommonSchedule(false);
+  };
+
+  const applyConnectionFailure = (error) => {
+    if (!error?.response?.data?.data?.connection_invalid) return false;
+    setConnection({ connected: false });
+    setAvailability(null);
+    setSlotSuggestions([]);
+    setShowCommonSchedule(false);
+    return true;
   };
 
   const addPerson = () => {
@@ -285,6 +301,7 @@ export default function MeetingCalendarScheduler({
       const response = await meetingMinuteService.checkCalendarAvailability(activeMinuteId, payload());
       setAvailability(response.data?.availability || []);
     } catch (error) {
+      applyConnectionFailure(error);
       enqueueSnackbar(error.response?.data?.message || 'No fue posible consultar la disponibilidad.', { variant: 'error' });
     } finally {
       setWorking(false);
@@ -305,6 +322,7 @@ export default function MeetingCalendarScheduler({
         .catch(() => {});
       enqueueSnackbar(response.message || 'Reunión programada en Google Calendar.', { variant: 'success' });
     } catch (error) {
+      applyConnectionFailure(error);
       const conflictAvailability = error.response?.data?.data?.availability;
       if (Array.isArray(conflictAvailability)) setAvailability(conflictAvailability);
       enqueueSnackbar(error.response?.data?.message || 'No fue posible programar la reunión.', { variant: error.response?.status === 409 ? 'warning' : 'error' });
@@ -323,6 +341,7 @@ export default function MeetingCalendarScheduler({
       setSlotSuggestions(slots);
       if (!slots.length) enqueueSnackbar('No se encontraron horarios comunes para la fecha seleccionada.', { variant: 'info' });
     } catch (error) {
+      applyConnectionFailure(error);
       enqueueSnackbar(error.response?.data?.message || 'No fue posible buscar horarios disponibles.', { variant: 'error' });
     } finally {
       setSuggestionsWorking(false);
@@ -405,6 +424,7 @@ export default function MeetingCalendarScheduler({
       }
       enqueueSnackbar(response.message || 'Reunión cancelada en Google Calendar.', { variant: 'success' });
     } catch (error) {
+      applyConnectionFailure(error);
       enqueueSnackbar(error.response?.data?.message || 'No fue posible cancelar la reunión.', { variant: 'error' });
     } finally {
       setWorking(false);

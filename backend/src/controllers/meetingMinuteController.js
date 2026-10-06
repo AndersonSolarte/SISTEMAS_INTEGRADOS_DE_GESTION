@@ -1737,9 +1737,15 @@ const calendarOAuthCallback = async (req, res) => {
       return respond(false, `Debe autorizar exactamente la cuenta ${expectedEmail}.`);
     }
     const existing = await GoogleCalendarConnection.findOne({ where: { user_id: user.id } });
+    // Una conexión marcada como revocada nunca debe "reconectarse" reutilizando
+    // el mismo refresh token que Google ya rechazó. En ese caso exigimos que el
+    // nuevo consentimiento entregue credenciales permanentes nuevas.
+    const reusableExistingToken = existing?.status === 'connected'
+      ? existing.refresh_token_encrypted
+      : null;
     const encryptedToken = authorization.tokens.refresh_token
       ? encryptRefreshToken(authorization.tokens.refresh_token)
-      : existing?.refresh_token_encrypted;
+      : reusableExistingToken;
     if (!encryptedToken) return respond(false, 'Google no entregó una autorización permanente. Intente conectar nuevamente.');
     const values = {
       google_email: authorization.email,
@@ -1805,26 +1811,59 @@ const listUpcomingCalendarSchedules = wrap(async (req, res) => {
   });
 });
 
+const isCalendarAuthorizationError = (error) => {
+  const code = error?.code;
+  const status = Number(error?.response?.status || error?.status || 0);
+  const detail = [
+    error?.message,
+    error?.response?.data?.error,
+    error?.response?.data?.error_description
+  ].filter(Boolean).join(' ');
+  return Number(code) === 401
+    || status === 401
+    || ['unauthorized_client', 'access_denied', 'invalid_grant'].includes(code)
+    || /unauthorized|forbidden|invalid_grant|token has been expired or revoked/i.test(detail);
+};
+
 const prepareCalendarError = (error) => {
+  if (isCalendarAuthorizationError(error)) {
+    error.statusCode = 409;
+    error.code = 'CALENDAR_AUTH_REVOKED';
+    error.message = 'Google Calendar rechazó o revocó la autorización. Vuelva a conectar la cuenta desde el acta y luego programe la reunión.';
+    error.data = { ...(error.data || {}), connection_invalid: true };
+    return error;
+  }
   if (error.statusCode) return error;
   if (['CALENDAR_NOT_CONFIGURED', 'CALENDAR_OAUTH_NOT_CONFIGURED'].includes(error.code)) error.statusCode = 503;
   else if (error.code === 'CALENDAR_NOT_CONNECTED') error.statusCode = 409;
   else if (['INVALID_CALENDAR_RANGE', 'INVALID_CALENDAR_ORGANIZER'].includes(error.code)) error.statusCode = 422;
   else {
     error.statusCode = 502;
-    if ([401, 403, 'unauthorized_client', 'access_denied', 'invalid_grant'].includes(error.code) || /unauthorized|forbidden|invalid_grant/i.test(error.message || '')) {
-      error.message = 'Google Calendar rechazó o revocó la autorización. Desconecte la cuenta y vuelva a conectarla desde el acta.';
-    }
   }
   return error;
+};
+
+const persistCalendarConnectionError = async (connection, error) => {
+  const prepared = prepareCalendarError(error);
+  if (prepared.data?.connection_invalid && connection) {
+    await connection.update({
+      status: 'revoked',
+      last_error: clean(prepared.message, 2000),
+      last_used_at: new Date()
+    }).catch(() => {});
+  }
+  return prepared;
 };
 
 const calendarAvailability = wrap(async (req, res) => {
   const { minute, organizer } = await loadMinuteForCalendar(req);
   const attendees = normalizeAttendees(req.body.attendees);
+  let connection = null;
   try {
     const existing = await DigitalMeetingSchedule.findOne({ where: { minute_id: minute.id } });
-    const { connection, connected } = await loadCalendarConnection(req.user.id, organizer.email);
+    const loadedConnection = await loadCalendarConnection(req.user.id, organizer.email);
+    connection = loadedConnection.connection;
+    const { connected } = loadedConnection;
     if (!connected) throw Object.assign(new Error('Conecte su cuenta institucional de Google Calendar antes de consultar disponibilidad.'), { code: 'CALENDAR_NOT_CONNECTED' });
     const authClient = createConnectedOAuthClient(connection);
     const availability = await checkAvailability({
@@ -1841,7 +1880,7 @@ const calendarAvailability = wrap(async (req, res) => {
     await connection.update({ last_used_at: new Date(), last_error: null });
     res.json({ success: true, data: { organizer, availability } });
   } catch (error) {
-    throw prepareCalendarError(error);
+    throw await persistCalendarConnectionError(connection, error);
   }
 });
 
@@ -1866,7 +1905,7 @@ const calendarSuggestions = wrap(async (req, res) => {
     await connection.update({ last_used_at: new Date(), last_error: null });
     res.json({ success: true, data: suggestions });
   } catch (error) {
-    throw prepareCalendarError(error);
+    throw await persistCalendarConnectionError(connection, error);
   }
 });
 
@@ -1898,7 +1937,7 @@ const saveCalendarSchedule = wrap(async (req, res) => {
       authClient
     });
   } catch (error) {
-    throw prepareCalendarError(error);
+    throw await persistCalendarConnectionError(connection, error);
   }
   const busyPeople = availability.filter((person) => person.status === 'busy');
   if (busyPeople.length && req.body.force !== true) {
@@ -1948,10 +1987,17 @@ const saveCalendarSchedule = wrap(async (req, res) => {
       data: { schedule: schedule.toJSON(), availability }
     });
   } catch (error) {
-    if (existing) await existing.update({ status: 'error', last_error: clean(error.message, 2000), updated_by: req.user.id }).catch(() => {});
-    if (!error.statusCode) error.statusCode = 502;
-    if (error.statusCode === 502) error.message = `Google Calendar no pudo programar la reunión: ${error.message}`;
-    throw error;
+    const prepared = await persistCalendarConnectionError(connection, error);
+    // Si se estaba editando una reunión ya creada, el evento anterior sigue
+    // vigente en Google aunque la actualización falle. No debemos ocultarlo ni
+    // marcarlo como inexistente.
+    if (existing) await existing.update({
+      status: existing.google_event_id && existing.status !== 'cancelled' ? 'scheduled' : 'error',
+      last_error: clean(prepared.message, 2000),
+      updated_by: req.user.id
+    }).catch(() => {});
+    if (prepared.statusCode === 502) prepared.message = `Google Calendar no pudo programar la reunión: ${prepared.message}`;
+    throw prepared;
   }
 });
 
@@ -1979,7 +2025,7 @@ const cancelCalendarSchedule = wrap(async (req, res) => {
     });
   } catch (error) {
     await schedule.update({ last_error: clean(error.message, 2000), updated_by: req.user.id }).catch(() => {});
-    throw prepareCalendarError(error);
+    throw await persistCalendarConnectionError(connection, error);
   }
 });
 
