@@ -22,6 +22,8 @@ import {
   Male as MaleIcon,
   Refresh as RefreshIcon,
   School as SchoolIcon,
+  Timeline as TimelineIcon,
+  PieChart as PieChartIcon,
   Work as WorkIcon
 } from '@mui/icons-material';
 import {
@@ -40,6 +42,7 @@ import {
 import { useSnackbar } from 'notistack';
 import html2canvas from 'html2canvas';
 import gestionInformacionService from '../../services/gestionInformacionService';
+import RecursoHumanoHistoricoTab from './RecursoHumanoHistoricoTab';
 
 const BLUE = '#1f73e8';
 const LIGHT_BLUE = '#b8cae9';
@@ -909,6 +912,7 @@ function RecursoHumanoDashboard({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [filters, setFilters] = useState(emptyFilters);
+  const [activeSegment, setActiveSegment] = useState('distribucion');
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -1290,8 +1294,96 @@ function RecursoHumanoDashboard({ onBack }) {
           </Box>
         </Box>
 
-        {/* ── PANEL DE FILTROS ── */}
+        {/* ── SELECTOR DE SEGMENTOS (PESTAÑAS EJECUTIVAS A ANCHO COMPLETO) ── */}
         <Paper
+          elevation={0}
+          sx={{
+            mb: 2.5,
+            p: 0.8,
+            borderRadius: 2.8,
+            bgcolor: '#ffffff',
+            border: '1px solid #c5d9f7',
+            display: 'flex',
+            flexDirection: { xs: 'column', sm: 'row' },
+            alignItems: 'center',
+            width: '100%',
+            gap: 1,
+            boxShadow: '0 4px 16px rgba(31, 115, 232, 0.06)'
+          }}
+        >
+          <Button
+            variant={activeSegment === 'distribucion' ? 'contained' : 'text'}
+            startIcon={<PieChartIcon />}
+            onClick={() => setActiveSegment('distribucion')}
+            sx={{
+              flex: 1,
+              width: { xs: '100%', sm: 'auto' },
+              borderRadius: 2.2,
+              px: { xs: 1.5, sm: 2.4 },
+              py: 1.15,
+              fontWeight: 850,
+              fontSize: { xs: 12.5, sm: 13.5 },
+              textTransform: 'none',
+              bgcolor: activeSegment === 'distribucion' ? BLUE : '#f8fafc',
+              color: activeSegment === 'distribucion' ? '#ffffff' : '#475569',
+              boxShadow: activeSegment === 'distribucion' ? '0 3px 12px rgba(25, 118, 210, 0.25)' : 'none',
+              border: activeSegment === 'distribucion' ? `1px solid ${BLUE}` : '1px solid transparent',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                bgcolor: activeSegment === 'distribucion' ? '#1764c9' : '#f0f7ff',
+                borderColor: activeSegment === 'distribucion' ? '#1764c9' : '#bfdbfe'
+              }
+            }}
+          >
+            Composición por Período
+          </Button>
+
+          <Button
+            variant={activeSegment === 'historico' ? 'contained' : 'text'}
+            startIcon={<TimelineIcon />}
+            onClick={() => setActiveSegment('historico')}
+            sx={{
+              flex: 1,
+              width: { xs: '100%', sm: 'auto' },
+              borderRadius: 2.2,
+              px: { xs: 1.5, sm: 2.4 },
+              py: 1.15,
+              fontWeight: 850,
+              fontSize: { xs: 12.5, sm: 13.5 },
+              textTransform: 'none',
+              bgcolor: activeSegment === 'historico' ? BLUE : '#f8fafc',
+              color: activeSegment === 'historico' ? '#ffffff' : '#475569',
+              boxShadow: activeSegment === 'historico' ? '0 3px 12px rgba(25, 118, 210, 0.25)' : 'none',
+              border: activeSegment === 'historico' ? `1px solid ${BLUE}` : '1px solid transparent',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                bgcolor: activeSegment === 'historico' ? '#1764c9' : '#f0f7ff',
+                borderColor: activeSegment === 'historico' ? '#1764c9' : '#bfdbfe'
+              }
+            }}
+          >
+            Histórico y Tablas Estadísticas
+            <Chip
+              size="small"
+              label="Nuevo"
+              sx={{
+                ml: 1,
+                height: 20,
+                fontSize: 10,
+                fontWeight: 900,
+                bgcolor: activeSegment === 'historico' ? 'rgba(255,255,255,0.25)' : '#e0f2fe',
+                color: activeSegment === 'historico' ? '#ffffff' : '#0369a1'
+              }}
+            />
+          </Button>
+        </Paper>
+
+        {activeSegment === 'historico' ? (
+          <RecursoHumanoHistoricoTab docenteRows={docenteRows} />
+        ) : (
+          <>
+            {/* ── PANEL DE FILTROS ── */}
+            <Paper
           elevation={0}
           sx={{
             mb: 2.5,
@@ -1751,6 +1843,8 @@ function RecursoHumanoDashboard({ onBack }) {
             </Box>
           </Box>
         ) : null}
+          </>
+        )}
       </Box>
     </Fade>
   );

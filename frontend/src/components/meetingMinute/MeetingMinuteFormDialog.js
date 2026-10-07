@@ -278,6 +278,9 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [externalDraft, setExternalDraft] = useState({ document: '', name: '', email: '', organization: '', role_title: '' });
   const [externalStudentResult, setExternalStudentResult] = useState(null);
   const [lookingUpExternalStudent, setLookingUpExternalStudent] = useState(false);
+  const [participantSearchOptions, setParticipantSearchOptions] = useState([]);
+  const [participantSearchOpen, setParticipantSearchOpen] = useState(false);
+  const [searchingParticipant, setSearchingParticipant] = useState(false);
   const [loading, setLoading] = useState(false);
   const [qr, setQr] = useState(null);
   const [confirmAdjust, setConfirmAdjust] = useState(false);
@@ -440,6 +443,39 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   }, [open, canManageParticipants, responsibleDocument, responsibleCandidate]);
 
   useEffect(() => {
+    const query = String(externalDraft.document || '').trim();
+    const isNameSearch = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(query);
+    if (!open || !canManageParticipants || externalStudentResult?.found || !isNameSearch || query.length < 2) {
+      setParticipantSearchOptions([]);
+      setParticipantSearchOpen(false);
+      return undefined;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setSearchingParticipant(true);
+      try {
+        const response = await meetingMinuteService.searchParticipants(query);
+        if (!active) return;
+        const matches = Array.isArray(response.data) ? response.data : [];
+        setParticipantSearchOptions(matches);
+        setParticipantSearchOpen(matches.length > 0);
+      } catch (_) {
+        if (!active) return;
+        setParticipantSearchOptions([]);
+        setParticipantSearchOpen(false);
+      } finally {
+        if (active) setSearchingParticipant(false);
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [open, canManageParticipants, externalDraft.document, externalStudentResult?.found]);
+
+  useEffect(() => {
     if (!open) return;
     guideAnimationRef.current?.cancel?.();
     guideAnimationRef.current = null;
@@ -461,6 +497,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setResponsibleCandidate(null);
     setExternalStudentResult(null);
     setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
+    setParticipantSearchOptions([]);
+    setParticipantSearchOpen(false);
     loadMinutes();
     loadMeetingPlaces();
   }, [open, user, closeSnackbar]);
@@ -771,6 +809,66 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     }]);
     setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
     setExternalStudentResult(null);
+    setParticipantSearchOptions([]);
+    setParticipantSearchOpen(false);
+  };
+
+  const selectInstitutionalParticipant = (person) => {
+    if (!person) return;
+    const normalizedDocument = String(person.document || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    const normalizedEmail = String(person.email || '').trim().toLowerCase();
+    const alreadyAdded = form.participants.some((participant) => (
+      (person.id && String(participant.user_id) === String(person.id))
+      || (normalizedDocument && String(participant.document || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === normalizedDocument)
+      || (normalizedEmail && String(participant.email || '').trim().toLowerCase() === normalizedEmail)
+    ));
+    if (alreadyAdded) {
+      setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
+      setExternalStudentResult(null);
+      setParticipantSearchOptions([]);
+      setParticipantSearchOpen(false);
+      enqueueSnackbar('La persona institucional ya está agregada al acta.', { variant: 'info' });
+      return;
+    }
+    setExternalDraft({
+      document: person.document || '',
+      name: person.name || '',
+      email: person.email || '',
+      organization: person.organization || '',
+      role_title: person.role_title || ''
+    });
+    setExternalStudentResult({
+      found: true,
+      kind: 'institutional',
+      institutionalId: person.id || null,
+      missingEmail: !person.email,
+      institutionalProfile: person,
+      studentOptions: []
+    });
+    setParticipantSearchOptions([]);
+    setParticipantSearchOpen(false);
+  };
+
+  const searchParticipantInput = async () => {
+    const query = String(externalDraft.document || '').trim();
+    if (!query) return;
+    const isNameSearch = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(query);
+    if (!isNameSearch) {
+      await lookupExternalStudent();
+      return;
+    }
+    setSearchingParticipant(true);
+    try {
+      const response = await meetingMinuteService.searchParticipants(query);
+      const matches = Array.isArray(response.data) ? response.data : [];
+      setParticipantSearchOptions(matches);
+      setParticipantSearchOpen(matches.length > 0);
+      if (!matches.length) enqueueSnackbar('No se encontraron usuarios internos con ese nombre.', { variant: 'info' });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible buscar usuarios internos.', { variant: 'error' });
+    } finally {
+      setSearchingParticipant(false);
+    }
   };
 
   const lookupExternalStudent = async () => {
@@ -802,6 +900,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         if (alreadyAdded) {
           setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
           setExternalStudentResult(null);
+          setParticipantSearchOptions([]);
+          setParticipantSearchOpen(false);
           enqueueSnackbar('La persona institucional ya está agregada al acta.', { variant: 'info' });
           return;
         }
@@ -1803,30 +1903,84 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </Stack>
 
                   <Stack direction={{ xs: 'column', sm: 'row' }} alignItems="stretch" gap={1} mb={1}>
-                    <TextField
+                    <Autocomplete
+                      freeSolo
                       fullWidth
                       size="small"
-                      label="Cédula o identificación"
-                      value={externalDraft.document}
-                      onChange={(e) => {
-                        const nextDocument = e.target.value;
+                      open={participantSearchOpen && participantSearchOptions.length > 0}
+                      onOpen={() => participantSearchOptions.length > 0 && setParticipantSearchOpen(true)}
+                      onClose={() => setParticipantSearchOpen(false)}
+                      options={participantSearchOptions}
+                      value={null}
+                      inputValue={externalDraft.document}
+                      loading={searchingParticipant}
+                      filterOptions={(options) => options}
+                      getOptionLabel={(option) => typeof option === 'string'
+                        ? option
+                        : `${formatPersonName(option.name)} · CC ${option.document}`}
+                      isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
+                      onInputChange={(_, value, reason) => {
+                        if (!['input', 'clear'].includes(reason)) return;
+                        const nextDocument = value.slice(0, 100);
                         setExternalDraft((old) => externalStudentResult?.found
                           ? { document: nextDocument, name: '', email: '', organization: '', role_title: '' }
                           : { ...old, document: nextDocument });
                         setExternalStudentResult(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          lookupExternalStudent();
+                        if (reason === 'clear') {
+                          setParticipantSearchOptions([]);
+                          setParticipantSearchOpen(false);
                         }
                       }}
+                      onChange={(_, option) => {
+                        if (option && typeof option !== 'string') selectInstitutionalParticipant(option);
+                      }}
+                      noOptionsText="No se encontraron usuarios internos"
+                      loadingText="Buscando usuarios internos..."
+                      renderOption={(props, option) => {
+                        const { key, ...optionProps } = props;
+                        return (
+                          <Box component="li" key={key} {...optionProps} sx={{ alignItems: 'flex-start !important', py: '9px !important' }}>
+                            <Box sx={{ minWidth: 0 }}>
+                              <Stack direction="row" gap={0.75} alignItems="center" flexWrap="wrap">
+                                <Typography variant="body2" fontWeight={900}>{formatPersonName(option.name)}</Typography>
+                                <Chip size="small" label={`CC ${option.document}`} variant="outlined" sx={{ height: 20, fontSize: 10.5 }} />
+                              </Stack>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                {[option.role_title, option.organization].filter(Boolean).join(' · ') || 'Sin cargo o dependencia registrados'}
+                              </Typography>
+                              {option.email && <Typography variant="caption" color="text.secondary">{option.email}</Typography>}
+                            </Box>
+                          </Box>
+                        );
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Nombre o cédula/identificación"
+                          placeholder="Nombre interno o cédula"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              searchParticipantInput();
+                            }
+                          }}
+                          InputProps={{
+                            ...params.InputProps,
+                            endAdornment: (
+                              <>
+                                {searchingParticipant ? <CircularProgress color="inherit" size={16} /> : null}
+                                {params.InputProps.endAdornment}
+                              </>
+                            )
+                          }}
+                        />
+                      )}
                     />
                     <Button
                       variant="outlined"
-                      startIcon={lookingUpExternalStudent ? <CircularProgress size={16} /> : <PersonSearch />}
-                      disabled={lookingUpExternalStudent || !String(externalDraft.document || '').trim()}
-                      onClick={lookupExternalStudent}
+                      startIcon={(lookingUpExternalStudent || searchingParticipant) ? <CircularProgress size={16} /> : <PersonSearch />}
+                      disabled={lookingUpExternalStudent || searchingParticipant || !String(externalDraft.document || '').trim()}
+                      onClick={searchParticipantInput}
                       sx={{
                         minWidth: { xs: '100%', sm: 140 },
                         height: 40,
@@ -1987,6 +2141,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     <Button onClick={() => {
                       setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
                       setExternalStudentResult(null);
+                      setParticipantSearchOptions([]);
+                      setParticipantSearchOpen(false);
                     }}>Limpiar</Button>
                     <Button
                       variant="contained"
