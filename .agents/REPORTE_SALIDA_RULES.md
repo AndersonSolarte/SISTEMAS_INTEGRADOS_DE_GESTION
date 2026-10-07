@@ -222,7 +222,15 @@ Las siguientes reglas son obligatorias. Cualquier agente que modifique Reportes 
 7. Los registros antiguos que ya fueron truncados no pueden reconstruirse automáticamente. La garantía aplica a nuevas radicaciones o textos que vuelvan a guardarse desde su fuente original.
 8. La misma garantía aplica al `objetoComision` del flujo de desplazamiento con viáticos y a `oficioCuerpo` cuando incorpora el motivo. Los PDF FR-002, los oficios de salida y los formatos de desplazamiento/viáticos deben conservar y mostrar el texto completo.
 
-### 7.5 Disciplina obligatoria al modificar el módulo
+### 7.5 Identificación de acciones administrativas
+
+1. Toda aprobación o rechazo ejecutado desde el panel administrativo debe conservar en `trazabilidad` el snapshot del usuario autenticado y su correo institucional.
+2. El detalle debe incluir `via: 'admin_dashboard'` y `actorEmail`; no se permite registrar solamente el texto genérico "Administrador SIAC".
+3. La columna Observaciones debe mostrar el correo del actor para acciones administrativas, incluso en registros históricos que solo lo tengan dentro de `actor.email`.
+4. El correo identifica la cuenta autenticada que ejecutó la acción; el monitor de actividad complementa la auditoría con fecha, endpoint e IP.
+5. El resumen final enviado por correo no debe atribuir la actuación al jefe asignado cuando la etapa fue ejecutada desde el panel administrativo; debe identificar al Administrador SIAC y su correo.
+
+### 7.6 Disciplina obligatoria al modificar el módulo
 
 1. Antes de editar, revisar esta guía completa y el diff pendiente del repositorio.
 2. Limitar cada cambio al flujo solicitado. No modificar aprobadores, destinatarios, estados, reposición, SST, Gestión Humana o viáticos si la solicitud no lo requiere expresamente.

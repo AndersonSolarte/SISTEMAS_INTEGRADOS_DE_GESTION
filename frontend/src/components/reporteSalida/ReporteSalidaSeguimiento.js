@@ -526,7 +526,13 @@ const getJefeObservacion = (row) => {
     });
     if (obsTrace) {
       const detail = obsTrace.detail || {};
-      return detail.justificacion || detail.observacion || detail.motivo || detail.reason || detail.comentario;
+      const observation = detail.justificacion || detail.observacion || detail.motivo || detail.reason || detail.comentario;
+      const isAdminAction = detail.via === 'admin_dashboard';
+      const actorEmail = detail.actorEmail || obsTrace.actor?.email;
+      if (isAdminAction && actorEmail && !String(observation).toLowerCase().includes(String(actorEmail).toLowerCase())) {
+        return `${observation} — Administrador SIAC: ${actorEmail}`;
+      }
+      return observation;
     }
   }
 

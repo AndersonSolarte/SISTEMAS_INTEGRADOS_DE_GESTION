@@ -12,7 +12,9 @@ const {
   resolveReposicionLaboralProfile,
   resolveReposicionValues,
   resolveReposicionAbono,
-  sanitizeFreeText
+  sanitizeFreeText,
+  buildAdminTraceDetail,
+  getInitialApprovalSummary
 } = require('../../controllers/reporteSalidaController');
 const {
   ensureReporteSalidaPdf,
@@ -50,6 +52,59 @@ test('el detalle narrativo conserva todo el texto y los saltos de linea', () => 
 
   const otraDescripcion = `otra:${'Motivo personalizado sin limite. '.repeat(250)}FIN`;
   assert.equal(sanitizeFreeText(otraDescripcion), otraDescripcion);
+});
+
+test('la aprobacion administrativa registra explicitamente el correo autenticado', () => {
+  assert.deepEqual(
+    buildAdminTraceDetail(
+      { email: 'ADMIN.SIAC@UNICESMAG.EDU.CO' },
+      '',
+      'Aprobada por Administrador SIAC'
+    ),
+    {
+      via: 'admin_dashboard',
+      actorEmail: 'admin.siac@unicesmag.edu.co',
+      observacion: 'Aprobada por Administrador SIAC'
+    }
+  );
+
+  assert.deepEqual(
+    buildAdminTraceDetail(
+      { email: 'auditor@unicesmag.edu.co' },
+      'Aprobacion revisada manualmente',
+      'Aprobada por Administrador SIAC'
+    ),
+    {
+      via: 'admin_dashboard',
+      actorEmail: 'auditor@unicesmag.edu.co',
+      observacion: 'Aprobacion revisada manualmente'
+    }
+  );
+});
+
+test('el correo final identifica al administrador que ejecuto la etapa del jefe', () => {
+  const summary = getInitialApprovalSummary({
+    jefe_snapshot: {
+      nombre: 'LILIAN MAGALI MARTINEZ CRESPO',
+      email: 'arquitectura@unicesmag.edu.co'
+    },
+    trazabilidad: [{
+      event: 'aprobada_jefe',
+      actor: {
+        nombre: 'AUDITOR SIAC',
+        email: 'auditor@unicesmag.edu.co',
+        role: 'administrador'
+      },
+      detail: {
+        via: 'admin_dashboard',
+        observacion: 'Aprobada por Administrador SIAC'
+      }
+    }]
+  });
+
+  assert.equal(summary.roleLabel, 'Administrador SIAC (etapa Jefe Inmediato)');
+  assert.equal(summary.label, 'AUDITOR SIAC (auditor@unicesmag.edu.co)');
+  assert.equal(summary.viaAdminDashboard, true);
 });
 
 test('hora catedra clasifica la duración usando jornada y horas solicitadas', () => {

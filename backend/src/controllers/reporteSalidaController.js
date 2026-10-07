@@ -1443,6 +1443,20 @@ const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
   }
 ]);
 
+const buildAdminTraceDetail = (user = {}, observacion = '', fallbackObservation = '') => {
+  const actorEmail = normalizeEmail(user.email);
+  const detail = {
+    via: 'admin_dashboard'
+  };
+
+  if (actorEmail) detail.actorEmail = actorEmail;
+
+  const traceObservation = sanitizeText(observacion, 600) || fallbackObservation;
+  if (traceObservation) detail.observacion = traceObservation;
+
+  return detail;
+};
+
 const GROUP_APPROVAL_STAGE_BY_PURPOSE = {
   reporte_salida_approve_proyeccion_social_grupo: 'pendiente_aprobacion_proyeccion_social',
   reporte_salida_approve_jefe_grupo: 'pendiente_aprobacion_jefe',
@@ -2837,13 +2851,22 @@ const getInitialApprovalTrace = (solicitud = {}) => {
 const getInitialApprovalSummary = (solicitud = {}) => {
   const trace = getInitialApprovalTrace(solicitud);
   const actor = trace?.actor || {};
+  const detail = trace?.detail || {};
   const viaDependencia = ['aprobada_dependencia', 'visto_bueno_dependencia'].includes(trace?.event);
+  const viaAdminDashboard = detail.via === 'admin_dashboard';
   const jefe = solicitud.jefe_snapshot || {};
+  const adminEmail = normalizeEmail(detail.actorEmail || actor.email);
+  const adminName = sanitizeText(actor.nombre || actor.name, 220) || 'Administrador SIAC';
   return {
     actor,
     viaDependencia,
-    label: viaDependencia ? (actor.nombre || 'Dependencia') : (jefe.nombre || actor.nombre || 'Jefe Inmediato'),
-    roleLabel: viaDependencia ? 'Dependencia' : 'Jefe Inmediato',
+    viaAdminDashboard,
+    label: viaAdminDashboard
+      ? `${adminName}${adminEmail ? ` (${adminEmail})` : ''}`
+      : (viaDependencia ? (actor.nombre || 'Dependencia') : (jefe.nombre || actor.nombre || 'Jefe Inmediato')),
+    roleLabel: viaAdminDashboard
+      ? 'Administrador SIAC (etapa Jefe Inmediato)'
+      : (viaDependencia ? 'Dependencia' : 'Jefe Inmediato'),
     actionLabel: trace?.event?.startsWith('visto_bueno') ? 'Visto bueno' : 'Aprobado'
   };
 };
@@ -6618,7 +6641,7 @@ const editarSolicitudAdmin = async (req, res) => {
               aprobacion_gh_token_hash: null,
               aprobacion_sst_token_hash: null,
               trazabilidad: appendTrace(s, traceEvent, req.user, {
-                via: 'admin_dashboard',
+                ...buildAdminTraceDetail(req.user),
                 actorName,
                 justificacion: observacionAdmin
               })
@@ -6647,7 +6670,7 @@ const editarSolicitudAdmin = async (req, res) => {
           aprobacion_gh_token_hash: null,
           aprobacion_sst_token_hash: null,
           trazabilidad: appendTrace(solicitud, traceEvent, req.user, {
-            via: 'admin_dashboard',
+            ...buildAdminTraceDetail(req.user),
             actorName,
             justificacion: observacionAdmin
           })
@@ -6702,10 +6725,12 @@ const editarSolicitudAdmin = async (req, res) => {
               jefe_aprobado_at: now,
               aprobacion_jefe_token_hash: null,
               aprobacion_gh_token_hash: ghTokenHash,
-              trazabilidad: appendTrace(s, 'aprobada_jefe', req.user, {
-                via: 'admin_dashboard',
-                observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
-              })
+              trazabilidad: appendTrace(
+                s,
+                'aprobada_jefe',
+                req.user,
+                buildAdminTraceDetail(req.user, observacionAdmin, 'Aprobada por Administrador SIAC')
+              )
             });
           }
 
@@ -6730,10 +6755,12 @@ const editarSolicitudAdmin = async (req, res) => {
           jefe_aprobado_at: now,
           aprobacion_jefe_token_hash: null,
           [nextTokenColumn]: hashToken(nextToken),
-          trazabilidad: appendTrace(solicitud, 'aprobada_jefe', req.user, {
-            via: 'admin_dashboard',
-            observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
-          })
+          trazabilidad: appendTrace(
+            solicitud,
+            'aprobada_jefe',
+            req.user,
+            buildAdminTraceDetail(req.user, observacionAdmin, 'Aprobada por Administrador SIAC')
+          )
         };
 
         if (observacionAdmin) {
@@ -6800,10 +6827,12 @@ const editarSolicitudAdmin = async (req, res) => {
           proyeccion_social_aprobado_at: now,
           aprobacion_proyeccion_social_token_hash: null,
           [nextTokenColumn]: hashToken(nextToken),
-          trazabilidad: appendTrace(solicitud, 'aprobada_proyeccion_social', req.user, {
-            via: 'admin_dashboard',
-            observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
-          })
+          trazabilidad: appendTrace(
+            solicitud,
+            'aprobada_proyeccion_social',
+            req.user,
+            buildAdminTraceDetail(req.user, observacionAdmin, 'Aprobada por Administrador SIAC')
+          )
         };
 
         if (observacionAdmin) {
@@ -6850,10 +6879,12 @@ const editarSolicitudAdmin = async (req, res) => {
           estado: nextEstado,
           ...(isVicerrectoria ? { vicerrectoria_aprobado_at: now, aprobacion_vicerrectoria_token_hash: null } : { rectoria_aprobado_at: now, aprobacion_rectoria_token_hash: null }),
           aprobacion_gh_token_hash: hashToken(nextToken),
-          trazabilidad: appendTrace(solicitud, isVicerrectoria ? 'aprobada_vicerrectoria_academica' : 'aprobada_rectoria', req.user, {
-            via: 'admin_dashboard',
-            observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
-          })
+          trazabilidad: appendTrace(
+            solicitud,
+            isVicerrectoria ? 'aprobada_vicerrectoria_academica' : 'aprobada_rectoria',
+            req.user,
+            buildAdminTraceDetail(req.user, observacionAdmin, 'Aprobada por Administrador SIAC')
+          )
         };
 
         await solicitud.update(updateData);
@@ -6881,10 +6912,12 @@ const editarSolicitudAdmin = async (req, res) => {
             gestion_humana_aprobado_at: now,
             aprobacion_gh_token_hash: null,
             aprobacion_sst_token_hash: hashToken(sstToken),
-            trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', req.user, {
-              via: 'admin_dashboard',
-              observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
-            })
+            trazabilidad: appendTrace(
+              solicitud,
+              'aprobada_gestion_humana',
+              req.user,
+              buildAdminTraceDetail(req.user, observacionAdmin, 'Aprobada por Administrador SIAC')
+            )
           };
 
           if (observacionAdmin) {
@@ -6914,10 +6947,12 @@ const editarSolicitudAdmin = async (req, res) => {
           gestion_humana_aprobado_at: now,
           ...(isLinkedToViaticos ? {} : { finalizado_at: now }),
           aprobacion_gh_token_hash: null,
-          trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', req.user, {
-            via: 'admin_dashboard',
-            observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
-          })
+          trazabilidad: appendTrace(
+            solicitud,
+            'aprobada_gestion_humana',
+            req.user,
+            buildAdminTraceDetail(req.user, observacionAdmin, 'Aprobada por Administrador SIAC')
+          )
         };
 
         if (observacionAdmin) {
@@ -6952,10 +6987,12 @@ const editarSolicitudAdmin = async (req, res) => {
                   gestion_humana_aprobado_at: now,
                   finalizado_at: now,
                   aprobacion_gh_token_hash: null,
-                  trazabilidad: appendTrace(s, 'aprobada_gestion_humana', req.user, {
-                    via: 'admin_dashboard',
-                    observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
-                  })
+                  trazabilidad: appendTrace(
+                    s,
+                    'aprobada_gestion_humana',
+                    req.user,
+                    buildAdminTraceDetail(req.user, observacionAdmin, 'Aprobada por Administrador SIAC')
+                  )
                 });
                 await s.reload();
               }
@@ -6999,10 +7036,12 @@ const editarSolicitudAdmin = async (req, res) => {
           estado: isLinkedToViaticos ? 'pendiente_aprobacion_gestion_humana' : 'finalizada',
           ...(isLinkedToViaticos ? {} : { finalizado_at: now }),
           aprobacion_sst_token_hash: null,
-          trazabilidad: appendTrace(solicitud, 'aprobada_sst', req.user, {
-            via: 'admin_dashboard',
-            observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
-          })
+          trazabilidad: appendTrace(
+            solicitud,
+            'aprobada_sst',
+            req.user,
+            buildAdminTraceDetail(req.user, observacionAdmin, 'Aprobada por Administrador SIAC')
+          )
         };
 
         await solicitud.update(updateData);
@@ -10447,6 +10486,8 @@ module.exports = {
   resolveReposicionValues,
   resolveReposicionAbono,
   sanitizeFreeText,
+  buildAdminTraceDetail,
+  getInitialApprovalSummary,
   getGroupInitialApprovalRecipients,
   isSingleHomogeneousGroup,
   getStoredReposicionLaboralProfile,
