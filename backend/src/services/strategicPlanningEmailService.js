@@ -121,6 +121,12 @@ const { sendInstitutionalEmail } = require('./emailService');
 const sendStrategicPlanningEmail = async ({
   to, subject, text, html, attachments = [], replyTo = '', headers = {}
 }) => {
+  const deliverySetting = String(process.env.EMAIL_DELIVERY_ENABLED || '').trim().toLowerCase();
+  const deliveryEnabled = deliverySetting ? deliverySetting === 'true' : process.env.NODE_ENV === 'production';
+  if (!deliveryEnabled) {
+    console.log('[strategic-planning-email] Envío omitido: entorno local de pruebas.');
+    return { success: true, suppressed: true, messageId: 'suppressed-local-testing' };
+  }
   if (process.env.PLAN_ACTION_SMTP_USER) {
     try {
       const recipients = (Array.isArray(to) ? to : [to]).map(normalizeRecipient);

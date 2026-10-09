@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -58,6 +59,7 @@ import {
   Slideshow as SlideshowIcon,
   VideoFile as VideoFileIcon,
   Save as SaveIcon,
+  SendRounded as SendToPlanIcon,
   SwapHoriz as SwapHorizIcon,
   Visibility as VisibilityIcon,
   WarningAmber as WarningAmberIcon
@@ -75,6 +77,7 @@ import {
 } from 'recharts';
 import { useSnackbar } from 'notistack';
 import gestionInformacionService from '../services/gestionInformacionService';
+import planMejoramientoService from '../services/planMejoramientoService';
 import InstrumentosPanel from '../modules/planeacionEstrategica/autoevaluacion/instrumentos/InstrumentosPanel';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
@@ -502,6 +505,9 @@ function Autoevaluacion() {
   const [importingSubbase, setImportingSubbase] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [savingEdits, setSavingEdits] = useState(false);
+  const [sendingToPlan, setSendingToPlan] = useState('');
+  const [linkedManualAspectIds, setLinkedManualAspectIds] = useState(new Set());
+  const [characteristicTransfer, setCharacteristicTransfer] = useState({ open: false, item: null, selectedIds: [] });
   const [deletingParticipantId, setDeletingParticipantId] = useState(null);
   const [aspectDrafts, setAspectDrafts] = useState({});
   const [participantDrafts, setParticipantDrafts] = useState({});
@@ -565,9 +571,70 @@ function Autoevaluacion() {
     }
   }, [enqueueSnackbar]);
 
+  const sendItemsToImprovementPlan = useCallback(async (items, key, label) => {
+    const aspectIds = (items || []).map((item) => Number(item?.id)).filter(Number.isInteger);
+    if (!aspectIds.length) {
+      enqueueSnackbar('No se encontraron aspectos válidos para trasladar', { variant: 'warning' });
+      return false;
+    }
+    setSendingToPlan(key);
+    try {
+      const response = await planMejoramientoService.syncAutoevaluacion({
+        mode: 'manual', programa: programa || items[0]?.programa || '', aspectIds
+      });
+      const added = Number(response?.aspectsAdded || 0);
+      const skipped = Number(response?.duplicatesSkipped || 0);
+      enqueueSnackbar(
+        added > 0
+          ? `${label}: ${added} aspecto${added === 1 ? '' : 's'} enviado${added === 1 ? '' : 's'} al Plan de mejoramiento.`
+          : `${label}: los ${skipped || aspectIds.length} aspectos ya estaban vinculados al plan.`,
+        { variant: added > 0 ? 'success' : 'info' }
+      );
+      setLinkedManualAspectIds((current) => new Set([...current, ...aspectIds]));
+      return true;
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible enviar al Plan de mejoramiento', { variant: 'error' });
+      return false;
+    } finally {
+      setSendingToPlan('');
+    }
+  }, [enqueueSnackbar, programa]);
+
+  const unlinkItemsFromImprovementPlan = useCallback(async (items, key) => {
+    const aspectIds = (items || []).map((item) => Number(item?.id)).filter(Number.isInteger);
+    if (!programa || !aspectIds.length) return false;
+    setSendingToPlan(key);
+    try {
+      const response = await planMejoramientoService.unlinkAutoevaluacion({ programa, aspectIds });
+      const removedIds = response?.aspectIds || aspectIds;
+      setLinkedManualAspectIds((current) => {
+        const next = new Set(current);
+        removedIds.forEach((id) => next.delete(Number(id)));
+        return next;
+      });
+      enqueueSnackbar(`${Number(response?.removed || removedIds.length)} aspecto(s) desvinculado(s) del Plan de mejoramiento.`, { variant: 'success' });
+      return true;
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible desvincular del Plan de mejoramiento', { variant: 'error' });
+      return false;
+    } finally {
+      setSendingToPlan('');
+    }
+  }, [enqueueSnackbar, programa]);
+
   useEffect(() => {
     loadDashboard('');
   }, [loadDashboard]);
+
+  useEffect(() => {
+    if (!programa) {
+      setLinkedManualAspectIds(new Set());
+      return;
+    }
+    planMejoramientoService.linkedAutoevaluacion(programa)
+      .then((response) => setLinkedManualAspectIds(new Set((response?.aspectIds || []).map(Number))))
+      .catch(() => setLinkedManualAspectIds(new Set()));
+  }, [programa]);
 
   useEffect(() => {
     if (view === 'instrumentos' && !canAccessInstrumentos) {
@@ -1815,11 +1882,12 @@ function Autoevaluacion() {
   const factorCaracteristicas = Object.values(
     (factorAspectos || []).reduce((acc, item) => {
       if (!item) return acc;
-      const key = item.caracteristica || 'Sin caracteristica';
+      const codigo = characteristicCode(item.caracteristica);
+      const key = codigo || String(item.caracteristica || 'Sin caracteristica').trim().toLowerCase();
       if (!acc[key]) {
         acc[key] = {
-          caracteristica: key,
-          codigo: characteristicCode(key),
+          caracteristica: item.caracteristica || 'Sin caracteristica',
+          codigo,
           componentes: new Set(),
           aspectos: [],
           calificaciones: []
@@ -1902,7 +1970,7 @@ function Autoevaluacion() {
   });
 
   const factorChartStats = {
-    critical: (factorCaracteristicas || []).filter((item) => Number(item.calificacion || 0) < 3.5),
+    critical: (factorCaracteristicas || []).filter((item) => Number(item.calificacion || 0) < 4),
     best: (factorCaracteristicas || []).length ? [...factorCaracteristicas].sort((a, b) => Number(b.calificacion || 0) - Number(a.calificacion || 0))[0] : null,
     lowest: (factorCaracteristicas || []).length ? [...factorCaracteristicas].sort((a, b) => Number(a.calificacion || 0) - Number(b.calificacion || 0))[0] : null
   };
@@ -2055,7 +2123,7 @@ function Autoevaluacion() {
   };
 
   const riesgos = scopedAspectos
-    .filter((item) => Number(item.calificacion) < 3.5)
+    .filter((item) => Number(item.calificacion) < 4)
     .sort((a, b) => Number(a.calificacion || 0) - Number(b.calificacion || 0))
     .slice(0, 8);
 
@@ -2477,7 +2545,7 @@ function Autoevaluacion() {
                   </Stack>
                 </Box>
               ))}
-              {!riesgos.length && <Alert severity="success">No se detectan aspectos por debajo de 3.5.</Alert>}
+              {!riesgos.length && <Alert severity="success">No se detectan aspectos con calificación inferior a 4.</Alert>}
             </Stack>
           </Paper>
         </Box>
@@ -2595,6 +2663,7 @@ function Autoevaluacion() {
                       <TableCell sx={{ fontWeight: 950, width: 44, textAlign: 'center' }} />
                       <TableCell sx={{ fontWeight: 950, width: 190 }}>Grado de cumplimiento</TableCell>
                       <TableCell sx={{ fontWeight: 950, width: 150, textAlign: 'center' }}>Evidencias</TableCell>
+                      <TableCell sx={{ fontWeight: 950, width: 190, textAlign: 'center' }}>Plan de mejoramiento</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -2664,6 +2733,25 @@ function Autoevaluacion() {
                             <Chip size="small" label="Sin evidencias" sx={{ bgcolor: '#f1f5f9', color: '#64748b', fontWeight: 800 }} />
                           )}
                         </TableCell>
+                        <TableCell align="center">
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={sendingToPlan === `characteristic-${item.codigo}` ? <CircularProgress size={15} color="inherit" /> : <SendToPlanIcon />}
+                            disabled={Boolean(sendingToPlan)}
+                            onClick={() => setCharacteristicTransfer({
+                              open: true,
+                              item,
+                              selectedIds: item.aspectos
+                                .filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id)))
+                                .map((aspect) => Number(aspect.id))
+                                .filter(Number.isInteger)
+                            })}
+                            sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap', bgcolor: '#d97706', '&:hover': { bgcolor: '#b45309' } }}
+                          >
+                            Ver {item.aspectos.length} {item.aspectos.length === 1 ? 'aspecto' : 'aspectos'}
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                     <TableRow sx={{ bgcolor: 'white' }}>
@@ -2684,7 +2772,7 @@ function Autoevaluacion() {
                       </TableCell>
                       <TableCell align="center"><ComplianceMark label={selectedFactorData?.cumplimiento?.label} /></TableCell>
                       <TableCell sx={{ fontSize: 12, fontWeight: 950, color: cumplimientoColor(selectedFactorData?.cumplimiento?.label) }}>{selectedFactorData?.cumplimiento?.label}</TableCell>
-                      <TableCell />
+                      <TableCell colSpan={2} />
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -2878,6 +2966,7 @@ function Autoevaluacion() {
                       <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc', width: 44, textAlign: 'center' }} />
                       <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc', width: 190 }}>Grado de cumplimiento</TableCell>
                       <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc', width: 150, textAlign: 'center' }}>Evidencias</TableCell>
+                      <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc', width: 160, textAlign: 'center' }}>Plan de mejoramiento</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -2973,6 +3062,20 @@ function Autoevaluacion() {
                                 })
                               )}
                             </TableCell>
+                            <TableCell align="center">
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={sendingToPlan === `aspect-${item.id}` ? <CircularProgress size={15} /> : <SendToPlanIcon />}
+                                disabled={Boolean(sendingToPlan) || !(Number(item.calificacion) >= 4)}
+                                onClick={() => linkedManualAspectIds.has(Number(item.id))
+                                  ? unlinkItemsFromImprovementPlan([item], `aspect-${item.id}`)
+                                  : sendItemsToImprovementPlan([item], `aspect-${item.id}`, 'Aspecto')}
+                                sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap', color: linkedManualAspectIds.has(Number(item.id)) ? '#dc2626' : '#b45309', borderColor: linkedManualAspectIds.has(Number(item.id)) ? '#fecaca' : '#fdba74', '&:hover': { bgcolor: linkedManualAspectIds.has(Number(item.id)) ? '#fef2f2' : '#fff7ed' } }}
+                              >
+                                {Number(item.calificacion) < 4 ? 'Envío automático' : linkedManualAspectIds.has(Number(item.id)) ? 'Desvincular' : 'Enviar aspecto'}
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         ))}
                         <TableRow sx={{ bgcolor: 'white' }}>
@@ -2980,7 +3083,7 @@ function Autoevaluacion() {
                           <TableCell align="center" sx={{ fontWeight: 950, color: '#0f172a' }}>{formatScore(caracteristica.calificacion)}</TableCell>
                           <TableCell align="center"><ComplianceMark label={caracteristica.cumplimiento} /></TableCell>
                           <TableCell sx={{ fontSize: 12, fontWeight: 950, color: cumplimientoColor(caracteristica.cumplimiento) }}>{caracteristica.cumplimiento}</TableCell>
-                          <TableCell />
+                          <TableCell colSpan={2} />
                         </TableRow>
                       </React.Fragment>
                     ))}
@@ -3191,7 +3294,7 @@ function Autoevaluacion() {
     <Grid container spacing={2.2}>
       <Grid item xs={12}>
         <Alert severity="warning" sx={{ borderRadius: 2 }}>
-          Esta vista será el puente hacia Planes de Mejoramiento: se alimentará automáticamente con los aspectos críticos y permitirá crear acciones, responsables, fechas, avances y evidencias.
+          Los aspectos con calificación inferior a 4 se trasladan automáticamente. También puedes enviar manualmente cualquier característica o aspecto, incluso cuando su calificación sea 4 o superior.
         </Alert>
       </Grid>
       <Grid item xs={12}>
@@ -3204,6 +3307,7 @@ function Autoevaluacion() {
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 950 }}>Factor</TableCell>
+                  <TableCell sx={{ fontWeight: 950 }}>Característica</TableCell>
                   <TableCell sx={{ fontWeight: 950 }}>Aspecto</TableCell>
                   <TableCell sx={{ fontWeight: 950, textAlign: 'center' }}>Evidencias</TableCell>
                   <TableCell sx={{ fontWeight: 950 }}>Calificación</TableCell>
@@ -3214,6 +3318,7 @@ function Autoevaluacion() {
                 {riesgos.map((item, index) => (
                   <TableRow key={`${item.aspecto}-${index}`}>
                     <TableCell>{item.factor}</TableCell>
+                    <TableCell>{item.caracteristica}</TableCell>
                     <TableCell>{item.aspecto}</TableCell>
                     <TableCell align="center">
                       {renderEvidenceAction({
@@ -3222,10 +3327,21 @@ function Autoevaluacion() {
                       })}
                     </TableCell>
                     <TableCell><ScoreChip value={item.calificacion} label={item.cumplimiento?.label} /></TableCell>
-                    <TableCell>Crear acción de mejora prioritaria</TableCell>
+                    <TableCell>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        startIcon={sendingToPlan === `risk-${item.id}` ? <CircularProgress size={15} color="inherit" /> : <SendToPlanIcon />}
+                        disabled={Boolean(sendingToPlan)}
+                        onClick={() => sendItemsToImprovementPlan([item], `risk-${item.id}`, 'Aspecto crítico')}
+                        sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap', bgcolor: '#d97706', '&:hover': { bgcolor: '#b45309' } }}
+                      >
+                        Enviar al plan
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
-                {!riesgos.length && <TableRow><TableCell colSpan={4} align="center" sx={{ py: 5 }}>No hay aspectos críticos detectados.</TableCell></TableRow>}
+                {!riesgos.length && <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}>No hay aspectos con calificación inferior a 4.</TableCell></TableRow>}
               </TableBody>
             </Table>
           </TableContainer>
@@ -3404,6 +3520,133 @@ function Autoevaluacion() {
                 ))}
               </Stack>
             )}
+
+            <Dialog
+              open={characteristicTransfer.open}
+              onClose={() => !sendingToPlan && setCharacteristicTransfer({ open: false, item: null, selectedIds: [] })}
+              fullWidth
+              maxWidth="md"
+            >
+              <DialogTitle sx={{ pb: 1 }}>
+                <Stack direction="row" spacing={1.3} alignItems="center">
+                  <Box sx={{ width: 42, height: 42, borderRadius: 2.2, display: 'grid', placeItems: 'center', bgcolor: '#fff7ed', color: '#d97706' }}>
+                    <SendToPlanIcon />
+                  </Box>
+                  <Box>
+                    <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>Aspectos evaluados de la característica</Typography>
+                    <Typography variant="body2" sx={{ color: '#64748b' }}>
+                      {characteristicTransfer.item?.aspectos?.[0]?.factor} · {characteristicTransfer.item?.codigo} · {characteristicTransfer.item?.caracteristica}
+                    </Typography>
+                  </Box>
+                </Stack>
+              </DialogTitle>
+              <DialogContent dividers>
+                <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
+                  Los aspectos con calificación inferior a 4 ya se trasladan automáticamente. Aquí puedes enviar toda la característica o seleccionar aspectos individuales con calificación mayor o igual a 4.
+                </Alert>
+                <TableContainer sx={{ maxHeight: 440, border: '1px solid #e2e8f0', borderRadius: 2.5 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell padding="checkbox" sx={{ bgcolor: '#f8fafc' }}>
+                          <Checkbox
+                            size="small"
+                            checked={Boolean(characteristicTransfer.item?.aspectos?.some((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id))))
+                              && characteristicTransfer.item.aspectos
+                                .filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id)))
+                                .every((aspect) => characteristicTransfer.selectedIds.includes(Number(aspect.id)))}
+                            indeterminate={characteristicTransfer.selectedIds.length > 0
+                              && characteristicTransfer.selectedIds.length < (characteristicTransfer.item?.aspectos || []).filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id))).length}
+                            onChange={(event) => setCharacteristicTransfer((current) => ({
+                              ...current,
+                              selectedIds: event.target.checked
+                                ? (current.item?.aspectos || [])
+                                  .filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id)))
+                                  .map((aspect) => Number(aspect.id))
+                                  .filter(Number.isInteger)
+                                : []
+                            }))}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc' }}>Aspecto evaluado</TableCell>
+                        <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc' }}>Indicador</TableCell>
+                        <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc', width: 125, textAlign: 'center' }}>Calificación</TableCell>
+                        <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc', width: 140, textAlign: 'center' }}>Ingreso</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(characteristicTransfer.item?.aspectos || []).map((aspect, index) => {
+                        const score = Number(aspect.calificacion);
+                        const automatic = Number.isFinite(score) && score < 4;
+                        const manual = Number.isFinite(score) && score >= 4;
+                        const linked = manual && linkedManualAspectIds.has(Number(aspect.id));
+                        return (
+                          <TableRow key={aspect.id || `${aspect.aspecto}-${index}`} hover>
+                            <TableCell padding="checkbox">
+                              <Checkbox
+                                size="small"
+                                checked={characteristicTransfer.selectedIds.includes(Number(aspect.id))}
+                                disabled={!manual || linked}
+                                onChange={(event) => setCharacteristicTransfer((current) => ({
+                                  ...current,
+                                  selectedIds: event.target.checked
+                                    ? Array.from(new Set([...current.selectedIds, Number(aspect.id)]))
+                                    : current.selectedIds.filter((id) => id !== Number(aspect.id))
+                                }))}
+                              />
+                            </TableCell>
+                            <TableCell sx={{ minWidth: 300 }}>{aspect.aspecto || 'Sin descripción'}</TableCell>
+                            <TableCell>{aspect.indicador || 'Sin indicador'}</TableCell>
+                            <TableCell align="center"><ScoreChip value={aspect.calificacion} label={aspect.cumplimiento?.label} /></TableCell>
+                            <TableCell align="center">
+                              <Stack spacing={0.6} alignItems="center">
+                                <Chip
+                                  size="small"
+                                  label={automatic ? 'Automático (< 4)' : linked ? 'Vinculado manualmente' : manual ? 'Manual (≥ 4)' : 'Sin calificar'}
+                                  sx={{ fontWeight: 850, bgcolor: automatic ? '#fff7ed' : linked ? '#ecfdf5' : manual ? '#eff6ff' : '#f1f5f9', color: automatic ? '#b45309' : linked ? '#047857' : manual ? '#1d4ed8' : '#64748b' }}
+                                />
+                                {linked && (
+                                  <Button
+                                    size="small"
+                                    color="error"
+                                    disabled={Boolean(sendingToPlan)}
+                                    onClick={() => unlinkItemsFromImprovementPlan([aspect], `unlink-${aspect.id}`)}
+                                    sx={{ textTransform: 'none', fontWeight: 850 }}
+                                  >
+                                    Desvincular
+                                  </Button>
+                                )}
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+                <Typography variant="body2" sx={{ mt: 1.5, color: '#64748b', fontWeight: 700 }}>
+                  Seleccionados: {characteristicTransfer.selectedIds.length} de {(characteristicTransfer.item?.aspectos || []).filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id))).length} aspectos disponibles para envío manual.
+                </Typography>
+              </DialogContent>
+              <DialogActions sx={{ px: 2.5, py: 1.7 }}>
+                <Button disabled={Boolean(sendingToPlan)} onClick={() => setCharacteristicTransfer({ open: false, item: null, selectedIds: [] })} sx={{ fontWeight: 850 }}>Cancelar</Button>
+                <Button
+                  variant="contained"
+                  startIcon={sendingToPlan ? <CircularProgress size={17} color="inherit" /> : <SendToPlanIcon />}
+                  disabled={Boolean(sendingToPlan) || !characteristicTransfer.selectedIds.length}
+                  onClick={async () => {
+                    const item = characteristicTransfer.item;
+                    if (!item) return;
+                    const selectedAspects = item.aspectos.filter((aspect) => characteristicTransfer.selectedIds.includes(Number(aspect.id)));
+                    const sent = await sendItemsToImprovementPlan(selectedAspects, `characteristic-${item.codigo}`, item.codigo || 'Característica');
+                    if (sent) setCharacteristicTransfer({ open: false, item: null, selectedIds: [] });
+                  }}
+                  sx={{ bgcolor: '#d97706', fontWeight: 900, textTransform: 'none', '&:hover': { bgcolor: '#b45309' } }}
+                >
+                  Enviar {characteristicTransfer.selectedIds.length} {characteristicTransfer.selectedIds.length === 1 ? 'aspecto' : 'aspectos'}
+                </Button>
+              </DialogActions>
+            </Dialog>
 
             <Dialog open={evidenceModal.open} onClose={closeEvidenceModal} fullWidth maxWidth="lg">
               <DialogTitle sx={{ pb: 1 }}>

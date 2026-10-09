@@ -502,7 +502,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     };
   }, [detail?.items]);
 
-  const rawFields = [...(formSchema?.fields || activePed?.fieldDefinitions || platformPlan?.fieldDefinitions || [])].filter((field) => field.active !== false).sort((a, b) => a.position - b.position);
+  const schemaFields = (Array.isArray(formSchema?.fields) ? formSchema.fields : []).filter((f) => f && f.active !== false);
+  const pedFields = (activePed?.fieldDefinitions || platformPlan?.fieldDefinitions || []).filter((f) => f && f.active !== false);
+  const rawFields = (schemaFields.length > 0 ? schemaFields : pedFields).sort((a, b) => (a.position || 0) - (b.position || 0));
   const formElements = formSchema?.elements || structure;
   const formCatalogs = (formSchema?.catalogs && formSchema.catalogs.length > 0)
     ? formSchema.catalogs

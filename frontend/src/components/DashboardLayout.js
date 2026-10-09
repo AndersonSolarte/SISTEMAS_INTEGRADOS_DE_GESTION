@@ -20,6 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS, ROLES } from '../constants/roles';
 import VigiladaMineducacion from './VigiladaMineducacion';
 import planAccionWorkflowService from '../services/planAccionWorkflowService';
+import planMejoramientoService from '../services/planMejoramientoService';
 import strategicPlanningService from '../services/strategicPlanningService';
 import reporteSalidaService from '../services/reporteSalidaService';
 import { getEstadoLegalizacion } from '../services/legalizacionViaticosService';
@@ -60,6 +61,7 @@ function DashboardLayout() {
   const [openAdministracionSistema, setOpenAdministracionSistema] = useState(false);
   const [planAccionPendientes, setPlanAccionPendientes] = useState(0);
   const [hasPlanAccionModulo, setHasPlanAccionModulo] = useState(false);
+  const [executionPlanAccess, setExecutionPlanAccess] = useState(null);
   const [reposicionBadge, setReposicionBadge] = useState(null);
   const [legalizacionesPendientes, setLegalizacionesPendientes] = useState(0);
 
@@ -94,6 +96,12 @@ function DashboardLayout() {
     }
   }, [user]);
 
+  const refrescarEjecucionAutoevaluacion = useCallback(async () => {
+    if (!user) return;
+    try { setExecutionPlanAccess(await planMejoramientoService.executionBadge()); }
+    catch (_) { setExecutionPlanAccess(null); }
+  }, [user]);
+
   const refrescarBadgeReposicion = useCallback(async () => {
     if (!user) return;
     try {
@@ -116,9 +124,10 @@ function DashboardLayout() {
 
   useEffect(() => {
     refrescarBadgePlanAccion();
+    refrescarEjecucionAutoevaluacion();
     refrescarBadgeReposicion();
     refrescarLegalizaciones();
-  }, [refrescarBadgePlanAccion, refrescarBadgeReposicion, refrescarLegalizaciones, location.pathname]);
+  }, [refrescarBadgePlanAccion, refrescarEjecucionAutoevaluacion, refrescarBadgeReposicion, refrescarLegalizaciones, location.pathname]);
 
   const normalizeMenuByBlocks = (items) => {
     if (!Array.isArray(items)) return [];
@@ -518,6 +527,20 @@ function DashboardLayout() {
         menuItems = [planAccionItem, ...menuItems];
       }
     }
+  }
+
+  if (executionPlanAccess?.access && executionPlanAccess?.executionOnly) {
+    const executionItem = {
+      key: 'autoevaluacion_ejecucion',
+      path: '/dashboard/autoevaluacion-ejecucion',
+      label: 'Ejecución Autoevaluación',
+      icon: <AssignmentTurnedInIcon />,
+      badge: executionPlanAccess.pending > 0 ? executionPlanAccess.pending : undefined
+    };
+    const inicioIdx = menuItems.findIndex((item) => item.key === 'dashboard');
+    menuItems = inicioIdx >= 0
+      ? [...menuItems.slice(0, inicioIdx + 1), executionItem, ...menuItems.slice(inicioIdx + 1)]
+      : [executionItem, ...menuItems];
   }
 
   if (legalizacionesPendientes > 0) {

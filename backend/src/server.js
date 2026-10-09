@@ -68,6 +68,7 @@ app.use('/api/planeacion/plan-accion-workflow', require('./routes/planAccionWork
 app.use('/api/strategic-planning', require('./routes/strategicPlanningRoutes'));
 app.use('/api/public/strategic-planning', require('./routes/publicStrategicPlanningRoutes'));
 app.use('/api/autoevaluacion/instrumentos', require('./routes/instrumentosRoutes'));
+app.use('/api/autoevaluacion/planes-mejoramiento', require('./routes/planMejoramientoRoutes'));
 app.use('/api/public/instrumentos', require('./routes/publicInstrumentosRoutes'));
 app.use('/api/security', require('./routes/securityRoutes'));
 app.use('/api/reporte-salida', require('./routes/reporteSalidaRoutes'));
@@ -76,6 +77,7 @@ app.use('/api/meeting-minutes', require('./routes/meetingMinuteRoutes'));
 app.use('/api/desplazamientos-viaticos', require('./routes/desplazamientoViaticosRoutes'));
 app.use('/api/legalizacion-viaticos', require('./routes/legalizacionViaticosRoutes'));
 app.use('/api/cronograma-movilidad', require('./routes/cronogramaMovilidadRoutes'));
+app.use('/api/oficina-juridica', require('./routes/oficinaJuridicaRoutes'));
 app.use('/api/pesv/parqueaderos', require('./routes/pesvParqueaderoRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro', require('./routes/saberProAnalyticsRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta', require('./routes/consultaValidacionRoutes'));
@@ -310,6 +312,10 @@ testConnection()
       const Autoevaluacion = require('./models/Autoevaluacion');
       const AutoevaluacionParticipante = require('./models/AutoevaluacionParticipante');
       const AutoevaluacionPrograma = require('./models/AutoevaluacionPrograma');
+      const PlanMejoramiento = require('./models/PlanMejoramiento');
+      const PlanMejoramientoTarifaVersion = require('./models/PlanMejoramientoTarifaVersion');
+      const PlanMejoramientoAsignacion = require('./models/PlanMejoramientoAsignacion');
+      const PlanMejoramientoFlujoHistorial = require('./models/PlanMejoramientoFlujoHistorial');
       const RegistroCalificadoHistorico = require('./models/RegistroCalificadoHistorico');
       const RegistroCalificadoResolucion = require('./models/RegistroCalificadoResolucion');
       const {
@@ -330,6 +336,14 @@ testConnection()
       await Autoevaluacion.sync();
       await AutoevaluacionParticipante.sync();
       await AutoevaluacionPrograma.sync();
+      await PlanMejoramiento.sync();
+      await PlanMejoramientoTarifaVersion.sync();
+      await PlanMejoramientoAsignacion.sync();
+      await PlanMejoramientoFlujoHistorial.sync();
+      const { JuridicaCaso, JuridicaHistorial, JuridicaAdjunto } = require('./models');
+      await JuridicaCaso.sync();
+      await JuridicaHistorial.sync();
+      await JuridicaAdjunto.sync();
       await RegistroCalificadoHistorico.sync();
       await RegistroCalificadoResolucion.sync();
       await InstrumentForm.sync();

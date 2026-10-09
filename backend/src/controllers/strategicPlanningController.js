@@ -797,14 +797,15 @@ const getActionPlan = wrap(async (req, res) => {
   }
   let activeSchema = actionPlan.metadata?.form_schema;
   const hasOrgUnits = Array.isArray(activeSchema?.catalogs) && activeSchema.catalogs.some((c) => c.catalog_type === 'organizational_unit');
-  if (!activeSchema || !hasOrgUnits) {
+  const hasFields = Array.isArray(activeSchema?.fields) && activeSchema.fields.length > 0;
+  if (!activeSchema || !hasOrgUnits || !hasFields) {
     const freshSchema = await captureActionPlanSchema(actionPlan.term.strategic_plan_id);
     activeSchema = {
       ...(activeSchema || freshSchema),
       catalogs: freshSchema.catalogs,
       levels: activeSchema?.levels?.length ? activeSchema.levels : freshSchema.levels,
       elements: activeSchema?.elements?.length ? activeSchema.elements : freshSchema.elements,
-      fields: freshSchema.fields
+      fields: freshSchema.fields?.length ? freshSchema.fields : (activeSchema?.fields || [])
     };
     actionPlan.metadata = { ...(actionPlan.metadata || {}), form_schema: activeSchema };
     await actionPlan.update({ metadata: actionPlan.metadata });

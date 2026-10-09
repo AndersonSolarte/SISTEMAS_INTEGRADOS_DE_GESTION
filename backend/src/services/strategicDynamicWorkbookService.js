@@ -37,16 +37,19 @@ const loadConfiguration = async (actionPlanId) => {
   const plan = term && await StrategicPlan.findByPk(term.strategic_plan_id);
   if (!plan) throw Object.assign(new Error('PED no encontrado.'), { statusCode: 404 });
   const snapshot = actionPlan.metadata?.form_schema;
-  if (snapshot?.fields) return {
+  if (snapshot?.fields && Array.isArray(snapshot.fields) && snapshot.fields.length > 0) return {
     actionPlan, term, plan, levels: snapshot.levels || [], elements: snapshot.elements || [],
     fields: snapshot.fields || [], catalogs: snapshot.catalogs || [], schemaVersion: snapshot.configuration_version || actionPlan.instrument_version
   };
-  const [levels, elements, fields, catalogs] = await Promise.all([
-    StrategicLevel.findAll({ where: { strategic_plan_id: plan.id, configuration_version: actionPlan.instrument_version, active: true }, order: [['position', 'ASC']] }),
+  const [levels, elements, fieldsByVer, catalogs] = await Promise.all([
+    StrategicLevel.findAll({ where: { strategic_plan_id: plan.id, active: true }, order: [['position', 'ASC']] }),
     StrategicElement.findAll({ where: { strategic_plan_id: plan.id, active: true, deleted_at: null }, order: [['position', 'ASC']] }),
-    StrategicFieldDefinition.findAll({ where: { strategic_plan_id: plan.id, configuration_version: actionPlan.instrument_version, active: true }, order: [['position', 'ASC']] }),
+    StrategicFieldDefinition.findAll({ where: { strategic_plan_id: plan.id, active: true }, order: [['position', 'ASC']] }),
     StrategicCatalogItem.findAll({ where: { strategic_plan_id: plan.id, active: true }, order: [['name', 'ASC']] })
   ]);
+  const fields = fieldsByVer.length > 0
+    ? fieldsByVer
+    : await StrategicFieldDefinition.findAll({ where: { strategic_plan_id: plan.id, active: true }, order: [['position', 'ASC']] });
   return { actionPlan, term, plan, levels, elements, fields, catalogs, schemaVersion: actionPlan.instrument_version };
 };
 

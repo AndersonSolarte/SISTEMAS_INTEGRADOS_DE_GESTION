@@ -17,7 +17,7 @@ import GestionUsuarios from './pages/GestionUsuarios';
 import MapaProcesos from './pages/MapaProcesos';
 import PlaneacionEstrategica from './pages/PlaneacionEstrategica';
 import PlaneacionEfectividad from './pages/PlaneacionEfectividad';
-import Autoevaluacion from './pages/Autoevaluacion';
+import AutoevaluacionModule from './modules/planeacionEstrategica/autoevaluacion/AutoevaluacionModule';
 import GestionInformacion from './pages/GestionInformacion';
 import PlanAccionRevision from './pages/PlanAccionRevision';
 import PlanAccionConsulta from './pages/PlanAccionConsulta';
@@ -168,7 +168,18 @@ function App() {
                         permissionKey="autoevaluacion"
                         deniedRoles={[ROLES.REGISTROS_CALIFICADOS, ROLES.PLANEACION_EFECTIVIDAD]}
                       >
-                        <Autoevaluacion />
+                        <AutoevaluacionModule />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="autoevaluacion-ejecucion"
+                    element={
+                      <RoleRoute
+                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.AUTOEVALUACION]}
+                        permissionKey="autoevaluacion_ejecucion"
+                      >
+                        <AutoevaluacionModule executionMode />
                       </RoleRoute>
                     }
                   />

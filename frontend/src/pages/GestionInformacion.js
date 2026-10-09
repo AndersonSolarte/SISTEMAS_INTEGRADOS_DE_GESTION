@@ -54,6 +54,7 @@ import {
   Download as DownloadIcon,
   DeleteSweep as DeleteSweepIcon,
   Folder as FolderIcon,
+  GavelRounded as GavelRoundedIcon,
   ArrowForwardRounded as ArrowForwardRoundedIcon,
   ArrowBackRounded as ArrowBackRoundedIcon,
   Security as SecurityIcon,
@@ -140,6 +141,7 @@ import SaberProLandingPage from '../components/saberPro/SaberProLandingPage';
 import RecursoHumanoLandingPage from '../components/recursoHumano/RecursoHumanoLandingPage';
 import InternacionalizacionLandingPage from '../components/internacionalizacion/InternacionalizacionLandingPage';
 import RiesgoAmbienteLandingPage from '../components/riesgoAmbiente/RiesgoAmbienteLandingPage';
+import OficinaJuridicaLandingPage from '../components/oficinaJuridica/OficinaJuridicaLandingPage';
 import ContextoExternoGestionPanel from '../components/contextoExterno/ContextoExternoGestionPanel';
 import { ROLES } from '../constants/roles';
 import { ACADEMIC_PROGRAMS, ACADEMIC_PROGRAM_LEVELS, getAcademicProgramPermissionKey } from '../constants/academicPrograms';
@@ -537,7 +539,8 @@ const BASES = [
   { key: 'registros_calificados_acreditacion', label: 'Registros Calificados y Acreditación', description: 'Histórico de registros calificados, resoluciones, planes de estudio y evidencias de Drive.' },
   { key: 'infraestructura_fisica', label: 'Infraestructura Física', description: 'Inventario físico unificado de áreas, aforos, tenencias y accesos de los campus.' },
   { key: 'vicerrectoria_academica', label: 'Vicerrectoría Académica', description: 'Oferta académica institucional organizada por programas de pregrado y posgrado.' },
-  { key: 'vicerrectoria_financiera', label: 'Vicerrectoría Financiera y de Desarrollo Institucional', description: 'Gestión, legalización y análisis institucional de viáticos y gastos de viaje.' }
+  { key: 'vicerrectoria_financiera', label: 'Vicerrectoría Financiera y de Desarrollo Institucional', description: 'Gestión, legalización y análisis institucional de viáticos y gastos de viaje.' },
+  { key: 'oficina_juridica', label: 'Oficina Jurídica', description: 'Gestión jurídica institucional, normatividad, convenios y procesos legales.' }
 ];
 
 const SUBBASES_POBLACIONAL = ['Inscritos', 'Admitidos', 'Primer Curso', 'Matriculados', 'Graduados', 'Cantidad Total Egresados', 'Caracterizacion', 'Desercion', 'Empleabilidad', 'Contexto Externo'];
@@ -591,60 +594,77 @@ const normalizeModulePermissionList = (raw) => {
   return [];
 };
 
+const canViewOficinaJuridica = (user) => {
+  if (user?.role === ROLES.ADMINISTRADOR) return true;
+  const permissions = normalizeModulePermissionList(user?.allowedModules)
+    .concat(normalizeModulePermissionList(user?.modulePermissions))
+    .concat(normalizeModulePermissionList(user?.permissions?.modules))
+    .concat(normalizeModulePermissionList(user?.modules));
+  return permissions.includes('oficina_juridica');
+};
+
 const getVisibleBaseKeysForUser = (user) => {
-  if ([ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)) {
+  let resolvedKeys = [];
+
+  if (user?.role === ROLES.ADMINISTRADOR) {
     return BASES.map((b) => b.key);
   }
 
-  const explicitPermissions = [
-    user?.modulePermissions,
-    user?.modules,
-    user?.allowedModules,
-    user?.permisosModulos,
-    user?.permissions?.modules
-  ]
-    .flatMap((entry) => normalizeModulePermissionList(entry))
-    .map((key) => String(key).trim());
+  if (user?.role === ROLES.PLANEACION_ESTRATEGICA) {
+    resolvedKeys = BASES.map((b) => b.key);
+  } else {
+    const explicitPermissions = [
+      user?.modulePermissions,
+      user?.modules,
+      user?.allowedModules,
+      user?.permisosModulos,
+      user?.permissions?.modules
+    ]
+      .flatMap((entry) => normalizeModulePermissionList(entry))
+      .map((key) => String(key).trim());
 
-  const validKeys = new Set(BASES.map((b) => b.key));
-  const explicitValid = Array.from(new Set(explicitPermissions.filter((key) => validKeys.has(key))));
-  if (explicitPermissions.includes('infraestructura_fisica.ver') || explicitPermissions.includes('infraestructura_fisica.gestionar')) {
-    explicitValid.push('infraestructura_fisica');
+    const validKeys = new Set(BASES.map((b) => b.key));
+    const explicitValid = Array.from(new Set(explicitPermissions.filter((key) => validKeys.has(key))));
+    if (explicitPermissions.includes('infraestructura_fisica.ver') || explicitPermissions.includes('infraestructura_fisica.gestionar')) {
+      explicitValid.push('infraestructura_fisica');
+    }
+    
+    // Si el usuario tiene permisos explícitos asignados, devolvemos estrictamente esos
+    // (evitando caer en los roles por defecto), incluso si la lista resultante está vacía.
+    if (explicitPermissions.length > 0) {
+      resolvedKeys = Array.from(new Set(explicitValid));
+    } else {
+      const specializedBaseKeys = [];
+      const explicitPoblacional = normalizeModulePermissionList(user?.allowedPoblacionalDashboards);
+      const explicitGestionProcesos = normalizeModulePermissionList(user?.allowedGestionProcesosDashboards);
+      const explicitSaberPro = normalizeModulePermissionList(user?.allowedSaberProDashboards);
+
+      if (explicitPoblacional.length > 0) specializedBaseKeys.push('poblacional');
+      if (explicitGestionProcesos.length > 0) specializedBaseKeys.push('gestion_procesos');
+      if (explicitSaberPro.length > 0) specializedBaseKeys.push('saber_pro');
+      if (specializedBaseKeys.length > 0) return Array.from(new Set(specializedBaseKeys));
+
+      if (user?.role === ROLES.AUTOEVALUACION) {
+        resolvedKeys = ['autoevaluacion', 'registros_calificados_acreditacion'];
+      } else if ([ROLES.PLANEACION_EFECTIVIDAD, ROLES.GESTION_INFORMACION].includes(user?.role)) {
+        resolvedKeys = ['poblacional', 'saber_pro'];
+      } else if (user?.role === ROLES.GESTION_PROCESOS) {
+        resolvedKeys = ['gestion_procesos'];
+      } else if (user?.role === ROLES.CONSULTA) {
+        resolvedKeys = ['poblacional'];
+      } else {
+        resolvedKeys = [];
+      }
+    }
   }
-  
-  // Si el usuario tiene permisos explícitos asignados, devolvemos estrictamente esos
-  // (evitando caer en los roles por defecto), incluso si la lista resultante está vacía.
-  if (explicitPermissions.length > 0) {
-    return Array.from(new Set(explicitValid));
+
+  // Candado de seguridad para Oficina Jurídica:
+  // Si el usuario no tiene permiso explícito 'oficina_juridica', NUNCA incluir la tarjeta
+  if (!canViewOficinaJuridica(user)) {
+    resolvedKeys = resolvedKeys.filter((key) => key !== 'oficina_juridica');
   }
 
-  const specializedBaseKeys = [];
-  const explicitPoblacional = normalizeModulePermissionList(user?.allowedPoblacionalDashboards);
-  const explicitGestionProcesos = normalizeModulePermissionList(user?.allowedGestionProcesosDashboards);
-  const explicitSaberPro = normalizeModulePermissionList(user?.allowedSaberProDashboards);
-
-  if (explicitPoblacional.length > 0) specializedBaseKeys.push('poblacional');
-  if (explicitGestionProcesos.length > 0) specializedBaseKeys.push('gestion_procesos');
-  if (explicitSaberPro.length > 0) specializedBaseKeys.push('saber_pro');
-  if (specializedBaseKeys.length > 0) return Array.from(new Set(specializedBaseKeys));
-
-  if (user?.role === ROLES.AUTOEVALUACION) {
-    return ['autoevaluacion', 'registros_calificados_acreditacion'];
-  }
-
-  if ([ROLES.PLANEACION_EFECTIVIDAD, ROLES.GESTION_INFORMACION].includes(user?.role)) {
-    return ['poblacional', 'saber_pro'];
-  }
-
-  if (user?.role === ROLES.GESTION_PROCESOS) {
-    return ['gestion_procesos'];
-  }
-
-  if (user?.role === ROLES.CONSULTA) {
-    return ['poblacional'];
-  }
-
-  return [];
+  return resolvedKeys;
 };
 
 const getVisibleAcademicProgramsForUser = (user) => {
@@ -2629,9 +2649,14 @@ function GestionInformacion() {
     return keys;
   }, [isPlaneacionGpInfoContext, user]);
   const visiblePoblacionalDashboardKeys = useMemo(() => getVisiblePoblacionalDashboardKeysForUser(user), [user]);
-  const visibleBases = useMemo(() => BASES.filter((base) => base.key !== 'georreferencia' && visibleBaseKeys.includes(base.key)), [visibleBaseKeys]);
-  const visibleAcademicPrograms = useMemo(() => getVisibleAcademicProgramsForUser(user), [user]);
   const canAccessSecurityApplication = useMemo(() => canViewSecurityApplication(user), [user]);
+  const canAccessOficinaJuridica = useMemo(() => canViewOficinaJuridica(user), [user]);
+  const visibleAcademicPrograms = useMemo(() => getVisibleAcademicProgramsForUser(user), [user]);
+  const visibleBases = useMemo(() => BASES.filter((base) => {
+    if (base.key === 'georreferencia') return false;
+    if (base.key === 'oficina_juridica' && !canAccessOficinaJuridica) return false;
+    return visibleBaseKeys.includes(base.key);
+  }), [visibleBaseKeys, canAccessOficinaJuridica]);
   const visiblePoblacionalDashboardCards = useMemo(
     () => POBLACIONAL_DASHBOARD_CARDS.filter((card) => visiblePoblacionalDashboardKeys.includes(`poblacional_${card.key}`)),
     [visiblePoblacionalDashboardKeys]
@@ -4877,12 +4902,16 @@ function GestionInformacion() {
   };
 
   const enterCard = (key) => {
-    if (!['poblacional', 'gestion_riesgo_ambiente', 'saber_pro', 'recurso_humano', 'internacionalizacion', 'gestion_procesos', 'registros_calificados_acreditacion', 'infraestructura_fisica', 'plan_accion', 'vicerrectoria_academica', 'vicerrectoria_financiera', 'activity_monitor', 'security_application'].includes(key)) {
+    if (!['poblacional', 'gestion_riesgo_ambiente', 'saber_pro', 'recurso_humano', 'internacionalizacion', 'gestion_procesos', 'registros_calificados_acreditacion', 'infraestructura_fisica', 'plan_accion', 'vicerrectoria_academica', 'vicerrectoria_financiera', 'oficina_juridica', 'activity_monitor', 'security_application'].includes(key)) {
       enqueueSnackbar('Modulo en construccion. La estructura ya quedo lista para activarlo.', { variant: 'info' });
       return;
     }
     if (key === 'security_application' && !canAccessSecurityApplication) {
       enqueueSnackbar('No tienes permiso para Gestion de Seguridad Aplicativa.', { variant: 'warning' });
+      return;
+    }
+    if (key === 'oficina_juridica' && !canAccessOficinaJuridica) {
+      enqueueSnackbar('No tienes permiso para ingresar a la Oficina Jurídica.', { variant: 'warning' });
       return;
     }
     if (key === 'poblacional') {
@@ -8140,13 +8169,21 @@ const renderCategoryBars = (items = [], options = {}) => {
                 width: 74,
                 height: 74,
                 borderRadius: 2.5,
-                background: 'linear-gradient(145deg, #6366f1, #4f46e5 55%, #4338ca)',
+                background: base.key === 'oficina_juridica'
+                  ? 'linear-gradient(145deg, #0f172a, #1e3a8a 55%, #1d4ed8)'
+                  : 'linear-gradient(145deg, #6366f1, #4f46e5 55%, #4338ca)',
                 display: 'grid',
                 placeItems: 'center',
-                boxShadow: '0 10px 22px rgba(79,70,229,0.22)'
+                boxShadow: base.key === 'oficina_juridica'
+                  ? '0 10px 22px rgba(30,58,138,0.28)'
+                  : '0 10px 22px rgba(79,70,229,0.22)'
               }}
             >
-              <FolderIcon sx={{ color: '#fff', fontSize: 36 }} />
+              {base.key === 'oficina_juridica' ? (
+                <GavelRoundedIcon sx={{ color: '#fff', fontSize: 36 }} />
+              ) : (
+                <FolderIcon sx={{ color: '#fff', fontSize: 36 }} />
+              )}
             </Box>
 
             <Box sx={{ minHeight: 92 }}>
@@ -8204,6 +8241,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                 ? 'Gestión de Viáticos y Estadística de Viáticos'
                 : base.key === 'vicerrectoria_academica'
                 ? `${visibleAcademicPrograms.length} programas académicos autorizados`
+                : base.key === 'oficina_juridica'
+                ? 'Gestión jurídica institucional y procesos legales'
                 : 'Interfaz preparada para activacion'}
             </Typography>
           </Box>
@@ -17444,7 +17483,7 @@ const renderCategoryBars = (items = [], options = {}) => {
   return (
     <Fade in={true}>
       <Box>
-        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'gestion_riesgo_ambiente' && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && selectedCard !== 'vicerrectoria_academica' && selectedCard !== 'vicerrectoria_financiera' && selectedCard !== 'activity_monitor' && selectedCard !== 'plan_accion' && (
+        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'gestion_riesgo_ambiente' && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && selectedCard !== 'vicerrectoria_academica' && selectedCard !== 'vicerrectoria_financiera' && selectedCard !== 'oficina_juridica' && selectedCard !== 'activity_monitor' && selectedCard !== 'plan_accion' && (
           <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 3, border: '1px solid #dbe2f1', background: 'linear-gradient(135deg,#0f172a,#1d4ed8)' }}>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <InsightsIcon sx={{ color: 'white' }} />
@@ -18010,6 +18049,12 @@ const renderCategoryBars = (items = [], options = {}) => {
                   financialPanel === 'viaticos'
                     ? <ViaticosGestionDashboard user={user} onBack={() => setFinancialPanel('hub')} />
                     : renderFinancialHub()
+                )}
+                {selectedCard === 'oficina_juridica' && canAccessOficinaJuridica && (
+                  <OficinaJuridicaLandingPage
+                    user={user}
+                    onBack={returnToCards}
+                  />
                 )}
                 {selectedCard === 'gestion_procesos' && renderGestionProcesosModule()}
                 {selectedCard === 'activity_monitor' && (

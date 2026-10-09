@@ -16,6 +16,18 @@ const transporter = nodemailer.createTransport({
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 const isLocal = frontendUrl.includes('localhost') || frontendUrl.includes('127.0.0.1');
+const isEmailDeliveryEnabled = () => {
+  const configured = String(process.env.EMAIL_DELIVERY_ENABLED || '').trim().toLowerCase();
+  if (configured) return configured === 'true';
+  return process.env.NODE_ENV === 'production';
+};
+const deliverEmail = async (mailOptions) => {
+  if (!isEmailDeliveryEnabled()) {
+    console.log('[email] Envío omitido: EMAIL_DELIVERY_ENABLED=false (entorno de pruebas).');
+    return { messageId: 'suppressed-local-testing', suppressed: true };
+  }
+  return transporter.sendMail(prepareMailOptions(mailOptions));
+};
 const INSTITUTIONAL_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@unicesmag\.edu\.co$/i;
 const GENERAL_EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
@@ -470,7 +482,7 @@ const sendWelcomeEmail = async (user) => {
     if (smtpConfigError) {
       return { success: false, error: smtpConfigError };
     }
-    await transporter.sendMail(prepareMailOptions(mailOptions));
+    await deliverEmail(mailOptions);
     console.log('✅ Email enviado a:', safeRecipient);
     return { success: true };
   } catch (error) {
@@ -506,7 +518,7 @@ const sendPasswordResetEmail = async (user, resetToken) => {
     if (smtpConfigError) {
       return { success: false, error: smtpConfigError };
     }
-    await transporter.sendMail(prepareMailOptions(mailOptions));
+    await deliverEmail(mailOptions);
     console.log('✅ Email de recuperación enviado a:', safeRecipient);
     return { success: true };
   } catch (error) {
@@ -546,7 +558,7 @@ const sendTemporaryPasswordEmail = async (user, tempPassword) => {
     if (smtpConfigError) {
       return { success: false, error: smtpConfigError };
     }
-    await transporter.sendMail(prepareMailOptions(mailOptions));
+    await deliverEmail(mailOptions);
     console.log('✅ Email de contraseña temporal enviado a:', safeRecipient);
     return { success: true };
   } catch (error) {
@@ -601,8 +613,8 @@ const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [
   }
 
   try {
-    const info = await transporter.sendMail(prepareMailOptions(mailOptions));
-    return { success: true, messageId: info?.messageId };
+    const info = await deliverEmail(mailOptions);
+    return { success: true, messageId: info?.messageId, suppressed: info?.suppressed === true };
   } catch (error) {
     console.error('Error enviando correo institucional:', error);
     return { success: false, error: error.message };

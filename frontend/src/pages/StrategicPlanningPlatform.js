@@ -484,13 +484,21 @@ export default function StrategicPlanningPlatform({ onBack }) {
 
   const previewFieldSchema = async (file) => {
     if (!file) return;
-    const body = new FormData(); body.append('file', file);
+    if (!plan?.id) {
+      enqueueSnackbar('Seleccione primero un PED para configurar sus columnas.', { variant: 'warning' });
+      return;
+    }
+    const body = new FormData();
+    body.append('file', file);
     try {
       const response = await strategicPlanningService.previewFieldSchema(plan.id, body);
       setFieldSchemaPreview({ ...response.data, fields: response.data.parsed_data?.fields || [] });
       setReplaceSchemaFields(false);
       enqueueSnackbar(`Se detectaron ${response.data.summary?.detected || 0} columnas. Revíselas antes de continuar.`, { variant: 'success' });
-    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible leer los encabezados del Excel.', { variant: 'error' }); }
+    } catch (error) {
+      const msg = error.response?.data?.message || error.message || 'No fue posible leer los encabezados del Excel. Verifique que el archivo sea un Excel (.xlsx) válido con encabezados de columna.';
+      enqueueSnackbar(msg, { variant: 'error' });
+    }
   };
 
   const updatePreviewField = (index, changes) => setFieldSchemaPreview((current) => ({
@@ -810,38 +818,308 @@ export default function StrategicPlanningPlatform({ onBack }) {
       </Stack>}
 
       {pedWorkspaceOpen && space === 'planning' && <Box>
-        <SectionHeader step="2" title="Diseñe las columnas de este PED" description="Cada PED puede tener campos diferentes. No es obligatorio usar objetivos ni lineamientos." action={<Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><Button component="label" variant="contained" startIcon={<UploadFile />}>Leer columnas de un Excel<input hidden type="file" accept=".xlsx" onChange={(event) => { previewFieldSchema(event.target.files?.[0]); event.target.value = ''; }} /></Button><Button variant="outlined" startIcon={<Add />} onClick={() => { setFieldForm({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '', catalog_type: '', list_source: 'manual', selected_level_id: '', selected_element_ids: [] }); setOpenField(true); }}>Agregar campo manual</Button></Stack>} />
+        <SectionHeader
+          step="2"
+          title="Diseño de columnas del PED"
+          description="Estructura dinámica de este PED. Cada columna aquí definida se mostrará en el formulario individual y en la plantilla Excel masiva."
+          action={
+            <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.25}>
+              <Button
+                component="label"
+                variant="contained"
+                startIcon={<UploadFile />}
+                sx={{ borderRadius: 2.25, fontWeight: 800, textTransform: 'none', px: 2.5 }}
+              >
+                Cargar columnas desde Excel
+                <input
+                  hidden
+                  type="file"
+                  accept=".xlsx"
+                  onChange={(event) => {
+                    previewFieldSchema(event.target.files?.[0]);
+                    event.target.value = '';
+                  }}
+                />
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<Add />}
+                onClick={() => {
+                  setFieldForm({
+                    id: null,
+                    key: '',
+                    label: '',
+                    data_type: 'text',
+                    required: false,
+                    options_text: '',
+                    formula: '',
+                    catalog_type: '',
+                    list_source: 'manual',
+                    selected_level_id: '',
+                    selected_element_ids: []
+                  });
+                  setOpenField(true);
+                }}
+                sx={{ borderRadius: 2.25, fontWeight: 800, textTransform: 'none' }}
+              >
+                Nuevo campo manual
+              </Button>
+            </Stack>
+          }
+        />
 
-        <Alert severity="info" sx={{ mb: 2, borderRadius: 2.5 }}><strong>Ejemplo:</strong> en el formato 2026 el sistema puede convertir “Objetivos Estratégicos”, “Actividades”, “Indicador”, “Meta” y “Observaciones” en campos. En otro PED podrá leer nombres completamente diferentes.</Alert>
+        <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden', mt: 2 }}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            justifyContent="space-between"
+            alignItems={{ sm: 'center' }}
+            gap={1}
+            sx={{ px: { xs: 2, md: 2.5 }, py: 1.75, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}
+          >
+            <Box>
+              <Typography variant="subtitle1" fontWeight={900} color="#0f172a">
+                Columnas configuradas ({activeFieldDefinitions.length})
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {activeFieldDefinitions.length
+                  ? 'Estas columnas componen la tabla de captura para todos los planes de acción de este PED.'
+                  : 'Aún no hay columnas configuradas para este PED.'}
+              </Typography>
+            </Box>
+            <Chip
+              size="small"
+              color={activeFieldDefinitions.length ? 'success' : 'warning'}
+              label={activeFieldDefinitions.length ? `${activeFieldDefinitions.length} columnas listas` : 'Sin columnas'}
+              sx={{ fontWeight: 800 }}
+            />
+          </Stack>
 
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3,1fr)' }, gap: 1.25, mb: 2.5 }}>
-          {[
-            ['1', 'Seleccione el Excel', 'Puede usar el formato actual; el sistema busca automáticamente la fila de encabezados.'],
-            ['2', 'Revise las columnas', 'Quite las que no necesita y cambie el nombre, el tipo de dato o si es obligatorio.'],
-            ['3', 'Cree la tabla dinámica', 'Los mismos campos se usarán en la interfaz y en la plantilla de carga masiva.']
-          ].map(([number, title, text]) => <Paper key={number} variant="outlined" sx={{ p: 1.75, borderRadius: 3, bgcolor: '#fbfdff' }}><Stack direction="row" gap={1.1}><Box sx={{ width: 30, height: 30, flex: '0 0 30px', borderRadius: '50%', bgcolor: '#eaf2ff', color: '#2563eb', display: 'grid', placeItems: 'center', fontWeight: 950 }}>{number}</Box><Box><Typography fontWeight={900}>{title}</Typography><Typography variant="body2" color="text.secondary" mt={0.25}>{text}</Typography></Box></Stack></Paper>)}
-        </Box>
+          {!activeFieldDefinitions.length ? (
+            <Box sx={{ px: 3, py: 6, textAlign: 'center' }}>
+              <Description color="primary" sx={{ fontSize: 52, opacity: 0.8, mb: 1 }} />
+              <Typography variant="h6" fontWeight={900} color="#0f172a">
+                Configure las columnas de su PED
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 520, mx: 'auto', mt: 0.5, mb: 2.5 }}>
+                Suba su archivo Excel oficial y el sistema detectará automáticamente los encabezados para crear la tabla en segundos, o agregue los campos uno a uno de forma manual.
+              </Typography>
+              <Stack direction="row" spacing={1.5} justifyContent="center" flexWrap="wrap" gap={1}>
+                <Button
+                  component="label"
+                  variant="contained"
+                  startIcon={<UploadFile />}
+                  sx={{ borderRadius: 2.25, fontWeight: 800, textTransform: 'none', px: 3 }}
+                >
+                  Seleccionar archivo Excel (.xlsx)
+                  <input
+                    hidden
+                    type="file"
+                    accept=".xlsx"
+                    onChange={(event) => {
+                      previewFieldSchema(event.target.files?.[0]);
+                      event.target.value = '';
+                    }}
+                  />
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<Add />}
+                  onClick={() => {
+                    setFieldForm({
+                      id: null,
+                      key: '',
+                      label: '',
+                      data_type: 'text',
+                      required: false,
+                      options_text: '',
+                      formula: '',
+                      catalog_type: '',
+                      list_source: 'manual',
+                      selected_level_id: '',
+                      selected_element_ids: []
+                    });
+                    setOpenField(true);
+                  }}
+                  sx={{ borderRadius: 2.25, fontWeight: 800, textTransform: 'none' }}
+                >
+                  Crear campo manual
+                </Button>
+              </Stack>
+            </Box>
+          ) : (
+            <TableContainer sx={{ maxHeight: 520 }}>
+              <Table stickyHeader size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 800, width: 70 }}>#</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>Nombre visible / Identificador</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>Tipo de información</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>Opciones / Lista</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>Obligatorio</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 800 }}>Acciones</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {[...activeFieldDefinitions]
+                    .sort((a, b) => a.position - b.position)
+                    .map((field) => {
+                      const isChoice = ['list', 'catalog', 'catalog_multi'].includes(field.data_type);
+                      const catalogType = field.validation_rules?.catalog_type;
+                      const choices = catalogType
+                        ? (plan.catalogItems || []).filter((item) => item.catalog_type === catalogType && item.active)
+                        : (field.options || []);
 
-        <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} sx={{ px: { xs: 2, md: 2.5 }, py: 2, borderBottom: '1px solid #e2e8f0' }}><Box><Typography variant="h6" fontWeight={950}>Columnas configuradas</Typography><Typography variant="body2" color="text.secondary">{activeFieldDefinitions.length ? `${activeFieldDefinitions.length} campos formarán la tabla de captura de este PED.` : 'Aún no hay campos. Importe un Excel o cree el primero manualmente.'}</Typography></Box><Chip color={activeFieldDefinitions.length ? 'success' : 'default'} label={activeFieldDefinitions.length ? 'Tabla lista' : 'Pendiente'} sx={{ fontWeight: 850 }} /></Stack>
-          {!activeFieldDefinitions.length ? <Box sx={{ px: 2, py: 5, textAlign: 'center' }}><Description color="primary" sx={{ fontSize: 44 }} /><Typography fontWeight={900} mt={1}>Comience con el Excel que ya utiliza</Typography><Typography variant="body2" color="text.secondary" mb={2}>No tiene que escribir todos los nombres nuevamente.</Typography><Button component="label" variant="contained" startIcon={<UploadFile />}>Seleccionar formato Excel<input hidden type="file" accept=".xlsx" onChange={(event) => { previewFieldSchema(event.target.files?.[0]); event.target.value = ''; }} /></Button></Box> :
-            <TableContainer sx={{ maxHeight: 520 }}><Table stickyHeader size="small"><TableHead><TableRow><TableCell>Orden</TableCell><TableCell>Nombre visible</TableCell><TableCell>Tipo de información</TableCell><TableCell>Obligatorio</TableCell><TableCell align="right">Acciones</TableCell></TableRow></TableHead><TableBody>{[...activeFieldDefinitions].sort((a,b) => a.position-b.position).map((field) => <TableRow key={field.id} hover><TableCell>{field.position}</TableCell><TableCell><Typography fontWeight={850}>{field.label}</Typography><Typography variant="caption" color="text.secondary">{field.key}</Typography></TableCell><TableCell><Chip size="small" variant="outlined" label={FIELD_TYPE_LABEL[field.data_type] || field.data_type} /></TableCell><TableCell>{field.required ? 'Sí' : 'No'}</TableCell><TableCell align="right"><Button size="small" onClick={() => openFieldEditor(field)}>Editar</Button><Button size="small" color="error" onClick={() => deleteField(field)}>Quitar</Button></TableCell></TableRow>)}</TableBody></Table></TableContainer>}
+                      return (
+                        <TableRow key={field.id} hover>
+                          <TableCell sx={{ fontWeight: 800, color: 'text.secondary' }}>{field.position}</TableCell>
+                          <TableCell>
+                            <Typography fontWeight={800} fontSize={14}>{field.label}</Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                              {field.key}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={FIELD_TYPE_LABEL[field.data_type] || field.data_type}
+                              sx={{ fontWeight: 600, fontSize: 12 }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {isChoice ? (
+                              <Stack direction="row" spacing={0.75} alignItems="center">
+                                <Chip
+                                  size="small"
+                                  color={choices.length ? 'default' : 'warning'}
+                                  label={`${choices.length} opciones`}
+                                  sx={{ fontSize: 11 }}
+                                />
+                                {catalogType ? (
+                                  <Button
+                                    size="small"
+                                    variant="text"
+                                    onClick={() => {
+                                      setManagedListFieldId(field.id);
+                                      setCatalogType(catalogType);
+                                      setEditingReferenceId(null);
+                                      setNewReference({ code: '', name: '' });
+                                    }}
+                                    sx={{ textTransform: 'none', fontSize: 12, p: 0.5, fontWeight: 700 }}
+                                  >
+                                    Ver opciones
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="small"
+                                    variant="text"
+                                    onClick={() => openFieldEditor(field)}
+                                    sx={{ textTransform: 'none', fontSize: 12, p: 0.5, fontWeight: 700 }}
+                                  >
+                                    Editar opciones
+                                  </Button>
+                                )}
+                              </Stack>
+                            ) : (
+                              <Typography variant="caption" color="text.secondary">Estándar</Typography>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              label={field.required ? 'Obligatorio' : 'Opcional'}
+                              color={field.required ? 'primary' : 'default'}
+                              variant={field.required ? 'filled' : 'outlined'}
+                              sx={{ fontSize: 11, fontWeight: 600 }}
+                            />
+                          </TableCell>
+                          <TableCell align="right">
+                            <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                              <Button size="small" onClick={() => openFieldEditor(field)} sx={{ textTransform: 'none', fontWeight: 700 }}>
+                                Editar
+                              </Button>
+                              <Button size="small" color="error" onClick={() => deleteField(field)} sx={{ textTransform: 'none', fontWeight: 700 }}>
+                                Quitar
+                              </Button>
+                            </Stack>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
         </Paper>
 
-        <Paper variant="outlined" sx={{ mt: 2, borderRadius: 3, overflow: 'hidden', borderColor: '#dbeafe' }}>
-          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1.5} sx={{ p: 2.25, bgcolor: '#f8fbff', borderBottom: '1px solid #dbeafe' }}><Box><Typography variant="h6" fontWeight={950}>Listas precargadas del formulario</Typography><Typography variant="body2" color="text.secondary">Aquí define las opciones que después aparecerán como listas al registrar cada actividad.</Typography></Box><Button variant="outlined" startIcon={<Add />} onClick={() => { setFieldForm({ id: null, key: '', label: '', data_type: 'list', required: false, options_text: '', formula: '', catalog_type: '', list_source: 'manual', selected_level_id: '', selected_element_ids: [] }); setOpenField(true); }}>Crear campo con lista</Button></Stack>
-          {!choiceFieldDefinitions.length ? <Box sx={{ p: 3, textAlign: 'center' }}><Typography fontWeight={900}>Todavía no hay campos con opciones</Typography><Typography variant="body2" color="text.secondary">Cree un campo de tipo “Lista desplegable” o “Referencia institucional”.</Typography></Box> : <Box sx={{ p: 2, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2,minmax(0,1fr))', xl: 'repeat(3,minmax(0,1fr))' }, gap: 1.25 }}>
-            {choiceFieldDefinitions.map((field) => {
-              const catalogType = field.validation_rules?.catalog_type;
-              const choices = catalogType ? (plan.catalogItems || []).filter((item) => item.catalog_type === catalogType && item.active) : (field.options || []);
-              return <Paper key={field.id} elevation={0} sx={{ p: 1.75, borderRadius: 2.75, border: '1px solid #e2e8f0', bgcolor: '#fff' }}><Stack direction="row" justifyContent="space-between" gap={1}><Box sx={{ minWidth: 0 }}><Typography fontWeight={950}>{field.label}</Typography><Typography variant="caption" color="text.secondary">{catalogType ? 'Tabla reutilizable' : 'Lista propia'} · {choices.length} opciones</Typography></Box><Chip size="small" color={choices.length ? 'success' : 'warning'} label={choices.length ? 'Lista lista' : 'Sin opciones'} /></Stack><Stack direction="row" gap={0.6} flexWrap="wrap" mt={1.25} minHeight={28}>{choices.slice(0, 4).map((option) => <Chip key={option.id || option} size="small" variant="outlined" label={option.name || option} />)}{choices.length > 4 && <Chip size="small" label={`+${choices.length - 4}`} />}</Stack><Button fullWidth size="small" variant="outlined" sx={{ mt: 1.4, borderRadius: 2, textTransform: 'none', fontWeight: 850 }} onClick={() => { if (catalogType) { setManagedListFieldId(field.id); setCatalogType(catalogType); setEditingReferenceId(null); setNewReference({ code: '', name: '' }); } else openFieldEditor(field); }}>{catalogType ? 'Administrar opciones' : 'Editar opciones'}</Button></Paper>;
-            })}
-          </Box>}
-        </Paper>
+        {managedListField && managedCatalogType && (
+          <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 3, borderColor: '#c4b5fd', bgcolor: '#fcfbff' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1} mb={2}>
+              <Box>
+                <Typography variant="h6" fontWeight={950}>Opciones de “{managedListField.label}”</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Todo registro activo aparecerá en el formulario individual y en las listas desplegables del Excel.
+                </Typography>
+              </Box>
+              <Button size="small" onClick={() => setManagedListFieldId('')} sx={{ textTransform: 'none' }}>
+                Cerrar panel de opciones
+              </Button>
+            </Stack>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(150px,.35fr) minmax(260px,1fr) auto' }, gap: 1.25 }}>
+              <TextField size="small" disabled label="Código automático" value={newReference.code} />
+              <TextField
+                size="small"
+                label="Nombre de la opción"
+                value={newReference.name}
+                onChange={(event) => {
+                  const name = event.target.value;
+                  const code = editingReferenceId
+                    ? newReference.code
+                    : name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+                  setNewReference({ code, name });
+                }}
+              />
+              <Button
+                variant="contained"
+                startIcon={<Add />}
+                disabled={!newReference.code.trim() || !newReference.name.trim()}
+                onClick={saveReference}
+                sx={{ textTransform: 'none', fontWeight: 800 }}
+              >
+                {editingReferenceId ? 'Guardar cambio' : 'Agregar opción'}
+              </Button>
+            </Box>
+            <TableContainer sx={{ mt: 1.5, maxHeight: 280 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Código</TableCell>
+                    <TableCell>Opción</TableCell>
+                    <TableCell>Estado</TableCell>
+                    <TableCell align="right">Acciones</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {managedCatalogItems.sort((a,b) => a.name.localeCompare(b.name,'es')).map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.code}</TableCell>
+                      <TableCell><Typography fontWeight={800}>{item.name}</Typography></TableCell>
+                      <TableCell><Chip size="small" color={item.active ? 'success' : 'default'} label={item.active ? 'Visible' : 'Oculta'} /></TableCell>
+                      <TableCell align="right">
+                        <Button size="small" onClick={() => { setEditingReferenceId(item.id); setNewReference({ code: item.code, name: item.name }); }}>Editar</Button>
+                        <Button size="small" color={item.active ? 'warning' : 'success'} onClick={() => toggleReference(item)}>{item.active ? 'Ocultar' : 'Mostrar'}</Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        )}
 
-        {managedListField && managedCatalogType && <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 3, borderColor: '#c4b5fd', bgcolor: '#fcfbff' }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1} mb={2}><Box><Typography variant="h6" fontWeight={950}>Opciones de “{managedListField.label}”</Typography><Typography variant="body2" color="text.secondary">Todo registro activo aparecerá automáticamente en el formulario y en el Excel dinámico.</Typography></Box><Button size="small" onClick={() => setManagedListFieldId('')}>Cerrar</Button></Stack><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(150px,.35fr) minmax(260px,1fr) auto' }, gap: 1.25 }}><TextField size="small" disabled label="Código automático" value={newReference.code} /><TextField size="small" label="Nombre de la opción" value={newReference.name} onChange={(event) => { const name = event.target.value; const code = editingReferenceId ? newReference.code : name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50); setNewReference({ code, name }); }} /><Button variant="contained" startIcon={<Add />} disabled={!newReference.code.trim() || !newReference.name.trim()} onClick={saveReference}>{editingReferenceId ? 'Guardar cambio' : 'Agregar opción'}</Button></Box><TableContainer sx={{ mt: 1.5, maxHeight: 280 }}><Table size="small" stickyHeader><TableHead><TableRow><TableCell>Código</TableCell><TableCell>Opción</TableCell><TableCell>Estado</TableCell><TableCell align="right">Acciones</TableCell></TableRow></TableHead><TableBody>{managedCatalogItems.sort((a,b) => a.name.localeCompare(b.name,'es')).map((item) => <TableRow key={item.id}><TableCell>{item.code}</TableCell><TableCell><Typography fontWeight={800}>{item.name}</Typography></TableCell><TableCell><Chip size="small" color={item.active ? 'success' : 'default'} label={item.active ? 'Visible' : 'Oculta'} /></TableCell><TableCell align="right"><Button size="small" onClick={() => { setEditingReferenceId(item.id); setNewReference({ code: item.code, name: item.name }); }}>Editar</Button><Button size="small" color={item.active ? 'warning' : 'success'} onClick={() => toggleReference(item)}>{item.active ? 'Ocultar' : 'Mostrar'}</Button></TableCell></TableRow>)}</TableBody></Table></TableContainer></Paper>}
         <StepNavigation onBack={() => setSpace('configuration')} onNext={activeFieldDefinitions.length ? () => setSpace('references') : null} nextLabel="Continuar a dependencias" />
-      </Box>}
+      </Box>
+      }
 
       {pedWorkspaceOpen && space === 'configuration' && <Box>
         {!showAdvancedConfig ? <Stack spacing={2.5}>
@@ -1475,10 +1753,111 @@ export default function StrategicPlanningPlatform({ onBack }) {
         <DialogTitle sx={{ px: 3, pt: 3, pb: 1 }}><Stack direction="row" gap={1.25} alignItems="center"><Box sx={{ width: 42, height: 42, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: '#fef2f2', color: '#dc2626' }}><DeleteOutline /></Box><Box><Typography variant="h6" fontWeight={950}>Eliminar PED en borrador</Typography><Typography variant="caption" color="text.secondary">Esta opción solo existe para borradores.</Typography></Box></Stack></DialogTitle>
         <DialogContent sx={{ px: 3, pt: '14px !important' }}><Typography>Se retirará <strong>{deleteCandidate?.name}</strong> de la lista de PED.</Typography><Paper variant="outlined" sx={{ p: 1.5, mt: 2, borderRadius: 2.5, bgcolor: '#f8fafc' }}><Typography variant="caption" color="text.secondary">PED QUE SE ELIMINARÁ</Typography><Typography fontWeight={900}>{deleteCandidate?.code}</Typography><Typography variant="body2" color="text.secondary">{deleteCandidate?.starts_on} → {deleteCandidate?.ends_on}</Typography></Paper><Alert severity="warning" sx={{ mt: 2 }}>Los PED activos, terminados o históricos están protegidos y nunca muestran esta opción.</Alert></DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}><Button onClick={() => setDeleteCandidate(null)} disabled={saving}>Conservar borrador</Button><Button color="error" variant="contained" startIcon={<DeleteOutline />} onClick={deleteDraftPlan} disabled={saving || deleteCandidate?.status !== 'draft'} sx={{ borderRadius: 2.25, fontWeight: 900 }}>{saving ? 'Eliminando…' : 'Sí, eliminar'}</Button></DialogActions>
-      </Dialog><Dialog open={openTerm} onClose={() => setOpenTerm(false)} fullWidth maxWidth="sm">
+      </Dialog>
+
+      {/* DIÁLOGO: VISTA PREVIA Y CONFIRMACIÓN DE COLUMNAS LEÍDAS DEL EXCEL */}
+      <Dialog open={Boolean(fieldSchemaPreview)} onClose={() => !saving && setFieldSchemaPreview(null)} fullWidth maxWidth="lg" PaperProps={{ sx: { borderRadius: 3.5, maxHeight: '92vh' } }}>
+        <DialogTitle sx={{ px: { xs: 2, md: 3 }, pt: 2.5, pb: 1 }}>
+          <Typography variant="h5" fontWeight={950}>Columnas detectadas en el archivo Excel</Typography>
+          <Typography variant="body2" color="text.secondary" mt={0.5}>
+            Hoja: “{fieldSchemaPreview?.parsed_data?.sheet_name}” · Fila de encabezados: {fieldSchemaPreview?.parsed_data?.header_row}
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: { xs: 2, md: 3 }, pt: '14px !important' }}>
+          <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
+            Seleccione las columnas que conformarán la tabla de actividades del PED. Puede renombrarlas, cambiar su tipo de dato o marcarlas como obligatorias.
+          </Alert>
+          <Stack spacing={1.1}>
+            {(fieldSchemaPreview?.fields || []).map((field, index) => (
+              <Paper key={`${field.source_column}-${field.key}`} variant="outlined" sx={{ p: 1.4, borderRadius: 2.5, opacity: field.include && !field.system ? 1 : 0.62, bgcolor: field.include && !field.system ? '#fff' : '#f8fafc' }}>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '130px minmax(220px,1.4fr) minmax(190px,1fr) minmax(160px,.8fr)' }, gap: 1.25, alignItems: 'center' }}>
+                  <FormControlLabel control={<Switch checked={field.include && !field.system} disabled={field.system} onChange={(event) => updatePreviewField(index, { include: event.target.checked })} />} label={field.system ? 'Automático' : 'Usar columna'} />
+                  <TextField size="small" label="Nombre visible" value={field.label} disabled={field.system || !field.include} onChange={(event) => updatePreviewField(index, { label: event.target.value })} />
+                  <TextField size="small" select label="Tipo de información" value={field.data_type} disabled={field.system || !field.include} onChange={(event) => updatePreviewField(index, { data_type: event.target.value })}>{Object.entries(FIELD_TYPE_LABEL).filter(([value]) => value !== 'strategic_relation').map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField>
+                  <Box>
+                    <FormControlLabel control={<Switch checked={field.required === true} disabled={field.system || !field.include} onChange={(event) => updatePreviewField(index, { required: event.target.checked })} />} label="Obligatorio" />
+                    {field.sample_values?.length > 0 && <Typography variant="caption" color="text.secondary" display="block" noWrap title={field.sample_values.join(' · ')}>Ejemplo: {field.sample_values.join(' · ')}</Typography>}
+                  </Box>
+                </Box>
+              </Paper>
+            ))}
+          </Stack>
+          {!!activeFieldDefinitions.length && (
+            <Paper variant="outlined" sx={{ p: 1.5, mt: 2, borderRadius: 2.5, bgcolor: '#fffbeb', borderColor: '#fde68a' }}>
+              <FormControlLabel control={<Switch checked={replaceSchemaFields} onChange={(event) => setReplaceSchemaFields(event.target.checked)} />} label="Reemplazar el diseño actual por estas columnas" />
+              <Typography variant="caption" color="text.secondary" display="block">
+                Si lo deja desactivado, las columnas leídas se sumarán a las que ya tiene configuradas sin borrar nada.
+              </Typography>
+            </Paper>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: { xs: 2, md: 3 }, py: 2 }}>
+          <Button onClick={() => setFieldSchemaPreview(null)} disabled={saving}>Cancelar</Button>
+          <Button variant="contained" onClick={confirmFieldSchema} disabled={saving || !(fieldSchemaPreview?.fields || []).some((field) => field.include && !field.system)} sx={{ px: 3, borderRadius: 2.5, fontWeight: 900 }}>
+            {saving ? 'Guardando columnas…' : `Confirmar y guardar ${(fieldSchemaPreview?.fields || []).filter((field) => field.include && !field.system).length} columnas`}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* DIÁLOGO: AGREGAR O EDITAR CAMPO INDIVIDUAL */}
+      <Dialog open={openField} onClose={() => setOpenField(false)} fullWidth maxWidth="md">
+        <DialogTitle fontWeight={900}>{fieldForm.id ? 'Editar columna del Plan de Acción' : 'Agregar nueva columna al Plan de Acción'}</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} mt={0.25}>
+            <Grid item xs={12} md={7}>
+              <TextField required fullWidth label="Nombre visible para el usuario" placeholder="Ejemplo: Resultado esperado" value={fieldForm.label} onChange={(e) => { const label = e.target.value; setFieldForm({ ...fieldForm, label, key: fieldForm.id ? fieldForm.key : label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') }); }} />
+            </Grid>
+            <Grid item xs={12} md={5}>
+              <TextField required fullWidth disabled={Boolean(fieldForm.id)} label="Código interno" value={fieldForm.key} onChange={(e) => setFieldForm({ ...fieldForm, key: e.target.value })} helperText="Identificador en base de datos" />
+            </Grid>
+            <Grid item xs={12} md={7}>
+              <TextField required fullWidth select label="Tipo de dato" value={fieldForm.data_type} onChange={(e) => setFieldForm({ ...fieldForm, data_type: e.target.value, catalog_type: ['catalog', 'catalog_multi'].includes(e.target.value) ? fieldForm.catalog_type : '', options_text: e.target.value === 'list' ? fieldForm.options_text : '' })}>
+                {Object.entries(FIELD_TYPE_LABEL).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
+              </TextField>
+            </Grid>
+            <Grid item xs={12} md={5}>
+              <FormControlLabel control={<Switch checked={fieldForm.required} onChange={(e) => setFieldForm({ ...fieldForm, required: e.target.checked })} />} label="Campo obligatorio" />
+            </Grid>
+            {fieldForm.data_type === 'list' && (
+              <Grid item xs={12}>
+                <Alert severity="info" sx={{ mb: 1.25 }}>Escriba las opciones de la lista desplegable (una opción por cada línea).</Alert>
+                <TextField fullWidth multiline minRows={5} label="Opciones que aparecerán en la lista" placeholder={'Gestión\nResultado\nProducto\nImpacto'} helperText="Escriba una opción por línea." value={fieldForm.options_text} onChange={(e) => setFieldForm({ ...fieldForm, options_text: e.target.value })} />
+              </Grid>
+            )}
+            {['catalog', 'catalog_multi'].includes(fieldForm.data_type) && (
+              <Grid item xs={12}>
+                <Alert severity="info" sx={{ mb: 1.25 }}>Seleccione una tabla institucional para alimentar las opciones disponibles.</Alert>
+                <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}>
+                  <TextField fullWidth select label="Tabla que alimentará este campo" value={fieldForm.catalog_type} onChange={(e) => setFieldForm({ ...fieldForm, catalog_type: e.target.value })} helperText="Las opciones activas aparecerán automáticamente en el formulario.">
+                    <MenuItem value="">Seleccione una tabla</MenuItem>
+                    {catalogOptions.map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
+                  </TextField>
+                  <Button variant="outlined" startIcon={<Add />} onClick={() => setOpenCatalog(true)} sx={{ minWidth: 190, alignSelf: 'flex-start', minHeight: 56 }}>Crear nueva tabla</Button>
+                </Stack>
+              </Grid>
+            )}
+            {fieldForm.data_type === 'formula' && (
+              <Grid item xs={12}>
+                <TextField fullWidth label="Fórmula" placeholder="avance_periodo_1 + avance_periodo_2" value={fieldForm.formula} onChange={(e) => setFieldForm({ ...fieldForm, formula: e.target.value })} />
+              </Grid>
+            )}
+            <Grid item xs={12}>
+              <Alert severity="info">Este campo se aplicará a los Planes de Acción del PED seleccionado.</Alert>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenField(false)}>Cancelar</Button>
+          <Button variant="contained" disabled={saving || !fieldForm.key.trim() || !fieldForm.label.trim()} onClick={saveField}>
+            {saving ? 'Guardando…' : fieldForm.id ? 'Actualizar campo' : 'Crear campo'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={openTerm} onClose={() => setOpenTerm(false)} fullWidth maxWidth="sm">
         <DialogTitle fontWeight={900}>{termForm.id ? 'Editar año del PED' : 'Agregar año al PED'}</DialogTitle>
         <DialogContent><Grid container spacing={2} mt={0.25}>
-          <Grid item xs={12} md={6}><TextField required fullWidth type="number" label="Año" value={termForm.year} onChange={(e) => { const year = e.target.value; setTermForm({ ...termForm, year, starts_on: termForm.id ? termForm.starts_on : `${year}-01-01`, ends_on: termForm.id ? termForm.ends_on : `${year}-12-31`, formulation_starts_on: termForm.id ? termForm.formulation_starts_on : `${year}-01-01`, formulation_ends_on: termForm.id ? termForm.formulation_ends_on : `${year}-03-31` }); }} /></Grid>
+          <Grid item xs={12} md={6}><TextField required fullWidth type="number" label="Año" value={termForm.year} onChange={(e) => { const year = e.target.value; setTermForm({ ...termForm, year, starts_on: termForm.id ? termForm.starts_on : `${year}-01-01`, ends_on: termForm.id ? termForm.ends_on : `${year}-12-31` }); }} /></Grid>
           <Grid item xs={12} md={6}><TextField select fullWidth label="Estado" value={termForm.status} onChange={(e) => setTermForm({ ...termForm, status: e.target.value })}><MenuItem value="planned">Programada</MenuItem><MenuItem value="active">Activa</MenuItem><MenuItem value="closed">Cerrada</MenuItem></TextField></Grid>
           <Grid item xs={12} md={6}><TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha inicial vigencia" value={termForm.starts_on} onChange={(e) => setTermForm({ ...termForm, starts_on: e.target.value })} /></Grid>
           <Grid item xs={12} md={6}><TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha final vigencia" value={termForm.ends_on} onChange={(e) => setTermForm({ ...termForm, ends_on: e.target.value })} /></Grid>
@@ -1498,16 +1877,6 @@ export default function StrategicPlanningPlatform({ onBack }) {
           {!termForm.id && <Grid item xs={12}><Alert severity="info">Se crearán inicialmente dos periodos: Seguimiento 1 (enero–junio) y Seguimiento 2 / Cierre (julio–diciembre).</Alert></Grid>}
         </Grid></DialogContent>
         <DialogActions><Button onClick={() => setOpenTerm(false)}>Cancelar</Button><Button variant="contained" disabled={saving || !termForm.year || !termForm.starts_on || !termForm.ends_on} onClick={saveTerm}>{saving ? 'Guardando…' : termForm.id ? 'Actualizar año y plazos' : 'Crear año y plazos'}</Button></DialogActions>
-      </Dialog><Dialog open={openTerm} onClose={() => setOpenTerm(false)} fullWidth maxWidth="sm">
-        <DialogTitle fontWeight={900}>{termForm.id ? 'Editar año del PED' : 'Agregar año al PED'}</DialogTitle>
-        <DialogContent><Grid container spacing={2} mt={0.25}>
-          <Grid item xs={12} md={6}><TextField required fullWidth type="number" label="Año" value={termForm.year} onChange={(e) => { const year = e.target.value; setTermForm({ ...termForm, year, starts_on: termForm.id ? termForm.starts_on : `${year}-01-01`, ends_on: termForm.id ? termForm.ends_on : `${year}-12-31` }); }} /></Grid>
-          <Grid item xs={12} md={6}><TextField select fullWidth label="Estado" value={termForm.status} onChange={(e) => setTermForm({ ...termForm, status: e.target.value })}><MenuItem value="planned">Programada</MenuItem><MenuItem value="active">Activa</MenuItem><MenuItem value="closed">Cerrada</MenuItem></TextField></Grid>
-          <Grid item xs={12} md={6}><TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha inicial" value={termForm.starts_on} onChange={(e) => setTermForm({ ...termForm, starts_on: e.target.value })} /></Grid>
-          <Grid item xs={12} md={6}><TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha final" value={termForm.ends_on} onChange={(e) => setTermForm({ ...termForm, ends_on: e.target.value })} /></Grid>
-          {!termForm.id && <Grid item xs={12}><Alert severity="info">Se crearán inicialmente dos periodos: Seguimiento 1 (enero–junio) y Seguimiento 2 / Cierre (julio–diciembre).</Alert></Grid>}
-        </Grid></DialogContent>
-        <DialogActions><Button onClick={() => setOpenTerm(false)}>Cancelar</Button><Button variant="contained" disabled={saving || !termForm.year || !termForm.starts_on || !termForm.ends_on} onClick={saveTerm}>{saving ? 'Guardando…' : termForm.id ? 'Actualizar año' : 'Crear año'}</Button></DialogActions>
       </Dialog>
 
       <Dialog open={openLevel} onClose={() => setOpenLevel(false)} fullWidth maxWidth="sm">

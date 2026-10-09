@@ -219,6 +219,7 @@ function GestionUsuarios() {
     { key: 'seguridad_aplicativa.exportar', label: 'Exportar', group: 'Seguridad Aplicativa' },
     { key: 'seguridad_aplicativa.configurar', label: 'Configurar', group: 'Seguridad Aplicativa' },
     { key: 'vicerrectoria_financiera', label: 'Vicerrectoría Financiera y de Desarrollo Institucional', group: 'Tableros estadisticos' },
+    { key: 'oficina_juridica', label: 'Oficina Jurídica', group: 'Tableros estadisticos' },
     { key: 'vicerrectoria_financiera.viaticos', label: 'Módulo de Viáticos', group: 'Viáticos' },
     { key: 'vicerrectoria_financiera.viaticos.gestion', label: 'Gestión de Viáticos', group: 'Viáticos' },
     { key: 'vicerrectoria_financiera.viaticos.estadistica', label: 'Estadística de Viáticos', group: 'Viáticos' },

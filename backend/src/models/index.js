@@ -48,6 +48,10 @@ const PlanAccion = require('./PlanAccion');
 const Autoevaluacion = require('./Autoevaluacion');
 const AutoevaluacionParticipante = require('./AutoevaluacionParticipante');
 const AutoevaluacionPrograma = require('./AutoevaluacionPrograma');
+const PlanMejoramiento = require('./PlanMejoramiento');
+const PlanMejoramientoTarifaVersion = require('./PlanMejoramientoTarifaVersion');
+const PlanMejoramientoAsignacion = require('./PlanMejoramientoAsignacion');
+const PlanMejoramientoFlujoHistorial = require('./PlanMejoramientoFlujoHistorial');
 const RegistroCalificadoHistorico = require('./RegistroCalificadoHistorico');
 const RegistroCalificadoResolucion = require('./RegistroCalificadoResolucion');
 const InstrumentForm = require('./InstrumentForm');
@@ -77,6 +81,9 @@ const DigitalMeetingSchedule = require('./DigitalMeetingSchedule');
 const GoogleCalendarConnection = require('./GoogleCalendarConnection');
 const CronogramaMovilidad = require('./CronogramaMovilidad');
 const CronogramaMovilidadActividad = require('./CronogramaMovilidadActividad');
+const JuridicaCaso = require('./JuridicaCaso');
+const JuridicaHistorial = require('./JuridicaHistorial');
+const JuridicaAdjunto = require('./JuridicaAdjunto');
 const strategicPlanning = require('./StrategicPlanning');
 
 strategicPlanning.registerStrategicPlanningAssociations({ User });
@@ -86,6 +93,16 @@ CronogramaMovilidad.hasMany(CronogramaMovilidadActividad, { foreignKey: 'id_cron
 CronogramaMovilidadActividad.belongsTo(CronogramaMovilidad, { foreignKey: 'id_cronograma', as: 'cronograma' });
 User.hasMany(CronogramaMovilidad, { foreignKey: 'id_director', as: 'cronogramasMovilidad' });
 CronogramaMovilidad.belongsTo(User, { foreignKey: 'id_director', as: 'directorUser' });
+
+JuridicaCaso.belongsTo(User, { foreignKey: 'solicitante_id', as: 'solicitante' });
+JuridicaCaso.belongsTo(User, { foreignKey: 'responsable_id', as: 'responsable' });
+JuridicaCaso.belongsTo(User, { foreignKey: 'secretario_id', as: 'secretario' });
+JuridicaCaso.hasMany(JuridicaHistorial, { foreignKey: 'caso_id', as: 'historial', onDelete: 'CASCADE' });
+JuridicaHistorial.belongsTo(JuridicaCaso, { foreignKey: 'caso_id', as: 'caso' });
+JuridicaHistorial.belongsTo(User, { foreignKey: 'usuario_id', as: 'usuario' });
+JuridicaCaso.hasMany(JuridicaAdjunto, { foreignKey: 'caso_id', as: 'adjuntos', onDelete: 'CASCADE' });
+JuridicaAdjunto.belongsTo(JuridicaCaso, { foreignKey: 'caso_id', as: 'caso' });
+JuridicaAdjunto.belongsTo(User, { foreignKey: 'usuario_id', as: 'usuario' });
 
 // Relaciones existentes
 MacroProceso.hasMany(Proceso, { foreignKey: 'macro_proceso_id', as: 'procesos' });
@@ -400,6 +417,10 @@ module.exports = {
   Autoevaluacion,
   AutoevaluacionParticipante,
   AutoevaluacionPrograma,
+  PlanMejoramiento,
+  PlanMejoramientoTarifaVersion,
+  PlanMejoramientoAsignacion,
+  PlanMejoramientoFlujoHistorial,
   RegistroCalificadoHistorico,
   RegistroCalificadoResolucion,
   InstrumentForm,
@@ -429,5 +450,8 @@ module.exports = {
     GoogleCalendarConnection,
   CronogramaMovilidad,
   CronogramaMovilidadActividad,
+  JuridicaCaso,
+  JuridicaHistorial,
+  JuridicaAdjunto,
   ...strategicPlanning
 };

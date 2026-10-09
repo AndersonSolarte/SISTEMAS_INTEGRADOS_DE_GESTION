@@ -10,7 +10,7 @@ import {
   Hub as HubIcon
 } from '@mui/icons-material';
 import PlaneacionEfectividad from './PlaneacionEfectividad';
-import Autoevaluacion from './Autoevaluacion';
+import AutoevaluacionModule from '../modules/planeacionEstrategica/autoevaluacion/AutoevaluacionModule';
 import RegistrosCalificadosAcreditacion from './RegistrosCalificadosAcreditacion';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
@@ -212,7 +212,7 @@ function PlaneacionEstrategica() {
 
         {currentView === 'autoevaluacion' && (
           <Box sx={{ mt: 3 }}>
-            <Autoevaluacion />
+            <AutoevaluacionModule />
           </Box>
         )}
 

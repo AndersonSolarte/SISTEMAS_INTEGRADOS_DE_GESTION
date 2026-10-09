@@ -813,7 +813,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setParticipantSearchOpen(false);
   };
 
-  const selectInstitutionalParticipant = (person) => {
+  const selectInstitutionalParticipant = async (person) => {
     if (!person) return;
     const normalizedDocument = String(person.document || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     const normalizedEmail = String(person.email || '').trim().toLowerCase();
@@ -830,6 +830,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       enqueueSnackbar('La persona institucional ya está agregada al acta.', { variant: 'info' });
       return;
     }
+    setParticipantSearchOptions([]);
+    setParticipantSearchOpen(false);
     setExternalDraft({
       document: person.document || '',
       name: person.name || '',
@@ -845,8 +847,45 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       institutionalProfile: person,
       studentOptions: []
     });
-    setParticipantSearchOptions([]);
-    setParticipantSearchOpen(false);
+    setLookingUpExternalStudent(true);
+
+    let institutionalProfile = person;
+    let studentOptions = [];
+    try {
+      const response = await meetingMinuteService.lookupEnrolledStudent(person.document);
+      if (response?.found && ['institutional', 'dual'].includes(response.kind) && response.data) {
+        institutionalProfile = response.data;
+        studentOptions = Array.isArray(response.student_options) ? response.student_options : [];
+      }
+    } catch (_) {
+      // La búsqueda por nombre ya validó al usuario interno. Si Matriculados no
+      // está disponible, se conserva esa vinculación y se permite continuar.
+    } finally {
+      setLookingUpExternalStudent(false);
+    }
+
+    setExternalDraft({
+      document: institutionalProfile.document || person.document || '',
+      name: institutionalProfile.name || person.name || '',
+      email: institutionalProfile.email || person.email || '',
+      organization: institutionalProfile.organization || person.organization || '',
+      role_title: institutionalProfile.role_title || person.role_title || ''
+    });
+    setExternalStudentResult({
+      found: true,
+      kind: 'institutional',
+      institutionalId: institutionalProfile.id || person.id || null,
+      alsoStudent: studentOptions.length > 0,
+      missingEmail: !(institutionalProfile.email || person.email),
+      institutionalProfile,
+      studentOptions
+    });
+    enqueueSnackbar(
+      studentOptions.length > 0
+        ? 'La persona aparece como colaborador institucional y estudiante. Seleccione cómo participa en esta acta.'
+        : 'Datos institucionales precargados. Puede revisarlos antes de agregar la persona.',
+      { variant: 'success' }
+    );
   };
 
   const searchParticipantInput = async () => {

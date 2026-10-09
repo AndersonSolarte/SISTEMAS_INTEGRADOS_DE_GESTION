@@ -12,6 +12,7 @@ const MENU_KEYS = new Set([
   'favoritos',
   'planeacion_efectividad',
   'autoevaluacion',
+  'autoevaluacion_ejecucion',
   'registros_calificados'
 ]);
 
@@ -38,6 +39,7 @@ const GESTION_INFO_MODULE_KEYS = new Set([
   'gestion_procesos',
   'plan_accion',
   'autoevaluacion',
+  'autoevaluacion_ejecucion',
   'registros_calificados_acreditacion',
   'autoevaluacion.instrumentos.access',
   'infraestructura_fisica.gestionar',
@@ -57,7 +59,8 @@ const GESTION_INFO_MODULE_KEYS = new Set([
   'vicerrectoria_financiera',
   'vicerrectoria_financiera.viaticos',
   'vicerrectoria_financiera.viaticos.gestion',
-  'vicerrectoria_financiera.viaticos.estadistica'
+  'vicerrectoria_financiera.viaticos.estadistica',
+  'oficina_juridica'
 ]);
 
 const GESTION_PROCESOS_DASHBOARD_KEYS = new Set([

@@ -80,8 +80,10 @@ const deduplicateKeys = (fields) => {
 };
 
 const detectHeaderRow = (sheet) => {
-  const lastRow = Math.min(sheet.rowCount, 40);
-  const lastColumn = Math.min(sheet.columnCount, 100);
+  const effectiveRowCount = Math.max(sheet.rowCount || 0, sheet.actualRowCount || 0, 1);
+  const effectiveColCount = Math.max(sheet.columnCount || 0, sheet.actualColumnCount || 0, 30);
+  const lastRow = Math.min(Math.max(effectiveRowCount, 10), 60);
+  const lastColumn = Math.min(effectiveColCount, 100);
   let best = { row: 1, score: -1, count: 0 };
   for (let row = 1; row <= lastRow; row += 1) {
     const labels = [];
@@ -104,21 +106,31 @@ const detectHeaderRow = (sheet) => {
 
 const parseFieldSchemaWorkbook = async (buffer) => {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-  if (!workbook.worksheets.length) throw Object.assign(new Error('El Excel no contiene hojas.'), { statusCode: 422 });
+  try {
+    await workbook.xlsx.load(buffer);
+  } catch (_loadErr) {
+    throw Object.assign(new Error('El archivo no tiene un formato Excel (.xlsx) válido o está dañado. Asegúrese de guardar el archivo en formato Libro de Excel (.xlsx).'), { statusCode: 422 });
+  }
+  if (!workbook.worksheets.length) throw Object.assign(new Error('El Excel no contiene hojas de cálculo.'), { statusCode: 422 });
 
   const candidates = workbook.worksheets.map((sheet) => ({ sheet, header: detectHeaderRow(sheet) }))
     .sort((a, b) => b.header.score - a.header.score);
   const selected = candidates[0];
-  if (!selected || selected.header.count < 2) throw Object.assign(new Error('No fue posible encontrar una fila de encabezados en el Excel.'), { statusCode: 422 });
+  if (!selected || selected.header.count < 2) {
+    throw Object.assign(new Error('No fue posible encontrar una fila de encabezados en el Excel. Verifique que la hoja contenga una fila con los nombres de las columnas (ej. Actividad, Indicador, Meta).'), { statusCode: 422 });
+  }
 
   const { sheet } = selected;
+  const effectiveColCount = Math.max(sheet.columnCount || 0, sheet.actualColumnCount || 0, 30);
+  const lastColumn = Math.min(effectiveColCount, 100);
+  const effectiveRowCount = Math.max(sheet.rowCount || 0, sheet.actualRowCount || 0, selected.header.row + 1);
+
   const fields = [];
-  for (let column = 1; column <= Math.min(sheet.columnCount, 100); column += 1) {
+  for (let column = 1; column <= lastColumn; column += 1) {
     const label = cellText(sheet.getCell(selected.header.row, column));
     if (!label) continue;
     const samples = [];
-    for (let row = selected.header.row + 1; row <= Math.min(sheet.rowCount, selected.header.row + 250); row += 1) {
+    for (let row = selected.header.row + 1; row <= Math.min(effectiveRowCount, selected.header.row + 250); row += 1) {
       const cell = sheet.getCell(row, column);
       samples.push(cell.value && typeof cell.value === 'object' && cell.value.result !== undefined ? cell.value.result : cell.value);
     }

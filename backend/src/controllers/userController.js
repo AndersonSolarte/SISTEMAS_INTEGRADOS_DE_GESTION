@@ -86,7 +86,8 @@ const GESTION_INFO_MODULE_KEYS = [
   'vicerrectoria_financiera',
   'vicerrectoria_financiera.viaticos',
   'vicerrectoria_financiera.viaticos.gestion',
-  'vicerrectoria_financiera.viaticos.estadistica'
+  'vicerrectoria_financiera.viaticos.estadistica',
+  'oficina_juridica'
 ];
 const STATISTICAL_MODULE_PERMISSION_KEYS = new Set([
   'poblacional',
@@ -109,7 +110,8 @@ const STATISTICAL_MODULE_PERMISSION_KEYS = new Set([
   'infraestructura_fisica',
   'monitor_actividad',
   'seguridad_aplicativa',
-  'vicerrectoria_academica'
+  'vicerrectoria_academica',
+  'oficina_juridica'
 ]);
 const INTERNACIONALIZACION_DASHBOARD_PERMISSION_KEYS = [
   'internacionalizacion_gestion',
@@ -625,6 +627,35 @@ const cleanupDirectUserDependencies = async (userId, transaction) => {
   }
 };
 
+const preserveJuridicaUserHistory = async (user, transaction) => {
+  const JuridicaCaso = models.JuridicaCaso;
+  if (!JuridicaCaso || !await hasModelTable(JuridicaCaso)) return;
+  const snapshot = {
+    id: user.id,
+    nombre: user.nombre,
+    email: user.email,
+    cargo: user.cargo,
+    dependencia: user.dependencia
+  };
+  const cases = await JuridicaCaso.findAll({
+    where: {
+      [Op.or]: [
+        { solicitante_id: user.id },
+        { responsable_id: user.id },
+        { secretario_id: user.id }
+      ]
+    },
+    transaction
+  });
+  for (const legalCase of cases) {
+    const metadata = { ...(legalCase.metadata || {}) };
+    if (Number(legalCase.solicitante_id) === Number(user.id)) metadata.solicitante_snapshot = snapshot;
+    if (Number(legalCase.responsable_id) === Number(user.id)) metadata.responsable_snapshot = snapshot;
+    if (Number(legalCase.secretario_id) === Number(user.id)) metadata.secretario_snapshot = snapshot;
+    await legalCase.update({ metadata }, { transaction });
+  }
+};
+
 const performPhysicalUserDelete = async (userId) => {
   await ensureUserReferenceIndexes();
 
@@ -633,6 +664,8 @@ const performPhysicalUserDelete = async (userId) => {
       `SET LOCAL statement_timeout = '${USER_DELETE_STATEMENT_TIMEOUT_MS}ms'`,
       { transaction: t }
     );
+    const user = await User.findByPk(userId, { transaction: t });
+    if (user) await preserveJuridicaUserHistory(user, t);
     await cleanupDirectUserDependencies(userId, t);
     await detachUserForeignKeyReferences(userId, t);
     await User.destroy({ where: { id: userId }, transaction: t });

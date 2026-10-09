@@ -4752,7 +4752,7 @@ function PlaneacionEfectividad() {
       const response = await gestionInformacionService.getPlanAccionDashboard();
       setDashboard(response.data || { rows: [], filters: {}, meta: {} });
     } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar PlaneaciÃ³n y Efectividad', { variant: 'error' });
+      if (!silent) { enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar Planeación y Efectividad', { variant: 'error' }); }
     } finally {
       if (!silent) setLoading(false);
     }

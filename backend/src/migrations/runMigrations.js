@@ -618,6 +618,13 @@ const runMigrations = async () => {
     await models.Autoevaluacion.sync();
     await models.AutoevaluacionParticipante.sync();
     await models.AutoevaluacionPrograma.sync();
+    await models.PlanMejoramiento.sync();
+    await models.PlanMejoramientoTarifaVersion.sync();
+    await models.PlanMejoramientoAsignacion.sync();
+    await models.PlanMejoramientoFlujoHistorial.sync();
+    await models.JuridicaCaso.sync();
+    await models.JuridicaHistorial.sync();
+    await models.JuridicaAdjunto.sync();
     await models.InstrumentForm.sync();
     await models.InstrumentSection.sync();
     await models.InstrumentQuestion.sync();
