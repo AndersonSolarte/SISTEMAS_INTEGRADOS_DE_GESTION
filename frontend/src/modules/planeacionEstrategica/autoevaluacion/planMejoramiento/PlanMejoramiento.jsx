@@ -619,6 +619,18 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   };
 
   const stats = useMemo(() => editor ? planStats(editor) : null, [editor]);
+  const workflowState = editor?.asignacion?.estado_flujo || '';
+  const executionLocked = executionMode && ['en_revision', 'en_firme'].includes(workflowState);
+  const assignedUser = editor?.asignacion?.usuario;
+  const assignmentResponsible = assignedUser ? {
+    responsableId: assignedUser.id,
+    responsableNombre: assignedUser.nombre,
+    responsableDocumento: assignedUser.documento,
+    responsableEmail: assignedUser.email,
+    cargoResponsable: assignedUser.cargo,
+    responsableDependencia: assignedUser.dependencia,
+    responsableVicerrectoria: assignedUser.vicerrectoria
+  } : {};
   const planOpportunities = useMemo(() => {
     const map = new Map();
     [...(editor?.oportunidadesAutoevaluacion || []), ...opportunities].forEach((item) => {
@@ -769,7 +781,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           <Stack direction="row" alignItems="center" spacing={1.2}>
             <IconButton onClick={() => setEditor(null)}><ArrowBackIcon /></IconButton>
             <Box>
-              <Typography variant="h5" sx={{ fontWeight: 950, color: '#0f172a' }}>{editor.id ? 'Editar plan de mejoramiento' : 'Nuevo plan de mejoramiento'}</Typography>
+              <Typography variant="h5" sx={{ fontWeight: 950, color: '#0f172a' }}>{executionMode ? 'Ejecución del plan de mejoramiento' : editor.id ? 'Editar plan de mejoramiento' : 'Nuevo plan de mejoramiento'}</Typography>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
                 <Typography variant="body2" color="text.secondary">Los cambios se guardan automáticamente mientras trabaja.</Typography>
                 <Chip
@@ -781,7 +793,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               </Stack>
             </Box>
           </Stack>
-          <Stack direction="row" spacing={1}><Button disabled={!editor.id} startIcon={<DownloadIcon />} onClick={() => exportExcel(editor.id, editor.programa)} sx={{ textTransform: 'none', fontWeight: 850 }}>Exportar Excel</Button><Button variant="contained" disabled={saving} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={save} sx={{ textTransform: 'none', fontWeight: 900 }}>{saving ? 'Guardando…' : 'Guardar ahora'}</Button></Stack>
+          <Stack direction="row" spacing={1}><Button disabled={!editor.id} startIcon={<DownloadIcon />} onClick={() => exportExcel(editor.id, editor.programa)} sx={{ textTransform: 'none', fontWeight: 850 }}>Exportar Excel</Button><Button variant="contained" disabled={saving || executionLocked} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={save} sx={{ textTransform: 'none', fontWeight: 900 }}>{saving ? 'Guardando…' : 'Guardar ahora'}</Button></Stack>
         </Stack>
       </Paper>
 
@@ -792,11 +804,63 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         <Metric icon={<BudgetIcon />} label="Presupuesto" value={money.format(stats.budget)} color="#d97706" />
       </Box>
 
+      {editor.id && (
+        <Paper elevation={0} sx={{ p: 1.7, mb: 1.5, borderRadius: 3, border: '1px solid #cbd5e1', bgcolor: '#fff', flexShrink: 0 }}>
+          <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" spacing={2} alignItems={{ lg: 'center' }}>
+            <Box>
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>Responsable y control del flujo</Typography>
+                <Chip size="small" label={workflowTone(workflowState).label} color={workflowTone(workflowState).color} sx={{ fontWeight: 850 }} />
+              </Stack>
+              <Typography variant="body2" sx={{ color: '#64748b', mt: 0.4 }}>
+                {assignedUser ? `${assignedUser.nombre} · CC ${assignedUser.documento || 'sin documento'} · ${assignedUser.cargo || 'cargo no registrado'}` : 'El plan todavía no tiene responsable de ejecución asignado.'}
+              </Typography>
+              {editor.asignacion?.ultima_observacion && <Typography variant="caption" sx={{ color: '#9a3412', fontWeight: 750 }}>Última observación: {editor.asignacion.ultima_observacion}</Typography>}
+            </Box>
+            {!executionMode && (
+              <Box sx={{ width: { xs: '100%', lg: 470 } }}>
+                <ResponsibleAutocomplete activity={assignmentResponsible} onChange={assignExecutionResponsible} />
+                <Typography variant="caption" sx={{ color: '#64748b' }}>Al asignar, se habilita automáticamente “Ejecución Autoevaluación” en el SIAC del usuario.</Typography>
+              </Box>
+            )}
+            {executionMode && (
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                {['asignado', 'devuelto'].includes(workflowState) && <Button variant="contained" disabled={workflowBusy} onClick={() => executeWorkflowAction('iniciar')} sx={{ textTransform: 'none', fontWeight: 900 }}>Iniciar ejecución</Button>}
+                {['en_ejecucion', 'devuelto'].includes(workflowState) && <Button variant="contained" color="warning" disabled={workflowBusy} onClick={() => executeWorkflowAction('enviar_revision')} sx={{ textTransform: 'none', fontWeight: 900 }}>Enviar a revisión</Button>}
+                {workflowState === 'en_revision' && <Alert severity="warning" sx={{ py: 0 }}>En revisión por Autoevaluación. La edición está bloqueada.</Alert>}
+                {workflowState === 'en_firme' && <Alert severity="success" sx={{ py: 0 }}>Plan aprobado y en firme.</Alert>}
+              </Stack>
+            )}
+          </Stack>
+          {!executionMode && workflowState === 'en_revision' && (
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} sx={{ mt: 1.5 }}>
+              <TextField fullWidth size="small" label="Observación de la revisión" value={workflowObservation} onChange={(event) => setWorkflowObservation(event.target.value)} />
+              <Button color="warning" variant="outlined" disabled={workflowBusy} onClick={() => executeWorkflowAction('devolver')} sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}>Devolver para corrección</Button>
+              <Button color="success" variant="contained" disabled={workflowBusy} onClick={() => executeWorkflowAction('aprobar')} sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}>Aprobar y dejar en firme</Button>
+            </Stack>
+          )}
+          {!executionMode && workflowState === 'en_firme' && (
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} sx={{ mt: 1.5 }}>
+              <TextField fullWidth size="small" label="Motivo obligatorio para reabrir" value={workflowObservation} onChange={(event) => setWorkflowObservation(event.target.value)} />
+              <Button color="warning" variant="outlined" disabled={workflowBusy} onClick={() => executeWorkflowAction('reabrir')} sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}>Reabrir ejecución</Button>
+            </Stack>
+          )}
+          {(editor.asignacion?.historial || []).length > 0 && (
+            <Box sx={{ mt: 1.3, pt: 1.1, borderTop: '1px solid #e2e8f0' }}>
+              <Typography variant="caption" sx={{ fontWeight: 900, color: '#475569' }}>Trazabilidad del flujo</Typography>
+              <Stack direction="row" spacing={0.8} sx={{ mt: 0.7, overflowX: 'auto', pb: 0.3 }}>
+                {editor.asignacion.historial.map((item) => <Chip key={item.id} size="small" variant="outlined" label={`${workflowTone(item.estado_nuevo).label} · ${item.actor_nombre || 'Usuario'} · ${item.createdAt ? new Date(item.createdAt).toLocaleString('es-CO') : ''}${item.observacion ? ` · ${item.observacion}` : ''}`} sx={{ flexShrink: 0, maxWidth: 520 }} />)}
+              </Stack>
+            </Box>
+          )}
+        </Paper>
+      )}
+
       <Paper elevation={0} sx={{ borderRadius: 3.5, border: '1px solid #dbe3ee', overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', boxShadow: '0 12px 35px rgba(15,23,42,.05)' }}>
         <Box sx={{ p: { xs: 1, md: 1.3 }, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0', overflowX: 'auto', flexShrink: 0 }}>
         <Tabs
           value={tab}
-          onChange={(_, value) => setTab(value)}
+          onChange={(_, value) => { if (!executionMode || value === 3) setTab(value); }}
           variant="fullWidth"
           TabIndicatorProps={{ sx: { display: 'none' } }}
           sx={{
@@ -810,7 +874,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             '& .Mui-selected': { bgcolor: '#ffffff', color: '#1d4ed8 !important', borderColor: '#bfdbfe', boxShadow: '0 5px 16px rgba(37,99,235,.10)' }
           }}
         >
-          <Tab label="01 · Identificación" /><Tab label="02 · Objetivos y actividades" /><Tab label="03 · Presupuesto" /><Tab label="04 · Seguimiento" />
+          <Tab disabled={executionMode} label="01 · Identificación" /><Tab disabled={executionMode} label="02 · Objetivos y actividades" /><Tab disabled={executionMode} label="03 · Presupuesto" /><Tab label="04 · Seguimiento" />
         </Tabs>
         </Box>
 
@@ -1095,20 +1159,20 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   </Stack>
                   <LinearProgress variant="determinate" value={percent(activity)} sx={{ mb: 2, height: 8, borderRadius: 8, bgcolor: '#e2e8f0', '& .MuiLinearProgress-bar': { borderRadius: 8, bgcolor: percent(activity) >= 100 ? '#16a34a' : '#2563eb' } }} />
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5 }}>
-                    <TextField label="Valor alcanzado" type="number" value={activity.metaAlcanzada} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'metaAlcanzada', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
-                    <TextField label="Fecha del corte" type="date" InputLabelProps={{ shrink: true }} value={activity.fechaSeguimiento} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'fechaSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
-                    <TextField select label="Verificación" value={activity.verificacionSeguimiento || 'pendiente'} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'verificacionSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}>
+                    <TextField disabled={executionLocked} label="Valor alcanzado" type="number" value={activity.metaAlcanzada} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'metaAlcanzada', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
+                    <TextField disabled={executionLocked} label="Fecha del corte" type="date" InputLabelProps={{ shrink: true }} value={activity.fechaSeguimiento} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'fechaSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
+                    <TextField disabled={executionLocked} select label="Verificación" value={activity.verificacionSeguimiento || 'pendiente'} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'verificacionSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}>
                       <MenuItem value="pendiente">Pendiente de verificación</MenuItem><MenuItem value="verificado">Cumplimiento verificado</MenuItem><MenuItem value="requiere_ajustes">Requiere ajustes</MenuItem>
                     </TextField>
-                    <TextField label="Enlace de evidencia (opcional si adjunta archivo)" value={activity.evidencia} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'evidencia', e.target.value)} sx={{ gridColumn: { md: 'span 5' } }} />
-                    <TextField label="Observaciones y retroalimentación" value={activity.observaciones} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'observaciones', e.target.value)} multiline minRows={2} sx={{ gridColumn: { md: 'span 12' } }} />
+                    <TextField disabled={executionLocked} label="Enlace de evidencia (opcional si adjunta archivo)" value={activity.evidencia} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'evidencia', e.target.value)} sx={{ gridColumn: { md: 'span 5' } }} />
+                    <TextField disabled={executionLocked} label="Observaciones y retroalimentación" value={activity.observaciones} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'observaciones', e.target.value)} multiline minRows={2} sx={{ gridColumn: { md: 'span 12' } }} />
                   </Box>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mt: 1.5 }}>
-                    <Button component="label" variant="outlined" startIcon={<AttachIcon />} sx={{ textTransform: 'none', fontWeight: 850 }}>
+                    <Button disabled={executionLocked} component="label" variant="outlined" startIcon={<AttachIcon />} sx={{ textTransform: 'none', fontWeight: 850 }}>
                       {evidenceFiles[activity.uid || `${objectiveIndex}_${activityIndex}`]?.name || 'Adjuntar evidencia'}
                       <input hidden type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.zip" onChange={(event) => setEvidenceFiles((previous) => ({ ...previous, [activity.uid || `${objectiveIndex}_${activityIndex}`]: event.target.files?.[0] || null }))} />
                     </Button>
-                    <Button variant="contained" disabled={recordingFollowUp === (activity.uid || `${objectiveIndex}_${activityIndex}`)} onClick={() => registerFollowUp(objectiveIndex, activityIndex)} sx={{ textTransform: 'none', fontWeight: 900 }}>
+                    <Button variant="contained" disabled={executionLocked || recordingFollowUp === (activity.uid || `${objectiveIndex}_${activityIndex}`)} onClick={() => registerFollowUp(objectiveIndex, activityIndex)} sx={{ textTransform: 'none', fontWeight: 900 }}>
                       {recordingFollowUp === (activity.uid || `${objectiveIndex}_${activityIndex}`) ? 'Registrando…' : 'Registrar corte de seguimiento'}
                     </Button>
                   </Stack>

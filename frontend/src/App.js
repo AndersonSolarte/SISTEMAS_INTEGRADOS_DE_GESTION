@@ -175,12 +175,9 @@ function App() {
                   <Route
                     path="autoevaluacion-ejecucion"
                     element={
-                      <RoleRoute
-                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.AUTOEVALUACION]}
-                        permissionKey="autoevaluacion_ejecucion"
-                      >
+                      <PrivateRoute>
                         <AutoevaluacionModule executionMode />
-                      </RoleRoute>
+                      </PrivateRoute>
                     }
                   />
                   <Route

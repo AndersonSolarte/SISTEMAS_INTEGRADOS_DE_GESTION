@@ -997,6 +997,7 @@ const exportExcel = async (req, res) => {
   try {
     const plan = await PlanMejoramiento.findByPk(req.params.id);
     if (!plan) return res.status(404).json({ success: false, message: 'Plan de mejoramiento no encontrado' });
+    if (!(await canAccessPlan(req, plan.id))) return res.status(403).json({ success: false, message: 'Este plan no está asignado a tu usuario' });
     if (!fs.existsSync(TEMPLATE_PATH)) {
       return res.status(500).json({ success: false, message: 'No se encontró la plantilla institucional de exportación' });
     }
