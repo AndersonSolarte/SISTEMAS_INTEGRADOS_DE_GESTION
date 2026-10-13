@@ -1,7 +1,7 @@
 // PEI StrategicActionPlanEditor Module
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, Grid, IconButton, InputAdornment, Menu, MenuItem, Paper, Stack, Tab, Tabs, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
@@ -17,6 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import strategicPlanningService from '../services/strategicPlanningService';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import RichTextEditor, { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
+import MeetingCalendarScheduler from '../components/meetingMinute/MeetingCalendarScheduler';
 
 const ACTION_LABELS = {
   schedule_meeting: 'Programar reunión', start_formulation: 'Iniciar formulación',
@@ -145,10 +146,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [meetingParticipants, setMeetingParticipants] = useState([]);
   const [participantDocument, setParticipantDocument] = useState('');
   const [participantCandidate, setParticipantCandidate] = useState(null);
+  const [participantOptions, setParticipantOptions] = useState([]);
   const [participantMeetingRole, setParticipantMeetingRole] = useState('principal');
   const [participantSearching, setParticipantSearching] = useState(false);
   const [attendeeDocument, setAttendeeDocument] = useState('');
   const [attendeeCandidate, setAttendeeCandidate] = useState(null);
+  const [attendeeOptions, setAttendeeOptions] = useState([]);
   const [attendeeMeetingRole, setAttendeeMeetingRole] = useState('participant');
   const [attendeeSearching, setAttendeeSearching] = useState(false);
   const [externalAttendeeMode, setExternalAttendeeMode] = useState(false);
@@ -191,7 +194,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [pdfMenuAnchor, setPdfMenuAnchor] = useState(null);
   const [actaData, setActaData] = useState({
     responsables: '', dependencia: '', lugar: '', fecha: '', horario: '', objetivo: '', desarrollo: '', conclusiones: '', participantes: []
-  });  const load = useCallback(async (showLoading = true) => {
+  });
+  const [calendarSchedulerOpen, setCalendarSchedulerOpen] = useState(false);
+  const load = useCallback(async (showLoading = true) => {
     if (!planId) return;
     if (showLoading) setLoading(true);
     setLoadError('');
@@ -248,6 +253,63 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const locations = useMemo(() => (platformPlan?.catalogItems || []).filter((entry) => entry.catalog_type === 'meeting_location' && entry.active), [platformPlan?.catalogItems]);
 
+  const calendarResponsibles = useMemo(() => {
+    const list = [];
+    const leaderUser = detail?.currentResponsibility?.responsibleUser;
+    if (leaderUser && leaderUser.email) {
+      list.push({
+        id: leaderUser.id,
+        name: leaderUser.nombre,
+        email: leaderUser.email,
+        document: leaderUser.username || '',
+        position: leaderUser.cargo || '',
+        source: 'leader'
+      });
+    }
+    if (detail?.owner?.email && !list.some((l) => l.email.toLowerCase() === detail.owner.email.toLowerCase())) {
+      list.push({
+        id: detail.owner.id,
+        name: detail.owner.name || detail.owner.nombre,
+        email: detail.owner.email,
+        document: detail.owner.document || detail.owner.username || '',
+        position: detail.owner.cargo || '',
+        source: 'leader'
+      });
+    }
+    (meetingParticipants || []).forEach((p) => {
+      if (['principal', 'co_responsible'].includes(p.meeting_role) && p.email) {
+        if (!list.some((l) => l.email.toLowerCase() === p.email.toLowerCase())) {
+          list.push({
+            id: p.user_id,
+            name: p.name,
+            email: p.email,
+            document: p.document || '',
+            position: p.role_title || '',
+            source: 'participant'
+          });
+        }
+      }
+    });
+    return list;
+  }, [detail?.currentResponsibility?.responsibleUser, detail?.owner, meetingParticipants]);
+
+  const calendarParticipants = useMemo(() => {
+    const list = [];
+    (meetingParticipants || []).forEach((p) => {
+      if (p.email) {
+        list.push({
+          id: p.user_id,
+          name: p.name,
+          email: p.email,
+          document: p.document || '',
+          position: p.role_title || '',
+          source: 'participant'
+        });
+      }
+    });
+    return list;
+  }, [meetingParticipants]);
+
   const activeMeeting = useMemo(() => {
     const meetings = detail?.meetings || [];
     if (selectedMeetingId === '__new__') return null;
@@ -258,6 +320,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     if (!activeMeeting?.minuteVersions?.length) return null;
     return [...activeMeeting.minuteVersions].sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
   }, [activeMeeting]);
+
+  useEffect(() => {
+    if (!open || editingActa || latestMinute?.status !== 'signing') return undefined;
+    const signatureRefresh = setInterval(() => load(false), 15000);
+    return () => clearInterval(signatureRefresh);
+  }, [open, editingActa, latestMinute?.id, latestMinute?.status, load]);
 
   const handleDownloadPdf = async (type = 'original') => {
     setPdfMenuAnchor(null);
@@ -805,6 +873,25 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     setTimeout(() => document.getElementById('activity-capture-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   };
 
+  const searchMeetingPeople = async (query, setOptions, setSearching) => {
+    const value = String(query || '').trim();
+    if (value.length < 2) {
+      setOptions([]);
+      return;
+    }
+    const pedId = detail?.term?.strategicPlan?.id || platformPlan?.id;
+    if (!pedId) return;
+    setSearching(true);
+    try {
+      const response = await strategicPlanningService.searchMeetingParticipants(pedId, value);
+      setOptions(response?.data || []);
+    } catch (_) {
+      setOptions([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
   const lookupParticipant = async () => {
     const document = participantDocument.trim();
     if (!document) return enqueueSnackbar('Digite la cédula que desea consultar.', { variant: 'warning' });
@@ -997,9 +1084,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     enqueueSnackbar('Nueva acta preparada. Complete la información y guárdela.', { variant: 'info' });
   };
   const saveMeeting = async () => {
-    if (!meeting.title?.trim() || !meeting.starts_at || !richTextPlain(meeting.objective)) return enqueueSnackbar('Título, fecha y objetivo son obligatorios.', { variant: 'warning' });
-    if (!meetingParticipants.length) return enqueueSnackbar('Agregue al menos un participante a la agenda.', { variant: 'warning' });
-    if (!meetingParticipants.some((participant) => participant.meeting_role === 'principal')) return enqueueSnackbar('Seleccione un Responsable principal para el acta.', { variant: 'warning' });
+    if (!meeting.title?.trim() || !meeting.starts_at || !richTextPlain(meeting.objective)) {
+      enqueueSnackbar('Título, fecha y objetivo son obligatorios.', { variant: 'warning' });
+      return false;
+    }
+    if (!meetingParticipants.length) {
+      enqueueSnackbar('Agregue al menos un participante a la agenda.', { variant: 'warning' });
+      return false;
+    }
+    if (!meetingParticipants.some((participant) => participant.meeting_role === 'principal')) {
+      enqueueSnackbar('Seleccione un Responsable principal para el acta.', { variant: 'warning' });
+      return false;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -1014,7 +1110,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         : await strategicPlanningService.createMeeting(planId, payload);
       if (!activeMeetingId && savedMeeting?.data?.id) setSelectedMeetingId(String(savedMeeting.data.id));
       await load(); enqueueSnackbar(activeMeetingId ? 'Reunión y roles actualizados.' : 'Reunión y participantes registrados.', { variant: 'success' });
-    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible programar la reunión.', { variant: 'error' }); }
+      return true;
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible programar la reunión.', { variant: 'error' });
+      return false;
+    }
     finally { setSaving(false); }
   };
   // eslint-disable-next-line no-unused-vars
@@ -1781,9 +1881,30 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       <Box sx={{ gridColumn: '1 / -1', gridRow: 1 }}>
                         <Box sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f5f9ff', border: '1px solid #cfe0f4' }}>
                           <Typography fontWeight={900} color="#17345f">Responsables de la reunión ({meetingParticipants.filter((entry) => ['principal', 'co_responsible'].includes(entry.meeting_role)).length})</Typography>
-                          <Typography variant="body2" color="#64748b" mb={1.5}>Consulte la cédula y asigne solamente Responsable principal o Corresponsable. El responsable principal aparecerá primero en el acta.</Typography>
+                          <Typography variant="body2" color="#64748b" mb={1.5}>Busque por nombre, correo o cédula y asigne solamente Responsable principal o Corresponsable. El responsable principal aparecerá primero en el acta.</Typography>
                           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                            <TextField fullWidth size="small" label="Cédula del responsable" value={participantDocument} onChange={(e) => { setParticipantDocument(e.target.value.replace(/[^0-9A-Za-z-]/g, '')); setParticipantCandidate(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupParticipant(); } }} />
+                            <Autocomplete
+                              fullWidth
+                              freeSolo
+                              options={participantOptions}
+                              loading={participantSearching}
+                              filterOptions={(options) => options}
+                              getOptionLabel={(option) => typeof option === 'string' ? option : `${option.name || ''} · ${option.document || option.email || ''}`}
+                              inputValue={participantDocument}
+                              onInputChange={(_, value, reason) => {
+                                if (reason === 'reset') return;
+                                setParticipantDocument(value);
+                                setParticipantCandidate(null);
+                                searchMeetingPeople(value, setParticipantOptions, setParticipantSearching);
+                              }}
+                              onChange={(_, option) => {
+                                if (!option || typeof option === 'string') return;
+                                setParticipantCandidate(option);
+                                setParticipantDocument(option.document || option.email || option.name || '');
+                                setParticipantOptions([]);
+                              }}
+                              renderInput={(params) => <TextField {...params} size="small" label="Nombre, correo o cédula del responsable" />}
+                            />
                             <Button variant="outlined" startIcon={participantSearching ? <CircularProgress size={16} /> : <PersonSearch />} disabled={participantSearching || !participantDocument.trim()} onClick={lookupParticipant} sx={{ minWidth: 132, borderRadius: 2, textTransform: 'none', fontWeight: 850 }}>Consultar</Button>
                           </Stack>
                           {participantCandidate && (
@@ -1827,9 +1948,31 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     </Box>
                     <Paper elevation={0} sx={{ mt: 2, p: 2, borderRadius: 2.5, bgcolor: '#ffffff', border: '1px solid #dbe7f4' }}>
                       <Typography fontWeight={900} color="#17345f">2. Participantes y firmas ({meetingParticipants.filter((entry) => ['collaborator', 'participant'].includes(entry.meeting_role)).length})</Typography>
-                      <Typography variant="body2" color="#64748b" mb={1.5}>Agregue aquí colaboradores y demás asistentes. Estos roles permanecen separados de los responsables de la reunión.</Typography>
+                      <Typography variant="body2" color="#64748b" mb={1.5}>Busque asistentes por nombre, correo o cédula. Si no existen en SIAC, puede agregarlos como participantes externos.</Typography>
                       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                        <TextField fullWidth size="small" label="Cédula del participante" value={attendeeDocument} onChange={(event) => { setAttendeeDocument(event.target.value.replace(/[^0-9A-Za-z-]/g, '')); setAttendeeCandidate(null); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); lookupAttendee(); } }} />
+                        <Autocomplete
+                          fullWidth
+                          freeSolo
+                          options={attendeeOptions}
+                          loading={attendeeSearching}
+                          filterOptions={(options) => options}
+                          getOptionLabel={(option) => typeof option === 'string' ? option : `${option.name || ''} · ${option.document || option.email || ''}`}
+                          inputValue={attendeeDocument}
+                          onInputChange={(_, value, reason) => {
+                            if (reason === 'reset') return;
+                            setAttendeeDocument(value);
+                            setAttendeeCandidate(null);
+                            searchMeetingPeople(value, setAttendeeOptions, setAttendeeSearching);
+                          }}
+                          onChange={(_, option) => {
+                            if (!option || typeof option === 'string') return;
+                            setAttendeeCandidate(option);
+                            setAttendeeDocument(option.document || option.email || option.name || '');
+                            setExternalAttendeeMode(false);
+                            setAttendeeOptions([]);
+                          }}
+                          renderInput={(params) => <TextField {...params} size="small" label="Nombre, correo o cédula del participante" />}
+                        />
                         <Button variant="outlined" startIcon={attendeeSearching ? <CircularProgress size={16} /> : <PersonSearch />} disabled={attendeeSearching || !attendeeDocument.trim()} onClick={lookupAttendee} sx={{ minWidth: 132, borderRadius: 2, textTransform: 'none', fontWeight: 850 }}>Consultar</Button>
                       </Stack>
                       {!externalAttendeeMode && (
@@ -1933,9 +2076,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           Vista previa del acta
                         </Typography>
                       </Stack>
-                      <Stack direction="row" alignItems="center" gap={0.75} sx={{ color: '#15803d', fontSize: 11, fontWeight: 750, bgcolor: '#f0fdf4', px: 1.25, py: 0.35, borderRadius: 1.5, border: '1px solid #bbf7d0' }}>
-                        <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#22c55e' }} />
-                        <span>Todo guardado · Autoguardado activo</span>
+                      <Stack direction="row" alignItems="center" gap={0.75} sx={{ color: activeMeeting ? '#15803d' : '#1d4ed8', fontSize: 11, fontWeight: 750, bgcolor: activeMeeting ? '#f0fdf4' : '#eff6ff', px: 1.25, py: 0.35, borderRadius: 1.5, border: `1px solid ${activeMeeting ? '#bbf7d0' : '#bfdbfe'}` }}>
+                        <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: saving ? '#f59e0b' : (activeMeeting ? '#22c55e' : '#3b82f6') }} />
+                        <span>{saving ? 'Guardando cambios…' : (activeMeeting ? 'Guardado en la base de datos' : 'Guarde la reunión para conservar los cambios')}</span>
                       </Stack>
                     </Stack>
 
@@ -1981,9 +2124,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             variant="contained"
                             color="success"
                             startIcon={<Save fontSize="small" />}
-                            onClick={() => {
-                              setEditingActa(false);
-                              enqueueSnackbar('Borrador del acta actualizado.', { variant: 'success' });
+                            disabled={saving}
+                            onClick={async () => {
+                              const saved = await saveMeeting();
+                              if (saved) setEditingActa(false);
                             }}
                           >
                             Guardar edición
@@ -2516,31 +2660,49 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </Typography>
                     </Box>
 
-                    {availableTransitions.length > 0 && (
-                      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.25} sx={{ width: { xs: '100%', sm: 'auto' }, flexShrink: 0 }}>
-                        {availableTransitions.map((entry) => (
-                          <Button
-                            key={entry.action}
-                            variant="contained"
-                            startIcon={<PlayArrow />}
-                            onClick={() => transition(entry.action)}
-                            sx={{
-                              borderRadius: 2,
-                              fontWeight: 850,
-                              px: 2.5,
-                              py: 0.8,
-                              textTransform: 'none',
-                              fontSize: 13,
-                              bgcolor: '#2563eb',
-                              boxShadow: '0 2px 6px rgba(37,99,235,0.25)',
-                              '&:hover': { bgcolor: '#1d4ed8' }
-                            }}
-                          >
-                            {ACTION_LABELS[entry.action] || entry.action}
-                          </Button>
-                        ))}
-                      </Stack>
-                    )}
+                    <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.25} sx={{ width: { xs: '100%', sm: 'auto' }, flexShrink: 0 }} alignItems="center">
+                      <Button
+                        variant="outlined"
+                        startIcon={<CalendarMonth />}
+                        onClick={() => setCalendarSchedulerOpen(true)}
+                        sx={{
+                          borderRadius: 2,
+                          fontWeight: 850,
+                          px: 2,
+                          py: 0.8,
+                          textTransform: 'none',
+                          fontSize: 13,
+                          borderColor: '#93c5fd',
+                          color: '#1d4ed8',
+                          bgcolor: '#f0f9ff',
+                          boxShadow: '0 1px 3px rgba(37,99,235,0.08)',
+                          '&:hover': { bgcolor: '#e0effe', borderColor: '#60a5fa' }
+                        }}
+                      >
+                        Programar reunión de seguimiento
+                      </Button>
+                      {availableTransitions.map((entry) => (
+                        <Button
+                          key={entry.action}
+                          variant="contained"
+                          startIcon={<PlayArrow />}
+                          onClick={() => transition(entry.action)}
+                          sx={{
+                            borderRadius: 2,
+                            fontWeight: 850,
+                            px: 2.5,
+                            py: 0.8,
+                            textTransform: 'none',
+                            fontSize: 13,
+                            bgcolor: '#2563eb',
+                            boxShadow: '0 2px 6px rgba(37,99,235,0.25)',
+                            '&:hover': { bgcolor: '#1d4ed8' }
+                          }}
+                        >
+                          {ACTION_LABELS[entry.action] || entry.action}
+                        </Button>
+                      ))}
+                    </Stack>
                   </Stack>
                 </Paper>
 
@@ -4011,6 +4173,29 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* DIÁLOGO GOOGLE CALENDAR PARA SEGUIMIENTO DEL PLAN DE ACCIÓN */}
+      {detail?.id && (
+        <MeetingCalendarScheduler
+          dialogMode
+          open={calendarSchedulerOpen}
+          onClose={() => setCalendarSchedulerOpen(false)}
+          service={strategicPlanningService}
+          contextType="action_plan"
+          planId={detail.id}
+          title={`Programar reunión de seguimiento · ${detail.code || 'Plan de Acción'}`}
+          minuteTitle={`Seguimiento Plan de Acción: ${detail.code || ''} - ${detail.organizationalUnit?.name || detail.title || ''}`}
+          defaultLocation="Presencial / Sala de Juntas UNICESMAG"
+          responsibles={calendarResponsibles}
+          participants={calendarParticipants}
+          lookupParticipantByDocument={async (doc) => {
+            const pedId = detail?.term?.strategicPlan?.id || platformPlan?.id;
+            if (!pedId) throw new Error('No se identificó el PED');
+            const res = await strategicPlanningService.lookupMeetingParticipant(pedId, doc);
+            return res.data;
+          }}
+        />
+      )}
     </Dialog>
   );
 }

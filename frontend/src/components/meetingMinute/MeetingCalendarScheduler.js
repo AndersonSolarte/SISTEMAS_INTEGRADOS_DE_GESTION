@@ -53,9 +53,14 @@ const nextSessionTitle = (value) => {
 };
 
 export default function MeetingCalendarScheduler({
-  minuteId, minuteTitle, defaultLocation, participants = [], responsibles = [],
-  lookupParticipantByDocument, dialogMode = false
+  minuteId, planId, minuteTitle, defaultLocation, participants = [], responsibles = [],
+  lookupParticipantByDocument, dialogMode = false,
+  service = meetingMinuteService, contextType = 'minute',
+  title = 'Programar siguiente sesión',
+  open: controlledOpen, onClose: controlledOnClose
 }) {
+  const activeEntityId = planId || minuteId;
+  const isControlled = typeof controlledOpen === 'boolean';
   const { enqueueSnackbar } = useSnackbar();
   const initialPeople = useMemo(() => normalizePeople([
     ...responsibles.map((person) => ({ ...person, source: 'responsible' })),
@@ -66,8 +71,13 @@ export default function MeetingCalendarScheduler({
   const fieldRefs = useRef({});
   defaultsRef.current = { defaultLocation, enqueueSnackbar, initialPeople, minuteTitle };
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [activeMinuteId, setActiveMinuteId] = useState(minuteId);
+  const [internalDialogOpen, setInternalDialogOpen] = useState(false);
+  const dialogOpen = isControlled ? controlledOpen : internalDialogOpen;
+  const handleCloseDialog = () => {
+    if (isControlled && controlledOnClose) controlledOnClose();
+    else setInternalDialogOpen(false);
+  };
+  const [activeMinuteId, setActiveMinuteId] = useState(activeEntityId);
   const [loadError, setLoadError] = useState('');
   const [working, setWorking] = useState(false);
   const [configuration, setConfiguration] = useState(null);
@@ -93,8 +103,8 @@ export default function MeetingCalendarScheduler({
   });
 
   useEffect(() => {
-    setActiveMinuteId(minuteId);
-  }, [minuteId]);
+    setActiveMinuteId(planId || minuteId);
+  }, [minuteId, planId]);
 
   useEffect(() => {
     if (!activeMinuteId || (dialogMode && !dialogOpen)) return undefined;
@@ -102,7 +112,7 @@ export default function MeetingCalendarScheduler({
     const defaults = defaultsRef.current;
     setLoading(true);
     setLoadError('');
-    meetingMinuteService.getCalendarSchedule(activeMinuteId).then((response) => {
+    service.getCalendarSchedule(activeMinuteId).then((response) => {
       if (!active) return;
       const data = response.data || {};
       const schedule = data.schedule;
@@ -114,7 +124,7 @@ export default function MeetingCalendarScheduler({
       setSlotSuggestions([]);
       setShowCommonSchedule(false);
       if (data.connection?.connected) {
-        meetingMinuteService.listUpcomingCalendar()
+        service.listUpcomingCalendar(activeMinuteId)
           .then((result) => active && setUpcoming(Array.isArray(result.data) ? result.data : []))
           .catch(() => active && setUpcoming([]));
       } else {
@@ -173,7 +183,7 @@ export default function MeetingCalendarScheduler({
     const timer = window.setTimeout(async () => {
       setAutoChecking(true);
       try {
-        const response = await meetingMinuteService.checkCalendarAvailability(activeMinuteId, {
+        const response = await service.checkCalendarAvailability(activeMinuteId, {
           summary: form.summary.trim(),
           location: form.location.trim(),
           start_at: calendarDateTime(form.date, form.start),
@@ -298,7 +308,7 @@ export default function MeetingCalendarScheduler({
     if (issue) return enqueueSnackbar(issue, { variant: 'warning' });
     setWorking(true);
     try {
-      const response = await meetingMinuteService.checkCalendarAvailability(activeMinuteId, payload());
+      const response = await service.checkCalendarAvailability(activeMinuteId, payload());
       setAvailability(response.data?.availability || []);
     } catch (error) {
       applyConnectionFailure(error);
@@ -313,11 +323,11 @@ export default function MeetingCalendarScheduler({
     if (issue) return enqueueSnackbar(issue, { variant: 'warning' });
     setWorking(true);
     try {
-      const response = await meetingMinuteService.saveCalendarSchedule(activeMinuteId, payload(force));
+      const response = await service.saveCalendarSchedule(activeMinuteId, payload(force));
       const saved = response.data?.schedule;
       setExisting(saved || null);
       setAvailability(response.data?.availability || availability);
-      meetingMinuteService.listUpcomingCalendar()
+      service.listUpcomingCalendar(activeMinuteId)
         .then((result) => setUpcoming(Array.isArray(result.data) ? result.data : []))
         .catch(() => {});
       enqueueSnackbar(response.message || 'Reunión programada en Google Calendar.', { variant: 'success' });
@@ -336,7 +346,7 @@ export default function MeetingCalendarScheduler({
     if (issue) return enqueueSnackbar(issue, { variant: 'warning' });
     setSuggestionsWorking(true);
     try {
-      const response = await meetingMinuteService.suggestCalendarSlots(activeMinuteId, { ...payload(), days: 1 });
+      const response = await service.suggestCalendarSlots(activeMinuteId, { ...payload(), days: 1 });
       const slots = Array.isArray(response.data?.slots) ? response.data.slots : [];
       setSlotSuggestions(slots);
       if (!slots.length) enqueueSnackbar('No se encontraron horarios comunes para la fecha seleccionada.', { variant: 'info' });
@@ -382,7 +392,7 @@ export default function MeetingCalendarScheduler({
     if (!popup) return enqueueSnackbar('Permita las ventanas emergentes para conectar Google Calendar.', { variant: 'warning' });
     popup.document.write('<p style="font-family:Arial;padding:24px">Abriendo autorización segura de Google…</p>');
     try {
-      const response = await meetingMinuteService.startCalendarConnection(activeMinuteId);
+      const response = await service.startCalendarConnection(activeMinuteId);
       popup.location.href = response.data?.url;
       const poll = window.setInterval(() => {
         if (popup.closed) {
@@ -400,7 +410,7 @@ export default function MeetingCalendarScheduler({
     if (!window.confirm('¿Desea desconectar su cuenta de Google Calendar de SIAC?')) return;
     setWorking(true);
     try {
-      const response = await meetingMinuteService.disconnectCalendar(activeMinuteId);
+      const response = await service.disconnectCalendar(activeMinuteId);
       setConnection({ connected: false });
       setAvailability(null);
       enqueueSnackbar(response.message || 'Google Calendar fue desconectado.', { variant: 'success' });
@@ -415,12 +425,13 @@ export default function MeetingCalendarScheduler({
     if (!window.confirm(`¿Cancelar "${item.summary}"? Google notificará a todos los invitados y liberará el horario.`)) return;
     setWorking(true);
     try {
-      const response = await meetingMinuteService.cancelCalendarSchedule(item.minute_id);
+      const scheduleParam = item.id ? { scheduleId: item.id } : {};
+      const response = await service.cancelCalendarSchedule(item.minute_id || activeEntityId, scheduleParam);
       setUpcoming((current) => current.filter((entry) => entry.id !== item.id));
-      if (String(item.minute_id) === String(activeMinuteId)) {
+      if (String(item.minute_id || item.id) === String(activeMinuteId)) {
         setExisting(null);
         setAvailability(null);
-        if (String(activeMinuteId) !== String(minuteId)) setActiveMinuteId(minuteId);
+        if (String(activeMinuteId) !== String(activeEntityId)) setActiveMinuteId(activeEntityId);
       }
       enqueueSnackbar(response.message || 'Reunión cancelada en Google Calendar.', { variant: 'success' });
     } catch (error) {
@@ -438,28 +449,30 @@ export default function MeetingCalendarScheduler({
     : [];
 
   const dialogShell = (content) => (
-    <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="md" PaperProps={{ sx: { borderRadius: 3.5, overflow: 'hidden' } }}>
+    <Dialog open={dialogOpen} onClose={handleCloseDialog} fullWidth maxWidth="md" PaperProps={{ sx: { borderRadius: 3.5, overflow: 'hidden' } }}>
       <DialogTitle sx={{ px: 2.5, py: 1.8, bgcolor: '#1746b3', color: '#fff' }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
           <Stack direction="row" alignItems="center" gap={1}>
             <CalendarMonth />
-            <Typography fontWeight={950}>Programar siguiente sesión</Typography>
+            <Typography fontWeight={950}>{title || 'Programar siguiente sesión'}</Typography>
           </Stack>
-          <IconButton aria-label="Cerrar" onClick={() => setDialogOpen(false)} sx={{ color: '#fff' }}><Close /></IconButton>
+          <IconButton aria-label="Cerrar" onClick={handleCloseDialog} sx={{ color: '#fff' }}><Close /></IconButton>
         </Stack>
       </DialogTitle>
       <DialogContent dividers sx={{ p: { xs: 1.5, sm: 2.5 }, bgcolor: '#f5f8fd' }}>{content}</DialogContent>
     </Dialog>
   );
 
+  if (isControlled && !dialogOpen) return null;
+
   if (dialogMode && !dialogOpen) return (
     <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, borderColor: '#93c5fd', bgcolor: '#f8fbff' }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" gap={1.5}>
         <Stack direction="row" alignItems="center" gap={1.25}>
           <Box sx={{ width: 46, height: 46, borderRadius: 2.5, display: 'grid', placeItems: 'center', bgcolor: '#dbeafe', color: '#1d4ed8' }}><CalendarMonth /></Box>
-          <Box><Typography fontWeight={900}>Programar siguiente sesión</Typography><Typography variant="body2" color="text.secondary">Opcional · Revise disponibilidad y envíe la invitación desde Calendar.</Typography></Box>
+          <Box><Typography fontWeight={900}>{title || 'Programar siguiente sesión'}</Typography><Typography variant="body2" color="text.secondary">Opcional · Revise disponibilidad y envíe la invitación desde Calendar.</Typography></Box>
         </Stack>
-        <Button variant="contained" startIcon={<CalendarMonth />} onClick={() => { setActiveMinuteId(minuteId); setDialogOpen(true); }} sx={{ borderRadius: 2.5, px: 2.5, textTransform: 'none', fontWeight: 900 }}>
+        <Button variant="contained" startIcon={<CalendarMonth />} onClick={() => { setActiveMinuteId(activeEntityId); setInternalDialogOpen(true); }} sx={{ borderRadius: 2.5, px: 2.5, textTransform: 'none', fontWeight: 900 }}>
           {existing ? 'Ver programación' : 'Abrir Calendar'}
         </Button>
       </Stack>
@@ -471,7 +484,7 @@ export default function MeetingCalendarScheduler({
     return dialogMode ? dialogShell(loadingPanel) : loadingPanel;
   }
   if (loadError) {
-    const errorPanel = <Alert severity="warning"><strong>No puede programar esta sesión.</strong><br />{loadError}<br />Ingrese con la cuenta institucional del líder autorizado del acta.</Alert>;
+    const errorPanel = <Alert severity="warning"><strong>No puede programar esta sesión.</strong><br />{loadError}<br />{contextType === 'action_plan' ? 'Ingrese con la cuenta institucional del responsable autorizado del Plan de Acción.' : 'Ingrese con la cuenta institucional del líder autorizado del acta.'}</Alert>;
     return dialogMode ? dialogShell(errorPanel) : errorPanel;
   }
 
@@ -479,8 +492,8 @@ export default function MeetingCalendarScheduler({
     <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3, borderColor: '#93c5fd', bgcolor: '#f8fbff' }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1} mb={1.5}>
         <Box>
-          <Stack direction="row" gap={1} alignItems="center"><CalendarMonth color="primary" /><Typography fontWeight={900}>3. Programar siguiente reunión</Typography></Stack>
-          <Typography variant="body2" color="text.secondary" mt={0.4}>Opcional · Esta información no forma parte del acta ni del PDF.</Typography>
+          <Stack direction="row" gap={1} alignItems="center"><CalendarMonth color="primary" /><Typography fontWeight={900}>{title || 'Programar siguiente reunión'}</Typography></Stack>
+          <Typography variant="body2" color="text.secondary" mt={0.4}>{contextType === 'action_plan' ? 'Opcional · Programación de seguimiento sincronizada con Google Calendar institucional.' : 'Opcional · Esta información no forma parte del acta ni del PDF.'}</Typography>
         </Box>
         {existing?.google_event_url && <Button component={Link} href={existing.google_event_url} target="_blank" rel="noopener noreferrer" startIcon={<OpenInNew />} size="small" sx={{ textTransform: 'none', fontWeight: 800 }}>Abrir en Calendar</Button>}
       </Stack>
@@ -501,12 +514,12 @@ export default function MeetingCalendarScheduler({
           onClick={() => setShowUpcoming((value) => !value)}
           sx={{ textTransform: 'none', fontWeight: 850 }}
         >
-          {showUpcoming ? 'Ocultar próximas reuniones' : `Mis próximas reuniones (${upcoming.length})`}
+          {showUpcoming ? 'Ocultar próximas reuniones' : contextType === 'action_plan' ? `Reuniones programadas del Plan (${upcoming.length})` : `Mis próximas reuniones (${upcoming.length})`}
         </Button>
         {showUpcoming && (
           <Paper variant="outlined" sx={{ mt: 1, p: 1.25, borderRadius: 2.5, bgcolor: '#fff' }}>
             {!upcoming.length ? (
-              <Typography variant="body2" color="text.secondary">No tiene reuniones futuras programadas desde SIAC.</Typography>
+              <Typography variant="body2" color="text.secondary">{contextType === 'action_plan' ? 'No hay reuniones futuras programadas para este Plan de Acción.' : 'No tiene reuniones futuras programadas desde SIAC.'}</Typography>
             ) : (
               <Stack gap={0.9}>
                 {upcoming.map((item) => (
@@ -516,7 +529,7 @@ export default function MeetingCalendarScheduler({
                       <Typography variant="caption" color="text.secondary" display="block">
                         {formatScheduleDate(item.start_at)}{item.location ? ` · ${item.location}` : ''}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary">Acta {item.minute?.code || ''}</Typography>
+                      <Typography variant="caption" color="text.secondary">{item.plan?.code ? `Plan ${item.plan.code}` : item.minute?.code ? `Acta ${item.minute.code}` : ''}</Typography>
                     </Box>
                     <Stack direction="row" gap={0.5} flexWrap="wrap">
                       {item.google_event_url && (
@@ -526,12 +539,12 @@ export default function MeetingCalendarScheduler({
                       )}
                       <Button
                         size="small"
-                        variant={String(item.minute_id) === String(activeMinuteId) ? 'contained' : 'outlined'}
-                        disabled={String(item.minute_id) === String(activeMinuteId)}
-                        onClick={() => { setActiveMinuteId(item.minute_id); setShowUpcoming(false); setAvailability(null); }}
+                        variant={String(item.minute_id || item.id) === String(activeMinuteId) ? 'contained' : 'outlined'}
+                        disabled={String(item.minute_id || item.id) === String(activeMinuteId)}
+                        onClick={() => { setActiveMinuteId(item.minute_id || item.id); setShowUpcoming(false); setAvailability(null); }}
                         sx={{ textTransform: 'none', fontWeight: 800 }}
                       >
-                        {String(item.minute_id) === String(activeMinuteId) ? 'Editando' : 'Editar aquí'}
+                        {String(item.minute_id || item.id) === String(activeMinuteId) ? 'Editando' : 'Editar aquí'}
                       </Button>
                       <Button color="error" size="small" disabled={working} onClick={() => cancelScheduledMeeting(item)} sx={{ textTransform: 'none', fontWeight: 800 }}>
                         Cancelar
@@ -557,7 +570,7 @@ export default function MeetingCalendarScheduler({
           onChange={(event) => update('summary', event.target.value.slice(0, 240))}
           inputRef={(element) => { fieldRefs.current.summary = element; }}
           error={Boolean(fieldErrors.summary)}
-          helperText={fieldErrors.summary || 'Propuesto automáticamente desde el título del acta; puede modificarlo.'}
+          helperText={fieldErrors.summary || (contextType === 'action_plan' ? 'Propuesto automáticamente desde el Plan de Acción; puede modificarlo.' : 'Propuesto automáticamente desde el título del acta; puede modificarlo.')}
           sx={{ gridColumn: { sm: '1 / -1' } }}
         />
         <TextField
@@ -657,7 +670,7 @@ export default function MeetingCalendarScheduler({
           const isOrganizer = person.email === organizer?.email;
           const color = result?.status === 'available' ? 'success' : result?.status === 'busy' ? 'error' : result?.status === 'unknown' ? 'default' : 'primary';
           const label = result?.status === 'available' ? 'Disponible' : result?.status === 'busy' ? 'Ocupado' : result?.status === 'unknown' ? 'No verificable' : 'Sin consultar';
-          const sourceLabel = ['responsible', 'participant', 'minute'].includes(person.source) ? 'Del acta' : person.source === 'internal' ? 'Interno' : 'Externo';
+          const sourceLabel = ['responsible', 'participant', 'minute'].includes(person.source) ? (contextType === 'action_plan' ? 'Del Plan' : 'Del acta') : person.source === 'internal' ? 'Interno' : 'Externo';
           return <Box key={person.email} sx={{ display: 'grid', gridTemplateColumns: '1fr auto auto', alignItems: 'center', gap: 0.75, p: 0.9, bgcolor: '#fff', border: '1px solid #dbeafe', borderRadius: 2 }}><Box><Stack direction="row" alignItems="center" gap={0.6} flexWrap="wrap"><Typography variant="body2" fontWeight={800}>{person.name || person.email}</Typography>{isOrganizer && <Chip size="small" label="Organizador" color="primary" variant="outlined" sx={{ height: 19, fontSize: 10 }} />}<Chip size="small" label={sourceLabel} variant="outlined" sx={{ height: 19, fontSize: 10 }} /></Stack><Typography variant="caption" color="text.secondary">{person.document ? `CC ${person.document} · ` : ''}{person.email}</Typography></Box><Chip size="small" color={color} variant={result?.status === 'unknown' ? 'outlined' : 'filled'} label={label} /><Tooltip title={isOrganizer ? 'El Responsable Principal siempre organiza la reunión' : 'Quitar de esta invitación'}><span><IconButton disabled={isOrganizer} size="small" color="error" onClick={() => update('attendees', form.attendees.filter((item) => item.email !== person.email))}><DeleteOutline fontSize="small" /></IconButton></span></Tooltip></Box>;
         })}
       </Stack>

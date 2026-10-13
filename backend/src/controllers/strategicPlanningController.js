@@ -9,11 +9,14 @@ const {
   StrategicPlan, StrategicLevel, StrategicElement, StrategicTerm, StrategicCatalogItem,
   StrategicResponsibility, StrategicFieldDefinition, StrategicMonitoringPeriod,
   StrategicActionPlan, StrategicActionItem, StrategicActionItemVersion, StrategicWorkflowEvent,
-  StrategicMeeting, StrategicMeetingParticipant, StrategicMinuteVersion, StrategicMinuteProposal,
+  StrategicMeeting, StrategicMeetingParticipant, StrategicMeetingSchedule, StrategicMinuteVersion, StrategicMinuteProposal,
   StrategicMinuteSignature, StrategicUserSignature, StrategicMonitoringResult, StrategicEvidence,
   StrategicSyncJob, StrategicBudgetImport, StrategicBudgetMovement, StrategicHistoricalImport,
-  StrategicAuditEvent, User
+  StrategicAuditEvent, GoogleCalendarConnection, User
 } = require('../models');
+const { formatPersonName } = require('../utils/formatPersonName');
+const { getOAuthConfiguration, createAuthorizationUrl, createConnectedOAuthClient } = require('../services/meetingCalendarOAuthService');
+const { getCalendarConfiguration, normalizeAttendees, checkAvailability, findAvailableSlots, saveCalendarEvent, cancelCalendarEvent } = require('../services/meetingCalendarService');
 const { generateActaBuffer } = require('../services/actaExportService');
 const { generateStrategicMinutePdf, ensureMinuteFinalPdfBuffer } = require('../services/strategicMinutePdfService');
 const { generatePlanAccionBuffer } = require('../services/planAccionExportService');
@@ -508,6 +511,40 @@ const lookupMeetingParticipant = wrap(async (req, res) => {
     id: user.id, document: user.username, name: user.nombre, email: user.email,
     dependency: user.dependencia, viceRectorate: user.vicerrectoria, position: user.cargo
   });
+});
+
+// Búsqueda exclusiva para las actas de Planes de Acción. No comparte ni
+// modifica el flujo del formato digital general de actas.
+const searchMeetingParticipants = wrap(async (req, res) => {
+  const plan = await StrategicPlan.findByPk(req.params.planId, { attributes: ['id'] });
+  if (!plan) throw Object.assign(new Error('PED no encontrado.'), { statusCode: 404 });
+  const query = String(req.query.q || '').trim();
+  if (query.length < 2) return ok(res, []);
+  const pattern = `%${query.replace(/[%_]/g, '\\$&')}%`;
+  const users = await User.findAll({
+    where: {
+      estado: 'activo',
+      [Op.or]: [
+        { username: { [Op.iLike]: pattern } },
+        { nombre: { [Op.iLike]: pattern } },
+        { email: { [Op.iLike]: pattern } },
+        { dependencia: { [Op.iLike]: pattern } },
+        { cargo: { [Op.iLike]: pattern } }
+      ]
+    },
+    attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'vicerrectoria', 'cargo'],
+    order: [['nombre', 'ASC']],
+    limit: 12
+  });
+  ok(res, users.map((user) => ({
+    id: user.id,
+    document: user.username,
+    name: user.nombre,
+    email: user.email,
+    dependency: user.dependencia,
+    viceRectorate: user.vicerrectoria,
+    position: user.cargo
+  })));
 });
 
 const downloadTermDependencyTemplate = wrap(async (req, res) => {
@@ -2404,16 +2441,452 @@ const analytics = wrap(async (req, res) => {
 const listAudit = wrap(async (req, res) => ok(res, await StrategicAuditEvent.findAll({ where: req.query.entity_type ? { entity_type: req.query.entity_type } : {}, limit: Math.min(500, Number(req.query.limit || 100)), order: [['created_at', 'DESC']] })));
 const listSyncJobs = wrap(async (_req, res) => ok(res, await StrategicSyncJob.findAll({ limit: 200, order: [['created_at', 'DESC']] })));
 
+const clean = (val, max = 500) => String(val || '').trim().slice(0, max);
+
+const loadPlanForCalendar = async (req) => {
+  const plan = await StrategicActionPlan.findByPk(req.params.id, {
+    include: [
+      { model: StrategicTerm, as: 'term' },
+      { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      {
+        model: StrategicResponsibility,
+        as: 'responsibilities',
+        required: false,
+        where: { status: 'active' },
+        include: [{ model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'cargo', 'dependencia'] }]
+      }
+    ]
+  });
+  if (!plan) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+
+  const organizer = {
+    name: formatPersonName(req.user.nombre || 'Organizador de la reunión'),
+    email: clean(req.user.email, 254).toLowerCase()
+  };
+  if (!organizer?.email) {
+    throw Object.assign(new Error('Su usuario no tiene un correo institucional registrado para organizar la reunión.'), { statusCode: 422 });
+  }
+  return { plan, organizer };
+};
+
+const loadPlanCalendarConnection = async (userId, organizerEmail) => {
+  const connection = await GoogleCalendarConnection.findOne({ where: { user_id: userId } });
+  const expectedEmail = clean(organizerEmail, 254).toLowerCase();
+  const connected = Boolean(
+    connection
+    && connection.status === 'connected'
+    && clean(connection.google_email, 254).toLowerCase() === expectedEmail
+  );
+  return { connection, connected };
+};
+
+const publicPlanCalendarConnection = (connection, connected) => ({
+  connected,
+  email: connected ? connection.google_email : null,
+  connected_at: connected ? connection.connected_at : null,
+  last_used_at: connected ? connection.last_used_at : null
+});
+
+const isPlanCalendarAuthError = (error) => {
+  const code = error?.code;
+  const status = Number(error?.response?.status || error?.status || 0);
+  const detail = [
+    error?.message,
+    error?.response?.data?.error,
+    error?.response?.data?.error_description
+  ].filter(Boolean).join(' ');
+  return Number(code) === 401
+    || status === 401
+    || ['unauthorized_client', 'access_denied', 'invalid_grant'].includes(code)
+    || /unauthorized|forbidden|invalid_grant|token has been expired or revoked/i.test(detail);
+};
+
+const preparePlanCalendarError = (error) => {
+  if (isPlanCalendarAuthError(error)) {
+    error.statusCode = 409;
+    error.code = 'CALENDAR_AUTH_REVOKED';
+    error.message = 'Google Calendar rechazó o revocó la autorización. Vuelva a conectar la cuenta institucional y luego programe la reunión.';
+    error.data = { ...(error.data || {}), connection_invalid: true };
+    return error;
+  }
+  if (error.statusCode) return error;
+  if (['CALENDAR_NOT_CONFIGURED', 'CALENDAR_OAUTH_NOT_CONFIGURED'].includes(error.code)) error.statusCode = 503;
+  else if (error.code === 'CALENDAR_NOT_CONNECTED') error.statusCode = 409;
+  else if (['INVALID_CALENDAR_RANGE', 'INVALID_CALENDAR_ORGANIZER'].includes(error.code)) error.statusCode = 422;
+  else {
+    error.statusCode = 502;
+  }
+  return error;
+};
+
+const persistPlanCalendarConnectionError = async (connection, error) => {
+  const prepared = preparePlanCalendarError(error);
+  if (prepared.data?.connection_invalid && connection) {
+    await connection.update({
+      status: 'revoked',
+      last_error: clean(prepared.message, 2000),
+      last_used_at: new Date()
+    }).catch(() => {});
+  }
+  return prepared;
+};
+
+const getPlanCalendarSchedule = wrap(async (req, res) => {
+  const { plan, organizer } = await loadPlanForCalendar(req);
+  const schedule = await StrategicMeetingSchedule.findOne({
+    include: [{
+      model: StrategicMeeting,
+      as: 'meeting',
+      required: true,
+      where: { action_plan_id: plan.id }
+    }],
+    where: { status: 'scheduled' },
+    order: [['start_at', 'ASC']]
+  });
+  const { connection, connected } = await loadPlanCalendarConnection(req.user.id, organizer.email);
+  ok(res, {
+    configuration: getCalendarConfiguration(),
+    organizer,
+    connection: publicPlanCalendarConnection(connection, connected),
+    schedule: schedule ? schedule.toJSON() : null
+  });
+});
+
+const listPlanUpcomingCalendar = wrap(async (req, res) => {
+  const { plan } = await loadPlanForCalendar(req);
+  const schedules = await StrategicMeetingSchedule.findAll({
+    include: [{
+      model: StrategicMeeting,
+      as: 'meeting',
+      required: true,
+      where: { action_plan_id: plan.id }
+    }],
+    where: {
+      status: 'scheduled',
+      end_at: { [Op.gte]: new Date() }
+    },
+    order: [['start_at', 'ASC']],
+    limit: 50
+  });
+  ok(res, schedules.map((s) => ({
+    ...s.toJSON(),
+    plan: {
+      id: plan.id,
+      code: plan.code,
+      title: s.summary
+    }
+  })));
+});
+
+const startPlanCalendarConnect = wrap(async (req, res) => {
+  const { organizer } = await loadPlanForCalendar(req);
+  const configuration = getOAuthConfiguration();
+  if (!configuration.configured) {
+    throw Object.assign(new Error(configuration.message), { statusCode: 503 });
+  }
+  const url = createAuthorizationUrl({ userId: req.user.id, expectedEmail: organizer.email });
+  ok(res, { url, expected_email: organizer.email });
+});
+
+const disconnectPlanCalendar = wrap(async (req, res) => {
+  const { organizer } = await loadPlanForCalendar(req);
+  const { connection } = await loadPlanCalendarConnection(req.user.id, organizer.email);
+  if (connection) await connection.destroy();
+  ok(res, null, 'La cuenta de Google Calendar fue desconectada.');
+});
+
+const checkPlanCalendarAvailability = wrap(async (req, res) => {
+  const { plan, organizer } = await loadPlanForCalendar(req);
+  const attendees = normalizeAttendees(req.body.attendees);
+  let connection = null;
+  try {
+    const existing = await StrategicMeetingSchedule.findOne({
+      include: [{
+        model: StrategicMeeting,
+        as: 'meeting',
+        required: true,
+        where: { action_plan_id: plan.id }
+      }],
+      where: { status: 'scheduled' }
+    });
+    const loadedConnection = await loadPlanCalendarConnection(req.user.id, organizer.email);
+    connection = loadedConnection.connection;
+    const { connected } = loadedConnection;
+    if (!connected) throw Object.assign(new Error('Conecte su cuenta institucional de Google Calendar antes de consultar disponibilidad.'), { code: 'CALENDAR_NOT_CONNECTED' });
+    const authClient = createConnectedOAuthClient(connection);
+    const availability = await checkAvailability({
+      organizerEmail: organizer.email,
+      organizerName: organizer.name,
+      attendees,
+      startAt: req.body.start_at,
+      endAt: req.body.end_at,
+      ignoreBusyRange: existing?.google_event_id && existing.status !== 'cancelled'
+        ? { startAt: existing.start_at, endAt: existing.end_at }
+        : null,
+      authClient
+    });
+    await connection.update({ last_used_at: new Date(), last_error: null });
+    ok(res, { organizer, availability });
+  } catch (error) {
+    throw await persistPlanCalendarConnectionError(connection, error);
+  }
+});
+
+const suggestPlanCalendarSlots = wrap(async (req, res) => {
+  const { plan, organizer } = await loadPlanForCalendar(req);
+  const { connection, connected } = await loadPlanCalendarConnection(req.user.id, organizer.email);
+  if (!connected) throw Object.assign(new Error('Conecte su cuenta institucional de Google Calendar antes de buscar horarios.'), { statusCode: 409 });
+  try {
+    const existing = await StrategicMeetingSchedule.findOne({
+      include: [{
+        model: StrategicMeeting,
+        as: 'meeting',
+        required: true,
+        where: { action_plan_id: plan.id }
+      }],
+      where: { status: 'scheduled' }
+    });
+    const suggestions = await findAvailableSlots({
+      organizerEmail: organizer.email,
+      organizerName: organizer.name,
+      attendees: normalizeAttendees(req.body.attendees),
+      startAt: req.body.start_at,
+      endAt: req.body.end_at,
+      days: req.body.days,
+      ignoreBusyRange: existing?.google_event_id && existing.status !== 'cancelled'
+        ? { startAt: existing.start_at, endAt: existing.end_at }
+        : null,
+      authClient: createConnectedOAuthClient(connection)
+    });
+    await connection.update({ last_used_at: new Date(), last_error: null });
+    ok(res, suggestions);
+  } catch (error) {
+    throw await persistPlanCalendarConnectionError(connection, error);
+  }
+});
+
+const savePlanCalendarSchedule = wrap(async (req, res) => {
+  const { plan, organizer } = await loadPlanForCalendar(req);
+  const summary = clean(req.body.summary, 240);
+  const attendees = normalizeAttendees(req.body.attendees);
+  if (!summary) throw Object.assign(new Error('Digite el título de la reunión de seguimiento.'), { statusCode: 422 });
+  const requestedStart = new Date(req.body.start_at);
+  if (Number.isNaN(requestedStart.getTime()) || requestedStart <= new Date()) {
+    throw Object.assign(new Error('La reunión de seguimiento debe programarse en una fecha y hora futuras.'), { statusCode: 422 });
+  }
+
+  let existing = null;
+  if (req.body.scheduleId) {
+    existing = await StrategicMeetingSchedule.findByPk(req.body.scheduleId, {
+      include: [{ model: StrategicMeeting, as: 'meeting', where: { action_plan_id: plan.id } }]
+    });
+  }
+  if (!existing) {
+    existing = await StrategicMeetingSchedule.findOne({
+      include: [{
+        model: StrategicMeeting,
+        as: 'meeting',
+        required: true,
+        where: { action_plan_id: plan.id }
+      }],
+      where: { status: 'scheduled' }
+    });
+  }
+
+  const isUpdatingExistingEvent = Boolean(existing?.google_event_id && existing.status !== 'cancelled');
+  const { connection, connected } = await loadPlanCalendarConnection(req.user.id, organizer.email);
+  if (!connected) throw Object.assign(new Error('Conecte su cuenta institucional de Google Calendar antes de programar la reunión.'), { statusCode: 409 });
+  const authClient = createConnectedOAuthClient(connection);
+
+  let availability;
+  try {
+    availability = await checkAvailability({
+      organizerEmail: organizer.email,
+      organizerName: organizer.name,
+      attendees,
+      startAt: req.body.start_at,
+      endAt: req.body.end_at,
+      ignoreBusyRange: isUpdatingExistingEvent
+        ? { startAt: existing.start_at, endAt: existing.end_at }
+        : null,
+      authClient
+    });
+  } catch (error) {
+    throw await persistPlanCalendarConnectionError(connection, error);
+  }
+
+  const busyPeople = availability.filter((person) => person.status === 'busy');
+  if (busyPeople.length && req.body.force !== true) {
+    const error = Object.assign(new Error('Algunos participantes están ocupados en este horario.'), {
+      statusCode: 409,
+      data: { availability }
+    });
+    throw error;
+  }
+
+  try {
+    const event = await saveCalendarEvent({
+      organizerEmail: organizer.email,
+      minuteId: plan.id,
+      minuteCode: plan.code,
+      eventId: isUpdatingExistingEvent ? existing.google_event_id : null,
+      summary,
+      description: clean(req.body.description || `Reunión de seguimiento del Plan de Acción ${plan.code} (${plan.organizationalUnit?.name || ''} - Vigencia ${plan.term?.year || ''}).`, 4000),
+      location: clean(req.body.location, 500),
+      startAt: req.body.start_at,
+      endAt: req.body.end_at,
+      attendees,
+      authClient
+    });
+    await connection.update({ last_used_at: new Date(), last_error: null });
+
+    const values = {
+      organizer_email: organizer.email,
+      summary,
+      description: clean(req.body.description || `Reunión de seguimiento del Plan de Acción ${plan.code}.`, 4000),
+      location: clean(req.body.location, 500),
+      start_at: new Date(req.body.start_at),
+      end_at: new Date(req.body.end_at),
+      timezone: getCalendarConfiguration().timezone,
+      attendees,
+      google_event_id: event.id,
+      google_event_url: event.htmlLink || null,
+      status: 'scheduled',
+      last_error: null,
+      updated_by: req.user.id
+    };
+
+    let meetingRecord;
+    if (existing?.meeting_id) {
+      meetingRecord = await StrategicMeeting.findByPk(existing.meeting_id);
+      if (meetingRecord) {
+        await meetingRecord.update({
+          title: summary,
+          starts_at: new Date(req.body.start_at),
+          ends_at: new Date(req.body.end_at),
+          location: clean(req.body.location, 500) || null,
+          updated_by: req.user.id
+        });
+      }
+    }
+    if (!meetingRecord) {
+      meetingRecord = await StrategicMeeting.create({
+        action_plan_id: plan.id,
+        title: summary,
+        type: 'monitoring',
+        starts_at: new Date(req.body.start_at),
+        ends_at: new Date(req.body.end_at),
+        location: clean(req.body.location, 500) || null,
+        modality: 'Virtual / Presencial',
+        objective: `Reunión de seguimiento para el Plan de Acción ${plan.code}`,
+        development: 'Sesión de seguimiento a las actividades y metas del plan.',
+        commitments: [],
+        status: 'scheduled',
+        created_by: req.user.id,
+        updated_by: req.user.id
+      });
+    }
+
+    for (const att of attendees) {
+      if (!att.email) continue;
+      const matchedUser = await User.findOne({ where: { email: { [Op.iLike]: att.email } } });
+      await StrategicMeetingParticipant.findOrCreate({
+        where: { meeting_id: meetingRecord.id, email: att.email.toLowerCase() },
+        defaults: {
+          meeting_id: meetingRecord.id,
+          user_id: matchedUser?.id || null,
+          participant_type: matchedUser ? 'internal' : 'external',
+          meeting_role: att.source === 'responsible' ? 'principal' : 'participant',
+          document: att.document || matchedUser?.username || null,
+          name: att.name || matchedUser?.nombre || att.email,
+          email: att.email.toLowerCase(),
+          organization: matchedUser?.dependencia || 'UNICESMAG',
+          role_title: matchedUser?.cargo || null,
+          status: 'invited'
+        }
+      });
+    }
+
+    const schedule = existing
+      ? await existing.update(values)
+      : await StrategicMeetingSchedule.create({ ...values, meeting_id: meetingRecord.id, created_by: req.user.id });
+
+    ok(res, { schedule: schedule.toJSON(), availability }, isUpdatingExistingEvent ? 'La reunión de seguimiento fue actualizada en Google Calendar.' : 'La reunión de seguimiento fue programada en Google Calendar.');
+  } catch (error) {
+    const prepared = await persistPlanCalendarConnectionError(connection, error);
+    if (existing) await existing.update({
+      status: existing.google_event_id && existing.status !== 'cancelled' ? 'scheduled' : 'error',
+      last_error: clean(prepared.message, 2000),
+      updated_by: req.user.id
+    }).catch(() => {});
+    if (prepared.statusCode === 502) prepared.message = `Google Calendar no pudo programar la reunión: ${prepared.message}`;
+    throw prepared;
+  }
+});
+
+const cancelPlanCalendarSchedule = wrap(async (req, res) => {
+  const { plan, organizer } = await loadPlanForCalendar(req);
+  const scheduleId = req.query.scheduleId || req.body?.scheduleId;
+  let schedule = null;
+  if (scheduleId) {
+    schedule = await StrategicMeetingSchedule.findByPk(scheduleId, {
+      include: [{ model: StrategicMeeting, as: 'meeting', where: { action_plan_id: plan.id } }]
+    });
+  }
+  if (!schedule) {
+    schedule = await StrategicMeetingSchedule.findOne({
+      include: [{
+        model: StrategicMeeting,
+        as: 'meeting',
+        required: true,
+        where: { action_plan_id: plan.id }
+      }],
+      where: { status: 'scheduled' },
+      order: [['start_at', 'DESC']]
+    });
+  }
+
+  if (!schedule || schedule.status === 'cancelled') {
+    throw Object.assign(new Error('Esta reunión ya no está programada.'), { statusCode: 404 });
+  }
+
+  const { connection, connected } = await loadPlanCalendarConnection(req.user.id, organizer.email);
+  if (!connected) {
+    throw Object.assign(new Error('Conecte su cuenta de Google Calendar antes de cancelar la reunión.'), { statusCode: 409 });
+  }
+
+  try {
+    await cancelCalendarEvent({
+      eventId: schedule.google_event_id,
+      authClient: createConnectedOAuthClient(connection)
+    });
+    await schedule.update({ status: 'cancelled', last_error: null, updated_by: req.user.id });
+    if (schedule.meeting_id) {
+      await StrategicMeeting.update(
+        { status: 'cancelled', updated_by: req.user.id },
+        { where: { id: schedule.meeting_id } }
+      ).catch(() => {});
+    }
+    await connection.update({ last_used_at: new Date(), last_error: null });
+    ok(res, { id: schedule.id, status: 'cancelled' }, 'La reunión fue cancelada en Google Calendar y se notificó a los invitados.');
+  } catch (error) {
+    await schedule.update({ last_error: clean(error.message, 2000), updated_by: req.user.id }).catch(() => {});
+    throw await persistPlanCalendarConnectionError(connection, error);
+  }
+});
+
 module.exports = {
   bootstrap, listPlans, createPlan, updatePlan, deletePlan, createLevel, updateLevel, deleteLevel,
   createElement, updateElement, deleteElement, listStructure, upsertCatalog, updateCatalog, deleteCatalog,
   applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, previewFieldSchema, confirmFieldSchema,
-  downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, termDependencies, downloadTermDependencyTemplate,
+  downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, searchMeetingParticipants, termDependencies, downloadTermDependencyTemplate,
   termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
   listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
   transitionActionPlan, saveMonitoring, createMeeting, updateMeeting,
   improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
   uploadEvidence, downloadEvidence, retrySync, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
-  previewHistorical, confirmHistorical, exportActionPlan, syncPlanDriveExcel, analytics, listAudit, listSyncJobs
+  previewHistorical, confirmHistorical, exportActionPlan, syncPlanDriveExcel, analytics, listAudit, listSyncJobs,
+  getPlanCalendarSchedule, listPlanUpcomingCalendar, startPlanCalendarConnect, disconnectPlanCalendar,
+  checkPlanCalendarAvailability, suggestPlanCalendarSlots, savePlanCalendarSchedule, cancelPlanCalendarSchedule
 };

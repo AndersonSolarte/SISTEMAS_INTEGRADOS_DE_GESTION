@@ -34,6 +34,7 @@ router.post('/plans/:planId/reference-imports/preview', permit('pei_configurar')
 router.post('/reference-imports/:importId/confirm', permit('pei_configurar'), c.referenceConfirm);
 router.get('/plans/:planId/leader-options', permit('pei_formular'), c.leaderOptions);
 router.get('/plans/:planId/participant-lookup', permit('pei_formular'), c.lookupMeetingParticipant);
+router.get('/plans/:planId/participant-search', permit('pei_formular'), c.searchMeetingParticipants);
 router.get('/plans/:planId/term-dependencies', permit(), c.termDependencies);
 router.get('/terms/:termId/dependencies-template', permit('pei_configurar'), c.downloadTermDependencyTemplate);
 router.post('/terms/:termId/dependencies-import/preview', permit('pei_configurar'), upload.single('file'), c.termDependencyPreview);
@@ -64,6 +65,15 @@ router.post('/action-plans/:id/transfer-leader', permit('pei_formular'), c.trans
 router.get('/action-plans/:id/export', permit(), c.exportActionPlan);
 router.post('/action-plans/:id/sync-drive-excel', permit('pei_formular'), c.syncPlanDriveExcel);
 router.put('/action-items/:itemId/monitoring/:periodId', permit('pei_seguimiento'), c.saveMonitoring);
+
+router.get('/action-plans/:id/calendar', permit(), c.getPlanCalendarSchedule);
+router.get('/action-plans/:id/calendar/upcoming', permit(), c.listPlanUpcomingCalendar);
+router.post('/action-plans/:id/calendar/connect', permit('pei_formular', 'pei_seguimiento'), c.startPlanCalendarConnect);
+router.delete('/action-plans/:id/calendar/connection', permit('pei_formular', 'pei_seguimiento'), c.disconnectPlanCalendar);
+router.post('/action-plans/:id/calendar/availability', permit('pei_formular', 'pei_seguimiento'), c.checkPlanCalendarAvailability);
+router.post('/action-plans/:id/calendar/suggestions', permit('pei_formular', 'pei_seguimiento'), c.suggestPlanCalendarSlots);
+router.put('/action-plans/:id/calendar', permit('pei_formular', 'pei_seguimiento'), c.savePlanCalendarSchedule);
+router.delete('/action-plans/:id/calendar', permit('pei_formular', 'pei_seguimiento'), c.cancelPlanCalendarSchedule);
 
 router.post('/action-plans/:id/meetings', permit('pei_formular'), c.createMeeting);
 router.put('/meetings/:meetingId', permit('pei_formular'), c.updateMeeting);

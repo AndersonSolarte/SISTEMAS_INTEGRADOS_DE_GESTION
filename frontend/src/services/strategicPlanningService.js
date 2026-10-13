@@ -30,6 +30,7 @@ const strategicPlanningService = {
   confirmReferences: (importId) => api.post(`${root}/reference-imports/${importId}/confirm`).then(data),
   leaderOptions: (planId) => api.get(`${root}/plans/${planId}/leader-options`).then(data),
   lookupMeetingParticipant: (planId, document) => api.get(`${root}/plans/${planId}/participant-lookup`, { params: { document } }).then(data),
+  searchMeetingParticipants: (planId, query) => api.get(`${root}/plans/${planId}/participant-search`, { params: { q: query } }).then(data),
   termDependencies: (planId, termId) => api.get(`${root}/plans/${planId}/term-dependencies`, { params: termId ? { termId } : {} }).then(data),
   downloadTermDependencyTemplate: (termId) => api.get(`${root}/terms/${termId}/dependencies-template`, { responseType: 'blob', timeout: 60000 }).then((response) => response.data),
   previewTermDependencies: (termId, formData) => api.post(`${root}/terms/${termId}/dependencies-import/preview`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }).then(data),
@@ -80,7 +81,15 @@ const strategicPlanningService = {
   previewHistorical: (formData) => api.post(`${root}/historical-imports/preview`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }).then(data),
   publicMinute: (token) => api.get(`/public/strategic-planning/minutes/${token}`, { skipAuthRedirect: true }).then(data),
   requestCode: (token, payload) => api.post(`/public/strategic-planning/minutes/${token}/request-code`, payload, { skipAuthRedirect: true }).then(data),
-  signExternal: (token, payload) => api.post(`/public/strategic-planning/minutes/${token}/sign`, payload, { skipAuthRedirect: true }).then(data)
+  signExternal: (token, payload) => api.post(`/public/strategic-planning/minutes/${token}/sign`, payload, { skipAuthRedirect: true }).then(data),
+  getCalendarSchedule: (planId) => api.get(`${root}/action-plans/${planId}/calendar`).then(data),
+  listUpcomingCalendar: (planId) => api.get(`${root}/action-plans/${planId}/calendar/upcoming`).then(data),
+  startCalendarConnection: (planId) => api.post(`${root}/action-plans/${planId}/calendar/connect`).then(data),
+  disconnectCalendar: (planId) => api.delete(`${root}/action-plans/${planId}/calendar/connection`).then(data),
+  checkCalendarAvailability: (planId, payload) => api.post(`${root}/action-plans/${planId}/calendar/availability`, payload).then(data),
+  suggestCalendarSlots: (planId, payload) => api.post(`${root}/action-plans/${planId}/calendar/suggestions`, payload).then(data),
+  saveCalendarSchedule: (planId, payload) => api.put(`${root}/action-plans/${planId}/calendar`, payload).then(data),
+  cancelCalendarSchedule: (planId, params = {}) => api.delete(`${root}/action-plans/${planId}/calendar`, { params }).then(data)
 };
 
 export default strategicPlanningService;
