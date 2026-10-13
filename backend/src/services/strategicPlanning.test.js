@@ -87,13 +87,14 @@ test('los estados de planes históricos se conservan al integrarlos al PED', () 
   assert.equal(mapLegacyStatus('Borrador'), 'convocation');
 });
 
-test('la fecha del acto administrativo parte desde el inicio del PED', () => {
+test('la fecha del acto administrativo puede ser previa a la ejecucion del PED', () => {
+  assert.doesNotThrow(() => validateAdministrativeActDate({ startsOn: '2023-01-01', approvedOn: '2022-12-15' }));
   assert.doesNotThrow(() => validateAdministrativeActDate({ startsOn: '2022-01-01', approvedOn: '2022-01-01' }));
   assert.doesNotThrow(() => validateAdministrativeActDate({ startsOn: '2022-01-01', approvedOn: '2022-02-15' }));
   assert.doesNotThrow(() => validateAdministrativeActDate({ startsOn: '2022-01-01', approvedOn: null }));
   assert.throws(
-    () => validateAdministrativeActDate({ startsOn: '2022-01-01', approvedOn: '2021-12-31' }),
-    /no puede ser anterior a la fecha inicial del PED/
+    () => validateAdministrativeActDate({ startsOn: '2023-01-01', approvedOn: '2020-12-31' }),
+    /no puede ser anterior al periodo previo de formulación/
   );
 });
 

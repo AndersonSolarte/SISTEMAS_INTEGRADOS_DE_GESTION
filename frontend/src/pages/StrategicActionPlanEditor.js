@@ -595,9 +595,14 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     const catalogEntries = catalogType
       ? formCatalogs.filter((entry) => (entry.catalog_type === catalogType || (catalogType === 'organizational_unit' && entry.catalog_type === 'dependency')) && entry.active !== false)
       : [];
+    const storedOptions = Array.isArray(field.options) ? field.options : (field.options ? [field.options] : []);
     let options = catalogEntries.length
       ? catalogEntries.map((entry) => ({ value: entry.id, label: `${entry.code} · ${entry.name}` }))
-      : (field.options || []).map((option) => ({ value: option, label: option }));
+      : storedOptions
+        .flatMap((option) => String(option).split(/\r?\n/))
+        .map((option) => option.trim())
+        .filter(Boolean)
+        .map((option) => ({ value: option, label: option }));
     if (field.key === 'indicator_type' && !options.length) options = ['Gestión','Resultado','Producto','Impacto'].map((value) => ({ value, label: value }));
     
     // Si aún no hay opciones y es corresponsables o responsables, buscar en cualquier lista de dependencias disponible

@@ -142,7 +142,7 @@ const createPlan = wrap(async (req, res) => {
   if (String(endsOn) < String(payload.starts_on)) {
     throw Object.assign(new Error('La fecha final del PED no puede ser anterior a la fecha inicial.'), { statusCode: 422 });
   }
-  validateAdministrativeActDate({ startsOn: payload.starts_on, approvedOn: payload.approved_on });
+  validateAdministrativeActDate({ startsOn: payload.starts_on, approvedOn: payload.approved_on, endsOn });
   if (await StrategicPlan.count({ where: { code: cleanCode(code), deleted_at: null } })) {
     throw Object.assign(new Error(`Ya existe el ${cleanCode(code)}. Ábralo desde el selector para revisarlo o editarlo.`), { statusCode: 409 });
   }
@@ -250,7 +250,8 @@ const updatePlan = wrap(async (req, res) => {
   if (String(changes.ends_on || plan.ends_on) < String(changes.starts_on || plan.starts_on)) throw Object.assign(new Error('La fecha final no puede ser anterior a la inicial.'), { statusCode: 422 });
   validateAdministrativeActDate({
     startsOn: changes.starts_on || plan.starts_on,
-    approvedOn: changes.approved_on !== undefined ? changes.approved_on : plan.approved_on
+    approvedOn: changes.approved_on !== undefined ? changes.approved_on : plan.approved_on,
+    endsOn: changes.ends_on || plan.ends_on
   });
   if (req.body.settings) changes.settings = { ...(plan.settings || {}), ...req.body.settings };
   if (req.body.new_configuration_version) changes.configuration_version = Number(plan.configuration_version) + 1;
