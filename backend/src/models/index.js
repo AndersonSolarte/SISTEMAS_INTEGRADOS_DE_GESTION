@@ -52,6 +52,7 @@ const PlanMejoramiento = require('./PlanMejoramiento');
 const PlanMejoramientoTarifaVersion = require('./PlanMejoramientoTarifaVersion');
 const PlanMejoramientoAsignacion = require('./PlanMejoramientoAsignacion');
 const PlanMejoramientoFlujoHistorial = require('./PlanMejoramientoFlujoHistorial');
+const PlanMejoramientoActividadAsignacion = require('./PlanMejoramientoActividadAsignacion');
 const RegistroCalificadoHistorico = require('./RegistroCalificadoHistorico');
 const RegistroCalificadoResolucion = require('./RegistroCalificadoResolucion');
 const InstrumentForm = require('./InstrumentForm');
@@ -421,6 +422,7 @@ module.exports = {
   PlanMejoramientoTarifaVersion,
   PlanMejoramientoAsignacion,
   PlanMejoramientoFlujoHistorial,
+  PlanMejoramientoActividadAsignacion,
   RegistroCalificadoHistorico,
   RegistroCalificadoResolucion,
   InstrumentForm,

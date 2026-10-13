@@ -622,6 +622,9 @@ const runMigrations = async () => {
     await models.PlanMejoramientoTarifaVersion.sync();
     await models.PlanMejoramientoAsignacion.sync();
     await models.PlanMejoramientoFlujoHistorial.sync();
+    await models.PlanMejoramientoActividadAsignacion.sync();
+    await ensureColumn(sequelize.getQueryInterface(), 'plan_mejoramiento_actividad_asignaciones', 'historial', { type: DataTypes.JSONB, allowNull: false, defaultValue: [] });
+    await ensureColumn(sequelize.getQueryInterface(), 'plan_mejoramiento_actividad_asignaciones', 'correcciones', { type: DataTypes.JSONB, allowNull: false, defaultValue: [] });
     await models.JuridicaCaso.sync();
     await models.JuridicaHistorial.sync();
     await models.JuridicaAdjunto.sync();

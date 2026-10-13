@@ -3,10 +3,11 @@ const path = require('path');
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const { Op } = require('sequelize');
-const { Autoevaluacion, AutoevaluacionPrograma, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, User, UserModulePermission } = require('../models');
+const { Autoevaluacion, AutoevaluacionPrograma, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission } = require('../models');
 
 const ALLOWED_ROLES = new Set(['administrador', 'planeacion_estrategica', 'autoevaluacion']);
 const VALID_STATES = new Set(['borrador', 'en_ejecucion', 'cerrado']);
+const ACTIONABLE_ACTIVITY_STATES = ['asignada', 'en_ejecucion', 'devuelta'];
 const TEMPLATE_PATH = path.join(__dirname, '../templates/plan_mejoramiento_2026.xlsx');
 
 const text = (value) => String(value ?? '').trim();
@@ -134,9 +135,13 @@ const ensureAccess = async (req, res, next) => {
       req.planMejoramientoManager = true;
       return next();
     }
-    const assigned = await PlanMejoramientoAsignacion.count({ where: { user_id: req.user?.id, activo: true } });
-    if (assigned > 0 || permissions.some((item) => item.module_key === 'autoevaluacion_ejecucion')) {
+    const [assigned, delegated] = await Promise.all([
+      PlanMejoramientoAsignacion.count({ where: { user_id: req.user?.id, activo: true } }),
+      PlanMejoramientoActividadAsignacion.count({ where: { user_id: req.user?.id, activo: true, estado_flujo: { [Op.in]: ACTIONABLE_ACTIVITY_STATES } } })
+    ]);
+    if (assigned > 0 || delegated > 0) {
       req.planExecutionOnly = true;
+      req.planCollaboratorOnly = assigned === 0 && delegated > 0;
       return next();
     }
     return res.status(403).json({ success: false, message: 'No tienes acceso al Plan de mejoramiento' });
@@ -150,46 +155,203 @@ const ensureManager = (req, res, next) => req.planMejoramientoManager
 
 const canAccessPlan = async (req, planId) => {
   if (!req.planExecutionOnly) return true;
-  return Boolean(await PlanMejoramientoAsignacion.count({ where: { plan_id: planId, user_id: req.user?.id, activo: true } }));
+  const [leader, collaborator] = await Promise.all([
+    PlanMejoramientoAsignacion.count({ where: { plan_id: planId, user_id: req.user?.id, activo: true } }),
+    PlanMejoramientoActividadAsignacion.count({ where: { plan_id: planId, user_id: req.user?.id, activo: true, ...(req.planCollaboratorOnly ? { estado_flujo: { [Op.in]: ACTIONABLE_ACTIVITY_STATES } } : {}) } })
+  ]);
+  return Boolean(leader || collaborator);
 };
 
-const mergeExecutionContent = (stored = {}, incoming = {}) => ({
+const mergeExecutionContent = (stored = {}, incoming = {}, allowedActivityUids = null) => {
+  const incomingByUid = new Map(array(incoming.objetivos).flatMap((objective) => array(objective.actividades)).filter((activity) => activity?.uid).map((activity) => [String(activity.uid), activity]));
+  return ({
   ...stored,
   objetivos: array(stored.objetivos).map((objective, objectiveIndex) => {
     const incomingObjective = array(incoming.objetivos)[objectiveIndex] || {};
     return {
       ...objective,
       actividades: array(objective.actividades).map((activity, activityIndex) => {
-        const update = array(incomingObjective.actividades)[activityIndex] || {};
+        const update = incomingByUid.get(String(activity.uid || '')) || array(incomingObjective.actividades)[activityIndex] || {};
+        if (allowedActivityUids && !allowedActivityUids.has(String(activity.uid || ''))) return activity;
         return {
           ...activity,
           metaAlcanzada: update.metaAlcanzada ?? activity.metaAlcanzada,
           fechaSeguimiento: update.fechaSeguimiento ?? activity.fechaSeguimiento,
           evidencia: update.evidencia ?? activity.evidencia,
           observaciones: update.observaciones ?? activity.observaciones,
-          verificacionSeguimiento: update.verificacionSeguimiento ?? activity.verificacionSeguimiento,
+          verificacionSeguimiento: allowedActivityUids ? activity.verificacionSeguimiento : (update.verificacionSeguimiento ?? activity.verificacionSeguimiento),
           seguimientos: array(update.seguimientos).length >= array(activity.seguimientos).length ? array(update.seguimientos) : array(activity.seguimientos)
         };
       })
     };
   })
-});
+  });
+};
 
 const assignmentData = async (planId) => {
   const assignment = await PlanMejoramientoAsignacion.findOne({ where: { plan_id: planId, activo: true }, order: [['id', 'DESC']], raw: true });
-  if (!assignment) return null;
-  const [user, history] = await Promise.all([
-    User.findByPk(assignment.user_id, { attributes: ['id', 'nombre', 'username', 'email', 'cargo', 'dependencia', 'vicerrectoria'], raw: true }),
-    PlanMejoramientoFlujoHistorial.findAll({ where: { asignacion_id: assignment.id }, order: [['createdAt', 'ASC'], ['id', 'ASC']], raw: true })
+  const activityAssignments = await PlanMejoramientoActividadAsignacion.findAll({ where: { plan_id: planId, activo: true }, order: [['id', 'ASC']], raw: true });
+  if (!assignment && !activityAssignments.length) return null;
+  const userIds = Array.from(new Set([assignment?.user_id, ...activityAssignments.map((item) => item.user_id)].filter(Boolean)));
+  const [users, history] = await Promise.all([
+    User.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ['id', 'nombre', 'username', 'email', 'cargo', 'dependencia', 'vicerrectoria'], raw: true }),
+    PlanMejoramientoFlujoHistorial.findAll({ where: { plan_id: planId }, order: [['createdAt', 'ASC'], ['id', 'ASC']], raw: true })
   ]);
+  const userMap = new Map(users.map((item) => [item.id, { ...item, documento: item.username }]));
   return {
     ...assignment,
-    usuario: user ? { ...user, documento: user.username } : null,
-    historial: history
+    usuario: assignment ? userMap.get(assignment.user_id) || null : null,
+    historial: history,
+    actividades: activityAssignments.map((item) => ({ ...item, usuario: userMap.get(item.user_id) || null }))
   };
 };
 
 const serializeWithAssignment = async (plan) => ({ ...serialize(plan), asignacion: await assignmentData(plan.id) });
+const ensureActivityUids = async (plan) => {
+  const content = plan.contenido && typeof plan.contenido === 'object' ? plan.contenido : {};
+  let changed = false;
+  const objectives = array(content.objetivos).map((objective) => ({
+    ...objective,
+    actividades: array(objective.actividades).map((activity) => {
+      if (activity?.uid) return activity;
+      changed = true;
+      return { ...activity, uid: crypto.randomUUID() };
+    })
+  }));
+  if (changed) await plan.update({ contenido: { ...content, objetivos: objectives } });
+  return plan;
+};
+const serializeForRequest = async (plan, req) => {
+  await ensureActivityUids(plan);
+  const result = await serializeWithAssignment(plan);
+  if (!req.planCollaboratorOnly) return result;
+  const activityAssignments = array(result.asignacion?.actividades).filter((item) => item.user_id === req.user?.id && item.activo && ACTIONABLE_ACTIVITY_STATES.includes(item.estado_flujo));
+  const allowed = new Set(activityAssignments.map((item) => String(item.actividad_uid)));
+  const filteredObjectives = array(result.contenido?.objetivos).map((objective) => ({
+    ...objective,
+    actividades: array(objective.actividades).filter((activity) => allowed.has(String(activity.uid || '')))
+  })).filter((objective) => objective.actividades.length);
+  result.contenido = { ...result.contenido, objetivos: filteredObjectives, presupuesto: [] };
+  result.resumen = {
+    ...result.resumen,
+    objetivos: filteredObjectives.length,
+    actividades: filteredObjectives.reduce((sum, objective) => sum + objective.actividades.length, 0),
+    presupuesto: 0
+  };
+  result.asignacion.actividades = activityAssignments;
+  result.asignacion.esColaborador = true;
+  return result;
+};
+
+const findActivity = (plan, uid) => array(plan?.contenido?.objetivos).flatMap((objective) => array(objective.actividades)).find((activity) => String(activity.uid || '') === String(uid));
+
+const assignActivity = async (req, res) => {
+  try {
+    const plan = await PlanMejoramiento.findByPk(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: 'Plan de mejoramiento no encontrado' });
+    const leader = await PlanMejoramientoAsignacion.findOne({ where: { plan_id: plan.id, user_id: req.user?.id, activo: true } });
+    if (!req.planMejoramientoManager && !leader) return res.status(403).json({ success: false, message: 'Solo el líder del plan puede delegar actividades' });
+    const activityUid = text(req.params.uid);
+    await ensureActivityUids(plan);
+    if (!activityUid || !findActivity(plan, activityUid)) return res.status(404).json({ success: false, message: 'No se encontró la actividad indicada' });
+    const selectedUser = req.body?.userId
+      ? await User.findOne({ where: { id: Number(req.body.userId), estado: 'activo' } })
+      : await User.findOne({ where: { username: { [Op.iLike]: text(req.body?.documento) }, estado: 'activo' } });
+    if (!selectedUser) return res.status(404).json({ success: false, message: 'No se encontró un colaborador interno activo' });
+    const currentAssignment = await PlanMejoramientoActividadAsignacion.findOne({ where: { plan_id: plan.id, actividad_uid: activityUid, activo: true } });
+    if (currentAssignment?.user_id === selectedUser.id) return res.json({ success: true, data: await assignmentData(plan.id), message: `${selectedUser.nombre} ya está asignado a esta actividad` });
+    const previousAssignments = await PlanMejoramientoActividadAsignacion.findAll({ where: { plan_id: plan.id, actividad_uid: activityUid, activo: true }, attributes: ['user_id', 'historial', 'correcciones'], raw: true });
+    const previousUserIds = Array.from(new Set(previousAssignments.map((item) => item.user_id).filter((id) => id !== selectedUser.id)));
+    const previousHistory = previousAssignments.flatMap((item) => array(item.historial));
+    const previousCorrections = previousAssignments.flatMap((item) => array(item.correcciones));
+    await PlanMejoramientoActividadAsignacion.update({ activo: false }, { where: { plan_id: plan.id, actividad_uid: activityUid, activo: true } });
+    await PlanMejoramientoActividadAsignacion.create({
+      plan_id: plan.id, actividad_uid: activityUid, user_id: selectedUser.id, estado_flujo: 'asignada', activo: true,
+      asignado_por: req.user?.id, ultima_observacion: text(req.body?.observacion) || null,
+      historial: [...previousHistory, { accion: previousAssignments.length ? 'reasignar' : 'asignar', estadoNuevo: 'asignada', observacion: text(req.body?.observacion) || `Asignada a ${selectedUser.nombre}`, actorId: req.user?.id, actor: req.user?.nombre || req.user?.email, fecha: new Date().toISOString() }],
+      correcciones: previousCorrections
+    });
+    await UserModulePermission.upsert({ user_id: selectedUser.id, module_key: 'autoevaluacion_ejecucion', can_view: true, can_manage: true });
+    for (const previousUserId of previousUserIds) {
+      const [remainingPlans, remainingActivities] = await Promise.all([
+        PlanMejoramientoAsignacion.count({ where: { user_id: previousUserId, activo: true } }),
+        PlanMejoramientoActividadAsignacion.count({ where: { user_id: previousUserId, activo: true } })
+      ]);
+      if (!remainingPlans && !remainingActivities) await UserModulePermission.update({ can_view: false, can_manage: false }, { where: { user_id: previousUserId, module_key: 'autoevaluacion_ejecucion' } });
+    }
+    return res.status(201).json({ success: true, data: await assignmentData(plan.id), message: `Actividad asignada a ${selectedUser.nombre}` });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'No fue posible asignar la actividad' });
+  }
+};
+
+const activityWorkflowAction = async (req, res) => {
+  try {
+    const task = await PlanMejoramientoActividadAsignacion.findOne({ where: { plan_id: req.params.id, actividad_uid: text(req.params.uid), activo: true }, order: [['id', 'DESC']] });
+    if (!task) return res.status(404).json({ success: false, message: 'La actividad no tiene colaborador asignado' });
+    const leader = await PlanMejoramientoAsignacion.findOne({ where: { plan_id: req.params.id, user_id: req.user?.id, activo: true } });
+    const isCollaborator = task.user_id === req.user?.id;
+    const isReviewer = Boolean(req.planMejoramientoManager || leader);
+    const action = text(req.body?.accion);
+    const observation = text(req.body?.observacion);
+    const transitions = {
+      iniciar: { from: ['asignada', 'devuelta'], to: 'en_ejecucion', collaborator: true },
+      entregar: { from: ['en_ejecucion', 'devuelta'], to: 'entregada', collaborator: true },
+      devolver: { from: ['entregada'], to: 'devuelta', reviewer: true, observation: true },
+      aprobar: { from: ['entregada'], to: 'aprobada', reviewer: true }
+    };
+    const transition = transitions[action];
+    if (!transition || (transition.collaborator && !isCollaborator) || (transition.reviewer && !isReviewer)) return res.status(403).json({ success: false, message: 'No tiene permiso para realizar esta acción' });
+    if (!transition.from.includes(task.estado_flujo)) return res.status(409).json({ success: false, message: `No se puede ejecutar esta acción desde ${task.estado_flujo}` });
+    if (transition.observation && !observation) return res.status(400).json({ success: false, message: 'La observación de devolución es obligatoria' });
+    const corrections = array(task.correcciones);
+    if (action === 'entregar' && corrections.some((item) => item.estado === 'pendiente')) return res.status(409).json({ success: false, message: 'Marque como corregidas todas las observaciones pendientes antes de enviar a revisión' });
+    if (action === 'aprobar' && corrections.some((item) => item.estado === 'pendiente')) return res.status(409).json({ success: false, message: 'La actividad todavía tiene correcciones pendientes' });
+    const history = [...array(task.historial), { accion: action, estadoAnterior: task.estado_flujo, estadoNuevo: transition.to, observacion: observation, actorId: req.user?.id, actor: req.user?.nombre || req.user?.email, fecha: new Date().toISOString() }];
+    const nextCorrections = action === 'devolver'
+      ? [...corrections, { id: crypto.randomUUID(), descripcion: observation, estado: 'pendiente', creadoAt: new Date().toISOString(), creadoPorId: req.user?.id, creadoPor: req.user?.nombre || req.user?.email }]
+      : action === 'aprobar'
+        ? corrections.map((item) => item.estado === 'corregida' ? { ...item, estado: 'validada', validadaAt: new Date().toISOString(), validadaPorId: req.user?.id, validadaPor: req.user?.nombre || req.user?.email } : item)
+        : corrections;
+    await task.update({ estado_flujo: transition.to, ultima_observacion: observation || task.ultima_observacion, historial: history, correcciones: nextCorrections });
+    return res.json({ success: true, data: await assignmentData(task.plan_id), message: `Actividad actualizada a ${transition.to.replace(/_/g, ' ')}` });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'No fue posible actualizar el flujo de la actividad' });
+  }
+};
+
+const activityCorrectionAction = async (req, res) => {
+  try {
+    const task = await PlanMejoramientoActividadAsignacion.findOne({ where: { plan_id: req.params.id, actividad_uid: text(req.params.uid), activo: true }, order: [['id', 'DESC']] });
+    if (!task) return res.status(404).json({ success: false, message: 'La actividad no tiene colaborador asignado' });
+    const leader = await PlanMejoramientoAsignacion.findOne({ where: { plan_id: req.params.id, user_id: req.user?.id, activo: true } });
+    const isCollaborator = task.user_id === req.user?.id;
+    const isReviewer = Boolean(req.planMejoramientoManager || leader);
+    const action = text(req.body?.accion);
+    const responseText = text(req.body?.respuesta);
+    const corrections = array(task.correcciones);
+    const correctionIndex = corrections.findIndex((item) => String(item.id) === String(req.params.correctionId));
+    if (correctionIndex < 0) return res.status(404).json({ success: false, message: 'No se encontró la corrección indicada' });
+    const current = corrections[correctionIndex];
+    let updated;
+    if (action === 'marcar_corregida' && isCollaborator && current.estado === 'pendiente') {
+      updated = { ...current, estado: 'corregida', respuesta: responseText, corregidaAt: new Date().toISOString(), corregidaPorId: req.user?.id, corregidaPor: req.user?.nombre || req.user?.email };
+    } else if (action === 'validar' && isReviewer && current.estado === 'corregida') {
+      updated = { ...current, estado: 'validada', validadaAt: new Date().toISOString(), validadaPorId: req.user?.id, validadaPor: req.user?.nombre || req.user?.email };
+    } else if (action === 'reabrir' && isReviewer && ['corregida', 'validada'].includes(current.estado)) {
+      if (!responseText) return res.status(400).json({ success: false, message: 'Indique el motivo para reabrir la corrección' });
+      updated = { ...current, estado: 'pendiente', reapertura: responseText, reabiertaAt: new Date().toISOString(), reabiertaPorId: req.user?.id, reabiertaPor: req.user?.nombre || req.user?.email };
+    } else {
+      return res.status(409).json({ success: false, message: 'La acción no corresponde al estado actual de la corrección' });
+    }
+    const nextCorrections = corrections.map((item, index) => index === correctionIndex ? updated : item);
+    const history = [...array(task.historial), { accion: `correccion_${action}`, observacion: responseText || current.descripcion, actorId: req.user?.id, actor: req.user?.nombre || req.user?.email, fecha: new Date().toISOString(), correccionId: current.id }];
+    await task.update({ correcciones: nextCorrections, historial: history, estado_flujo: action === 'reabrir' ? 'devuelta' : task.estado_flujo, ultima_observacion: action === 'reabrir' ? responseText : task.ultima_observacion });
+    return res.json({ success: true, data: await assignmentData(task.plan_id), message: 'Bitácora de correcciones actualizada' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'No fue posible actualizar la corrección' });
+  }
+};
 
 const assignPlan = async (req, res) => {
   try {
@@ -200,6 +362,9 @@ const assignPlan = async (req, res) => {
       ? await User.findOne({ where: { id: Number(req.body.userId), estado: 'activo' } })
       : await User.findOne({ where: { username: { [Op.iLike]: document }, estado: 'activo' } });
     if (!selectedUser) return res.status(404).json({ success: false, message: 'No se encontró un usuario interno activo con ese documento' });
+
+    const currentAssignment = await PlanMejoramientoAsignacion.findOne({ where: { plan_id: plan.id, activo: true } });
+    if (currentAssignment?.user_id === selectedUser.id) return res.json({ success: true, data: await assignmentData(plan.id), message: `${selectedUser.nombre} ya es el responsable de este plan` });
 
     const transaction = await PlanMejoramientoAsignacion.sequelize.transaction();
     let assignment;
@@ -234,8 +399,11 @@ const assignPlan = async (req, res) => {
       throw error;
     }
     for (const previousUserId of previousUserIds) {
-      const remaining = await PlanMejoramientoAsignacion.count({ where: { user_id: previousUserId, activo: true } });
-      if (!remaining) await UserModulePermission.update({ can_view: false, can_manage: false }, { where: { user_id: previousUserId, module_key: 'autoevaluacion_ejecucion' } });
+      const [remainingPlans, remainingActivities] = await Promise.all([
+        PlanMejoramientoAsignacion.count({ where: { user_id: previousUserId, activo: true } }),
+        PlanMejoramientoActividadAsignacion.count({ where: { user_id: previousUserId, activo: true } })
+      ]);
+      if (!remainingPlans && !remainingActivities) await UserModulePermission.update({ can_view: false, can_manage: false }, { where: { user_id: previousUserId, module_key: 'autoevaluacion_ejecucion' } });
     }
     return res.status(201).json({ success: true, data: await assignmentData(plan.id), message: `Plan asignado a ${selectedUser.nombre}` });
   } catch (error) {
@@ -267,6 +435,10 @@ const workflowAction = async (req, res) => {
     }
     if (!transition.from.includes(assignment.estado_flujo)) return res.status(409).json({ success: false, message: `No se puede ejecutar esta acción desde el estado ${assignment.estado_flujo}` });
     if (transition.observation && !observation) return res.status(400).json({ success: false, message: 'La observación es obligatoria' });
+    if (action === 'enviar_revision') {
+      const pendingActivities = await PlanMejoramientoActividadAsignacion.count({ where: { plan_id: plan.id, activo: true, estado_flujo: { [Op.ne]: 'aprobada' } } });
+      if (pendingActivities) return res.status(409).json({ success: false, message: `Hay ${pendingActivities} actividad(es) delegada(s) pendientes de aprobación por el líder` });
+    }
     const previousState = assignment.estado_flujo;
     await assignment.update({ estado_flujo: transition.to, ultima_observacion: observation || assignment.ultima_observacion });
     await PlanMejoramientoFlujoHistorial.create({
@@ -288,11 +460,17 @@ const workflowAction = async (req, res) => {
 const executionBadge = async (req, res) => {
   try {
     const where = req.planExecutionOnly ? { user_id: req.user?.id, activo: true } : { activo: true };
-    const rows = await PlanMejoramientoAsignacion.findAll({ where, attributes: ['estado_flujo'], raw: true });
+    const taskWhere = req.planCollaboratorOnly ? { ...where, estado_flujo: { [Op.in]: ACTIONABLE_ACTIVITY_STATES } } : where;
+    const [rows, tasks] = await Promise.all([
+      PlanMejoramientoAsignacion.findAll({ where, attributes: ['estado_flujo'], raw: true }),
+      PlanMejoramientoActividadAsignacion.findAll({ where: taskWhere, attributes: ['estado_flujo'], raw: true })
+    ]);
     const pending = rows.filter((item) => req.planExecutionOnly
       ? ['asignado', 'en_ejecucion', 'devuelto'].includes(item.estado_flujo)
-      : item.estado_flujo === 'en_revision').length;
-    return res.json({ success: true, data: { access: rows.length > 0 || Boolean(req.planMejoramientoManager), pending, executionOnly: Boolean(req.planExecutionOnly) } });
+      : item.estado_flujo === 'en_revision').length + tasks.filter((item) => req.planCollaboratorOnly
+      ? ['asignada', 'en_ejecucion', 'devuelta'].includes(item.estado_flujo)
+      : item.estado_flujo === 'entregada').length;
+    return res.json({ success: true, data: { access: rows.length > 0 || tasks.length > 0 || Boolean(req.planMejoramientoManager), pending, executionOnly: Boolean(req.planExecutionOnly), collaboratorOnly: Boolean(req.planCollaboratorOnly) } });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'No fue posible consultar la bandeja de ejecución' });
   }
@@ -511,13 +689,16 @@ const list = async (req, res) => {
   try {
     const where = {};
     if (req.planExecutionOnly) {
-      const assignments = await PlanMejoramientoAsignacion.findAll({ where: { user_id: req.user?.id, activo: true }, attributes: ['plan_id'], raw: true });
-      where.id = { [Op.in]: assignments.map((item) => item.plan_id) };
+      const [assignments, tasks] = await Promise.all([
+        PlanMejoramientoAsignacion.findAll({ where: { user_id: req.user?.id, activo: true }, attributes: ['plan_id'], raw: true }),
+        PlanMejoramientoActividadAsignacion.findAll({ where: { user_id: req.user?.id, activo: true, ...(req.planCollaboratorOnly ? { estado_flujo: { [Op.in]: ACTIONABLE_ACTIVITY_STATES } } : {}) }, attributes: ['plan_id'], raw: true })
+      ]);
+      where.id = { [Op.in]: Array.from(new Set([...assignments, ...tasks].map((item) => item.plan_id))) };
     }
     if (text(req.query.programa)) where.programa = { [Op.iLike]: `%${text(req.query.programa)}%` };
     if (VALID_STATES.has(req.query.estado)) where.estado = req.query.estado;
     const rows = await PlanMejoramiento.findAll({ where, order: [['updatedAt', 'DESC'], ['id', 'DESC']] });
-    return res.json({ success: true, data: await Promise.all(rows.map(serializeWithAssignment)) });
+    return res.json({ success: true, data: await Promise.all(rows.map((row) => serializeForRequest(row, req))) });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'No fue posible consultar los planes de mejoramiento' });
   }
@@ -527,7 +708,7 @@ const get = async (req, res) => {
   const plan = await PlanMejoramiento.findByPk(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: 'Plan de mejoramiento no encontrado' });
   if (!(await canAccessPlan(req, plan.id))) return res.status(403).json({ success: false, message: 'Este plan no está asignado a tu usuario' });
-  return res.json({ success: true, data: await serializeWithAssignment(plan) });
+  return res.json({ success: true, data: await serializeForRequest(plan, req) });
 };
 
 const uploadEvidence = async (req, res) => {
@@ -537,7 +718,9 @@ const uploadEvidence = async (req, res) => {
     if (!(await canAccessPlan(req, plan.id))) return res.status(403).json({ success: false, message: 'Este plan no está asignado a tu usuario' });
     if (req.planExecutionOnly) {
       const assignment = await PlanMejoramientoAsignacion.findOne({ where: { plan_id: plan.id, user_id: req.user?.id, activo: true } });
-      if (!assignment || !['asignado', 'en_ejecucion', 'devuelto'].includes(assignment.estado_flujo)) return res.status(409).json({ success: false, message: 'El plan está bloqueado mientras se encuentra en revisión o en firme' });
+      const task = await PlanMejoramientoActividadAsignacion.findOne({ where: { plan_id: plan.id, user_id: req.user?.id, activo: true } });
+      if (assignment && !['asignado', 'en_ejecucion', 'devuelto'].includes(assignment.estado_flujo)) return res.status(409).json({ success: false, message: 'El plan está bloqueado mientras se encuentra en revisión o en firme' });
+      if (!assignment && (!task || !['asignada', 'en_ejecucion', 'devuelta'].includes(task.estado_flujo))) return res.status(409).json({ success: false, message: 'La actividad está bloqueada hasta que el líder la devuelva o habilite' });
     }
     if (!req.file?.buffer) return res.status(400).json({ success: false, message: 'Seleccione un archivo de evidencia' });
     const extension = path.extname(req.file.originalname || '').toLowerCase().slice(0, 12);
@@ -583,15 +766,17 @@ const update = async (req, res) => {
     const payload = normalizePayload(req.body);
     if (req.planExecutionOnly) {
       const assignment = await PlanMejoramientoAsignacion.findOne({ where: { plan_id: plan.id, user_id: req.user?.id, activo: true } });
-      if (!assignment || !['asignado', 'en_ejecucion', 'devuelto'].includes(assignment.estado_flujo)) return res.status(409).json({ success: false, message: 'El plan está bloqueado mientras se encuentra en revisión o en firme' });
+      const delegated = await PlanMejoramientoActividadAsignacion.findAll({ where: { plan_id: plan.id, user_id: req.user?.id, activo: true }, attributes: ['actividad_uid', 'estado_flujo'], raw: true });
+      if (assignment && !['asignado', 'en_ejecucion', 'devuelto'].includes(assignment.estado_flujo)) return res.status(409).json({ success: false, message: 'El plan está bloqueado mientras se encuentra en revisión o en firme' });
+      if (!assignment && !delegated.some((item) => ['asignada', 'en_ejecucion', 'devuelta'].includes(item.estado_flujo))) return res.status(409).json({ success: false, message: 'Las actividades están bloqueadas hasta que el líder las devuelva o habilite' });
       payload.programa = plan.programa;
       payload.periodo_inicio = plan.periodo_inicio;
       payload.periodo_fin = plan.periodo_fin;
       payload.estado = plan.estado;
-      payload.contenido = mergeExecutionContent(plan.contenido || {}, payload.contenido || {});
+      payload.contenido = mergeExecutionContent(plan.contenido || {}, payload.contenido || {}, assignment ? null : new Set(delegated.filter((item) => ['asignada', 'en_ejecucion', 'devuelta'].includes(item.estado_flujo)).map((item) => String(item.actividad_uid))));
     }
     await plan.update({ ...payload, actualizado_por: req.user?.id });
-    return res.json({ success: true, data: await serializeWithAssignment(plan) });
+    return res.json({ success: true, data: await serializeForRequest(plan, req) });
   } catch (error) {
     return res.status(error.status || 500).json({ success: false, message: error.message || 'No fue posible actualizar el plan' });
   }
@@ -995,6 +1180,7 @@ const addBudgetSummarySheet = (workbook, contenido) => {
 
 const exportExcel = async (req, res) => {
   try {
+    if (req.planCollaboratorOnly) return res.status(403).json({ success: false, message: 'El colaborador solo puede consultar y entregar las actividades asignadas' });
     const plan = await PlanMejoramiento.findByPk(req.params.id);
     if (!plan) return res.status(404).json({ success: false, message: 'Plan de mejoramiento no encontrado' });
     if (!(await canAccessPlan(req, plan.id))) return res.status(403).json({ success: false, message: 'Este plan no está asignado a tu usuario' });
@@ -1046,4 +1232,4 @@ const exportExcel = async (req, res) => {
   }
 };
 
-module.exports = { ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, list, get, create, update, remove, uploadEvidence, exportExcel };
+module.exports = { ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, exportExcel };

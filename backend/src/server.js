@@ -9,6 +9,7 @@ const morgan = require('morgan');
 const compression = require('compression');
 const multer = require('multer');
 const fs = require('fs');
+const { DataTypes } = require('sequelize');
 const { sequelize, testConnection } = require('./config/database');
 const {
   corsOptions,
@@ -316,6 +317,7 @@ testConnection()
       const PlanMejoramientoTarifaVersion = require('./models/PlanMejoramientoTarifaVersion');
       const PlanMejoramientoAsignacion = require('./models/PlanMejoramientoAsignacion');
       const PlanMejoramientoFlujoHistorial = require('./models/PlanMejoramientoFlujoHistorial');
+      const PlanMejoramientoActividadAsignacion = require('./models/PlanMejoramientoActividadAsignacion');
       const RegistroCalificadoHistorico = require('./models/RegistroCalificadoHistorico');
       const RegistroCalificadoResolucion = require('./models/RegistroCalificadoResolucion');
       const {
@@ -340,6 +342,14 @@ testConnection()
       await PlanMejoramientoTarifaVersion.sync();
       await PlanMejoramientoAsignacion.sync();
       await PlanMejoramientoFlujoHistorial.sync();
+      await PlanMejoramientoActividadAsignacion.sync();
+      const activityAssignmentColumns = await sequelize.getQueryInterface().describeTable('plan_mejoramiento_actividad_asignaciones');
+      if (!activityAssignmentColumns.historial) {
+        await sequelize.getQueryInterface().addColumn('plan_mejoramiento_actividad_asignaciones', 'historial', { type: DataTypes.JSONB, allowNull: false, defaultValue: [] });
+      }
+      if (!activityAssignmentColumns.correcciones) {
+        await sequelize.getQueryInterface().addColumn('plan_mejoramiento_actividad_asignaciones', 'correcciones', { type: DataTypes.JSONB, allowNull: false, defaultValue: [] });
+      }
       const { JuridicaCaso, JuridicaHistorial, JuridicaAdjunto } = require('./models');
       await JuridicaCaso.sync();
       await JuridicaHistorial.sync();

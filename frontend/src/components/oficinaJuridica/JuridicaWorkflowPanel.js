@@ -125,33 +125,101 @@ const emptyForm = {
   regla_aplicada: ''
 };
 
+const GROUP_THEMES = {
+  'derechos de petición': { color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+  'tutelas': { color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
+  'requerimientos': { color: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
+  'contratación': { color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' },
+  'convenios': { color: '#0e7490', bg: '#ecfeff', border: '#a5f3fc' },
+  'normatividad': { color: '#4338ca', bg: '#eef2ff', border: '#c7d2fe' },
+  'conceptos': { color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+  'procesos disciplinarios': { color: '#be123c', bg: '#fff1f2', border: '#fecdd3' },
+  'otro': { color: '#475569', bg: '#f1f5f9', border: '#cbd5e1' }
+};
+
+const getGroupTheme = (grupo) => {
+  if (!grupo) return GROUP_THEMES['otro'];
+  const key = String(grupo).toLowerCase().trim();
+  return GROUP_THEMES[key] || GROUP_THEMES['otro'];
+};
+
+const getInitials = (name) => {
+  if (!name) return '??';
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+const formatUserName = (name) => {
+  if (!name) return 'Sin asignar';
+  return String(name)
+    .toLowerCase()
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+};
+
 const StatusChip = ({ value }) => {
   const meta = STATE[value] || [value || 'Sin estado', '#475569', '#f1f5f9'];
   return (
     <Chip
       size="small"
+      icon={
+        <Box
+          sx={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            bgcolor: meta[1],
+            ml: 0.8,
+            boxShadow: `0 0 4px ${meta[1]}80`
+          }}
+        />
+      }
       label={meta[0]}
-      sx={{ color: meta[1], bgcolor: meta[2], fontWeight: 850, border: `1px solid ${meta[1]}22` }}
+      sx={{
+        color: meta[1],
+        bgcolor: meta[2],
+        fontWeight: 800,
+        border: `1px solid ${meta[1]}30`,
+        fontSize: '0.69rem',
+        height: 22,
+        maxWidth: 130,
+        '& .MuiChip-label': { px: 0.7, overflow: 'hidden', textOverflow: 'ellipsis' }
+      }}
     />
   );
 };
 
 const TermAlertChip = ({ fechaLimite, estado, fechaIngreso }) => {
   const alert = getTermAlert(fechaLimite, estado, fechaIngreso);
+  const formattedLimit = fechaLimite ? formatDateBrief(fechaLimite) : null;
+  const tooltipText = alert.sublabel
+    ? alert.sublabel
+    : formattedLimit
+    ? `Límite: ${formattedLimit} (${alert.label})`
+    : alert.label;
+
   return (
-    <Tooltip title={alert.sublabel || alert.label} arrow>
+    <Tooltip title={tooltipText} arrow placement="top">
       <Chip
         size="small"
-        icon={alert.urgent ? <AlarmRoundedIcon sx={{ fontSize: '14px !important', color: `${alert.color} !important` }} /> : undefined}
-        label={alert.label}
+        icon={alert.urgent ? <AlarmRoundedIcon sx={{ fontSize: '13px !important', color: `${alert.color} !important` }} /> : undefined}
+        label={alert.badge || alert.label}
         sx={{
           color: alert.color,
           bgcolor: alert.bg,
           fontWeight: 850,
           border: `1px solid ${alert.borderColor}`,
-          fontSize: 11.5,
-          height: 24,
-          '& .MuiChip-icon': { ml: 0.5 }
+          fontSize: '0.69rem',
+          height: 22,
+          maxWidth: 135,
+          cursor: 'pointer',
+          transition: 'transform 0.15s ease',
+          '&:hover': { transform: 'scale(1.03)' },
+          '& .MuiChip-label': { px: 0.7 },
+          '& .MuiChip-icon': { ml: 0.5, mr: -0.3 }
         }}
       />
     </Tooltip>
@@ -169,35 +237,107 @@ const saveBlob = (blob, name) => {
   URL.revokeObjectURL(url);
 };
 
-function Metric({ icon: Icon, label, value, color, helper, onClick, active }) {
+function Metric({
+  icon: Icon,
+  label,
+  value,
+  helper,
+  onClick,
+  active,
+  pastelBg = '#f0f7ff',
+  pastelBorder = '#dbeafe',
+  accentColor = '#1d4ed8'
+}) {
   return (
     <Paper
       elevation={0}
       onClick={onClick}
       sx={{
-        p: 2.1,
+        p: 1.4,
+        px: 1.6,
         borderRadius: 3,
-        border: active ? `2px solid ${color}` : '1px solid #dbe5f3',
-        bgcolor: active ? `${color}08` : '#fff',
-        flex: '1 1 170px',
-        minWidth: 165,
+        border: active ? `2px solid ${accentColor}` : `1px solid ${pastelBorder}`,
+        bgcolor: pastelBg,
+        flex: '1 1 155px',
+        minWidth: 150,
         cursor: onClick ? 'pointer' : 'default',
+        boxShadow: active ? `0 6px 18px ${accentColor}25` : '0 1px 3px rgba(15,23,42,0.03)',
         transition: 'all .2s ease',
-        '&:hover': onClick ? { transform: 'translateY(-2px)', borderColor: color, boxShadow: `0 8px 20px ${color}15` } : {}
+        position: 'relative',
+        overflow: 'hidden',
+        '&:hover': onClick
+          ? {
+              transform: 'translateY(-2px)',
+              borderColor: accentColor,
+              boxShadow: `0 8px 20px ${accentColor}20`
+            }
+          : {}
       }}
     >
-      <Stack direction="row" spacing={1.5} alignItems="center">
-        <Avatar sx={{ bgcolor: `${color}14`, color, width: 46, height: 46 }}>
-          <Icon />
+      {active && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 3.5,
+            bgcolor: accentColor
+          }}
+        />
+      )}
+      <Stack direction="row" spacing={1.2} alignItems="center">
+        <Avatar
+          sx={{
+            bgcolor: '#ffffff',
+            color: accentColor,
+            width: 38,
+            height: 38,
+            borderRadius: 2,
+            border: `1px solid ${pastelBorder}`,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+          }}
+        >
+          <Icon sx={{ fontSize: 20 }} />
         </Avatar>
-        <Box>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 900, letterSpacing: 0.5 }}>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: '#64748b',
+              fontWeight: 850,
+              letterSpacing: 0.4,
+              fontSize: '0.67rem',
+              display: 'block',
+              textTransform: 'uppercase',
+              lineHeight: 1.2
+            }}
+          >
             {label}
           </Typography>
-          <Typography variant="h5" sx={{ fontWeight: 950, color: COLORS.ink, lineHeight: 1.1 }}>
+          <Typography
+            sx={{
+              fontWeight: 950,
+              color: '#0f172a',
+              lineHeight: 1.15,
+              fontSize: '1.4rem'
+            }}
+          >
             {value ?? 0}
           </Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography
+            variant="caption"
+            sx={{
+              color: active ? accentColor : '#94a3b8',
+              fontSize: '0.66rem',
+              fontWeight: active ? 750 : 500,
+              display: 'block',
+              lineHeight: 1.1,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}
+          >
             {helper}
           </Typography>
         </Box>
@@ -353,6 +493,17 @@ export default function JuridicaWorkflowPanel() {
       setStateFilter('');
       setTermFilter('');
     }
+    setPage(0);
+  };
+
+  const handleSelectStateMetric = (st) => {
+    if (stateFilter === st && !scopeFilter && !termFilter) {
+      handleSelectAll();
+      return;
+    }
+    setStateFilter(st);
+    setTermFilter('');
+    setScopeFilter('');
     setPage(0);
   };
 
@@ -910,32 +1061,49 @@ export default function JuridicaWorkflowPanel() {
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
       {notice && <Alert severity="success" onClose={() => setNotice('')}>{notice}</Alert>}
 
-      {/* Métricas con Semáforo de Términos */}
-      <Stack direction="row" flexWrap="wrap" gap={1.5}>
+      {/* Métricas Pastel Interactivas (Unificadas - Sin duplicación) */}
+      <Stack direction="row" flexWrap="wrap" gap={1.2}>
         <Metric
           icon={InboxRoundedIcon}
-          label="TOTAL DE ASUNTOS"
+          label="TOTAL ASUNTOS"
           value={stats.total}
-          color={COLORS.blue}
-          helper="Expedientes registrados"
+          helper="Bandeja general"
+          pastelBg="#f0f7ff"
+          pastelBorder="#dbeafe"
+          accentColor="#1d4ed8"
           onClick={handleSelectAll}
           active={!stateFilter && !termFilter && !scopeFilter}
+        />
+        <Metric
+          icon={PersonRoundedIcon}
+          label="MIS ASIGNADOS"
+          value={myAssignedCount}
+          helper="Mi carga de trabajo"
+          pastelBg="#f0fdfa"
+          pastelBorder="#ccfbf1"
+          accentColor="#0f766e"
+          onClick={() => handleSelectScope('mis_asignados')}
+          active={scopeFilter === 'mis_asignados'}
         />
         <Metric
           icon={PendingActionsRoundedIcon}
           label="EN TRÁMITE"
           value={stats.abiertos}
-          color={COLORS.orange}
           helper="Bandeja activa"
-          onClick={() => { setStateFilter('asignado'); setTermFilter(''); setScopeFilter(''); setPage(0); }}
-          active={stateFilter === 'asignado' && !scopeFilter}
+          pastelBg="#fffbeb"
+          pastelBorder="#fef3c7"
+          accentColor="#d97706"
+          onClick={() => handleSelectStateMetric('asignado')}
+          active={stateFilter === 'asignado' && !scopeFilter && !termFilter}
         />
         <Metric
           icon={AlarmRoundedIcon}
           label="POR VENCER (≤ 5 D.H.)"
           value={stats.por_vencer ?? termCounts.porVencer}
-          color="#d97706"
-          helper="Términos próximos a vencer"
+          helper="Alerta preventiva"
+          pastelBg="#fefce8"
+          pastelBorder="#fef08a"
+          accentColor="#ca8a04"
           onClick={() => handleSelectScope('por_vencer')}
           active={scopeFilter === 'por_vencer'}
         />
@@ -943,8 +1111,10 @@ export default function JuridicaWorkflowPanel() {
           icon={WarningAmberRoundedIcon}
           label="VENCIDOS"
           value={stats.vencidos ?? termCounts.vencidos}
-          color={COLORS.red}
           helper="Término legal superado"
+          pastelBg="#fff1f2"
+          pastelBorder="#fecdd3"
+          accentColor="#e11d48"
           onClick={() => handleSelectScope('vencidos')}
           active={scopeFilter === 'vencidos'}
         />
@@ -952,10 +1122,12 @@ export default function JuridicaWorkflowPanel() {
           icon={CheckCircleRoundedIcon}
           label="FINALIZADOS"
           value={stats.cerrados}
-          color={COLORS.green}
           helper="Entregados o cerrados"
-          onClick={() => { setStateFilter('entregado'); setTermFilter(''); setScopeFilter(''); setPage(0); }}
-          active={stateFilter === 'entregado'}
+          pastelBg="#f0fdf4"
+          pastelBorder="#bbf7d0"
+          accentColor="#16a34a"
+          onClick={() => handleSelectStateMetric('entregado')}
+          active={stateFilter === 'entregado' && !scopeFilter && !termFilter}
         />
       </Stack>
 
@@ -1005,330 +1177,425 @@ export default function JuridicaWorkflowPanel() {
           </Box>
         ) : tab === 0 ? (
           <>
-            {/* BARRA DE VISTAS OPERATIVAS RÁPIDAS (SEGMENTOS MODERNOS) */}
-            <Box
-              sx={{
-                p: { xs: 1.2, md: 1.5 },
-                bgcolor: '#f8fafc',
-                borderBottom: '1px solid #e2e8f0',
-                overflowX: 'auto',
-                '&::-webkit-scrollbar': { height: 6 },
-                '&::-webkit-scrollbar-thumb': { bgcolor: '#cbd5e1', borderRadius: 3 }
-              }}
+            {/* Barra de Búsqueda y Filtros */}
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              spacing={1.2}
+              alignItems="center"
+              sx={{ p: 1.4, bgcolor: '#f8fafc', borderBottom: '1px solid #eef2f6' }}
             >
-              <Stack
-                direction="row"
-                spacing={1.2}
-                alignItems="center"
-                sx={{ minWidth: 'max-content' }}
-              >
-                <Typography
-                  variant="caption"
-                  sx={{
-                    fontWeight: 900,
-                    color: '#64748b',
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.7,
-                    fontSize: '0.72rem',
-                    pr: 0.5,
-                    display: { xs: 'none', lg: 'block' }
-                  }}
-                >
-                  Vistas rápidas:
-                </Typography>
-
-                <QuickScopeCard
-                  title="Todos los asuntos"
-                  subtitle="Bandeja general"
-                  icon={InboxRoundedIcon}
-                  count={rows.length}
-                  activeColor="#0b1f45"
-                  inactiveIconColor="#1e40af"
-                  badgeBg="#f1f5f9"
-                  badgeColor="#334155"
-                  active={!scopeFilter && !stateFilter && !termFilter}
-                  onClick={handleSelectAll}
-                />
-
-                <QuickScopeCard
-                  title="Mis asuntos asignados"
-                  subtitle="Mi carga laboral"
-                  icon={PersonRoundedIcon}
-                  count={myAssignedCount}
-                  activeColor="#1d4ed8"
-                  inactiveIconColor="#2563eb"
-                  badgeBg="#dbeafe"
-                  badgeColor="#1e40af"
-                  active={scopeFilter === 'mis_asignados'}
-                  onClick={() => handleSelectScope('mis_asignados')}
-                />
-
-                <QuickScopeCard
-                  title="Atrasados / Vencidos"
-                  subtitle="Término legal superado"
-                  icon={WarningAmberRoundedIcon}
-                  count={termCounts.vencidos}
-                  activeColor="#dc2626"
-                  inactiveIconColor="#dc2626"
-                  badgeBg="#fee2e2"
-                  badgeColor="#b91c1c"
-                  urgent={true}
-                  active={scopeFilter === 'vencidos'}
-                  onClick={() => handleSelectScope('vencidos')}
-                />
-
-                <QuickScopeCard
-                  title="Por vencer ≤ 5 d.h."
-                  subtitle="Alerta preventiva"
-                  icon={AlarmRoundedIcon}
-                  count={termCounts.porVencer}
-                  activeColor="#d97706"
-                  inactiveIconColor="#d97706"
-                  badgeBg="#fef3c7"
-                  badgeColor="#b45309"
-                  active={scopeFilter === 'por_vencer'}
-                  onClick={() => handleSelectScope('por_vencer')}
-                />
-
-                <QuickScopeCard
-                  title="Órdenes de salida"
-                  subtitle="Listas para radicación"
-                  icon={OutboxRoundedIcon}
-                  count={salidasCount}
-                  activeColor="#7c3aed"
-                  inactiveIconColor="#7c3aed"
-                  badgeBg="#f3e8ff"
-                  badgeColor="#6d28d9"
-                  active={scopeFilter === 'salidas'}
-                  onClick={() => handleSelectScope('salidas')}
-                />
-              </Stack>
-            </Box>
-
-            {/* AVISO INFORMATIVO DE VISTA RÁPIDA ACTIVA */}
-            {scopeFilter && (
-              <Stack
-                direction="row"
-                alignItems="center"
-                justifyContent="space-between"
-                sx={{ px: 2, py: 0.8, bgcolor: '#eff6ff', borderBottom: '1px solid #bfdbfe' }}
-              >
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Typography variant="body2" sx={{ fontWeight: 800, color: '#1e40af' }}>
-                    Vista rápida activa:
-                  </Typography>
-                  <Chip
-                    size="small"
-                    label={
-                      scopeFilter === 'mis_asignados'
-                        ? 'Mis asuntos asignados'
-                        : scopeFilter === 'vencidos'
-                        ? 'Atrasados / Vencidos (Término superado)'
-                        : scopeFilter === 'por_vencer'
-                        ? 'Por vencer (≤ 5 días hábiles)'
-                        : 'Órdenes de salida / Por radicar'
-                    }
-                    sx={{ bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 900 }}
-                  />
-                  <Typography variant="caption" sx={{ color: '#2563eb', fontWeight: 700 }}>
-                    ({filtered.length} {filtered.length === 1 ? 'asunto coincide' : 'asuntos coinciden'})
-                  </Typography>
-                </Stack>
-                <Button
-                  size="small"
-                  variant="text"
-                  onClick={handleSelectAll}
-                  sx={{ textTransform: 'none', fontWeight: 850, color: '#1d4ed8' }}
-                >
-                  Restablecer a todos
-                </Button>
-              </Stack>
-            )}
-
-            {/* Barra de Filtros con Alerta de Término */}
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ p: 1.7, bgcolor: '#f8fafc', borderBottom: '1px solid #eef2f6' }}>
               <TextField
                 fullWidth
                 size="small"
                 placeholder="Buscar por NRI, radicado, asunto, interesado, dependencia o responsable..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                InputProps={{ startAdornment: <SearchRoundedIcon sx={{ mr: 1, color: '#64748b' }} /> }}
+                InputProps={{
+                  startAdornment: <SearchRoundedIcon sx={{ mr: 1, color: '#64748b', fontSize: 19 }} />,
+                  sx: { fontSize: '0.82rem', bgcolor: '#fff', borderRadius: 2 }
+                }}
               />
 
-              <FormControl size="small" sx={{ minWidth: 200 }}>
-                <InputLabel>Grupo / Tipo</InputLabel>
-                <Select label="Grupo / Tipo" value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <InputLabel sx={{ fontSize: '0.82rem' }}>Grupo / Tipo</InputLabel>
+                <Select
+                  label="Grupo / Tipo"
+                  value={groupFilter}
+                  onChange={(e) => setGroupFilter(e.target.value)}
+                  sx={{ fontSize: '0.82rem', bgcolor: '#fff', borderRadius: 2 }}
+                >
                   <MenuItem value="">Todos los grupos</MenuItem>
                   {GROUPS.map((g) => (
-                    <MenuItem key={g} value={g}>{g}</MenuItem>
+                    <MenuItem key={g} value={g} sx={{ fontSize: '0.82rem' }}>{g}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
 
-              <FormControl size="small" sx={{ minWidth: 200 }}>
-                <InputLabel>Alerta de Término</InputLabel>
-                <Select label="Alerta de Término" value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
+              <FormControl size="small" sx={{ minWidth: 190 }}>
+                <InputLabel sx={{ fontSize: '0.82rem' }}>Alerta de Término</InputLabel>
+                <Select
+                  label="Alerta de Término"
+                  value={termFilter}
+                  onChange={(e) => setTermFilter(e.target.value)}
+                  sx={{ fontSize: '0.82rem', bgcolor: '#fff', borderRadius: 2 }}
+                >
                   <MenuItem value="">Todos los términos</MenuItem>
-                  <MenuItem value="vencidos" sx={{ color: '#dc2626', fontWeight: 700 }}>🚨 Vencidos ({termCounts.vencidos})</MenuItem>
-                  <MenuItem value="por_vencer" sx={{ color: '#d97706', fontWeight: 700 }}>⏰ Por vencer ≤ 5 d.h. ({termCounts.porVencer})</MenuItem>
-                  <MenuItem value="en_termino" sx={{ color: '#059669', fontWeight: 700 }}>🟢 En término ({termCounts.enTermino})</MenuItem>
-                  <MenuItem value="sin_limite">⚪ Sin fecha límite ({termCounts.sinLimite})</MenuItem>
-                  <MenuItem value="finalizados">✓ Finalizados</MenuItem>
+                  <MenuItem value="vencidos" sx={{ color: '#dc2626', fontWeight: 700, fontSize: '0.82rem' }}>🚨 Vencidos ({termCounts.vencidos})</MenuItem>
+                  <MenuItem value="por_vencer" sx={{ color: '#d97706', fontWeight: 700, fontSize: '0.82rem' }}>⏰ Por vencer ≤ 5 d.h. ({termCounts.porVencer})</MenuItem>
+                  <MenuItem value="en_termino" sx={{ color: '#059669', fontWeight: 700, fontSize: '0.82rem' }}>🟢 En término ({termCounts.enTermino})</MenuItem>
+                  <MenuItem value="sin_limite" sx={{ fontSize: '0.82rem' }}>⚪ Sin fecha límite ({termCounts.sinLimite})</MenuItem>
+                  <MenuItem value="finalizados" sx={{ fontSize: '0.82rem' }}>✓ Finalizados</MenuItem>
                 </Select>
               </FormControl>
 
-              <FormControl size="small" sx={{ minWidth: 180 }}>
-                <InputLabel>Estado</InputLabel>
-                <Select label="Estado" value={stateFilter} onChange={(e) => setStateFilter(e.target.value)}>
+              <FormControl size="small" sx={{ minWidth: 170 }}>
+                <InputLabel sx={{ fontSize: '0.82rem' }}>Estado</InputLabel>
+                <Select
+                  label="Estado"
+                  value={stateFilter}
+                  onChange={(e) => setStateFilter(e.target.value)}
+                  sx={{ fontSize: '0.82rem', bgcolor: '#fff', borderRadius: 2 }}
+                >
                   <MenuItem value="">Todos los estados</MenuItem>
                   {Object.entries(STATE).map(([key, value]) => (
-                    <MenuItem key={key} value={key}>{value[0]}</MenuItem>
+                    <MenuItem key={key} value={key} sx={{ fontSize: '0.82rem' }}>{value[0]}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
 
               {(search || stateFilter || termFilter || groupFilter || scopeFilter) && (
-                <Tooltip title="Limpiar todos los filtros">
-                  <IconButton
+                <Tooltip title="Restablecer todos los filtros">
+                  <Button
                     size="small"
-                    onClick={() => { setSearch(''); setStateFilter(''); setTermFilter(''); setGroupFilter(''); setScopeFilter(''); }}
-                    sx={{ alignSelf: 'center', bgcolor: '#e2e8f0' }}
+                    variant="outlined"
+                    onClick={handleSelectAll}
+                    startIcon={<FilterAltOffRoundedIcon sx={{ fontSize: '15px !important' }} />}
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 850,
+                      fontSize: '0.74rem',
+                      whiteSpace: 'nowrap',
+                      borderRadius: 2,
+                      borderColor: '#cbd5e1',
+                      color: '#475569',
+                      bgcolor: '#fff',
+                      height: 36,
+                      px: 1.2
+                    }}
                   >
-                    <FilterAltOffRoundedIcon fontSize="small" />
-                  </IconButton>
+                    Limpiar
+                  </Button>
                 </Tooltip>
               )}
             </Stack>
 
             {/* Tabla de Asuntos con Alerta y Términos */}
-            <TableContainer sx={{ maxHeight: 580 }}>
+            <TableContainer
+              sx={{
+                maxHeight: 620,
+                borderRadius: '0 0 8px 8px',
+                borderTop: '1px solid #e2e8f0',
+                '&::-webkit-scrollbar': { width: 7, height: 7 },
+                '&::-webkit-scrollbar-thumb': { bgcolor: '#cbd5e1', borderRadius: 4 },
+                '&::-webkit-scrollbar-thumb:hover': { bgcolor: '#94a3b8' }
+              }}
+            >
               <Table stickyHeader size="small">
                 <TableHead>
                   <TableRow>
-                    {['NRI / Radicado', 'Fecha radicación', 'Término y vencimiento', 'Asunto e interesado', 'Dependencia', 'Responsable', 'Estado', 'Acciones'].map((h) => (
-                      <TableCell key={h} sx={{ bgcolor: '#eef3fb', color: COLORS.navy, fontWeight: 950, py: 1.4 }}>
-                        {h}
+                    {[
+                      { label: 'NRI / Radicado', width: 115 },
+                      { label: 'Fecha radicación', width: 110 },
+                      { label: 'Término / Vencimiento', width: 140 },
+                      { label: 'Asunto e Interesado', width: 280 },
+                      { label: 'Dependencia', width: 135 },
+                      { label: 'Responsable', width: 160 },
+                      { label: 'Estado', width: 125 },
+                      { label: 'Acciones', width: 75, align: 'center' }
+                    ].map((h) => (
+                      <TableCell
+                        key={h.label}
+                        align={h.align || 'left'}
+                        sx={{
+                          bgcolor: '#0e2246',
+                          color: '#ffffff',
+                          fontWeight: 850,
+                          fontSize: '0.71rem',
+                          letterSpacing: 0.5,
+                          textTransform: 'uppercase',
+                          py: 1,
+                          px: 1.2,
+                          whiteSpace: 'nowrap',
+                          borderBottom: '2.5px solid #2563eb',
+                          width: h.width,
+                          maxWidth: h.width
+                        }}
+                      >
+                        {h.label}
                       </TableCell>
                     ))}
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {visibleRows.map((row) => (
-                    <TableRow hover key={row.id} sx={{ cursor: 'pointer' }} onClick={() => openDetail(row)}>
-                      <TableCell>
-                        <Typography fontWeight={900}>{row.nri}</Typography>
-                        <Typography variant="caption" color="text.secondary">{row.radicado || 'Sin radicado'}</Typography>
-                      </TableCell>
-
-                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                        <Typography variant="body2" fontWeight={700}>
-                          {formatDate(row.fecha_ingreso)}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Ingreso
-                        </Typography>
-                      </TableCell>
-
-                      <TableCell sx={{ minWidth: 170 }}>
-                        <Stack spacing={0.4}>
-                          <TermAlertChip
-                            fechaLimite={row.fecha_limite}
-                            estado={row.estado}
-                            fechaIngreso={row.fecha_ingreso}
-                          />
-                          {row.fecha_limite && (
-                            <Typography variant="caption" sx={{ color: '#64748b', fontSize: 11 }}>
-                              Límite: {formatDate(row.fecha_limite)}
+                  {visibleRows.map((row, index) => (
+                    <TableRow
+                      hover
+                      key={row.id}
+                      sx={{
+                        cursor: 'pointer',
+                        bgcolor: index % 2 === 0 ? '#ffffff' : '#fbfcfd',
+                        transition: 'background-color 0.15s ease',
+                        '&:hover': {
+                          bgcolor: '#f0f7ff !important',
+                          '& .action-btn': { transform: 'scale(1.08)' }
+                        }
+                      }}
+                      onClick={() => openDetail(row)}
+                    >
+                      {/* NRI / Radicado */}
+                      <TableCell sx={{ py: 0.7, px: 1.2, width: 115, maxWidth: 115, whiteSpace: 'nowrap' }}>
+                        <Stack direction="row" spacing={0.7} alignItems="center">
+                          <Box
+                            sx={{
+                              px: 0.8,
+                              py: 0.2,
+                              borderRadius: 1.5,
+                              bgcolor: '#0b1f450f',
+                              color: '#0b1f45',
+                              fontWeight: 900,
+                              fontSize: '0.74rem',
+                              border: '1px solid #0b1f451a',
+                              lineHeight: 1.2
+                            }}
+                          >
+                            #{row.nri}
+                          </Box>
+                          {row.radicado ? (
+                            <Tooltip title={`Radicado: ${row.radicado}`} arrow placement="top">
+                              <Typography
+                                sx={{
+                                  fontSize: '0.68rem',
+                                  color: '#475569',
+                                  fontWeight: 700,
+                                  maxWidth: 65,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {row.radicado}
+                              </Typography>
+                            </Tooltip>
+                          ) : (
+                            <Typography sx={{ fontSize: '0.65rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                              s/rad
                             </Typography>
                           )}
                         </Stack>
                       </TableCell>
 
-                      <TableCell sx={{ maxWidth: 360 }}>
-                        <Typography fontWeight={850} noWrap sx={{ color: '#0f172a' }}>
-                          {row.asunto}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" display="block" noWrap>
-                          {row.interesado} · <strong style={{ color: '#1d4ed8' }}>{row.grupo || 'Sin clasificar'}</strong>
+                      {/* Fecha radicación */}
+                      <TableCell sx={{ py: 0.7, px: 1, width: 110, maxWidth: 110, whiteSpace: 'nowrap' }}>
+                        <Typography sx={{ fontSize: '0.74rem', fontWeight: 750, color: '#1e293b', lineHeight: 1.2 }}>
+                          {formatDate(row.fecha_ingreso)}
                         </Typography>
                       </TableCell>
 
-                      <TableCell sx={{ maxWidth: 180 }}>
-                        <Typography variant="body2" noWrap>
-                          {row.dependencia_solicitante || '—'}
-                        </Typography>
+                      {/* Término y vencimiento */}
+                      <TableCell sx={{ py: 0.7, px: 1, width: 140, maxWidth: 140 }}>
+                        <TermAlertChip
+                          fechaLimite={row.fecha_limite}
+                          estado={row.estado}
+                          fechaIngreso={row.fecha_ingreso}
+                        />
                       </TableCell>
 
-                      <TableCell sx={{ minWidth: 175 }}>
-                        {row.metadata?.co_responsables?.length > 1 ? (
-                          <Box>
-                            <Typography variant="body2" fontWeight={800} noWrap>
-                              {row.responsable?.nombre || row.metadata?.responsable_snapshot?.nombre || 'Asesor'}
-                            </Typography>
-                            <Stack direction="row" spacing={0.6} alignItems="center" mt={0.3} flexWrap="wrap">
+                      {/* Asunto e Interesado */}
+                      <TableCell sx={{ py: 0.7, px: 1.2, width: 280, maxWidth: 280 }}>
+                        <Stack direction="row" spacing={0.6} alignItems="center" mb={0.2}>
+                          {(() => {
+                            const gTheme = getGroupTheme(row.grupo);
+                            return (
                               <Chip
                                 size="small"
-                                icon={<GroupsRoundedIcon sx={{ fontSize: '13px !important' }} />}
-                                label={`+${row.metadata.co_responsables.length - 1} co-responsables`}
-                                sx={{ height: 20, fontSize: 10.5, bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 800 }}
+                                label={row.grupo || 'General'}
+                                sx={{
+                                  height: 18,
+                                  fontSize: '0.62rem',
+                                  fontWeight: 850,
+                                  color: gTheme.color,
+                                  bgcolor: gTheme.bg,
+                                  border: `1px solid ${gTheme.border}`,
+                                  flexShrink: 0,
+                                  '& .MuiChip-label': { px: 0.6 }
+                                }}
                               />
-                              {(() => {
-                                const ids = (row.metadata?.responsables_ids || []).map(Number);
-                                const vb = row.metadata?.vistos_buenos || {};
-                                const count = ids.filter((id) => vb[id]?.aprobado).length;
-                                const all = count === ids.length && ids.length > 0;
-                                return (
-                                  <Tooltip title={`Vistos buenos: ${count} de ${ids.length} emitidos`}>
-                                    <Chip
-                                      size="small"
-                                      label={`VB: ${count}/${ids.length}`}
-                                      sx={{
-                                        height: 20,
-                                        fontSize: 10.5,
-                                        fontWeight: 900,
-                                        bgcolor: all ? '#ecfdf5' : '#fffbeb',
-                                        color: all ? '#047857' : '#b45309',
-                                        border: `1px solid ${all ? '#a7f3d0' : '#fde68a'}`
-                                      }}
-                                    />
-                                  </Tooltip>
-                                );
-                              })()}
-                            </Stack>
-                          </Box>
-                        ) : (
-                          <Typography variant="body2" fontWeight={700} noWrap>
-                            {row.responsable?.nombre || row.metadata?.responsable_snapshot?.nombre || (
-                              <Chip size="small" label="Sin asignar" sx={{ bgcolor: '#f1f5f9', color: '#64748b' }} />
-                            )}
+                            );
+                          })()}
+                          <Tooltip title={row.asunto || ''} arrow placement="top-start">
+                            <Typography
+                              sx={{
+                                fontSize: '0.75rem',
+                                fontWeight: 800,
+                                color: '#0f172a',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                flex: 1
+                              }}
+                            >
+                              {row.asunto}
+                            </Typography>
+                          </Tooltip>
+                        </Stack>
+                        <Tooltip title={`Interesado: ${row.interesado || 'Sin interesado'}`} arrow placement="bottom-start">
+                          <Typography
+                            sx={{
+                              fontSize: '0.69rem',
+                              color: '#475569',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {row.interesado || 'Sin interesado'}
                           </Typography>
-                        )}
+                        </Tooltip>
                       </TableCell>
 
-                      <TableCell>
+                      {/* Dependencia */}
+                      <TableCell sx={{ py: 0.7, px: 1, width: 135, maxWidth: 135 }}>
+                        <Tooltip title={row.dependencia_solicitante || 'Sin dependencia'} arrow placement="top">
+                          <Typography
+                            sx={{
+                              fontSize: '0.72rem',
+                              color: '#334155',
+                              fontWeight: 600,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {row.dependencia_solicitante || '—'}
+                          </Typography>
+                        </Tooltip>
+                      </TableCell>
+
+                      {/* Responsable */}
+                      <TableCell sx={{ py: 0.7, px: 1, width: 160, maxWidth: 160 }}>
+                        {(() => {
+                          const mainName = row.responsable?.nombre || row.metadata?.responsable_snapshot?.nombre;
+                          const coCount = (row.metadata?.co_responsables || []).length;
+                          const formatted = formatUserName(mainName);
+                          const initials = getInitials(mainName);
+
+                          if (!mainName) {
+                            return (
+                              <Chip
+                                size="small"
+                                label="Sin asignar"
+                                sx={{ height: 20, fontSize: '0.65rem', bgcolor: '#f1f5f9', color: '#64748b' }}
+                              />
+                            );
+                          }
+
+                          return (
+                            <Stack direction="row" spacing={0.7} alignItems="center">
+                              <Avatar
+                                sx={{
+                                  width: 22,
+                                  height: 22,
+                                  fontSize: '0.62rem',
+                                  fontWeight: 900,
+                                  bgcolor: '#0b1f45',
+                                  color: '#fff',
+                                  flexShrink: 0
+                                }}
+                              >
+                                {initials}
+                              </Avatar>
+                              <Box sx={{ minWidth: 0, flex: 1 }}>
+                                <Tooltip title={`Responsable principal: ${mainName}`} arrow placement="top">
+                                  <Typography
+                                    sx={{
+                                      fontSize: '0.73rem',
+                                      fontWeight: 750,
+                                      color: '#1e293b',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    {formatted}
+                                  </Typography>
+                                </Tooltip>
+                                {coCount > 1 && (
+                                  <Stack direction="row" spacing={0.4} alignItems="center" mt={0.15}>
+                                    <Chip
+                                      size="small"
+                                      label={`+${coCount - 1}`}
+                                      sx={{
+                                        height: 15,
+                                        fontSize: '0.6rem',
+                                        fontWeight: 900,
+                                        bgcolor: '#eff6ff',
+                                        color: '#1d4ed8',
+                                        '& .MuiChip-label': { px: 0.4 }
+                                      }}
+                                    />
+                                    {(() => {
+                                      const ids = (row.metadata?.responsables_ids || []).map(Number);
+                                      const vb = row.metadata?.vistos_buenos || {};
+                                      const count = ids.filter((id) => vb[id]?.aprobado).length;
+                                      const all = count === ids.length && ids.length > 0;
+                                      return (
+                                        <Chip
+                                          size="small"
+                                          label={`VB: ${count}/${ids.length}`}
+                                          sx={{
+                                            height: 15,
+                                            fontSize: '0.6rem',
+                                            fontWeight: 900,
+                                            bgcolor: all ? '#ecfdf5' : '#fffbeb',
+                                            color: all ? '#047857' : '#b45309',
+                                            border: `1px solid ${all ? '#a7f3d0' : '#fde68a'}`,
+                                            '& .MuiChip-label': { px: 0.4 }
+                                          }}
+                                        />
+                                      );
+                                    })()}
+                                  </Stack>
+                                )}
+                              </Box>
+                            </Stack>
+                          );
+                        })()}
+                      </TableCell>
+
+                      {/* Estado */}
+                      <TableCell sx={{ py: 0.7, px: 1, width: 125, maxWidth: 125 }}>
                         <StatusChip value={row.estado} />
                       </TableCell>
 
-                      <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
-                        <Tooltip title="Editar datos del expediente">
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEdit(row);
-                            }}
-                            sx={{ color: '#0284c7', mr: 0.5 }}
-                          >
-                            <EditRoundedIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
+                      {/* Acciones */}
+                      <TableCell align="center" sx={{ py: 0.7, px: 0.4, width: 75, maxWidth: 75, whiteSpace: 'nowrap' }}>
+                        <Stack direction="row" spacing={0.3} justifyContent="center" alignItems="center">
+                          <Tooltip title="Editar datos del expediente" arrow placement="top">
+                            <IconButton
+                              size="small"
+                              className="action-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEdit(row);
+                              }}
+                              sx={{
+                                color: '#0284c7',
+                                p: 0.5,
+                                borderRadius: 1.5,
+                                transition: 'all 0.15s ease',
+                                '&:hover': { bgcolor: '#e0f2fe', color: '#0369a1' }
+                              }}
+                            >
+                              <EditRoundedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Tooltip>
 
-                        <Tooltip title="Abrir expediente completo">
-                          <IconButton size="small" sx={{ color: COLORS.blue }}>
-                            <OpenInNewRoundedIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
+                          <Tooltip title="Abrir expediente completo" arrow placement="top">
+                            <IconButton
+                              size="small"
+                              className="action-btn"
+                              sx={{
+                                color: '#1d4ed8',
+                                p: 0.5,
+                                borderRadius: 1.5,
+                                transition: 'all 0.15s ease',
+                                '&:hover': { bgcolor: '#eff6ff', color: '#1e40af' }
+                              }}
+                            >
+                              <OpenInNewRoundedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
                       </TableCell>
                     </TableRow>
                   ))}

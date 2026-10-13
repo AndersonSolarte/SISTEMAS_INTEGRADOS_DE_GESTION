@@ -13,7 +13,6 @@ import {
   AssignmentTurnedIn as AssignmentTurnedInIcon,
   ReceiptLong as ReceiptLongIcon,
   ChevronLeft as ChevronLeftIcon,
-  ChevronRight as ChevronRightIcon,
   MenuOpen as MenuOpenIcon
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
@@ -129,10 +128,17 @@ function DashboardLayout() {
     refrescarLegalizaciones();
   }, [refrescarBadgePlanAccion, refrescarEjecucionAutoevaluacion, refrescarBadgeReposicion, refrescarLegalizaciones, location.pathname]);
 
+  useEffect(() => {
+    if (!user) return undefined;
+    const timer = window.setInterval(refrescarEjecucionAutoevaluacion, 30000);
+    return () => window.clearInterval(timer);
+  }, [user, refrescarEjecucionAutoevaluacion]);
+
   const normalizeMenuByBlocks = (items) => {
     if (!Array.isArray(items)) return [];
     const dashboardItems = items.filter((item) => !item.section && item.key === 'dashboard');
-    const nonDashboardTopItems = items.filter((item) => !item.section && item.key !== 'dashboard');
+    const pinnedTopItems = items.filter((item) => !item.section && item.key !== 'dashboard' && item.pinnedTop);
+    const nonDashboardTopItems = items.filter((item) => !item.section && item.key !== 'dashboard' && !item.pinnedTop);
     const sections = items.filter((item) => item.section);
 
     const rankSection = (section) => {
@@ -146,7 +152,7 @@ function DashboardLayout() {
       return String(a.section || '').localeCompare(String(b.section || ''));
     });
 
-    return [...dashboardItems, ...orderedSections, ...nonDashboardTopItems];
+    return [...dashboardItems, ...pinnedTopItems, ...orderedSections, ...nonDashboardTopItems];
   };
 
   const handleLogout = () => {
@@ -533,8 +539,9 @@ function DashboardLayout() {
     const executionItem = {
       key: 'autoevaluacion_ejecucion',
       path: '/dashboard/autoevaluacion-ejecucion',
-      label: 'Ejecución Autoevaluación',
+      label: executionPlanAccess.collaboratorOnly ? 'Tareas de Autoevaluación' : 'Ejecución Autoevaluación',
       icon: <AssignmentTurnedInIcon />,
+      pinnedTop: true,
       badge: executionPlanAccess.pending > 0 ? executionPlanAccess.pending : undefined
     };
     const inicioIdx = menuItems.findIndex((item) => item.key === 'dashboard');

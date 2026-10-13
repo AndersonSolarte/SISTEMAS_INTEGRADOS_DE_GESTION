@@ -16,6 +16,8 @@ import {
   FlagRounded as ObjectiveIcon,
   MonetizationOnRounded as BudgetIcon,
   PlaylistAddCheckRounded as PlanIcon,
+  PersonAddAlt1Rounded as PersonAddIcon,
+  PersonRounded as PersonIcon,
   SchoolRounded as ProgramIcon,
   SaveRounded as SaveIcon,
   TrendingUpRounded as ProgressIcon
@@ -150,10 +152,16 @@ function Metric({ icon, label, value, color }) {
   );
 }
 
-function ResponsibleAutocomplete({ activity, onChange }) {
+function ResponsibleAutocomplete({ activity, onChange, label = 'Responsable (nombre o cédula)', helperText = '' }) {
   const [inputValue, setInputValue] = useState(activity.responsableNombre || activity.responsableDocumento || '');
   const [options, setOptions] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [replacementMode, setReplacementMode] = useState(false);
+
+  useEffect(() => {
+    setReplacementMode(false);
+    setInputValue(activity.responsableNombre || activity.responsableDocumento || '');
+  }, [activity.responsableId, activity.responsableNombre, activity.responsableDocumento]);
 
   useEffect(() => {
     const query = inputValue.trim();
@@ -182,7 +190,7 @@ function ResponsibleAutocomplete({ activity, onChange }) {
     };
   }, [inputValue]);
 
-  const selected = activity.responsableId ? {
+  const selected = activity.responsableId && !replacementMode ? {
     id: activity.responsableId,
     nombre: activity.responsableNombre,
     documento: activity.responsableDocumento,
@@ -203,10 +211,14 @@ function ResponsibleAutocomplete({ activity, onChange }) {
       getOptionLabel={(option) => [option.nombre, option.documento && `CC ${option.documento}`].filter(Boolean).join(' · ')}
       onInputChange={(_, value, reason) => {
         setInputValue(value);
-        if (reason === 'clear') onChange(null);
+        if (reason === 'clear') {
+          setReplacementMode(true);
+          onChange(null);
+        }
       }}
       onChange={(_, value) => {
         onChange(value);
+        if (!value) setReplacementMode(true);
         setInputValue(value ? [value.nombre, value.documento && `CC ${value.documento}`].filter(Boolean).join(' · ') : '');
       }}
       noOptionsText={inputValue.trim().length < 2 ? 'Escriba al menos 2 caracteres' : 'No se encontraron usuarios activos'}
@@ -221,11 +233,12 @@ function ResponsibleAutocomplete({ activity, onChange }) {
       renderInput={(params) => (
         <TextField
           {...params}
-          label="Responsable (nombre o cédula)"
+          label={label}
           placeholder="Digite nombre o número de documento"
+          helperText={helperText}
           InputProps={{
             ...params.InputProps,
-            endAdornment: <>{searching ? <CircularProgress color="inherit" size={18} /> : null}{params.InputProps.endAdornment}</>
+            endAdornment: <>{activity.responsableId && !replacementMode && <Button size="small" onMouseDown={(event) => event.preventDefault()} onClick={(event) => { event.stopPropagation(); setReplacementMode(true); setInputValue(''); setOptions([]); }} sx={{ minWidth: 0, mr: 0.5, px: 1, textTransform: 'none', fontWeight: 850 }}>Reasignar</Button>}{searching ? <CircularProgress color="inherit" size={18} /> : null}{params.InputProps.endAdornment}</>
           }}
         />
       )}
@@ -248,10 +261,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [evidenceFiles, setEvidenceFiles] = useState({});
   const [recordingFollowUp, setRecordingFollowUp] = useState('');
   const [workflowObservation, setWorkflowObservation] = useState('');
+  const [activityWorkflowObservations, setActivityWorkflowObservations] = useState({});
+  const [correctionResponses, setCorrectionResponses] = useState({});
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [editor, setEditor] = useState(null);
+  const [assignmentPlan, setAssignmentPlan] = useState(null);
   const [tab, setTab] = useState(0);
   const [expandedObjective, setExpandedObjective] = useState(null);
+  const [expandedFollowUpObjective, setExpandedFollowUpObjective] = useState(0);
+  const [expandedFollowUpActivity, setExpandedFollowUpActivity] = useState(null);
   const editorRef = useRef(null);
   const lastSavedSnapshotRef = useRef('');
   const saveInFlightRef = useRef(false);
@@ -347,6 +365,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       setSaveStatus('saved');
       setEditor(nextEditor);
       setExpandedObjective(null);
+      setExpandedFollowUpObjective(0);
+      setExpandedFollowUpActivity(nextEditor.objetivos?.[0]?.actividades?.[0]?.uid || null);
       setTab(executionMode ? 3 : 0);
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible abrir el plan', { variant: 'error' }); }
   };
@@ -602,6 +622,19 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     } finally { setWorkflowBusy(false); }
   };
 
+  const assignResponsibleFromCard = async (user) => {
+    if (!user || !assignmentPlan?.id) return;
+    setWorkflowBusy(true);
+    try {
+      const response = await planMejoramientoService.assignPlan(assignmentPlan.id, { userId: user.id, documento: user.documento });
+      enqueueSnackbar(response.message || 'Responsable de ejecución asignado', { variant: 'success' });
+      setAssignmentPlan(null);
+      await loadPlans();
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible asignar el responsable', { variant: 'error' });
+    } finally { setWorkflowBusy(false); }
+  };
+
   const executeWorkflowAction = async (action) => {
     if (!editor?.id) return;
     if (['devolver', 'reabrir'].includes(action) && !workflowObservation.trim()) {
@@ -618,8 +651,66 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     } finally { setWorkflowBusy(false); }
   };
 
+  const assignActivityResponsible = async (activity, user) => {
+    if (!user || !editor?.id || !activity?.uid) return;
+    setWorkflowBusy(true);
+    try {
+      const response = await planMejoramientoService.assignActivity(editor.id, activity.uid, { userId: user.id, documento: user.documento });
+      setEditor((previous) => ({ ...previous, asignacion: response.data }));
+      enqueueSnackbar(response.message || 'Actividad delegada correctamente', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible delegar la actividad', { variant: 'error' });
+    } finally { setWorkflowBusy(false); }
+  };
+
+  const executeActivityWorkflowAction = async (activity, action) => {
+    if (!editor?.id || !activity?.uid) return;
+    const observation = String(activityWorkflowObservations[activity.uid] || '').trim();
+    if (action === 'devolver' && !observation) return enqueueSnackbar('Ingrese la retroalimentación para devolver la actividad', { variant: 'warning' });
+    setWorkflowBusy(true);
+    try {
+      const collaboratorMode = Boolean(editor.asignacion?.esColaborador);
+      const response = await planMejoramientoService.activityWorkflowAction(editor.id, activity.uid, { accion: action, observacion: observation });
+      setEditor((previous) => ({ ...previous, asignacion: { ...response.data, esColaborador: collaboratorMode } }));
+      setActivityWorkflowObservations((previous) => ({ ...previous, [activity.uid]: '' }));
+      enqueueSnackbar(response.message || 'Actividad actualizada', { variant: 'success' });
+      if (collaboratorMode && action === 'entregar') {
+        try {
+          const badge = await planMejoramientoService.executionBadge();
+          if (badge?.pending > 0) {
+            setEditor(null);
+            await loadPlans();
+          } else {
+            window.location.assign('/dashboard');
+          }
+        } catch (_) {
+          window.location.assign('/dashboard');
+        }
+      }
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible actualizar la actividad', { variant: 'error' });
+    } finally { setWorkflowBusy(false); }
+  };
+
+  const executeCorrectionAction = async (activity, correction, action) => {
+    if (!editor?.id || !activity?.uid || !correction?.id) return;
+    const responseText = String(correctionResponses[correction.id] || '').trim();
+    if (action === 'reabrir' && !responseText) return enqueueSnackbar('Ingrese el motivo para reabrir la corrección', { variant: 'warning' });
+    setWorkflowBusy(true);
+    try {
+      const isCollaborator = Boolean(editor.asignacion?.esColaborador);
+      const response = await planMejoramientoService.activityCorrectionAction(editor.id, activity.uid, correction.id, { accion: action, respuesta: responseText });
+      setEditor((previous) => ({ ...previous, asignacion: { ...response.data, esColaborador: isCollaborator } }));
+      setCorrectionResponses((previous) => ({ ...previous, [correction.id]: '' }));
+      enqueueSnackbar(response.message || 'Bitácora de correcciones actualizada', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible actualizar la corrección', { variant: 'error' });
+    } finally { setWorkflowBusy(false); }
+  };
+
   const stats = useMemo(() => editor ? planStats(editor) : null, [editor]);
   const workflowState = editor?.asignacion?.estado_flujo || '';
+  const collaboratorMode = Boolean(editor?.asignacion?.esColaborador);
   const executionLocked = executionMode && ['en_revision', 'en_firme'].includes(workflowState);
   const assignedUser = editor?.asignacion?.usuario;
   const assignmentResponsible = assignedUser ? {
@@ -631,6 +722,10 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     responsableDependencia: assignedUser.dependencia,
     responsableVicerrectoria: assignedUser.vicerrectoria
   } : {};
+  const activityAssignment = (activity) => (editor?.asignacion?.actividades || []).find((item) => String(item.actividad_uid) === String(activity?.uid));
+  const collaboratorActivityIsEditable = (activity) => collaboratorMode && ['asignada', 'en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo);
+  const followUpActivityIsExpanded = (activity, objectiveIndex, activityIndex) => collaboratorActivityIsEditable(activity)
+    || expandedFollowUpActivity === (activity.uid || `${objectiveIndex}-${activityIndex}`);
   const planOpportunities = useMemo(() => {
     const map = new Map();
     [...(editor?.oportunidadesAutoevaluacion || []), ...opportunities].forEach((item) => {
@@ -734,8 +829,25 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                         <Stack direction="row" spacing={0.7} alignItems="center" sx={{ mt: 0.7, color: '#64748b' }}><CalendarIcon sx={{ fontSize: 17 }} /><Typography variant="body2" sx={{ fontWeight: 700 }}>{plan.periodo_inicio} – {plan.periodo_fin}</Typography></Stack>
                       </Box>
                     </Stack>
-                    {!executionMode && <Tooltip title="Eliminar plan"><IconButton size="small" onClick={() => remove(plan.id)} sx={{ color: '#e11d48', bgcolor: '#fff1f2', border: '1px solid #ffe4e6', '&:hover': { bgcolor: '#ffe4e6' } }}><DeleteIcon fontSize="small" /></IconButton></Tooltip>}
+                    {!executionMode && <Stack direction="row" spacing={0.7}>
+                      <Tooltip title={plan.asignacion?.usuario ? 'Cambiar responsable de ejecución' : 'Asignar responsable de ejecución'}>
+                        <IconButton size="small" onClick={() => setAssignmentPlan(plan)} sx={{ color: '#1d4ed8', bgcolor: '#eff6ff', border: '1px solid #dbeafe', '&:hover': { bgcolor: '#dbeafe' } }}><PersonAddIcon fontSize="small" /></IconButton>
+                      </Tooltip>
+                      <Tooltip title="Eliminar plan"><IconButton size="small" onClick={() => remove(plan.id)} sx={{ color: '#e11d48', bgcolor: '#fff1f2', border: '1px solid #ffe4e6', '&:hover': { bgcolor: '#ffe4e6' } }}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                    </Stack>}
                   </Stack>
+
+                  <Box sx={{ mt: 2, px: 1.4, py: 1.1, borderRadius: 2.5, bgcolor: plan.asignacion?.usuario ? '#ecfdf5' : '#f8fafc', border: `1px solid ${plan.asignacion?.usuario ? '#a7f3d0' : '#e2e8f0'}` }}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <PersonIcon sx={{ fontSize: 20, color: plan.asignacion?.usuario ? '#047857' : '#94a3b8' }} />
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="caption" sx={{ display: 'block', color: '#64748b', fontWeight: 850 }}>Responsable de ejecución</Typography>
+                        <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {plan.asignacion?.usuario ? `${plan.asignacion.usuario.nombre} · CC ${plan.asignacion.usuario.documento || 'sin documento'}` : 'Sin asignar'}
+                        </Typography>
+                      </Box>
+                    </Stack>
+                  </Box>
 
                   <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1.2, my: 2.7 }}>
                     {[
@@ -757,13 +869,35 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
                   <Stack direction="row" spacing={1.2}>
                     <Button fullWidth variant="contained" startIcon={<EditIcon />} onClick={() => openPlan(plan.id)} sx={{ py: 1.15, borderRadius: 2.7, textTransform: 'none', fontWeight: 900, boxShadow: '0 7px 18px rgba(37,99,235,.18)' }}>Abrir plan</Button>
-                    <Button fullWidth variant="outlined" startIcon={<DownloadIcon />} onClick={() => exportExcel(plan.id, plan.programa)} sx={{ py: 1.15, borderRadius: 2.7, textTransform: 'none', fontWeight: 900, bgcolor: 'white' }}>Exportar Excel</Button>
+                    {!plan.asignacion?.esColaborador && <Button fullWidth variant="outlined" startIcon={<DownloadIcon />} onClick={() => exportExcel(plan.id, plan.programa)} sx={{ py: 1.15, borderRadius: 2.7, textTransform: 'none', fontWeight: 900, bgcolor: 'white' }}>Exportar Excel</Button>}
                   </Stack>
                 </Box>
               </Paper>
             ))}
           </Box>
         )}
+        <Dialog open={Boolean(assignmentPlan)} onClose={() => !workflowBusy && setAssignmentPlan(null)} fullWidth maxWidth="sm" PaperProps={{ sx: { borderRadius: 4, overflow: 'visible' } }}>
+          <Box sx={{ p: { xs: 2.5, md: 3 } }}>
+            <Stack direction="row" spacing={1.2} alignItems="center" sx={{ mb: 0.8 }}>
+              <Box sx={{ width: 44, height: 44, borderRadius: 2.5, display: 'grid', placeItems: 'center', bgcolor: '#eff6ff', color: '#1d4ed8' }}><PersonAddIcon /></Box>
+              <Box><Typography variant="h6" sx={{ fontWeight: 950 }}>Asignar responsable de ejecución</Typography><Typography variant="body2" sx={{ color: '#64748b' }}>{assignmentPlan?.programa}</Typography></Box>
+            </Stack>
+            <Alert severity="info" sx={{ my: 2 }}>Busque al líder por nombre o número de documento. Al seleccionarlo se habilitará automáticamente el módulo de ejecución en su SIAC.</Alert>
+            <ResponsibleAutocomplete
+              activity={assignmentPlan?.asignacion?.usuario ? {
+                responsableId: assignmentPlan.asignacion.usuario.id,
+                responsableNombre: assignmentPlan.asignacion.usuario.nombre,
+                responsableDocumento: assignmentPlan.asignacion.usuario.documento,
+                responsableEmail: assignmentPlan.asignacion.usuario.email,
+                cargoResponsable: assignmentPlan.asignacion.usuario.cargo,
+                responsableDependencia: assignmentPlan.asignacion.usuario.dependencia,
+                responsableVicerrectoria: assignmentPlan.asignacion.usuario.vicerrectoria
+              } : {}}
+              onChange={assignResponsibleFromCard}
+            />
+            <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}><Button disabled={workflowBusy} onClick={() => setAssignmentPlan(null)} sx={{ textTransform: 'none', fontWeight: 850 }}>Cancelar</Button></Stack>
+          </Box>
+        </Dialog>
       </Box>
     );
   }
@@ -775,7 +909,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       onClose={() => setEditor(null)}
       PaperProps={{ sx: { bgcolor: '#f5f7fb', backgroundImage: 'linear-gradient(180deg, #f8fbff 0%, #f5f7fb 100%)' } }}
     >
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', p: { xs: 1.5, md: 2.5 } }}>
+    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', overflow: 'visible', p: { xs: 1.5, md: 2.5 } }}>
       <Paper elevation={0} sx={{ p: { xs: 1.7, md: 2.2 }, borderRadius: 3.5, border: '1px solid #dbeafe', mb: 1.5, flexShrink: 0, bgcolor: 'rgba(255,255,255,.97)', backdropFilter: 'blur(12px)', boxShadow: '0 8px 26px rgba(15,23,42,.06)' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={2}>
           <Stack direction="row" alignItems="center" spacing={1.2}>
@@ -793,7 +927,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               </Stack>
             </Box>
           </Stack>
-          <Stack direction="row" spacing={1}><Button disabled={!editor.id} startIcon={<DownloadIcon />} onClick={() => exportExcel(editor.id, editor.programa)} sx={{ textTransform: 'none', fontWeight: 850 }}>Exportar Excel</Button><Button variant="contained" disabled={saving || executionLocked} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={save} sx={{ textTransform: 'none', fontWeight: 900 }}>{saving ? 'Guardando…' : 'Guardar ahora'}</Button></Stack>
+          <Stack direction="row" spacing={1}>{!collaboratorMode && <Button disabled={!editor.id} startIcon={<DownloadIcon />} onClick={() => exportExcel(editor.id, editor.programa)} sx={{ textTransform: 'none', fontWeight: 850 }}>Exportar Excel</Button>}<Button variant="contained" disabled={saving || executionLocked} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={save} sx={{ textTransform: 'none', fontWeight: 900 }}>{saving ? 'Guardando…' : 'Guardar ahora'}</Button></Stack>
         </Stack>
       </Paper>
 
@@ -823,7 +957,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                 <Typography variant="caption" sx={{ color: '#64748b' }}>Al asignar, se habilita automáticamente “Ejecución Autoevaluación” en el SIAC del usuario.</Typography>
               </Box>
             )}
-            {executionMode && (
+            {executionMode && !collaboratorMode && (
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                 {['asignado', 'devuelto'].includes(workflowState) && <Button variant="contained" disabled={workflowBusy} onClick={() => executeWorkflowAction('iniciar')} sx={{ textTransform: 'none', fontWeight: 900 }}>Iniciar ejecución</Button>}
                 {['en_ejecucion', 'devuelto'].includes(workflowState) && <Button variant="contained" color="warning" disabled={workflowBusy} onClick={() => executeWorkflowAction('enviar_revision')} sx={{ textTransform: 'none', fontWeight: 900 }}>Enviar a revisión</Button>}
@@ -831,6 +965,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                 {workflowState === 'en_firme' && <Alert severity="success" sx={{ py: 0 }}>Plan aprobado y en firme.</Alert>}
               </Stack>
             )}
+            {executionMode && collaboratorMode && <Alert severity="info" sx={{ py: 0 }}>Vista de colaborador: gestione únicamente las actividades que el líder le delegó.</Alert>}
           </Stack>
           {!executionMode && workflowState === 'en_revision' && (
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} sx={{ mt: 1.5 }}>
@@ -856,7 +991,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         </Paper>
       )}
 
-      <Paper elevation={0} sx={{ borderRadius: 3.5, border: '1px solid #dbe3ee', overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', boxShadow: '0 12px 35px rgba(15,23,42,.05)' }}>
+      <Paper elevation={0} sx={{ borderRadius: 3.5, border: '1px solid #dbe3ee', overflow: 'visible', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 35px rgba(15,23,42,.05)' }}>
         <Box sx={{ p: { xs: 1, md: 1.3 }, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0', overflowX: 'auto', flexShrink: 0 }}>
         <Tabs
           value={tab}
@@ -878,7 +1013,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         </Tabs>
         </Box>
 
-        <Box sx={{ p: { xs: 2, md: 3 }, flex: 1, minHeight: 0, overflowY: 'auto', bgcolor: '#ffffff' }}>
+        <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: '#ffffff', borderRadius: '0 0 14px 14px' }}>
           {tab === 0 && (
             <Stack spacing={2.2}>
               <Alert severity="info">El plan se formula para un periodo de tres años, siguiendo las fases Planear, Hacer, Verificar y Actuar.</Alert>
@@ -1143,36 +1278,111 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               <Alert severity="info">Las actividades formuladas se cargan automáticamente. Registre cada corte de seguimiento, adjunte su evidencia y verifique el cumplimiento; los registros anteriores permanecen en la trazabilidad.</Alert>
               {editor.objetivos.map((objective, objectiveIndex) => (
                 <Paper key={objective.codigo || objectiveIndex} elevation={0} sx={{ p: 2.3, borderRadius: 3.5, border: '1px solid #bfdbfe', bgcolor: '#f8fbff' }}>
-                  <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 1.5 }}>
+                  <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1.5} onClick={() => setExpandedFollowUpObjective((current) => current === objectiveIndex ? null : objectiveIndex)} sx={{ mb: expandedFollowUpObjective === objectiveIndex ? 1.5 : 0, cursor: 'pointer' }}>
                     <Box><Stack direction="row" spacing={1} alignItems="center"><Chip size="small" label={objective.codigo} color="primary" sx={{ fontWeight: 900 }} /><Typography sx={{ fontWeight: 950 }}>{objective.objetivo || 'Objetivo pendiente de formulación'}</Typography></Stack><Typography variant="body2" sx={{ color: '#64748b', mt: 0.6 }}>{objective.actividades.length} actividad{objective.actividades.length === 1 ? '' : 'es'} · Cada actividad aporta {activityWeight(objective).toFixed(1)}% al resultado del objetivo.</Typography></Box>
-                    <Box sx={{ minWidth: { md: 230 } }}><Stack direction="row" justifyContent="space-between"><Typography variant="caption" sx={{ fontWeight: 850, color: '#64748b' }}>Resultado del objetivo</Typography><Typography variant="caption" sx={{ fontWeight: 950, color: '#1d4ed8' }}>{objectiveProgress(objective).toFixed(1)}%</Typography></Stack><LinearProgress variant="determinate" value={objectiveProgress(objective)} sx={{ mt: 0.6, height: 9, borderRadius: 8 }} /></Box>
+                    <Stack direction="row" spacing={1} alignItems="center"><Box sx={{ minWidth: { xs: 200, md: 230 } }}><Stack direction="row" justifyContent="space-between"><Typography variant="caption" sx={{ fontWeight: 850, color: '#64748b' }}>Resultado del objetivo</Typography><Typography variant="caption" sx={{ fontWeight: 950, color: '#1d4ed8' }}>{objectiveProgress(objective).toFixed(1)}%</Typography></Stack><LinearProgress variant="determinate" value={objectiveProgress(objective)} sx={{ mt: 0.6, height: 9, borderRadius: 8 }} /></Box><IconButton size="small" sx={{ transform: expandedFollowUpObjective === objectiveIndex ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .2s' }}><ExpandMoreIcon /></IconButton></Stack>
                   </Stack>
+                  <Collapse in={expandedFollowUpObjective === objectiveIndex} timeout="auto" unmountOnExit>
                   <Stack spacing={1.5}>
                   {objective.actividades.map((activity, activityIndex) => (
                 <Paper key={activity.uid || `${objectiveIndex}-${activityIndex}`} elevation={0} sx={{ p: 2.1, borderRadius: 3, border: '1px solid #dbe3ee', bgcolor: 'white' }}>
-                  <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1} sx={{ mb: 1.5 }}>
+                  <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1} onClick={() => { if (!collaboratorActivityIsEditable(activity)) setExpandedFollowUpActivity((current) => current === (activity.uid || `${objectiveIndex}-${activityIndex}`) ? null : (activity.uid || `${objectiveIndex}-${activityIndex}`)); }} sx={{ mb: followUpActivityIsExpanded(activity, objectiveIndex, activityIndex) ? 1.5 : 0, cursor: collaboratorActivityIsEditable(activity) ? 'default' : 'pointer' }}>
                     <Box>
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap"><Chip size="small" label={`Actividad ${activityIndex + 1}`} sx={{ fontWeight: 900, bgcolor: '#e0f2fe', color: '#0369a1' }} /><Typography sx={{ fontWeight: 950 }}>{activity.nombre || 'Actividad pendiente de nombrar'}</Typography></Stack>
                       <Typography variant="body2" sx={{ color: '#64748b', mt: 0.35 }}>{activity.indicador || 'Indicador pendiente'} · Meta: {activity.meta || 0} · Periodo: {activity.fechaInicio || '—'} a {activity.fechaFin || '—'} · Responsable: {activity.responsableNombre || activity.cargoResponsable || 'Pendiente'}</Typography>
                     </Box>
-                    <Stack direction={{ xs: 'row', md: 'column' }} spacing={0.7} alignItems={{ xs: 'center', md: 'flex-end' }}><Chip label={`${percent(activity).toFixed(1)}% ejecutado`} sx={{ fontWeight: 900, bgcolor: percent(activity) >= 100 ? '#dcfce7' : '#fff7ed', color: percent(activity) >= 100 ? '#166534' : '#9a3412' }} /><Typography variant="caption" sx={{ fontWeight: 850, color: '#475569' }}>Aporte al objetivo: {activityContribution(objective, activity).toFixed(1)} de {activityWeight(objective).toFixed(1)}%</Typography></Stack>
+                    <Stack direction="row" spacing={0.8} alignItems="center"><Stack spacing={0.7} alignItems={{ xs: 'flex-start', md: 'flex-end' }}><Chip label={`${percent(activity).toFixed(1)}% ejecutado`} sx={{ fontWeight: 900, bgcolor: percent(activity) >= 100 ? '#dcfce7' : '#fff7ed', color: percent(activity) >= 100 ? '#166534' : '#9a3412' }} /><Typography variant="caption" sx={{ fontWeight: 850, color: '#475569' }}>Aporte al objetivo: {activityContribution(objective, activity).toFixed(1)} de {activityWeight(objective).toFixed(1)}%</Typography></Stack><IconButton size="small" disabled={collaboratorActivityIsEditable(activity)} sx={{ transform: followUpActivityIsExpanded(activity, objectiveIndex, activityIndex) ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .2s' }}><ExpandMoreIcon /></IconButton></Stack>
                   </Stack>
+                  <Collapse in={followUpActivityIsExpanded(activity, objectiveIndex, activityIndex)} timeout="auto" unmountOnExit>
+                  <Box>
+                  {executionMode && (() => {
+                    const task = activityAssignment(activity);
+                    if (!task && collaboratorMode) return null;
+                    const taskUser = task?.usuario;
+                    const taskState = task?.estado_flujo || '';
+                    const taskLabels = { asignada: 'Asignada', en_ejecucion: 'En ejecución', entregada: 'Entregada al líder', devuelta: 'Devuelta con ajustes', aprobada: 'Aprobada por el líder' };
+                    const taskResponsible = taskUser ? { responsableId: taskUser.id, responsableNombre: taskUser.nombre, responsableDocumento: taskUser.documento, responsableEmail: taskUser.email, cargoResponsable: taskUser.cargo, responsableDependencia: taskUser.dependencia, responsableVicerrectoria: taskUser.vicerrectoria } : {};
+                    return (
+                      <Paper elevation={0} sx={{ p: 1.5, mb: 1.7, borderRadius: 2.5, border: '1px solid #c7d2fe', bgcolor: '#f8faff' }}>
+                        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} alignItems={{ md: 'center' }} justifyContent="space-between">
+                          <Box>
+                            <Stack direction="row" spacing={0.8} alignItems="center"><Typography sx={{ fontWeight: 900 }}>Ejecución delegada</Typography><Chip size="small" label={taskLabels[taskState] || 'Sin delegar'} color={taskState === 'aprobada' ? 'success' : taskState === 'devuelta' ? 'error' : taskState === 'entregada' ? 'warning' : 'info'} sx={{ fontWeight: 850 }} /></Stack>
+                            {taskUser && <Typography variant="body2" sx={{ color: '#64748b' }}>{taskUser.nombre} · CC {taskUser.documento || 'sin documento'} · {taskUser.cargo || 'cargo no registrado'}</Typography>}
+                            {task?.ultima_observacion && <Typography variant="caption" sx={{ color: '#b45309', fontWeight: 800 }}>Retroalimentación: {task.ultima_observacion}</Typography>}
+                          </Box>
+                          {!collaboratorMode && <Box sx={{ width: { xs: '100%', md: 440 } }}><ResponsibleAutocomplete activity={taskResponsible} onChange={(user) => assignActivityResponsible(activity, user)} label="Colaborador de esta actividad (nombre o cédula)" helperText="Este usuario solo verá y gestionará esta actividad." /></Box>}
+                          {collaboratorMode && (
+                            <Stack direction="row" spacing={1}>
+                              {['asignada', 'devuelta'].includes(taskState) && <Button variant="contained" disabled={workflowBusy} onClick={() => executeActivityWorkflowAction(activity, 'iniciar')} sx={{ textTransform: 'none', fontWeight: 900 }}>Iniciar actividad</Button>}
+                              {['en_ejecucion', 'devuelta'].includes(taskState) && <Button color="warning" variant="contained" disabled={workflowBusy} onClick={() => executeActivityWorkflowAction(activity, 'entregar')} sx={{ textTransform: 'none', fontWeight: 900 }}>Enviar a revisión del líder</Button>}
+                            </Stack>
+                          )}
+                        </Stack>
+                        {!collaboratorMode && taskState === 'entregada' && (
+                          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ mt: 1.2 }}>
+                            <TextField fullWidth size="small" label="Retroalimentación para el colaborador" value={activityWorkflowObservations[activity.uid] || ''} onChange={(event) => setActivityWorkflowObservations((previous) => ({ ...previous, [activity.uid]: event.target.value }))} />
+                            <Button color="warning" variant="outlined" disabled={workflowBusy} onClick={() => executeActivityWorkflowAction(activity, 'devolver')} sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}>Devolver con ajustes</Button>
+                            <Button color="success" variant="contained" disabled={workflowBusy} onClick={() => executeActivityWorkflowAction(activity, 'aprobar')} sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}>Aprobar actividad</Button>
+                          </Stack>
+                        )}
+                        {(task?.correcciones || []).length > 0 && (
+                          <Box sx={{ mt: 1.5, pt: 1.3, borderTop: '1px solid #cbd5e1' }}>
+                            <Typography sx={{ fontWeight: 950, color: '#334155', mb: 1 }}>Bitácora de correcciones ({task.correcciones.length})</Typography>
+                            <Stack spacing={1}>
+                              {task.correcciones.map((correction, correctionIndex) => {
+                                const correctionTone = correction.estado === 'validada' ? { label: 'Validada', color: 'success' } : correction.estado === 'corregida' ? { label: 'Corregida · pendiente de validar', color: 'info' } : { label: 'Pendiente', color: 'warning' };
+                                return (
+                                  <Paper key={correction.id || correctionIndex} elevation={0} sx={{ p: 1.3, borderRadius: 2.2, border: '1px solid #e2e8f0', bgcolor: correction.estado === 'pendiente' ? '#fffbeb' : correction.estado === 'validada' ? '#f0fdf4' : '#eff6ff' }}>
+                                    <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1}>
+                                      <Box>
+                                        <Stack direction="row" spacing={0.8} alignItems="center" flexWrap="wrap"><Chip size="small" label={`Corrección ${correctionIndex + 1}`} sx={{ fontWeight: 850 }} /><Chip size="small" label={correctionTone.label} color={correctionTone.color} sx={{ fontWeight: 850 }} /></Stack>
+                                        <Typography variant="body2" sx={{ mt: 0.7, color: '#0f172a', fontWeight: 750 }}>{correction.descripcion}</Typography>
+                                        <Typography variant="caption" sx={{ color: '#64748b' }}>Solicitada por {correction.creadoPor || 'Líder'} · {correction.creadoAt ? new Date(correction.creadoAt).toLocaleString('es-CO') : ''}</Typography>
+                                        {correction.respuesta && <Typography variant="body2" sx={{ mt: 0.5, color: '#1d4ed8' }}><strong>Respuesta:</strong> {correction.respuesta}</Typography>}
+                                        {correction.reapertura && <Typography variant="body2" sx={{ mt: 0.5, color: '#b45309' }}><strong>Motivo de reapertura:</strong> {correction.reapertura}</Typography>}
+                                      </Box>
+                                      {collaboratorMode && correction.estado === 'pendiente' && (
+                                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.8} sx={{ minWidth: { md: 520 } }}>
+                                          <TextField fullWidth size="small" label="Qué se corrigió" value={correctionResponses[correction.id] || ''} onChange={(event) => setCorrectionResponses((previous) => ({ ...previous, [correction.id]: event.target.value }))} />
+                                          <Button variant="contained" color="success" disabled={workflowBusy} onClick={() => executeCorrectionAction(activity, correction, 'marcar_corregida')} sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}>Marcar corregida</Button>
+                                        </Stack>
+                                      )}
+                                      {!collaboratorMode && correction.estado === 'corregida' && (
+                                        <Stack direction="row" spacing={0.8} alignItems="center"><Button variant="contained" color="success" disabled={workflowBusy} onClick={() => executeCorrectionAction(activity, correction, 'validar')} sx={{ textTransform: 'none', fontWeight: 900 }}>Validar</Button></Stack>
+                                      )}
+                                    </Stack>
+                                    {!collaboratorMode && ['corregida', 'validada'].includes(correction.estado) && (
+                                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.8} sx={{ mt: 1 }}>
+                                        <TextField fullWidth size="small" label="Nueva observación para reabrir esta corrección" value={correctionResponses[correction.id] || ''} onChange={(event) => setCorrectionResponses((previous) => ({ ...previous, [correction.id]: event.target.value }))} />
+                                        <Button variant="outlined" color="warning" disabled={workflowBusy} onClick={() => executeCorrectionAction(activity, correction, 'reabrir')} sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}>Reabrir corrección</Button>
+                                      </Stack>
+                                    )}
+                                  </Paper>
+                                );
+                              })}
+                            </Stack>
+                          </Box>
+                        )}
+                        {(task?.historial || []).length > 0 && <Stack direction="row" spacing={0.7} sx={{ mt: 1, overflowX: 'auto' }}>{task.historial.map((record, index) => <Chip key={`${record.fecha}-${index}`} size="small" variant="outlined" label={`${taskLabels[record.estadoNuevo] || record.accion} · ${record.actor || 'Usuario'}${record.observacion ? ` · ${record.observacion}` : ''}`} sx={{ flexShrink: 0 }} />)}</Stack>}
+                      </Paper>
+                    );
+                  })()}
                   <LinearProgress variant="determinate" value={percent(activity)} sx={{ mb: 2, height: 8, borderRadius: 8, bgcolor: '#e2e8f0', '& .MuiLinearProgress-bar': { borderRadius: 8, bgcolor: percent(activity) >= 100 ? '#16a34a' : '#2563eb' } }} />
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5 }}>
-                    <TextField disabled={executionLocked} label="Valor alcanzado" type="number" value={activity.metaAlcanzada} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'metaAlcanzada', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
-                    <TextField disabled={executionLocked} label="Fecha del corte" type="date" InputLabelProps={{ shrink: true }} value={activity.fechaSeguimiento} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'fechaSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
-                    <TextField disabled={executionLocked} select label="Verificación" value={activity.verificacionSeguimiento || 'pendiente'} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'verificacionSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}>
+                    <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Valor alcanzado" type="number" value={activity.metaAlcanzada} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'metaAlcanzada', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
+                    <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Fecha del corte" type="date" InputLabelProps={{ shrink: true }} value={activity.fechaSeguimiento} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'fechaSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
+                    <TextField disabled={executionLocked || collaboratorMode} select label="Verificación del líder" value={activity.verificacionSeguimiento || 'pendiente'} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'verificacionSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}>
                       <MenuItem value="pendiente">Pendiente de verificación</MenuItem><MenuItem value="verificado">Cumplimiento verificado</MenuItem><MenuItem value="requiere_ajustes">Requiere ajustes</MenuItem>
                     </TextField>
-                    <TextField disabled={executionLocked} label="Enlace de evidencia (opcional si adjunta archivo)" value={activity.evidencia} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'evidencia', e.target.value)} sx={{ gridColumn: { md: 'span 5' } }} />
-                    <TextField disabled={executionLocked} label="Observaciones y retroalimentación" value={activity.observaciones} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'observaciones', e.target.value)} multiline minRows={2} sx={{ gridColumn: { md: 'span 12' } }} />
+                    <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Enlace de evidencia (opcional si adjunta archivo)" value={activity.evidencia} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'evidencia', e.target.value)} sx={{ gridColumn: { md: 'span 5' } }} />
+                    <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Observaciones y retroalimentación" value={activity.observaciones} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'observaciones', e.target.value)} multiline minRows={2} sx={{ gridColumn: { md: 'span 12' } }} />
                   </Box>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mt: 1.5 }}>
-                    <Button disabled={executionLocked} component="label" variant="outlined" startIcon={<AttachIcon />} sx={{ textTransform: 'none', fontWeight: 850 }}>
+                    <Button disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} component="label" variant="outlined" startIcon={<AttachIcon />} sx={{ textTransform: 'none', fontWeight: 850 }}>
                       {evidenceFiles[activity.uid || `${objectiveIndex}_${activityIndex}`]?.name || 'Adjuntar evidencia'}
                       <input hidden type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.zip" onChange={(event) => setEvidenceFiles((previous) => ({ ...previous, [activity.uid || `${objectiveIndex}_${activityIndex}`]: event.target.files?.[0] || null }))} />
                     </Button>
-                    <Button variant="contained" disabled={executionLocked || recordingFollowUp === (activity.uid || `${objectiveIndex}_${activityIndex}`)} onClick={() => registerFollowUp(objectiveIndex, activityIndex)} sx={{ textTransform: 'none', fontWeight: 900 }}>
+                    <Button variant="contained" disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo)) || recordingFollowUp === (activity.uid || `${objectiveIndex}_${activityIndex}`)} onClick={() => registerFollowUp(objectiveIndex, activityIndex)} sx={{ textTransform: 'none', fontWeight: 900 }}>
                       {recordingFollowUp === (activity.uid || `${objectiveIndex}_${activityIndex}`) ? 'Registrando…' : 'Registrar corte de seguimiento'}
                     </Button>
                   </Stack>
@@ -1196,9 +1406,12 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                       </TableContainer>
                     </Box>
                   )}
+                  </Box>
+                  </Collapse>
                 </Paper>
                   ))}
                   </Stack>
+                  </Collapse>
                 </Paper>
               ))}
             </Stack>
