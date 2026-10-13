@@ -91,11 +91,6 @@ const formatCop = (value) => {
   return digits ? `$ ${digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}` : '';
 };
 
-const formatIsoDate = (value) => {
-  const [year, month, day] = String(value || '').split('-');
-  return year && month && day ? `${day}/${month}/${year}` : '';
-};
-
 export default function StrategicPlanningPlatform({ onBack }) {
   const { enqueueSnackbar } = useSnackbar();
   const [space, setSpace] = useState('configuration');
@@ -2028,7 +2023,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               <Typography variant="subtitle2" fontWeight={900} color="#334155" mb={1.25}>Información administrativa</Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.5fr 1fr 1fr' }, gap: 2 }}>
                 <TextField fullWidth label="Acto administrativo" placeholder="Ejemplo: Acuerdo 012 de 2029" value={strategicPlanForm.administrative_act} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, administrative_act: e.target.value })} />
-                <TextField fullWidth type="date" InputLabelProps={{ shrink: true }} inputProps={{ min: minAdministrativeActDate || undefined, max: strategicPlanForm.ends_on || undefined }} label="Fecha del acto administrativo" value={strategicPlanForm.approved_on} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, approved_on: e.target.value })} error={administrativeDateInvalid} helperText={administrativeDateInvalid ? `Fecha fuera del rango permitido (${newPedStartYear ? newPedStartYear - 2 : ''} – ${strategicPlanForm.ends_on ? strategicPlanForm.ends_on.slice(0, 4) : ''}).` : minAdministrativeActDate ? `Permitido desde ${formatIsoDate(minAdministrativeActDate)} (aprobación previa o durante vigencia).` : 'Opcional. Fecha de aprobación del acto administrativo.'} />
+                <TextField fullWidth type="date" InputLabelProps={{ shrink: true }} inputProps={{ min: minAdministrativeActDate || undefined, max: strategicPlanForm.ends_on || undefined }} label="Fecha del acto administrativo" value={strategicPlanForm.approved_on} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, approved_on: e.target.value })} error={administrativeDateInvalid} helperText={administrativeDateInvalid ? 'Fecha fuera del rango permitido.' : undefined} />
                 <TextField fullWidth type="text" label="Presupuesto general" value={formatCop(strategicPlanForm.global_budget)} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, global_budget: copDigits(e.target.value) })} inputProps={{ inputMode: 'numeric' }} helperText="Pesos colombianos (COP)" placeholder="$ 0" />
               </Box>
             </Box>
