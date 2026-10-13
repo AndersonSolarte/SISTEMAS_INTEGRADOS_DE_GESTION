@@ -47,7 +47,7 @@ const documentScopeLiteral = (scope = 'documentos', alias = 'documentos') => {
   if (scope === 'plantillas') {
     return literal(`${sheetExpr} = 'PLANTILLAS'`);
   }
-  return literal(`(${sheetExpr} = '' OR ${sheetExpr} = 'BD_SGD_UNICESMAG' OR ${sheetExpr} = 'DOCUMENTOS')`);
+  return literal(`(${sheetExpr} = '' OR ${sheetExpr} = 'BD_SGD_UNICESMAG' OR ${sheetExpr} = 'DOCUMENTOS' OR ${sheetExpr} = 'SIAC_FORMATOS_DIGITALES')`);
 };
 
 const isLocalUploadLink = (value = '') => {
@@ -407,7 +407,8 @@ const getDocumentos = async (req, res) => {
 
     if (andConditions.length) where[Op.and] = andConditions;
     const scopeCondition = documentScopeLiteral(normalizeDocumentScope(document_scope), 'documentos');
-    where[Op.and] = [...(where[Op.and] || []), scopeCondition];
+    const presentInSheetsCondition = literal(`COALESCE("documentos"."datos_originales"->>'eliminado_sheets', 'false') <> 'true'`);
+    where[Op.and] = [...(where[Op.and] || []), scopeCondition, presentInSheetsCondition];
 
     const estadoScopeStr = String(estado_scope || '').toLowerCase().trim();
     if (estadoScopeStr === 'en_revision') {

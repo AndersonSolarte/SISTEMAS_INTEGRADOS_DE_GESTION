@@ -1626,7 +1626,7 @@ const hasDocumentalManagementPermission = useMemo(() => {
                     <Chip label="USO EVENTUAL" size="small" sx={{ position: 'absolute', top: 12, right: 12, bgcolor: '#b45309', color: '#fff', fontWeight: 800, fontSize: 9, height: 18, letterSpacing: '0.4px' }} />
                     <Box>
                       <Typography sx={{ fontWeight: 900, fontSize: 13.5, color: '#78350f', pr: 12 }}>Sincronizar todo desde Sheets</Typography>
-                      <Typography sx={{ fontSize: 11.5, color: '#d97706', mt: 0.4, lineHeight: 1.5 }}>Recorre <strong>todas</strong> las filas. Úsalo solo si hay inconsistencias graves.</Typography>
+                      <Typography sx={{ fontSize: 11.5, color: '#d97706', mt: 0.4, lineHeight: 1.5 }}>Deja el servidor igual a Sheets y retira documentos que ya no existen en la hoja.</Typography>
                     </Box>
                     <Button variant="outlined" color="warning" disabled={syncingSheet} onClick={() => handleSyncFromSheets('reemplazar')}
                       sx={{ borderRadius: '8px', py: 1.15, textTransform: 'none', fontWeight: 700, fontSize: 13, borderColor: '#f59e0b', color: '#b45309', bgcolor: '#fff', '&:hover': { bgcolor: '#fef3c7', borderColor: '#d97706' }, alignSelf: 'flex-start', minWidth: 190 }}>

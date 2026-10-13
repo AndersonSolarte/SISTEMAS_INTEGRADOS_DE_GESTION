@@ -1,11 +1,31 @@
 const XLSX = require('xlsx');
 const { google } = require('googleapis');
 const path = require('path');
-const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento, DocumentoFavorito, GestionInformacionCarga, User } = require('../models');
+const {
+  MacroProceso,
+  Proceso,
+  SubProceso,
+  TipoDocumentacion,
+  Documento,
+  DocumentoFavorito,
+  DigitalMeetingMinute,
+  ReporteSalidaSolicitud,
+  DesplazamientoViaticosSolicitud,
+  GestionInformacionCarga,
+  User
+} = require('../models');
 const { sequelize } = require('../config/database');
 const fs = require('fs');
 const MAX_DOCUMENT_IMPORT_ROWS = Number(process.env.MAX_DOCUMENT_IMPORT_ROWS || 10000);
 const GOOGLE_SHEETS_PUBLIC_TIMEOUT_MS = Number(process.env.GOOGLE_SHEETS_PUBLIC_TIMEOUT_MS || 15000);
+const SYSTEM_DIGITAL_DOCUMENT_CODES = new Set([
+  'THM-DP-FR-002',
+  'COM-ID-FR-002',
+  'COM-IF-FR-002'
+]);
+// El Acta Digital usa este codigo estable como identificador interno. Su ficha
+// es administrada por el SIAC y no debe degradarse con la fila historica de Sheets.
+const SHEET_SYNC_EXCLUDED_CODES = new Set(['COM-ID-FR-002']);
 const DOCUMENT_SYNC_SHEETS = [
   { name: 'BD_SGD_UNICESMAG', aliases: ['BD_SGD_UNICESMAG', 'Documentos'] },
   { name: 'POLÍTICAS', aliases: ['POLÍTICAS', 'POLITICAS'] },
@@ -193,12 +213,141 @@ const nextDocumentOccurrence = (occurrences, key) => {
   return index;
 };
 
+const normalizeDocumentCode = (value = '') => String(value || '').trim().toUpperCase();
+
+const documentVersionParts = (value = '') => {
+  const matches = String(value || '').match(/\d+/g);
+  return matches?.length ? matches.map((part) => Number(part) || 0) : [0];
+};
+
+const compareSheetRows = (left = {}, right = {}) => {
+  const leftParts = documentVersionParts(mapRowKeys(left).version);
+  const rightParts = documentVersionParts(mapRowKeys(right).version);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] || 0) - (rightParts[index] || 0);
+    if (difference !== 0) return difference;
+  }
+
+  const leftDate = Date.parse(excelDateToISO(mapRowKeys(left).fecha_creacion) || '') || 0;
+  const rightDate = Date.parse(excelDateToISO(mapRowKeys(right).fecha_creacion) || '') || 0;
+  return leftDate - rightDate;
+};
+
+// Un codigo identifica un unico documento. Si la hoja conserva varias versiones,
+// solo se importa la version mayor (con sus datos, incluido el nombre actualizado).
+const keepLatestSheetRowPerCode = (sheetsData = []) => {
+  const winners = new Map();
+  let sequence = 0;
+
+  sheetsData.forEach((sheet) => {
+    sheet.rows.forEach((rawRow, index) => {
+      sequence += 1;
+      const row = mapRowKeys(rawRow);
+      const { codigo } = normalizeMappedFields(row);
+      const code = normalizeDocumentCode(codigo);
+      if (!code) return;
+      const candidate = { sheet, rawRow, index, sequence };
+      const current = winners.get(code);
+      if (!current || compareSheetRows(rawRow, current.rawRow) > 0
+        || (compareSheetRows(rawRow, current.rawRow) === 0 && sequence > current.sequence)) {
+        winners.set(code, candidate);
+      }
+    });
+  });
+
+  let removed = 0;
+  const filteredSheets = sheetsData.map((sheet) => ({
+    ...sheet,
+    rows: sheet.rows.filter((rawRow, index) => {
+      const { codigo } = normalizeMappedFields(mapRowKeys(rawRow));
+      const code = normalizeDocumentCode(codigo);
+      if (!code) return true;
+      const keep = winners.get(code)?.sheet === sheet && winners.get(code)?.index === index;
+      if (!keep) removed += 1;
+      return keep;
+    })
+  }));
+
+  return { sheetsData: filteredSheets, removed };
+};
+
+const buildExistingDocumentCodeBuckets = async () => {
+  const buckets = new Map();
+  const documents = await Documento.findAll({ order: [['id', 'ASC']] });
+  documents.forEach((documento) => {
+    const code = normalizeDocumentCode(documento.codigo);
+    if (!code) return;
+    const bucket = buckets.get(code) || [];
+    bucket.push(documento);
+    buckets.set(code, bucket);
+  });
+  return buckets;
+};
+
+const moveDocumentReferences = async ({ fromIds, toId, transaction }) => {
+  if (!fromIds.length) return;
+  const favorites = await DocumentoFavorito.findAll({
+    where: { documento_id: fromIds },
+    attributes: ['user_id'],
+    raw: true,
+    transaction
+  });
+  await DocumentoFavorito.destroy({ where: { documento_id: fromIds }, transaction });
+  for (const favorite of favorites) {
+    await DocumentoFavorito.findOrCreate({
+      where: { user_id: favorite.user_id, documento_id: toId },
+      defaults: { user_id: favorite.user_id, documento_id: toId },
+      transaction
+    });
+  }
+
+  await DigitalMeetingMinute.update({ documento_id: toId }, { where: { documento_id: fromIds }, transaction });
+  await ReporteSalidaSolicitud.update({ documento_id: toId }, { where: { documento_id: fromIds }, transaction });
+  await DesplazamientoViaticosSolicitud.update({ documento_id: toId }, { where: { documento_id: fromIds }, transaction });
+};
+
+const removeDocumentsMissingFromSheets = async ({ currentCodes, processedScopes }) => sequelize.transaction(async (transaction) => {
+  const documents = await Documento.findAll({ transaction });
+  const candidates = documents.filter((documento) => {
+    const code = normalizeDocumentCode(documento.codigo);
+    // Son puntos de entrada a funcionalidades nativas del SIAC y no se deben
+    // borrar por una ausencia temporal en la fuente documental externa.
+    if (SYSTEM_DIGITAL_DOCUMENT_CODES.has(code)) return false;
+    const scope = normalizeDocumentSheetScope(documento.datos_originales?.hoja);
+    return processedScopes.has(scope) && !currentCodes.has(code);
+  });
+  if (!candidates.length) return { eliminados: 0, preservadosPorHistorial: 0 };
+
+  const ids = candidates.map((documento) => documento.id);
+  const referenceQueries = [DigitalMeetingMinute, ReporteSalidaSolicitud, DesplazamientoViaticosSolicitud]
+    .map((model) => model.findAll({ where: { documento_id: ids }, attributes: ['documento_id'], raw: true, transaction }));
+  const referenceRows = (await Promise.all(referenceQueries)).flat();
+  const referencedIds = new Set(referenceRows.map((row) => Number(row.documento_id)));
+  const deletableIds = ids.filter((id) => !referencedIds.has(Number(id)));
+  const preserved = candidates.filter((documento) => referencedIds.has(Number(documento.id)));
+
+  await DocumentoFavorito.destroy({ where: { documento_id: ids }, transaction });
+  if (deletableIds.length) await Documento.destroy({ where: { id: deletableIds }, transaction });
+
+  // Los historicos no se pueden borrar sin destruir solicitudes o actas. Se ocultan
+  // del catalogo y se conservan exclusivamente para mantener esas trazas.
+  for (const documento of preserved) {
+    await documento.update({
+      estado: 'obsoleto',
+      datos_originales: { ...(documento.datos_originales || {}), eliminado_sheets: true }
+    }, { transaction });
+  }
+
+  return { eliminados: deletableIds.length, preservadosPorHistorial: preserved.length };
+});
+
 const buildSyncMessage = ({ mode, results }) => {
   if (mode === 'incremental') {
     return `Servidor actualizado desde Sheets: ${results.importados} nuevos, ${results.actualizados} actualizados, ${results.omitidos} sin cambios, ${results.errores.length} con error de ${results.total} registros`;
   }
 
-  return `Servidor actualizado desde Sheets sin eliminar registros: ${results.importados} nuevos, ${results.actualizados} actualizados, ${results.omitidos} sin cambios, ${results.errores.length} con error de ${results.total} registros`;
+  return `Servidor sincronizado con Sheets: ${results.importados} nuevos, ${results.actualizados} actualizados, ${results.eliminados || 0} retirados, ${results.omitidos} sin cambios, ${results.errores.length} con error de ${results.total} registros`;
 };
 
 const ensureDocumentImportColumns = async () => {
@@ -255,8 +404,8 @@ const getGoogleCredentialsPath = () => (
 );
 
 const parseSheetMatrix = (values = []) => {
-  if (values.length < 2) {
-    return { success: false, status: 400, message: 'La hoja no tiene datos suficientes' };
+  if (values.length < 1) {
+    return { success: false, status: 400, message: 'La hoja no contiene encabezados' };
   }
 
   const headers = values[0].map(normalizeHeader);
@@ -272,10 +421,6 @@ const parseSheetMatrix = (values = []) => {
       });
       return obj;
     });
-
-  if (data.length === 0) {
-    return { success: false, status: 400, message: 'La hoja no tiene filas con datos' };
-  }
 
   if (data.length > MAX_DOCUMENT_IMPORT_ROWS) {
     return {
@@ -1081,20 +1226,32 @@ const importFromSheetFixed = async (req, res) => {
       });
     }
 
+    const rawTotal = sheetsData.reduce((sum, sheet) => sum + sheet.rows.length, 0);
+    const latestRows = keepLatestSheetRowPerCode(sheetsData);
+    const synchronizedSheets = latestRows.sheetsData.map((sheet) => ({
+      ...sheet,
+      rows: sheet.rows.filter((row) => {
+        const { codigo } = normalizeMappedFields(mapRowKeys(row));
+        return !SHEET_SYNC_EXCLUDED_CODES.has(normalizeDocumentCode(codigo));
+      })
+    }));
     const results = {
-      total: sheetsData.reduce((sum, sheet) => sum + sheet.rows.length, 0),
+      total: rawTotal,
       importados: 0,
       actualizados: 0,
-      omitidos: 0,
+      omitidos: latestRows.removed,
+      duplicadosDescartados: latestRows.removed,
+      eliminados: 0,
+      preservadosPorHistorial: 0,
       errores: [...sheetErrors],
       hojasProcesadas: []
     };
 
-    const existingDocumentBuckets = await buildExistingDocumentBuckets();
-    const occurrenceIndexes = new Map();
+    const existingDocumentBuckets = await buildExistingDocumentCodeBuckets();
+    const currentCodes = new Set();
     let globalIndex = 0;
 
-    for (const sheet of sheetsData) {
+    for (const sheet of synchronizedSheets) {
       const sheetResult = { hoja: sheet.logicalName, pestaña: sheet.sheetName, total: sheet.rows.length, importados: 0, actualizados: 0, omitidos: 0, errores: [] };
     for (let i = 0; i < sheet.rows.length; i++) {
       const row = mapRowKeys(sheet.rows[i]);
@@ -1174,9 +1331,10 @@ const importFromSheetFixed = async (req, res) => {
           datos_originales: { ...sheet.rows[i], hoja: sheet.logicalName }
         };
 
-        const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version, sheet.logicalName);
-        const occurrenceIndex = nextDocumentOccurrence(occurrenceIndexes, documentKey);
-        const existente = existingDocumentBuckets.get(documentKey)?.[occurrenceIndex] || null;
+        const documentKey = normalizeDocumentCode(documentoData.codigo);
+        currentCodes.add(documentKey);
+        const bucket = existingDocumentBuckets.get(documentKey) || [];
+        const existente = bucket[0] || null;
 
         if (existente) {
           if (documentNeedsUpdate(existente, documentoData)) {
@@ -1187,11 +1345,20 @@ const importFromSheetFixed = async (req, res) => {
             results.omitidos++;
             sheetResult.omitidos++;
           }
+
+          const duplicates = bucket.slice(1);
+          if (duplicates.length) {
+            const duplicateIds = duplicates.map((documento) => documento.id);
+            await sequelize.transaction(async (transaction) => {
+              await moveDocumentReferences({ fromIds: duplicateIds, toId: existente.id, transaction });
+              await Documento.destroy({ where: { id: duplicateIds }, transaction });
+            });
+            results.eliminados += duplicateIds.length;
+          }
+          existingDocumentBuckets.set(documentKey, [existente]);
         } else {
           const nuevoDocumento = await Documento.create(documentoData);
-          const bucket = existingDocumentBuckets.get(documentKey) || [];
-          bucket.push(nuevoDocumento);
-          existingDocumentBuckets.set(documentKey, bucket);
+          existingDocumentBuckets.set(documentKey, [nuevoDocumento]);
           results.importados++;
           sheetResult.importados++;
         }
@@ -1208,9 +1375,26 @@ const importFromSheetFixed = async (req, res) => {
       results.hojasProcesadas.push(sheetResult);
     }
 
+    if (mode === 'reemplazar') {
+      const scopesWithRowErrors = new Set(
+        results.hojasProcesadas
+          .filter((sheet) => sheet.errores.length > 0)
+          .map((sheet) => normalizeDocumentSheetScope(sheet.hoja))
+      );
+      const processedScopes = new Set(
+        synchronizedSheets
+          .map((sheet) => normalizeDocumentSheetScope(sheet.logicalName))
+          .filter((scope) => !scopesWithRowErrors.has(scope))
+      );
+      const cleanup = await removeDocumentsMissingFromSheets({ currentCodes, processedScopes });
+      results.eliminados += cleanup.eliminados;
+      results.preservadosPorHistorial = cleanup.preservadosPorHistorial;
+    }
+
     const totalProcesados = Number(results.importados || 0) + Number(results.actualizados || 0);
-    const porcentaje = results.total > 0 ? Number(((totalProcesados / results.total) * 100).toFixed(2)) : 0;
-    const estadoCarga = porcentaje === 100 ? 'exitoso' : (totalProcesados > 0 ? 'parcial' : 'fallido');
+    const totalAtendidos = totalProcesados + Number(results.omitidos || 0);
+    const porcentaje = results.total > 0 ? Number(((totalAtendidos / results.total) * 100).toFixed(2)) : 100;
+    const estadoCarga = results.errores.length === 0 ? 'exitoso' : (totalAtendidos > 0 ? 'parcial' : 'fallido');
 
     try {
       await GestionInformacionCarga.create({
@@ -1235,9 +1419,9 @@ const importFromSheetFixed = async (req, res) => {
       message: buildSyncMessage({ mode, results }),
       data: {
         ...results,
-        source: Array.from(new Set(sheetsData.map((sheet) => sheet.source))).join(','),
+        source: Array.from(new Set(synchronizedSheets.map((sheet) => sheet.source))).join(','),
         sheetId,
-        sheetName: sheetsData.map((sheet) => sheet.logicalName).join(',')
+        sheetName: synchronizedSheets.map((sheet) => sheet.logicalName).join(',')
       }
     });
   } catch (error) {
