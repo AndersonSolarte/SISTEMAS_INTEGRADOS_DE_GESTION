@@ -2450,11 +2450,11 @@ const loadPlanForCalendar = async (req) => {
       { model: StrategicCatalogItem, as: 'organizationalUnit' },
       {
         model: StrategicResponsibility,
-        as: 'responsibilities',
+        as: 'currentResponsibility',
         required: false,
-        where: { status: 'active' },
         include: [{ model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'cargo', 'dependencia'] }]
-      }
+      },
+      { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'cargo', 'dependencia'] }
     ]
   });
   if (!plan) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
