@@ -16,8 +16,20 @@ const juridicaAccess = async (req, res, next) => {
 
   const email = String(req.user.email || '').trim().toLowerCase();
 
-  // 1. SuperAdmin institucional exclusivo
+  // 1. SuperAdmin institucional exclusivo (con soporte para simulación de perspectivas de pruebas)
   if (email === 'sgc@unicesmag.edu.co') {
+    const simId = req.headers['x-simulated-user-id'] || req.query.simulate_user_id;
+    if (simId) {
+      try {
+        const { User } = require('../models');
+        const simUser = await User.findByPk(simId);
+        if (simUser && simUser.estado === 'activo') {
+          req.simulatedUser = simUser;
+        }
+      } catch (simErr) {
+        console.warn('Error resolviendo usuario simulado:', simErr);
+      }
+    }
     return next();
   }
 

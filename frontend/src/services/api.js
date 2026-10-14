@@ -41,6 +41,10 @@ const HTTP_STATUS_MESSAGES = {
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  const simId = localStorage.getItem('juridica_simulated_user_id');
+  if (simId) {
+    config.headers['x-simulated-user-id'] = simId;
+  }
   if (config.data instanceof FormData) {
     delete config.headers['Content-Type'];
   }

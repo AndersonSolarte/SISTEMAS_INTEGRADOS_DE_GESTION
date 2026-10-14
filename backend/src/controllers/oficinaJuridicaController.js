@@ -27,15 +27,50 @@ const parseDate = (value) => {
   const latam = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
   return latam ? `${latam[3]}-${latam[2].padStart(2, '0')}-${latam[1].padStart(2, '0')}` : null;
 };
+// Helper: Resolver el actor efectivo (permite al SuperAdmin simular perspectivas en pruebas)
+const resolveActor = (reqOrUser) => {
+  if (reqOrUser?.user) {
+    if (reqOrUser.user?.email === 'sgc@unicesmag.edu.co' && reqOrUser.simulatedUser) {
+      return reqOrUser.simulatedUser;
+    }
+    return reqOrUser.user;
+  }
+  return reqOrUser;
+};
+
 const roleFor = (user) => {
   if (user?.email === 'sgc@unicesmag.edu.co') return 'administrador';
   if (user?.role === 'administrador') return 'administrador';
   const cargo = normalize(user?.cargo);
-  const dependencia = normalize(user?.dependencia);
+  const dep = normalize(user?.dependencia);
+
+  // 1. Secretaría: cualquier cargo con 'secretari'
   if (cargo.includes('secretari')) return 'secretaria';
-  if ((cargo.includes('asesora juridica') || cargo.includes('asesor juridico')) && !cargo.includes('asistente')) return 'jefatura';
-  if (dependencia.includes('oficina juridica') || cargo.includes('juridic') || cargo.includes('abogad')) return 'asesor';
-  return 'solicitante';
+
+  // 2. Jefatura / Asesora Jurídica titular:
+  // Si menciona asesor/jefe/director/coordinador/lider juridico y NO es asistente ni auxiliar
+  if (
+    (cargo.includes('asesor') || cargo.includes('jefe') || cargo.includes('director') || cargo.includes('lider')) &&
+    !cargo.includes('asistente') &&
+    !cargo.includes('auxiliar') &&
+    (cargo.includes('jurid') || dep.includes('jurid'))
+  ) {
+    return 'jefatura';
+  }
+
+  // 3. Asistentes y Abogados ejecutores:
+  // Cualquier asistente, auxiliar, abogado o personal operativo jurídico
+  if (
+    cargo.includes('asistente') ||
+    cargo.includes('auxiliar') ||
+    cargo.includes('abogad') ||
+    cargo.includes('jurid') ||
+    dep.includes('jurid')
+  ) {
+    return 'asesor';
+  }
+
+  return 'asesor';
 };
 const userSnapshot = (user) => user ? ({ id: user.id, nombre: user.nombre, email: user.email, cargo: user.cargo, dependencia: user.dependencia }) : null;
 const addHistory = (caso, userId, evento, previous, next, comentario, datos = {}) =>
@@ -75,13 +110,36 @@ const getCaseEmailAttachments = async (casoId, maxBytes = 25 * 1024 * 1024) => {
   }
 };
 
-// Helper: Obtener personal activo de la dependencia Oficina Jurídica
+// Helper: Obtener dinámicamente todo el personal ACTIVO adscrito a Oficina Jurídica
+// Si se crea un nuevo usuario activo, aparece de inmediato. Si se inactiva o elimina, desaparece de inmediato.
+const getJuridicaActiveUsers = async () => {
+  return User.findAll({
+    attributes: USER_FIELDS,
+    where: {
+      estado: 'activo',
+      [Op.or]: [
+        {
+          dependencia: { [Op.iLike]: '%JURID%' },
+          [Op.and]: [{ dependencia: { [Op.notILike]: '%CONSULTOR%' } }]
+        },
+        {
+          cargo: { [Op.iLike]: '%JURID%' },
+          [Op.and]: [{ cargo: { [Op.notILike]: '%CONSULTOR%' } }]
+        },
+        {
+          cargo: { [Op.iLike]: '%ABOGAD%' },
+          [Op.and]: [{ cargo: { [Op.notILike]: '%CONSULTOR%' } }]
+        }
+      ]
+    },
+    order: [['nombre', 'ASC']]
+  });
+};
+
+// Helper: Obtener personal activo agrupado de la Oficina Jurídica
 const getJuridicaCoreStaff = async () => {
   try {
-    const staff = await User.findAll({
-      attributes: USER_FIELDS,
-      where: { estado: 'activo', dependencia: { [Op.iLike]: '%JURID%' } }
-    });
+    const staff = await getJuridicaActiveUsers();
     const jefatura = staff.filter((u) => roleFor(u) === 'jefatura');
     const secretaria = staff.filter((u) => roleFor(u) === 'secretaria');
     const asesores = staff.filter((u) => roleFor(u) === 'asesor');
@@ -252,17 +310,25 @@ const accessWhere = (user) => {
 };
 
 const getProfile = async (req, res) => {
-  const juridica = await User.findAll({
-    attributes: USER_FIELDS,
-    where: { estado: 'activo', dependencia: { [Op.iLike]: '%JURID%' } },
-    order: [['nombre', 'ASC']]
-  });
+  const actor = resolveActor(req);
+  const juridica = await getJuridicaActiveUsers();
   const team = juridica.map((u) => ({ ...u.toJSON(), juridica_rol: roleFor(u) }));
-  res.json({ success: true, data: { role: roleFor(req.user), team, states: VALID_STATES } });
+  res.json({
+    success: true,
+    data: {
+      role: roleFor(actor),
+      actor: userSnapshot(actor),
+      isSimulation: Boolean(req.simulatedUser),
+      simulatedUser: req.simulatedUser ? userSnapshot(req.simulatedUser) : null,
+      team,
+      states: VALID_STATES
+    }
+  });
 };
 
 const listCases = async (req, res) => {
-  const where = accessWhere(req.user);
+  const actor = resolveActor(req);
+  const where = accessWhere(actor);
   if (req.query.estado && VALID_STATES.includes(req.query.estado)) where.estado = req.query.estado;
   if (req.query.responsable_id) where.responsable_id = req.query.responsable_id;
   if (req.query.anio) where.anio = Number(req.query.anio);
@@ -289,8 +355,9 @@ const listCases = async (req, res) => {
 };
 
 const getCase = async (req, res) => {
+  const actor = resolveActor(req);
   const caso = await JuridicaCaso.findOne({
-    where: { id: req.params.id, ...accessWhere(req.user) },
+    where: { id: req.params.id, ...accessWhere(actor) },
     include: [...includeCase(), { model: JuridicaHistorial, as: 'historial', include: [{ model: User, as: 'usuario', attributes: USER_FIELDS }] }],
     order: [[{ model: JuridicaHistorial, as: 'historial' }, 'created_at', 'ASC']]
   });
@@ -379,8 +446,9 @@ const createCase = async (req, res) => {
 };
 
 const assignCase = async (req, res) => {
-  const role = roleFor(req.user);
-  const email = String(req.user.email || '').trim().toLowerCase();
+  const actor = resolveActor(req);
+  const role = roleFor(actor);
+  const email = String(actor?.email || '').trim().toLowerCase();
   const isSuperAdmin = email === 'sgc@unicesmag.edu.co';
   const isJefatura = role === 'jefatura';
 
@@ -441,7 +509,7 @@ const assignCase = async (req, res) => {
     fecha_limite: parseDate(req.body.fecha_limite) || caso.fecha_limite,
     estado: 'asignado',
     fecha_asignacion: new Date(),
-    actualizado_por: req.user.id,
+    actualizado_por: actor.id,
     metadata: {
       ...(caso.metadata || {}),
       responsables_ids: ids,
@@ -457,7 +525,7 @@ const assignCase = async (req, res) => {
   const nombresAsignados = assignees.map((u) => u.nombre).join(', ');
   await addHistory(
     caso,
-    req.user.id,
+    actor.id,
     'asignacion',
     previous,
     'asignado',
@@ -476,7 +544,7 @@ const assignCase = async (req, res) => {
     ...assigneeEmails,
     ...staff.jefatura.map((u) => u.email),
     ...staff.secretaria.map((u) => u.email),
-    req.user.email
+    actor.email
   ]));
 
   sendJuridicaNotification({
@@ -503,12 +571,13 @@ const assignCase = async (req, res) => {
 };
 
 const vistoBuenoCase = async (req, res) => {
-  const caso = await JuridicaCaso.findOne({ where: { id: req.params.id, ...accessWhere(req.user) } });
+  const actor = resolveActor(req);
+  const caso = await JuridicaCaso.findOne({ where: { id: req.params.id, ...accessWhere(actor) } });
   if (!caso) return res.status(404).json({ success: false, message: 'Expediente no encontrado.' });
 
-  const role = roleFor(req.user);
+  const role = roleFor(actor);
   const ids = caso.metadata?.responsables_ids || (caso.responsable_id ? [caso.responsable_id] : []);
-  const isAssigned = ids.some((id) => Number(id) === Number(req.user.id));
+  const isAssigned = ids.some((id) => Number(id) === Number(actor.id));
   const isPrivileged = ['administrador', 'jefatura'].includes(role);
 
   if (!isAssigned && !isPrivileged) {
@@ -518,7 +587,7 @@ const vistoBuenoCase = async (req, res) => {
     });
   }
 
-  const targetUserId = req.user.id;
+  const targetUserId = actor.id;
   const currentVb = { ...(caso.metadata?.vistos_buenos || {}) };
 
   currentVb[targetUserId] = {
@@ -526,8 +595,8 @@ const vistoBuenoCase = async (req, res) => {
     fecha: new Date().toISOString(),
     comentario: clean(req.body.comentario, 2000) || 'Visto bueno favorable emitido sin observaciones.',
     usuario_id: targetUserId,
-    nombre: req.user.nombre,
-    cargo: req.user.cargo
+    nombre: actor.nombre,
+    cargo: actor.cargo
   };
 
   const checkIds = ids.length ? ids : [targetUserId];
@@ -542,7 +611,7 @@ const vistoBuenoCase = async (req, res) => {
 
   await caso.update({
     estado: nextState,
-    actualizado_por: req.user.id,
+    actualizado_por: actor.id,
     metadata: {
       ...(caso.metadata || {}),
       vistos_buenos: currentVb,
@@ -552,13 +621,13 @@ const vistoBuenoCase = async (req, res) => {
 
   await addHistory(
     caso,
-    req.user.id,
+    actor.id,
     'visto_bueno',
     previousState,
     nextState,
-    req.body.comentario || `Visto bueno emitido por ${req.user.nombre}. Progreso: ${totalApproved}/${checkIds.length} asesores.`,
+    req.body.comentario || `Visto bueno emitido por ${actor.nombre}. Progreso: ${totalApproved}/${checkIds.length} asesores.`,
     {
-      usuario_nombre: req.user.nombre,
+      usuario_nombre: actor.nombre,
       progreso_vistos_buenos: `${totalApproved}/${checkIds.length}`,
       todos_aprobados: allApproved
     }
@@ -570,7 +639,7 @@ const vistoBuenoCase = async (req, res) => {
     const notifyRecipients = Array.from(new Set([
       ...staff.jefatura.map((u) => u.email),
       ...staff.secretaria.map((u) => u.email),
-      req.user.email
+      actor.email
     ]));
 
     sendJuridicaNotification({
@@ -585,7 +654,7 @@ const vistoBuenoCase = async (req, res) => {
         { label: 'Asunto', value: caso.asunto },
         { label: 'Interesado', value: caso.interesado },
         { label: 'Vistos buenos emitidos', value: `${totalApproved}/${checkIds.length} asesores` },
-        { label: 'Último visto bueno por', value: `${req.user.nombre} (${req.user.cargo || 'Asesor Jurídico'})` },
+        { label: 'Último visto bueno por', value: `${actor.nombre} (${actor.cargo || 'Asesor Jurídico'})` },
         { label: 'Observaciones del asesor', value: req.body.comentario || 'Se adjuntan los documentos de respuesta para revisión y aprobación final.' }
       ],
       includeAttachments: true
@@ -602,11 +671,12 @@ const vistoBuenoCase = async (req, res) => {
 };
 
 const transitionCase = async (req, res) => {
+  const actor = resolveActor(req);
   const next = clean(req.body.estado, 60);
   if (!VALID_STATES.includes(next)) return res.status(400).json({ success: false, message: 'Estado no válido.' });
-  const caso = await JuridicaCaso.findOne({ where: { id: req.params.id, ...accessWhere(req.user) } });
+  const caso = await JuridicaCaso.findOne({ where: { id: req.params.id, ...accessWhere(actor) } });
   if (!caso) return res.status(404).json({ success: false, message: 'Caso no encontrado.' });
-  const role = roleFor(req.user);
+  const role = roleFor(actor);
 
   // Restricciones de roles según el flujo operativo legal de Unicesmag:
   // - Asesor: inicia estudio, puede enviar a revisión de jefatura
@@ -650,7 +720,7 @@ const transitionCase = async (req, res) => {
   }
 
   const previous = caso.estado;
-  const changes = { estado: next, actualizado_por: req.user.id };
+  const changes = { estado: next, actualizado_por: actor.id };
   if (next === 'respuesta_revision') changes.fecha_entrega_asesor = new Date();
   if (next === 'entregado') changes.fecha_atencion = new Date();
   if (next === 'cerrado') changes.fecha_cierre = new Date();
@@ -658,7 +728,7 @@ const transitionCase = async (req, res) => {
     if (req.body[key] !== undefined) changes[key] = clean(req.body[key], key === 'resultado' || key === 'observaciones' ? 20000 : 5000) || null;
   });
   await caso.update(changes);
-  await addHistory(caso, req.user.id, 'cambio_estado', previous, next, req.body.comentario);
+  await addHistory(caso, actor.id, 'cambio_estado', previous, next, req.body.comentario);
 
   // Disparar notificaciones por correo institucional según el nuevo estado
   const staff = await getJuridicaCoreStaff();
@@ -672,7 +742,7 @@ const transitionCase = async (req, res) => {
       ...staff.jefatura.map((u) => u.email),
       ...staff.secretaria.map((u) => u.email),
       ...assignedEmails,
-      req.user.email
+      actor.email
     ]));
 
     sendJuridicaNotification({
@@ -680,7 +750,7 @@ const transitionCase = async (req, res) => {
       recipients: notifyRecipients,
       subject: `[Oficina Jurídica] Respuesta en Revisión de Jefatura - NRI ${caso.nri}`,
       title: 'Respuesta jurídica enviada a revisión de Jefatura',
-      intro: `<p>Cordial Saludo de Paz y Bien,</p><p>El expediente <strong>NRI ${escapeHtml(caso.nri)}</strong> ha sido remitido a <strong>Revisión de Jefatura</strong> por parte de <strong>${escapeHtml(req.user.nombre)}</strong>:</p>`,
+      intro: `<p>Cordial Saludo de Paz y Bien,</p><p>El expediente <strong>NRI ${escapeHtml(caso.nri)}</strong> ha sido remitido a <strong>Revisión de Jefatura</strong> por parte de <strong>${escapeHtml(actor.nombre)}</strong>:</p>`,
       badgeText: 'Respuesta en Revisión',
       badgeColor: '#7c3aed',
       details: [
@@ -695,7 +765,7 @@ const transitionCase = async (req, res) => {
     const notifyRecipients = Array.from(new Set([
       ...assignedEmails,
       ...staff.jefatura.map((u) => u.email),
-      req.user.email
+      actor.email
     ]));
 
     sendJuridicaNotification({
@@ -719,7 +789,7 @@ const transitionCase = async (req, res) => {
       ...staff.secretaria.map((u) => u.email),
       ...assignedEmails,
       ...staff.jefatura.map((u) => u.email),
-      req.user.email
+      actor.email
     ]));
 
     sendJuridicaNotification({
@@ -744,7 +814,7 @@ const transitionCase = async (req, res) => {
       ...staff.jefatura.map((u) => u.email),
       ...staff.secretaria.map((u) => u.email),
       ...assignedEmails,
-      req.user.email
+      actor.email
     ]));
 
     sendJuridicaNotification({
@@ -796,7 +866,7 @@ const transitionCase = async (req, res) => {
 
         await addHistory(
           caso,
-          req.user.id,
+          actor.id,
           'depuracion_adjuntos',
           previous,
           next,
@@ -812,19 +882,21 @@ const transitionCase = async (req, res) => {
 };
 
 const updateCase = async (req, res) => {
-  const caso = await JuridicaCaso.findOne({ where: { id: req.params.id, ...accessWhere(req.user) } });
+  const actor = resolveActor(req);
+  const caso = await JuridicaCaso.findOne({ where: { id: req.params.id, ...accessWhere(actor) } });
   if (!caso) return res.status(404).json({ success: false, message: 'Caso no encontrado.' });
   const allowed = ['fecha_ingreso', 'radicado', 'accion', 'detalle', 'asunto', 'grupo', 'clase', 'interesado', 'descripcion', 'nivel', 'dependencia_solicitante', 'oficina', 'forma_recepcion', 'fecha_limite', 'despacho', 'acta', 'observaciones', 'resultado', 'devolucion'];
-  const changes = { actualizado_por: req.user.id };
+  const changes = { actualizado_por: actor.id };
   allowed.forEach((key) => { if (req.body[key] !== undefined) changes[key] = key.startsWith('fecha_') ? parseDate(req.body[key]) : clean(req.body[key], 20000) || null; });
   await caso.update(changes);
-  await addHistory(caso, req.user.id, 'actualizacion', caso.estado, caso.estado, req.body.comentario || 'Información del expediente actualizada.');
+  await addHistory(caso, actor.id, 'actualizacion', caso.estado, caso.estado, req.body.comentario || 'Información del expediente actualizada.');
   res.json({ success: true, data: await JuridicaCaso.findByPk(caso.id, { include: includeCase() }) });
 };
 
 const uploadAttachment = async (req, res) => {
+  const actor = resolveActor(req);
   if (!req.file) return res.status(400).json({ success: false, message: 'Seleccione un archivo.' });
-  const caso = await JuridicaCaso.findOne({ where: { id: req.params.id, ...accessWhere(req.user) } });
+  const caso = await JuridicaCaso.findOne({ where: { id: req.params.id, ...accessWhere(actor) } });
   if (!caso) return res.status(404).json({ success: false, message: 'Caso no encontrado.' });
 
   // Seguridad y política temporal: No permitir cargas a expedientes cerrados/entregados
@@ -836,11 +908,11 @@ const uploadAttachment = async (req, res) => {
   }
 
   const adjunto = await JuridicaAdjunto.create({
-    caso_id: caso.id, usuario_id: req.user.id, tipo: clean(req.body.tipo, 60) || 'soporte',
+    caso_id: caso.id, usuario_id: actor.id, tipo: clean(req.body.tipo, 60) || 'soporte',
     nombre_original: clean(req.file.originalname, 500), mime_type: clean(req.file.mimetype, 150),
     tamano_bytes: req.file.size, sha256: crypto.createHash('sha256').update(req.file.buffer).digest('hex'), contenido: req.file.buffer
   });
-  await addHistory(caso, req.user.id, 'adjunto', caso.estado, caso.estado, `Archivo adjunto: ${adjunto.nombre_original}`, { adjunto_id: String(adjunto.id) });
+  await addHistory(caso, actor.id, 'adjunto', caso.estado, caso.estado, `Archivo adjunto: ${adjunto.nombre_original}`, { adjunto_id: String(adjunto.id) });
   res.status(201).json({ success: true, data: { id: adjunto.id, nombre_original: adjunto.nombre_original, tipo: adjunto.tipo } });
 };
 
@@ -858,7 +930,8 @@ const downloadAttachment = async (req, res) => {
 };
 
 const stats = async (req, res) => {
-  const where = accessWhere(req.user);
+  const actor = resolveActor(req);
+  const where = accessWhere(actor);
   if (req.query.anio) where.anio = Number(req.query.anio);
   const rows = await JuridicaCaso.findAll({
     where,
@@ -896,7 +969,8 @@ const stats = async (req, res) => {
 };
 
 const exportExcel = async (req, res) => {
-  const rows = await JuridicaCaso.findAll({ where: accessWhere(req.user), include: includeCase(), order: [['anio', 'DESC'], ['nri', 'DESC']] });
+  const actor = resolveActor(req);
+  const rows = await JuridicaCaso.findAll({ where: accessWhere(actor), include: includeCase(), order: [['anio', 'DESC'], ['nri', 'DESC']] });
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('GENERAL', { views: [{ state: 'frozen', ySplit: 1 }] });
   ws.columns = [
@@ -921,7 +995,8 @@ const cellValue = (cell) => {
   return value ?? '';
 };
 const importExcel = async (req, res) => {
-  if (!['administrador', 'jefatura', 'secretaria'].includes(roleFor(req.user))) return res.status(403).json({ success: false, message: 'No autorizado para importar.' });
+  const actor = resolveActor(req);
+  if (!['administrador', 'jefatura', 'secretaria'].includes(roleFor(actor))) return res.status(403).json({ success: false, message: 'No autorizado para importar.' });
   if (!req.file) return res.status(400).json({ success: false, message: 'Seleccione el Excel de seguimiento.' });
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(req.file.buffer);
@@ -953,11 +1028,11 @@ const importExcel = async (req, res) => {
       acta: clean(cellValue(row.getCell(27)), 180) || null, observaciones: clean(cellValue(row.getCell(28)), 20000) || null,
       estado: inferredState,
       origen: clean(cellValue(row.getCell(30)), 120) || 'Importación histórica', resultado: clean(cellValue(row.getCell(31)), 20000) || null,
-      devolucion: clean(cellValue(row.getCell(33)), 5000) || null, actualizado_por: req.user.id,
+      devolucion: clean(cellValue(row.getCell(33)), 5000) || null, actualizado_por: actor.id,
       metadata: { importado_desde_excel: true, fila_origen: rowNumber, responsable_snapshot: responsible ? userSnapshot(responsible) : (responsibleName ? { nombre: responsibleName } : null) }
     };
-    const [caso, created] = await JuridicaCaso.findOrCreate({ where: { anio: year, nri }, defaults: { ...payload, creado_por: req.user.id } });
-    if (created) { imported += 1; await addHistory(caso, req.user.id, 'importacion', null, caso.estado, `Importado desde fila ${rowNumber}.`); }
+    const [caso, created] = await JuridicaCaso.findOrCreate({ where: { anio: year, nri }, defaults: { ...payload, creado_por: actor.id } });
+    if (created) { imported += 1; await addHistory(caso, actor.id, 'importacion', null, caso.estado, `Importado desde fila ${rowNumber}.`); }
     else { await caso.update(payload); updated += 1; }
   }
   res.json({ success: true, data: { imported, updated, skipped, total: imported + updated } });

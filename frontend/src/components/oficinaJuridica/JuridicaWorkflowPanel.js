@@ -591,6 +591,14 @@ export default function JuridicaWorkflowPanel() {
     load();
   }, [load]);
 
+  // Usuario efectivo para permisos y filtrado (soporta simulación de perspectiva)
+  const effectiveUser = useMemo(() => {
+    if (profile.isSimulation && profile.actor) {
+      return profile.actor;
+    }
+    return authUser;
+  }, [profile, authUser]);
+
   // Contabilización en vivo de términos
   const termCounts = useMemo(() => {
     let vencidos = 0;
@@ -611,15 +619,15 @@ export default function JuridicaWorkflowPanel() {
 
   // Contadores para filtros de asesor
   const myAssignedCount = useMemo(() => {
-    if (!authUser?.id) return 0;
-    const uid = Number(authUser.id);
+    const uid = Number(effectiveUser?.id);
+    if (!uid) return 0;
     return rows.filter((r) => {
       const respId = Number(r.responsable_id);
       const isDirect = respId === uid || r.metadata?.responsable_snapshot?.id === uid;
       const ids = (r.metadata?.responsables_ids || []).map(Number);
       return isDirect || ids.includes(uid);
     }).length;
-  }, [rows, authUser]);
+  }, [rows, effectiveUser]);
 
   const salidasCount = useMemo(() => {
     return rows.filter((r) => ['aprobado_jefatura', 'pendiente_radicacion_salida', 'respuesta_revision'].includes(r.estado)).length;
@@ -640,7 +648,7 @@ export default function JuridicaWorkflowPanel() {
 
       let matchesScope = true;
       if (scopeFilter === 'mis_asignados') {
-        const uid = Number(authUser?.id);
+        const uid = Number(effectiveUser?.id);
         const respId = Number(row.responsable_id);
         const isDirect = respId === uid || row.metadata?.responsable_snapshot?.id === uid;
         const ids = (row.metadata?.responsables_ids || []).map(Number);
@@ -667,7 +675,7 @@ export default function JuridicaWorkflowPanel() {
 
       return matchesSearch && matchesState && matchesGroup && matchesScope && matchesTerm;
     });
-  }, [rows, search, stateFilter, groupFilter, scopeFilter, termFilter, authUser]);
+  }, [rows, search, stateFilter, groupFilter, scopeFilter, termFilter, effectiveUser]);
 
   const visibleRows = useMemo(() => {
     return filtered.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
@@ -677,11 +685,33 @@ export default function JuridicaWorkflowPanel() {
     setPage(0);
   }, [search, stateFilter, groupFilter, scopeFilter, termFilter]);
 
-  const advisers = profile.team.filter((u) => ['asesor', 'jefatura'].includes(u.juridica_rol));
-  const secretaries = profile.team.filter((u) => u.juridica_rol === 'secretaria');
+  const advisers = useMemo(() => profile.team.filter((u) => ['asesor', 'jefatura'].includes(u.juridica_rol)), [profile.team]);
+  const secretaries = useMemo(() => profile.team.filter((u) => u.juridica_rol === 'secretaria'), [profile.team]);
+  const jefaturaList = useMemo(() => profile.team.filter((u) => u.juridica_rol === 'jefatura'), [profile.team]);
+  const secretariaList = useMemo(() => profile.team.filter((u) => u.juridica_rol === 'secretaria'), [profile.team]);
+  const asesorList = useMemo(() => profile.team.filter((u) => u.juridica_rol === 'asesor'), [profile.team]);
+
   const isSuperAdmin = String(authUser?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
   const isJefatura = profile.role === 'jefatura';
-  const canAssign = isSuperAdmin || isJefatura;
+  // La secretaría NO puede asignar expedientes. Solo la Jefatura o el SuperAdmin (en vista real)
+  const canAssign = (!profile.isSimulation && isSuperAdmin) || isJefatura;
+
+  const handleSwitchPerspective = async (userId) => {
+    setBusy(true);
+    try {
+      oficinaJuridicaService.setSimulatedUserId(userId);
+      await load();
+      if (userId) {
+        setNotice('Modo de simulación activado. Ahora estás visualizando la interfaz exactamente como este funcionario.');
+      } else {
+        setNotice('Has vuelto a tu vista de SuperAdmin (Control Total).');
+      }
+    } catch (err) {
+      setError('Error al cambiar de perspectiva de usuario.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const refreshSelected = async (id) => {
     const response = await oficinaJuridicaService.get(id);
@@ -920,14 +950,15 @@ export default function JuridicaWorkflowPanel() {
   };
 
   const canGiveVistoBueno = useMemo(() => {
-    if (!selected || !authUser?.id) return false;
-    const uid = Number(authUser.id);
+    if (!selected || !effectiveUser?.id) return false;
+    const uid = Number(effectiveUser.id);
     const ids = (selected.metadata?.responsables_ids || (selected.responsable_id ? [selected.responsable_id] : [])).map(Number);
     const isAssigned = ids.includes(uid);
+    const isPrivileged = (!profile.isSimulation && isSuperAdmin) || profile.role === 'jefatura';
     const vb = selected.metadata?.vistos_buenos || {};
     const alreadyApproved = vb[uid]?.aprobado === true;
-    return isAssigned && !alreadyApproved && !['entregado', 'cerrado', 'cancelado'].includes(selected.estado);
-  }, [selected, authUser]);
+    return (isAssigned || isPrivileged) && !alreadyApproved && !['entregado', 'cerrado', 'cancelado'].includes(selected.estado);
+  }, [selected, effectiveUser, profile, isSuperAdmin]);
 
   const handleProrroga = async () => {
     if (!prorrogaData.fecha_limite) return setError('Indique la nueva fecha límite.');
@@ -1066,8 +1097,8 @@ export default function JuridicaWorkflowPanel() {
               sx={{ bgcolor: '#fff', color: COLORS.blue, fontWeight: 900 }}
             />
             <Chip
-              label={`Perfil: ${profile.role}`}
-              sx={{ bgcolor: '#ffffff25', color: '#fff', fontWeight: 900, textTransform: 'capitalize' }}
+              label={`Perfil: ${profile.role}${profile.isSimulation ? ` (Simulando a ${formatUserName(profile.actor?.nombre)})` : ''}`}
+              sx={{ bgcolor: profile.isSimulation ? '#f59e0b' : '#ffffff25', color: '#fff', fontWeight: 900, textTransform: 'capitalize' }}
             />
           </Stack>
         </Stack>
@@ -1075,6 +1106,158 @@ export default function JuridicaWorkflowPanel() {
 
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
       {notice && <Alert severity="success" onClose={() => setNotice('')}>{notice}</Alert>}
+
+      {/* Barra de Simulación de Perspectivas para Pruebas del SuperAdmin */}
+      {isSuperAdmin && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 2,
+            borderRadius: 3.5,
+            border: profile.isSimulation ? '2px solid #f59e0b' : '1.5px solid #dbeafe',
+            bgcolor: profile.isSimulation ? '#fffdf7' : '#f8fbff',
+            boxShadow: profile.isSimulation ? '0 4px 16px rgba(245, 158, 11, 0.12)' : '0 2px 8px rgba(37, 99, 235, 0.05)'
+          }}
+        >
+          <Stack spacing={1.5}>
+            <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={1.5}>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Avatar
+                  sx={{
+                    width: 38,
+                    height: 38,
+                    bgcolor: profile.isSimulation ? '#fef3c7' : '#eff6ff',
+                    color: profile.isSimulation ? '#b45309' : '#1d4ed8',
+                    border: profile.isSimulation ? '1px solid #fde68a' : '1px solid #bfdbfe',
+                    fontSize: '1.1rem'
+                  }}
+                >
+                  🧪
+                </Avatar>
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    Simulador de Perspectiva y Pruebas de Roles
+                    {profile.isSimulation ? (
+                      <Chip
+                        size="small"
+                        label={`Viendo como: ${profile.actor?.nombre || 'Funcionario'} (${profile.actor?.cargo || 'Oficina Jurídica'} · Rol: ${profile.role?.toUpperCase()})`}
+                        sx={{ bgcolor: '#fef3c7', color: '#b45309', fontWeight: 900, border: '1px solid #fde68a', fontSize: '0.74rem' }}
+                      />
+                    ) : (
+                      <Chip
+                        size="small"
+                        label="👑 Modo Real: SuperAdmin SGC (Control Total)"
+                        sx={{ bgcolor: '#ecfdf5', color: '#047857', fontWeight: 900, border: '1px solid #a7f3d0', fontSize: '0.74rem' }}
+                      />
+                    )}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    Permite al administrador probar y verificar la interfaz, permisos y bandejas de cada usuario activo sin cerrar sesión ni cambiar contraseñas.
+                  </Typography>
+                </Box>
+              </Stack>
+
+              {profile.isSimulation && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="warning"
+                  onClick={() => handleSwitchPerspective(null)}
+                  sx={{ fontWeight: 800, textTransform: 'none', borderRadius: 2 }}
+                >
+                  ✕ Salir de Simulación (Restaurar SuperAdmin)
+                </Button>
+              )}
+            </Stack>
+
+            {/* Selector interactivo de perspectivas */}
+            <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
+              <Typography variant="caption" sx={{ fontWeight: 800, color: '#475569', mr: 0.5 }}>
+                Perspectiva:
+              </Typography>
+
+              <Button
+                size="small"
+                variant={!profile.isSimulation ? 'contained' : 'outlined'}
+                onClick={() => handleSwitchPerspective(null)}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 800,
+                  borderRadius: 2,
+                  bgcolor: !profile.isSimulation ? '#0b1f45' : 'transparent',
+                  borderColor: '#cbd5e1',
+                  color: !profile.isSimulation ? '#ffffff' : '#334155',
+                  '&:hover': { bgcolor: !profile.isSimulation ? '#172554' : '#f1f5f9' }
+                }}
+              >
+                👑 SuperAdmin (Control Total)
+              </Button>
+
+              {jefaturaList.map((j) => (
+                <Button
+                  key={j.id}
+                  size="small"
+                  variant={profile.actor?.id === j.id ? 'contained' : 'outlined'}
+                  onClick={() => handleSwitchPerspective(j.id)}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 800,
+                    borderRadius: 2,
+                    bgcolor: profile.actor?.id === j.id ? '#7c3aed' : 'transparent',
+                    borderColor: '#ddd6fe',
+                    color: profile.actor?.id === j.id ? '#ffffff' : '#6d28d9',
+                    '&:hover': { bgcolor: profile.actor?.id === j.id ? '#6d28d9' : '#f5f3ff' }
+                  }}
+                >
+                  ⚖️ Jefatura ({formatUserName(j.nombre)})
+                </Button>
+              ))}
+
+              {secretariaList.map((s) => (
+                <Button
+                  key={s.id}
+                  size="small"
+                  variant={profile.actor?.id === s.id ? 'contained' : 'outlined'}
+                  onClick={() => handleSwitchPerspective(s.id)}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 800,
+                    borderRadius: 2,
+                    bgcolor: profile.actor?.id === s.id ? '#0284c7' : 'transparent',
+                    borderColor: '#bae6fd',
+                    color: profile.actor?.id === s.id ? '#ffffff' : '#0369a1',
+                    '&:hover': { bgcolor: profile.actor?.id === s.id ? '#0369a1' : '#f0f9ff' }
+                  }}
+                >
+                  📋 Secretaría ({formatUserName(s.nombre)})
+                </Button>
+              ))}
+
+              <FormControl size="small" sx={{ minWidth: 260 }}>
+                <InputLabel id="sim-asistente-label" sx={{ fontSize: '0.8rem', fontWeight: 700 }}>
+                  👥 Asistentes Jurídicos Activos ({asesorList.length})
+                </InputLabel>
+                <Select
+                  labelId="sim-asistente-label"
+                  label={`👥 Asistentes Jurídicos Activos (${asesorList.length})`}
+                  value={asesorList.some((u) => u.id === profile.actor?.id) ? profile.actor.id : ''}
+                  onChange={(e) => handleSwitchPerspective(e.target.value)}
+                  sx={{ height: 32, fontSize: '0.8rem', borderRadius: 2 }}
+                >
+                  <MenuItem value="" disabled>
+                    <em>Seleccionar Asistente Jurídico...</em>
+                  </MenuItem>
+                  {asesorList.map((asistente) => (
+                    <MenuItem key={asistente.id} value={asistente.id} sx={{ fontSize: '0.8rem' }}>
+                      👤 {formatUserName(asistente.nombre)} ({asistente.cargo || 'Asistente'})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
 
       {/* Métricas Pastel Interactivas (Unificadas - Sin duplicación) */}
       <Stack direction="row" flexWrap="wrap" gap={1.2}>

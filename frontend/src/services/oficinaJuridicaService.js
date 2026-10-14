@@ -27,7 +27,16 @@ const oficinaJuridicaService = {
     return api.post('/oficina-juridica/importar', data, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 }).then((r) => r.data);
   },
   downloadExcel: () => api.get('/oficina-juridica/exportar', { responseType: 'blob', timeout: 180000 }),
-  downloadAttachment: (id) => api.get(`/oficina-juridica/adjuntos/${id}`, { responseType: 'blob' })
+  downloadAttachment: (id) => api.get(`/oficina-juridica/adjuntos/${id}`, { responseType: 'blob' }),
+  getSimulatedUserId: () => localStorage.getItem('juridica_simulated_user_id'),
+  setSimulatedUserId: (id) => {
+    if (id) {
+      localStorage.setItem('juridica_simulated_user_id', String(id));
+    } else {
+      localStorage.removeItem('juridica_simulated_user_id');
+    }
+  },
+  clearSimulatedUser: () => localStorage.removeItem('juridica_simulated_user_id')
 };
 
 export default oficinaJuridicaService;
