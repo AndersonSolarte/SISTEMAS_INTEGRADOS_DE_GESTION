@@ -4,7 +4,12 @@ const oficinaJuridicaService = {
   getProfile: () => api.get('/oficina-juridica/perfil').then((r) => r.data),
   list: (params = {}) => api.get('/oficina-juridica/casos', { params }).then((r) => r.data),
   get: (id) => api.get(`/oficina-juridica/casos/${id}`).then((r) => r.data),
-  create: (payload) => api.post('/oficina-juridica/casos', payload).then((r) => r.data),
+  create: (payload) => {
+    if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+      return api.post('/oficina-juridica/casos', payload, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
+    }
+    return api.post('/oficina-juridica/casos', payload).then((r) => r.data);
+  },
   update: (id, payload) => api.patch(`/oficina-juridica/casos/${id}`, payload).then((r) => r.data),
   assign: (id, payload) => api.post(`/oficina-juridica/casos/${id}/asignar`, payload).then((r) => r.data),
   vistoBueno: (id, payload = {}) => api.post(`/oficina-juridica/casos/${id}/visto-bueno`, payload).then((r) => r.data),

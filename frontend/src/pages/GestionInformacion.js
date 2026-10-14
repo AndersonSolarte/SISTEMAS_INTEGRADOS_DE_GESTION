@@ -595,7 +595,18 @@ const normalizeModulePermissionList = (raw) => {
 };
 
 const canViewOficinaJuridica = (user) => {
-  if (user?.role === ROLES.ADMINISTRADOR) return true;
+  const email = String(user?.email || '').trim().toLowerCase();
+  // 1. SuperAdmin institucional exclusivo
+  if (email === 'sgc@unicesmag.edu.co') return true;
+  // 2. Ningún otro administrador tiene acceso al módulo jurídico
+  if (user?.role === ROLES.ADMINISTRADOR) return false;
+
+  // 3. Debe pertenecer a la dependencia Oficina Jurídica
+  const dep = String(user?.dependencia || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const cargo = String(user?.cargo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const isJuridica = dep.includes('jurid') || cargo.includes('jurid');
+  if (!isJuridica) return false;
+
   const permissions = normalizeModulePermissionList(user?.allowedModules)
     .concat(normalizeModulePermissionList(user?.modulePermissions))
     .concat(normalizeModulePermissionList(user?.permissions?.modules))
@@ -607,11 +618,13 @@ const getVisibleBaseKeysForUser = (user) => {
   let resolvedKeys = [];
 
   if (user?.role === ROLES.ADMINISTRADOR) {
-    return BASES.map((b) => b.key);
+    const keys = BASES.map((b) => b.key);
+    return canViewOficinaJuridica(user) ? keys : keys.filter((k) => k !== 'oficina_juridica');
   }
 
   if (user?.role === ROLES.PLANEACION_ESTRATEGICA) {
-    resolvedKeys = BASES.map((b) => b.key);
+    const keys = BASES.map((b) => b.key);
+    return canViewOficinaJuridica(user) ? keys : keys.filter((k) => k !== 'oficina_juridica');
   } else {
     const explicitPermissions = [
       user?.modulePermissions,

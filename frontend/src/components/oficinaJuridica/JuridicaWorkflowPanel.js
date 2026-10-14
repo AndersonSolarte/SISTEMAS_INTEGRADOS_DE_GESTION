@@ -83,27 +83,25 @@ const GROUPS = [
 const ACTIONS = {
   asesor: [
     ['en_estudio', 'Iniciar estudio'],
-    ['respuesta_revision', 'Enviar a revisión de jefatura'],
-    ['devuelto_informacion', 'Solicitar información al área'],
-    ['pendiente_radicacion_salida', 'Registrar orden de salida'],
-    ['entregado', 'Marcar entregado al interesado']
+    ['respuesta_revision', 'Enviar a revisión de jefatura']
   ],
   jefatura: [
-    ['aprobado_jefatura', 'Aprobar respuesta'],
-    ['devuelto_informacion', 'Devolver al asesor con observaciones'],
+    ['aprobado_jefatura', 'Aprobar respuesta (Listo para Despacho)'],
+    ['devuelto_informacion', 'Devolver al asesor con observaciones / retroalimentación'],
     ['pendiente_radicacion_salida', 'Enviar a radicación de salida'],
     ['entregado', 'Marcar entregado'],
     ['cerrado', 'Cerrar expediente']
   ],
   secretaria: [
     ['pendiente_radicacion_salida', 'Registrar radicado de salida'],
-    ['entregado', 'Marcar entregado y despachado'],
+    ['entregado', 'Marcar entregado y despachado al peticionario'],
     ['cerrado', 'Cerrar expediente']
   ],
   administrador: [
     ['en_estudio', 'Iniciar estudio'],
     ['respuesta_revision', 'Enviar a revisión'],
-    ['aprobado_jefatura', 'Aprobar'],
+    ['aprobado_jefatura', 'Aprobar respuesta'],
+    ['devuelto_informacion', 'Devolver con observaciones'],
     ['pendiente_radicacion_salida', 'Radicar salida'],
     ['entregado', 'Entregar'],
     ['cerrado', 'Cerrar']
@@ -518,6 +516,7 @@ export default function JuridicaWorkflowPanel() {
 
   // Radicación
   const [createOpen, setCreateOpen] = useState(false);
+  const [createFiles, setCreateFiles] = useState([]);
   const [form, setForm] = useState(emptyForm);
 
   // Edición completa del expediente si hubo error
@@ -680,7 +679,9 @@ export default function JuridicaWorkflowPanel() {
 
   const advisers = profile.team.filter((u) => ['asesor', 'jefatura'].includes(u.juridica_rol));
   const secretaries = profile.team.filter((u) => u.juridica_rol === 'secretaria');
-  const canAssign = ['administrador', 'jefatura'].includes(profile.role);
+  const isSuperAdmin = String(authUser?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
+  const isJefatura = profile.role === 'jefatura';
+  const canAssign = isSuperAdmin || isJefatura;
 
   const refreshSelected = async (id) => {
     const response = await oficinaJuridicaService.get(id);
@@ -827,10 +828,24 @@ export default function JuridicaWorkflowPanel() {
     setBusy(true);
     setError('');
     try {
-      const r = await oficinaJuridicaService.create(form);
+      let payload;
+      if (createFiles.length > 0) {
+        payload = new FormData();
+        Object.entries(form).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== '') payload.append(k, v);
+        });
+        createFiles.forEach((file) => {
+          payload.append('archivos', file);
+        });
+      } else {
+        payload = form;
+      }
+
+      const r = await oficinaJuridicaService.create(payload);
       setCreateOpen(false);
       setForm(emptyForm);
-      setNotice(`Solicitud NRI ${r.data.nri} radicada correctamente con término fijado al ${formatDateBrief(r.data.fecha_limite)}.`);
+      setCreateFiles([]);
+      setNotice(`Solicitud NRI ${r.data.nri} sistematizada y radicada exitosamente. Se ha notificado por correo a la Asesora Jurídica y Secretaría${createFiles.length ? ` con ${createFiles.length} anexo(s)` : ''}.`);
       await load();
     } catch (e) {
       setError(e.response?.data?.message || 'No fue posible radicar.');
@@ -1867,6 +1882,70 @@ export default function JuridicaWorkflowPanel() {
               onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
               sx={{ gridColumn: { md: 'span 2' } }}
             />
+
+            {/* SECCIÓN ADJUNTOS / DOCUMENTOS INICIALES */}
+            <Paper
+              variant="outlined"
+              sx={{
+                gridColumn: { md: 'span 2' },
+                p: 2,
+                borderRadius: 2.5,
+                bgcolor: '#f8fafc',
+                border: '1px dashed #94a3b8'
+              }}
+            >
+              <Stack direction="row" spacing={1} alignItems="center" mb={1} justifyContent="space-between">
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <AttachFileRoundedIcon sx={{ color: '#0369a1' }} />
+                  <Typography variant="subtitle2" fontWeight={900} color="#0f172a">
+                    Anexos y Documentos de la Solicitud (Llegados al correo de Jurídica)
+                  </Typography>
+                </Stack>
+                <Button
+                  component="label"
+                  variant="outlined"
+                  size="small"
+                  startIcon={<CloudUploadRoundedIcon />}
+                  sx={{ textTransform: 'none', fontWeight: 800 }}
+                >
+                  Seleccionar archivos
+                  <input
+                    type="file"
+                    hidden
+                    multiple
+                    accept=".pdf,.docx,.doc,.xlsx,.xls,.png,.jpg,.jpeg"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      setCreateFiles((prev) => [...prev, ...files]);
+                      e.target.value = '';
+                    }}
+                  />
+                </Button>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
+                La secretaría puede adjuntar los oficios, derechos de petición, tutelas y anexos recibidos por correo. Se enviarán directamente por correo electrónico a la Asesora Jurídica y a los Asistentes asignados.
+              </Typography>
+
+              {createFiles.length > 0 ? (
+                <Stack direction="row" flexWrap="wrap" gap={1}>
+                  {createFiles.map((file, idx) => (
+                    <Chip
+                      key={`${file.name}-${idx}`}
+                      label={`${file.name} (${(file.size / 1024).toFixed(0)} KB)`}
+                      onDelete={() => setCreateFiles((prev) => prev.filter((_, i) => i !== idx))}
+                      color="primary"
+                      variant="outlined"
+                      size="small"
+                      sx={{ fontWeight: 750, bgcolor: '#eff6ff' }}
+                    />
+                  ))}
+                </Stack>
+              ) : (
+                <Typography variant="caption" color="#94a3b8" fontStyle="italic">
+                  No se han seleccionado archivos adjuntos aún (opcional).
+                </Typography>
+              )}
+            </Paper>
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
@@ -2431,7 +2510,19 @@ export default function JuridicaWorkflowPanel() {
                   </Paper>
                 )}
 
-                {(ACTIONS[profile.role] || []).length > 0 && (
+                {profile.role === 'secretaria' && !['aprobado_jefatura', 'pendiente_radicacion_salida', 'entregado', 'cerrado'].includes(selected?.estado) ? (
+                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, bgcolor: '#fffbeb', borderColor: '#fde68a' }}>
+                    <Stack direction="row" spacing={1} alignItems="center" mb={0.8}>
+                      <InfoOutlinedIcon sx={{ color: '#b45309', fontSize: 20 }} />
+                      <Typography fontWeight={900} color="#92400e" fontSize="0.9rem">
+                        En trámite con la Asesora Jurídica
+                      </Typography>
+                    </Stack>
+                    <Typography variant="body2" color="#78350f" fontSize="0.82rem">
+                      Estado actual: <strong>{STATE[selected?.estado]?.[0] || selected?.estado}</strong>. Una vez la Asesora Jurídica revise y apruebe la respuesta final (estado &quot;Aprobado por jefatura&quot;), la Secretaría podrá registrar el radicado de salida y despachar la respuesta al peticionario.
+                    </Typography>
+                  </Paper>
+                ) : (ACTIONS[profile.role] || []).length > 0 && (
                   <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
                     <Typography fontWeight={950}>Actualizar trámite</Typography>
                     <TextField

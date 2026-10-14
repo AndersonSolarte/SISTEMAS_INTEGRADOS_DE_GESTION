@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const { Op, fn, col, Sequelize } = require('sequelize');
 const { JuridicaCaso, JuridicaHistorial, JuridicaAdjunto, User } = require('../models');
+const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 
 const USER_FIELDS = ['id', 'nombre', 'email', 'cargo', 'dependencia'];
 const CLOSED = ['entregado', 'cerrado', 'cancelado'];
@@ -27,6 +28,7 @@ const parseDate = (value) => {
   return latam ? `${latam[3]}-${latam[2].padStart(2, '0')}-${latam[1].padStart(2, '0')}` : null;
 };
 const roleFor = (user) => {
+  if (user?.email === 'sgc@unicesmag.edu.co') return 'administrador';
   if (user?.role === 'administrador') return 'administrador';
   const cargo = normalize(user?.cargo);
   const dependencia = normalize(user?.dependencia);
@@ -38,6 +40,159 @@ const roleFor = (user) => {
 const userSnapshot = (user) => user ? ({ id: user.id, nombre: user.nombre, email: user.email, cargo: user.cargo, dependencia: user.dependencia }) : null;
 const addHistory = (caso, userId, evento, previous, next, comentario, datos = {}) =>
   JuridicaHistorial.create({ caso_id: caso.id, usuario_id: userId, evento, estado_anterior: previous, estado_nuevo: next, comentario: clean(comentario, 5000) || null, datos });
+
+// Helper: Extraer los adjuntos del caso en buffers para enviarlos como anexos al correo
+const getCaseEmailAttachments = async (casoId, maxBytes = 25 * 1024 * 1024) => {
+  try {
+    const adjuntos = await JuridicaAdjunto.findAll({
+      where: { caso_id: casoId },
+      attributes: ['id', 'nombre_original', 'mime_type', 'contenido', 'tamano_bytes'],
+      order: [['created_at', 'ASC']]
+    });
+
+    let totalBytes = 0;
+    const emailAttachments = [];
+
+    for (const adj of adjuntos) {
+      if (!adj.contenido) continue;
+      const size = Number(adj.tamano_bytes) || adj.contenido.length;
+      if (totalBytes + size > maxBytes) {
+        console.warn(`[juridicaEmail] Adjunto ${adj.nombre_original} excede límite de tamaño para correo.`);
+        continue;
+      }
+      totalBytes += size;
+      emailAttachments.push({
+        filename: adj.nombre_original,
+        content: adj.contenido,
+        contentType: adj.mime_type
+      });
+    }
+
+    return emailAttachments;
+  } catch (err) {
+    console.error('[juridicaEmail] Error obteniendo adjuntos del caso:', err);
+    return [];
+  }
+};
+
+// Helper: Obtener personal activo de la dependencia Oficina Jurídica
+const getJuridicaCoreStaff = async () => {
+  try {
+    const staff = await User.findAll({
+      attributes: USER_FIELDS,
+      where: { estado: 'activo', dependencia: { [Op.iLike]: '%JURID%' } }
+    });
+    const jefatura = staff.filter((u) => roleFor(u) === 'jefatura');
+    const secretaria = staff.filter((u) => roleFor(u) === 'secretaria');
+    const asesores = staff.filter((u) => roleFor(u) === 'asesor');
+    return { all: staff, jefatura, secretaria, asesores };
+  } catch (err) {
+    console.error('[juridicaEmail] Error obteniendo personal clave:', err);
+    return { all: [], jefatura: [], secretaria: [], asesores: [] };
+  }
+};
+
+// Helper: Enviar notificación institucional por correo con plantilla y anexos
+const sendJuridicaNotification = async ({
+  caso,
+  recipients = [],
+  subject,
+  title,
+  intro,
+  badgeText,
+  badgeColor = '#0b3a6f',
+  details = [],
+  actionUrl = '',
+  includeAttachments = true
+}) => {
+  try {
+    const targetEmails = Array.from(new Set(
+      recipients
+        .map((r) => (typeof r === 'string' ? r : r?.email))
+        .filter((e) => Boolean(e) && String(e).includes('@'))
+        .map((e) => String(e).trim().toLowerCase())
+    ));
+
+    if (!targetEmails.length) return;
+
+    let attachments = [];
+    if (includeAttachments && caso?.id) {
+      attachments = await getCaseEmailAttachments(caso.id);
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const linkUrl = actionUrl || `${frontendUrl}/gestion-informacion`;
+
+    const detailRows = details
+      .filter((d) => d && d.label && d.value)
+      .map((d) => `
+        <tr>
+          <td style="padding: 7px 12px; font-weight: 700; color: #475569; width: 190px; border-bottom: 1px solid #f1f5f9; vertical-align: top;">${escapeHtml(d.label)}</td>
+          <td style="padding: 7px 12px; color: #0f172a; border-bottom: 1px solid #f1f5f9;">${escapeHtml(d.value)}</td>
+        </tr>
+      `)
+      .join('');
+
+    const attachmentsNote = attachments.length > 0
+      ? `<p style="margin: 14px 0 0; color: #047857; font-weight: 700; font-size: 0.9rem; padding: 10px 14px; background: #ecfdf5; border-radius: 8px; border: 1px solid #a7f3d0;">
+          📎 Se han adjuntado directamente a este correo ${attachments.length} archivo(s) del expediente para su consulta inmediata sin descargas adicionales.
+        </p>`
+      : '';
+
+    const bodyHtml = `
+      <div style="margin: 14px 0; border: 1px solid #d6e4f5; border-radius: 12px; overflow: hidden; background: #ffffff; box-shadow: 0 4px 14px rgba(11, 58, 111, 0.05);">
+        <div style="background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%); border-bottom: 1px solid #d6e4f5; padding: 12px 18px;">
+          <span style="display: inline-block; background: ${badgeColor}; color: #ffffff; padding: 3px 10px; border-radius: 6px; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;">
+            ${escapeHtml(badgeText || 'Oficina Jurídica')}
+          </span>
+          <p style="margin: 8px 0 0; font-weight: 800; color: #0b3a6f; font-size: 1.08rem;">
+            NRI: ${escapeHtml(caso.nri)} — Radicado: ${escapeHtml(caso.radicado || 'Sin radicar')}
+          </p>
+        </div>
+        <div style="padding: 14px 18px;">
+          <table role="presentation" style="width: 100%; border-collapse: collapse; font-size: 0.92rem;">
+            ${detailRows}
+          </table>
+          ${attachmentsNote}
+        </div>
+      </div>
+      <div style="text-align: center; margin-top: 18px;">
+        <a href="${linkUrl}" style="display: inline-block; min-width: 250px; background: #0b3a6f; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 700; text-align: center; font-size: 0.95rem;">
+          Consultar expediente en SIAC UNICESMAG
+        </a>
+      </div>
+      <p style="margin: 16px 0 0; color: #64748b; font-size: 0.82rem; text-align: center;">
+        Oficina Jurídica · Universidad CESMAG · Sistema Interno de Aseguramiento de la Calidad
+      </p>
+    `;
+
+    const html = renderInstitutionalTemplate({
+      title: title || 'Notificación Oficina Jurídica',
+      introHtml: intro || `<p>Cordial Saludo de Paz y Bien,</p><p>Se notifica novedad sobre el expediente jurídico <strong>NRI ${escapeHtml(caso.nri)}</strong>:</p>`,
+      bodyHtml
+    });
+
+    const text = `${title || 'Notificación Oficina Jurídica'}\n\nNRI: ${caso.nri}\nAsunto: ${caso.asunto}\nInteresado: ${caso.interesado}\nEstado: ${caso.estado}\n\nIngresar: ${linkUrl}`;
+
+    sendInstitutionalEmail({
+      to: targetEmails,
+      subject,
+      text,
+      html,
+      attachments
+    }).then((res) => {
+      if (res?.success) {
+        console.log(`[juridicaEmail] ✅ Correo entregado a [${targetEmails.join(', ')}] para NRI ${caso.nri} con ${attachments.length} adjuntos.`);
+      } else {
+        console.warn(`[juridicaEmail] ⚠️ No se pudo entregar a [${targetEmails.join(', ')}]:`, res?.error);
+      }
+    }).catch((err) => {
+      console.error('[juridicaEmail] ❌ Error en sendJuridicaNotification:', err);
+    });
+  } catch (outerErr) {
+    console.error('[juridicaEmail] Excepción en sendJuridicaNotification:', outerErr);
+  }
+};
 
 const includeCase = (withAttachments = true) => [
   { model: User, as: 'solicitante', attributes: USER_FIELDS },
@@ -145,14 +300,69 @@ const createCase = async (req, res) => {
     origen: 'Aplicativo',
     metadata: { solicitante_snapshot: userSnapshot(req.user) }
   });
+
+  // Guardar archivos adjuntos iniciales si se recibieron
+  if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+    for (const file of req.files) {
+      await JuridicaAdjunto.create({
+        caso_id: caso.id,
+        usuario_id: req.user.id,
+        tipo: 'anexo_inicial',
+        nombre_original: clean(file.originalname, 500),
+        mime_type: clean(file.mimetype, 150),
+        tamano_bytes: file.size,
+        sha256: crypto.createHash('sha256').update(file.buffer).digest('hex'),
+        contenido: file.buffer
+      });
+    }
+    await addHistory(caso, req.user.id, 'adjunto', null, caso.estado, `${req.files.length} archivo(s) anexo(s) cargado(s) durante la radicación.`);
+  }
+
   await addHistory(caso, req.user.id, 'radicacion', null, caso.estado, 'Solicitud radicada en el aplicativo.');
+
+  // Notificar por correo a la Jefatura Jurídica y a la Secretaría
+  const staff = await getJuridicaCoreStaff();
+  const notifyRecipients = Array.from(new Set([
+    ...staff.jefatura.map((u) => u.email),
+    ...staff.secretaria.map((u) => u.email),
+    req.user.email
+  ]));
+
+  sendJuridicaNotification({
+    caso,
+    recipients: notifyRecipients,
+    subject: `[Oficina Jurídica] Nuevo Asunto Radicado - NRI ${caso.nri} (${caso.grupo || 'General'})`,
+    title: 'Nuevo asunto radicado en Oficina Jurídica',
+    intro: `<p>Cordial Saludo de Paz y Bien,</p><p>Se ha registrado un nuevo asunto jurídico en el sistema <strong>pendiente de asignación y clasificación</strong> por parte de la Asesora Jurídica:</p>`,
+    badgeText: 'Nuevo Asunto',
+    badgeColor: '#b45309',
+    details: [
+      { label: 'Asunto', value: caso.asunto },
+      { label: 'Interesado / Peticionario', value: caso.interesado },
+      { label: 'Dependencia Solicitante', value: caso.dependencia_solicitante || 'No registrada' },
+      { label: 'Grupo / Tipo', value: caso.grupo || 'Sin clasificar' },
+      { label: 'Radicado externo', value: caso.radicado || 'Sin radicar' },
+      { label: 'Fecha límite sugerida', value: caso.fecha_limite ? `${caso.fecha_limite}` : 'Por definir por jefatura' },
+      { label: 'Registrado por', value: `${req.user.nombre} (${req.user.cargo || 'Funcionario'})` }
+    ],
+    includeAttachments: true
+  });
+
   res.status(201).json({ success: true, data: await JuridicaCaso.findByPk(caso.id, { include: includeCase() }) });
 };
 
 const assignCase = async (req, res) => {
   const role = roleFor(req.user);
-  if (!['administrador', 'jefatura'].includes(role)) {
-    return res.status(403).json({ success: false, message: 'Solo la jefatura o administrador puede asignar asuntos.' });
+  const email = String(req.user.email || '').trim().toLowerCase();
+  const isSuperAdmin = email === 'sgc@unicesmag.edu.co';
+  const isJefatura = role === 'jefatura';
+
+  // Seguridad: La secretaría solo transcribe, NO puede asignar expedientes
+  if (!isSuperAdmin && !isJefatura) {
+    return res.status(403).json({
+      success: false,
+      message: 'Solo la Asesora Jurídica (jefatura) o la administración SGC pueden asignar expedientes. La secretaría solo sistematiza solicitudes y radica salidas.'
+    });
   }
   const caso = await JuridicaCaso.findByPk(req.params.id);
   if (!caso) return res.status(404).json({ success: false, message: 'Caso no encontrado.' });
@@ -232,6 +442,36 @@ const assignCase = async (req, res) => {
     }
   );
 
+  // Notificar por correo con todos los documentos adjuntos del caso a los asesores asignados, jefatura y secretaría
+  const staff = await getJuridicaCoreStaff();
+  const assigneeEmails = assignees.map((u) => u.email);
+  const notifyRecipients = Array.from(new Set([
+    ...assigneeEmails,
+    ...staff.jefatura.map((u) => u.email),
+    ...staff.secretaria.map((u) => u.email),
+    req.user.email
+  ]));
+
+  sendJuridicaNotification({
+    caso,
+    recipients: notifyRecipients,
+    subject: `[Oficina Jurídica] Asignación de Caso - NRI ${caso.nri}: ${caso.asunto.slice(0, 45)}...`,
+    title: 'Asignación de expediente jurídico',
+    intro: `<p>Cordial Saludo de Paz y Bien,</p><p>La Asesora Jurídica ha asignado el expediente <strong>NRI ${escapeHtml(caso.nri)}</strong> para su estudio, proyección de respuesta y trámite:</p>`,
+    badgeText: asignacionMultiple ? `Asignación Colectiva (${assignees.length} Asesores)` : 'Expediente Asignado',
+    badgeColor: '#1d4ed8',
+    details: [
+      { label: 'Asignado a', value: nombresAsignados },
+      { label: 'Término legal / Fecha límite', value: caso.fecha_limite ? `${caso.fecha_limite} (Improrrogable)` : 'Por definir' },
+      { label: 'Nivel de prioridad', value: caso.nivel || 'Media' },
+      { label: 'Asunto', value: caso.asunto },
+      { label: 'Interesado / Peticionario', value: caso.interesado },
+      { label: 'Dependencia solicitante', value: caso.dependencia_solicitante || 'No registrada' },
+      { label: 'Instrucciones / Observación', value: req.body.comentario || 'Favor estudiar antecedentes, proyectar respuesta jurídica y registrar visto bueno en el sistema.' }
+    ],
+    includeAttachments: true
+  });
+
   res.json({ success: true, data: await JuridicaCaso.findByPk(caso.id, { include: includeCase() }) });
 };
 
@@ -297,10 +537,38 @@ const vistoBuenoCase = async (req, res) => {
     }
   );
 
+  // Si todos los asesores dieron visto bueno y pasa a revisión de jefatura, notificar por correo con adjuntos
+  if (allApproved && nextState === 'respuesta_revision') {
+    const staff = await getJuridicaCoreStaff();
+    const notifyRecipients = Array.from(new Set([
+      ...staff.jefatura.map((u) => u.email),
+      ...staff.secretaria.map((u) => u.email),
+      req.user.email
+    ]));
+
+    sendJuridicaNotification({
+      caso,
+      recipients: notifyRecipients,
+      subject: `[Oficina Jurídica] Respuesta en Revisión de Jefatura - NRI ${caso.nri}`,
+      title: 'Propuesta de respuesta lista para revisión de Jefatura',
+      intro: `<p>Cordial Saludo de Paz y Bien,</p><p>El expediente <strong>NRI ${escapeHtml(caso.nri)}</strong> cuenta con visto bueno unánime de los asesores asignados (${totalApproved}/${checkIds.length}) y ha pasado a <strong>Revisión de Jefatura</strong>:</p>`,
+      badgeText: 'Respuesta en Revisión',
+      badgeColor: '#7c3aed',
+      details: [
+        { label: 'Asunto', value: caso.asunto },
+        { label: 'Interesado', value: caso.interesado },
+        { label: 'Vistos buenos emitidos', value: `${totalApproved}/${checkIds.length} asesores` },
+        { label: 'Último visto bueno por', value: `${req.user.nombre} (${req.user.cargo || 'Asesor Jurídico'})` },
+        { label: 'Observaciones del asesor', value: req.body.comentario || 'Se adjuntan los documentos de respuesta para revisión y aprobación final.' }
+      ],
+      includeAttachments: true
+    });
+  }
+
   res.json({
     success: true,
     message: allApproved
-      ? `¡Visto bueno unánime registrado (${totalApproved}/${checkIds.length})! El expediente cuenta con la aprobación de todos los asesores.`
+      ? `¡Visto bueno unánime registrado (${totalApproved}/${checkIds.length})! El expediente cuenta con la aprobación de todos los asesores y pasó a revisión de jefatura.`
       : `Visto bueno registrado (${totalApproved}/${checkIds.length}). Pendiente la aprobación de los demás co-responsables.`,
     data: await JuridicaCaso.findByPk(caso.id, { include: includeCase() })
   });
@@ -312,14 +580,28 @@ const transitionCase = async (req, res) => {
   const caso = await JuridicaCaso.findOne({ where: { id: req.params.id, ...accessWhere(req.user) } });
   if (!caso) return res.status(404).json({ success: false, message: 'Caso no encontrado.' });
   const role = roleFor(req.user);
+
+  // Restricciones de roles según el flujo operativo legal de Unicesmag:
+  // - Asesor: inicia estudio, puede enviar a revisión de jefatura
+  // - Jefatura: revisa borrador, devuelve con observaciones o aprueba la respuesta
+  // - Secretaría: radica salida y marca entregado/cerrado una vez aprobado
   const allowed = {
     administrador: VALID_STATES,
     jefatura: VALID_STATES,
-    asesor: ['en_estudio', 'devuelto_informacion', 'respuesta_revision', 'pendiente_radicacion_salida', 'entregado'],
+    asesor: ['en_estudio', 'respuesta_revision'],
     secretaria: ['pendiente_radicacion_salida', 'entregado', 'cerrado'],
     solicitante: []
   }[role];
-  if (!allowed.includes(next)) return res.status(403).json({ success: false, message: 'Tu rol no puede realizar esta transición.' });
+  if (!allowed.includes(next)) {
+    return res.status(403).json({
+      success: false,
+      message: role === 'secretaria'
+        ? 'La secretaría no puede cambiar este estado hasta que la Asesora Jurídica apruebe la respuesta final.'
+        : role === 'asesor'
+        ? 'Como asesor jurídico, debe enviar la respuesta a revisión de jefatura para su aprobación.'
+        : 'Tu rol no tiene permitido realizar esta transición de estado.'
+    });
+  }
 
   // REGLA CLAVE: Si se intenta entregar o cerrar y hay múltiples asesores asignados, TODOS deben haber dado visto bueno
   if (['entregado', 'cerrado'].includes(next)) {
@@ -350,6 +632,113 @@ const transitionCase = async (req, res) => {
   });
   await caso.update(changes);
   await addHistory(caso, req.user.id, 'cambio_estado', previous, next, req.body.comentario);
+
+  // Disparar notificaciones por correo institucional según el nuevo estado
+  const staff = await getJuridicaCoreStaff();
+  const ids = caso.metadata?.responsables_ids || (caso.responsable_id ? [caso.responsable_id] : []);
+  const assignedUsers = staff.all.filter((u) => ids.some((id) => Number(id) === Number(u.id)));
+  const assignedEmails = assignedUsers.map((u) => u.email);
+
+  if (next === 'respuesta_revision') {
+    // Notificar a la Jefatura para su revisión
+    const notifyRecipients = Array.from(new Set([
+      ...staff.jefatura.map((u) => u.email),
+      ...staff.secretaria.map((u) => u.email),
+      ...assignedEmails,
+      req.user.email
+    ]));
+
+    sendJuridicaNotification({
+      caso,
+      recipients: notifyRecipients,
+      subject: `[Oficina Jurídica] Respuesta en Revisión de Jefatura - NRI ${caso.nri}`,
+      title: 'Respuesta jurídica enviada a revisión de Jefatura',
+      intro: `<p>Cordial Saludo de Paz y Bien,</p><p>El expediente <strong>NRI ${escapeHtml(caso.nri)}</strong> ha sido remitido a <strong>Revisión de Jefatura</strong> por parte de <strong>${escapeHtml(req.user.nombre)}</strong>:</p>`,
+      badgeText: 'Respuesta en Revisión',
+      badgeColor: '#7c3aed',
+      details: [
+        { label: 'Asunto', value: caso.asunto },
+        { label: 'Interesado', value: caso.interesado },
+        { label: 'Observaciones / Justificación', value: req.body.comentario || req.body.observaciones || 'Se adjunta propuesta de respuesta jurídica para revisión.' }
+      ],
+      includeAttachments: true
+    });
+  } else if (next === 'devuelto_informacion') {
+    // Notificar a los asesores asignados con las observaciones/retroalimentación de Jefatura
+    const notifyRecipients = Array.from(new Set([
+      ...assignedEmails,
+      ...staff.jefatura.map((u) => u.email),
+      req.user.email
+    ]));
+
+    sendJuridicaNotification({
+      caso,
+      recipients: notifyRecipients,
+      subject: `[Oficina Jurídica] Caso Devuelto con Retroalimentación - NRI ${caso.nri}`,
+      title: 'Expediente devuelto para ajustes por la Jefatura',
+      intro: `<p>Cordial Saludo de Paz y Bien,</p><p>La Asesora Jurídica ha revisado la propuesta del expediente <strong>NRI ${escapeHtml(caso.nri)}</strong> y ha solicitado <strong>ajustes y correcciones</strong>:</p>`,
+      badgeText: 'Devuelto para Ajustes',
+      badgeColor: '#be123c',
+      details: [
+        { label: 'Asunto', value: caso.asunto },
+        { label: 'Interesado', value: caso.interesado },
+        { label: 'Retroalimentación de Jefatura', value: req.body.comentario || req.body.observaciones || 'Favor revisar antecedentes y ajustar los documentos según indicaciones.' }
+      ],
+      includeAttachments: true
+    });
+  } else if (next === 'aprobado_jefatura') {
+    // Notificar a la Secretaría para proceder al despacho al peticionario
+    const notifyRecipients = Array.from(new Set([
+      ...staff.secretaria.map((u) => u.email),
+      ...assignedEmails,
+      ...staff.jefatura.map((u) => u.email),
+      req.user.email
+    ]));
+
+    sendJuridicaNotification({
+      caso,
+      recipients: notifyRecipients,
+      subject: `[Oficina Jurídica] Respuesta Aprobada por Jefatura - NRI ${caso.nri} (Listo para Despacho)`,
+      title: 'Respuesta jurídica aprobada por Jefatura',
+      intro: `<p>Cordial Saludo de Paz y Bien,</p><p>La Asesora Jurídica ha <strong>APROBADO</strong> la respuesta final del expediente <strong>NRI ${escapeHtml(caso.nri)}</strong>. Se solicita a la Secretaría proceder con la radicación de salida y entrega formal al peticionario:</p>`,
+      badgeText: 'Aprobado por Jefatura',
+      badgeColor: '#047857',
+      details: [
+        { label: 'Asunto', value: caso.asunto },
+        { label: 'Interesado / Peticionario', value: caso.interesado },
+        { label: 'Dependencia solicitante', value: caso.dependencia_solicitante || 'No registrada' },
+        { label: 'Observaciones de aprobación', value: req.body.comentario || req.body.observaciones || 'Respuesta revisada y conforme. Proceder al despacho formal.' }
+      ],
+      includeAttachments: true
+    });
+  } else if (['entregado', 'cerrado'].includes(next)) {
+    // Notificar finalización a todo el equipo
+    const notifyRecipients = Array.from(new Set([
+      ...staff.jefatura.map((u) => u.email),
+      ...staff.secretaria.map((u) => u.email),
+      ...assignedEmails,
+      req.user.email
+    ]));
+
+    sendJuridicaNotification({
+      caso,
+      recipients: notifyRecipients,
+      subject: `[Oficina Jurídica] Trámite Entregado y Finalizado - NRI ${caso.nri}`,
+      title: 'Trámite jurídico finalizado exitosamente',
+      intro: `<p>Cordial Saludo de Paz y Bien,</p><p>Se confirma que el expediente <strong>NRI ${escapeHtml(caso.nri)}</strong> ha sido formalmente entregado al peticionario y registrado como <strong>${next.toUpperCase()}</strong>:</p>`,
+      badgeText: next === 'cerrado' ? 'Cerrado' : 'Entregado al Peticionario',
+      badgeColor: '#15803d',
+      details: [
+        { label: 'Asunto', value: caso.asunto },
+        { label: 'Interesado / Peticionario', value: caso.interesado },
+        { label: 'Medio de Despacho', value: caso.despacho || req.body.despacho || 'Despachado por secretaría' },
+        { label: 'Radicado de salida', value: caso.radicado || req.body.radicado || 'Registrado' },
+        { label: 'Observación de entrega', value: req.body.comentario || req.body.observaciones || 'Trámite concluido a satisfacción.' }
+      ],
+      includeAttachments: false
+    });
+  }
+
   res.json({ success: true, data: await JuridicaCaso.findByPk(caso.id, { include: includeCase() }) });
 };
 

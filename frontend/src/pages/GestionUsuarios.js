@@ -2884,11 +2884,21 @@ function GestionUsuarios() {
                           <Typography sx={{ fontWeight: 850, color: '#1e3a8a', mb: 1 }}>Submódulos de tableros estadísticos</Typography>
                           <FormGroup>
                             <Grid container spacing={0.5}>
-                              {STATISTICAL_MODULE_OPTIONS.map((item) => (
-                                <Grid item xs={12} sm={6} md={4} key={`stats-${item.key}`}>
-                                  <FormControlLabel control={<Checkbox checked={modulePermissionsForm.allowedModules.includes(item.key)} onChange={() => handleTogglePermission('allowedModules', item.key)} size="small" />} label={item.label} />
-                                </Grid>
-                              ))}
+                              {STATISTICAL_MODULE_OPTIONS.map((item) => {
+                                if (item.key === 'oficina_juridica') {
+                                  const depTarget = String(permissionsUser?.dependencia || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                                  const cargoTarget = String(permissionsUser?.cargo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                                  const isEligible = (String(permissionsUser?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co') ||
+                                    depTarget.includes('jurid') || cargoTarget.includes('jurid');
+
+                                  if (!isEligible) return null;
+                                }
+                                return (
+                                  <Grid item xs={12} sm={6} md={4} key={`stats-${item.key}`}>
+                                    <FormControlLabel control={<Checkbox checked={modulePermissionsForm.allowedModules.includes(item.key)} onChange={() => handleTogglePermission('allowedModules', item.key)} size="small" />} label={item.label} />
+                                  </Grid>
+                                );
+                              })}
                             </Grid>
                           </FormGroup>
 
