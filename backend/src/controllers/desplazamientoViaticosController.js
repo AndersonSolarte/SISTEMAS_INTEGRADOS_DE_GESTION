@@ -2,7 +2,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
-const { DesplazamientoViaticosSolicitud, ReporteSalidaSolicitud, SystemSetting, ViaticosLegalizacion } = require('../models');
+const { DesplazamientoViaticosSolicitud, ReporteSalidaSolicitud, SystemSetting, UserModulePermission, ViaticosLegalizacion } = require('../models');
+const { ROLES } = require('../constants/roles');
 const { getDependencyEmail } = require('../config/dependencyEmails');
 const { sequelize } = require('../config/database');
 const { decryptPayload, encryptPayload } = require('../utils/secureUrlToken');
@@ -27,6 +28,7 @@ const usedDemoLiquidationTokens = new Set();
 const usedDemoTreasuryTokens = new Set();
 const usedDemoFinancialTokens = new Set();
 const DEMO_PROCESSED_SETTING_KEY = 'desplazamiento_viaticos_demo_tokens_procesados';
+const MANAGEMENT_PERMISSION = 'vicerrectoria_financiera.viaticos.gestion';
 const revokedDemoTokenHashes = new Set([
   '097ba874fb3d8cd53838ec1248c421ca721620cf5ff39d4392b520a5369db16b'
 ]);
@@ -565,11 +567,12 @@ const nextConsecutivo = async () => {
   return `${prefix}${String(next).padStart(4, '0')}`;
 };
 
-const createStageToken = (solicitud, step, accessSource = 'primary') => encryptPayload({
+const createStageToken = (solicitud, step, accessSource = 'primary', actor = null) => encryptPayload({
     purpose: 'desplazamiento_viaticos_action',
     solicitudId: solicitud.id,
     stage: step.key,
     accessSource,
+    ...(actor ? { actor } : {}),
     nonce: crypto.randomBytes(12).toString('hex')
   }, null);
 
@@ -2378,15 +2381,23 @@ const procesarAccion = async (req, res) => {
     const { solicitud, payload, step } = actionContext;
     if (!step || step.key !== solicitud.token_etapa) return res.status(409).send(page('Etapa no disponible', '<p>Esta etapa ya no está activa.</p>'));
     const isAlternateAccess = payload.accessSource === step.alternateAccessSource;
-    const actor = isAlternateAccess
-      ? buildActor(
+    const actor = payload.accessSource === 'admin_dashboard' && payload.actor
+      ? {
+        id: payload.actor.id,
+        key: step.key,
+        nombre: clean(payload.actor.nombre, 180),
+        email: normalizeEmail(payload.actor.email),
+        origen: 'gestion_viaticos'
+      }
+      : isAlternateAccess
+        ? buildActor(
         step.key,
         step.parallelEquivalentAccess
           ? `${step.alternateApprovalLabel || step.label} – buzón institucional`
           : `${step.alternateApprovalLabel || 'Programa académico'} – acceso alterno`,
         step.alternateApprovalEmail
-      )
-      : buildActor(step.key, step.label, step.email);
+        )
+        : buildActor(step.key, step.label, step.email);
     const accion = clean(req.body.accion, 30);
     const actionObservation = clean(req.body.observacion, 1200);
     if (isAlternateAccess && step.alternateObservationRequired !== false && !actionObservation) {
@@ -2654,6 +2665,13 @@ const descargarPdf = async (req, res) => {
 
 const abrirAccionAdmin = async (req, res) => {
   try {
+    const canManage = req.user?.role === ROLES.ADMINISTRADOR || Boolean(await UserModulePermission.count({
+      where: { user_id: req.user.id, module_key: MANAGEMENT_PERMISSION, can_view: true }
+    }));
+    if (!canManage) {
+      return res.status(403).json({ success: false, message: 'No tiene permiso para gestionar solicitudes de viáticos.' });
+    }
+
     const { id } = req.params;
     const isNum = !isNaN(Number(id));
     const solicitud = await DesplazamientoViaticosSolicitud.findOne({
@@ -2666,27 +2684,39 @@ const abrirAccionAdmin = async (req, res) => {
     });
 
     if (!solicitud) {
-      return res.status(404).send(page('Solicitud no encontrada', '<p>No se encontró la solicitud de viáticos especificada.</p>'));
+      return res.status(404).json({ success: false, message: 'No se encontró la solicitud de viáticos especificada.' });
     }
 
-    const plan = solicitud.plan_aprobacion || [];
-    const currentStep = plan[solicitud.paso_actual];
+    const currentPlan = solicitud.plan_aprobacion || [];
+    const currentStep = currentPlan[solicitud.paso_actual];
 
     if (!currentStep || ['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(solicitud.estado)) {
-      const html = liquidationRequestDocumentHtml(solicitud, {
-        currentStepKey: null,
-        formId: 'view_form',
-        isTechnician: false,
-        isTreasury: false
-      });
-      return res.send(html);
+      return res.status(409).json({ success: false, message: 'La solicitud no tiene una etapa de aprobación activa.' });
     }
 
-    const adminToken = createStageToken(solicitud, currentStep, 'admin_dashboard');
-    return res.redirect(`/api/desplazamientos-viaticos/accion/${adminToken}`);
+    const adminToken = createStageToken(solicitud, currentStep, 'admin_dashboard', {
+      id: req.user.id,
+      nombre: req.user.nombre || req.user.name || req.user.email,
+      email: req.user.email
+    });
+    const plan = [...(solicitud.plan_aprobacion || [])];
+    plan[solicitud.paso_actual] = {
+      ...currentStep,
+      actionTokenHashes: [
+        ...(currentStep.actionTokenHashes || []).filter((entry) => entry.source !== 'admin_dashboard'),
+        { source: 'admin_dashboard', hash: hashToken(adminToken) }
+      ]
+    };
+    await solicitud.update({ plan_aprobacion: plan });
+    return res.json({
+      success: true,
+      url: `${publicBackendUrl.replace(/\/$/, '')}/api/desplazamientos-viaticos/accion/${adminToken}`,
+      etapa: currentStep.key,
+      estado: solicitud.estado
+    });
   } catch (error) {
     console.error('Error al abrir acción admin:', error);
-    return res.status(500).send(page('Error al abrir formulario', `<p>${escapeHtml(error.message)}</p>`));
+    return res.status(500).json({ success: false, message: 'No fue posible abrir la gestión de la etapa.' });
   }
 };
 

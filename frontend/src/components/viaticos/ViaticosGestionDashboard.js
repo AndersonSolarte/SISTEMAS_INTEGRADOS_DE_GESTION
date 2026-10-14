@@ -17,7 +17,7 @@ import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import VerifiedRoundedIcon from '@mui/icons-material/VerifiedRounded';
 import { useSnackbar } from 'notistack';
-import { abrirAdjuntoLegalizacion, getEstadisticasViaticos, getSolicitudesViaticos, validarLegalizacion } from '../../services/legalizacionViaticosService';
+import { abrirAdjuntoLegalizacion, getAccionAdministrativaViaticos, getEstadisticasViaticos, getSolicitudesViaticos, validarLegalizacion } from '../../services/legalizacionViaticosService';
 import LegalizacionViaticosFormat from './LegalizacionViaticosFormat';
 
 const currency = (value) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -158,18 +158,21 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
     return row.updatedAt || row.updated_at || row.createdAt || row.created_at || null;
   };
 
-  const getBackendApiUrl = () => {
-    if (process.env.REACT_APP_API_URL) {
-      return process.env.REACT_APP_API_URL.replace(/\/$/, '');
-    }
-    const port = window.location.port === '3000' ? ':5000' : (window.location.port ? `:${window.location.port}` : '');
-    return `${window.location.protocol}//${window.location.hostname}${port}/api`;
-  };
-
-  const openStageAction = (row) => {
+  const openStageAction = async (row) => {
     if (!row || !row.id) return;
-    const baseUrl = getBackendApiUrl();
-    window.open(`${baseUrl}/desplazamientos-viaticos/solicitudes/${row.id}/accion-admin`, '_blank');
+    const popup = window.open('about:blank', '_blank');
+    if (!popup) {
+      enqueueSnackbar('El navegador bloqueó la ventana de gestión. Habilite las ventanas emergentes e inténtelo nuevamente.', { variant: 'warning' });
+      return;
+    }
+    popup.opener = null;
+    try {
+      const result = await getAccionAdministrativaViaticos(row.id);
+      popup.location.href = result.url;
+    } catch (error) {
+      popup.close();
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible abrir la gestión de la etapa.', { variant: 'error' });
+    }
   };
 
   const segments = [
@@ -373,7 +376,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
                     </Tooltip>
                   ) : (
                     <Tooltip title="Abrir y gestionar formulario de la etapa o consultar documento">
-                      <IconButton size="small" onClick={() => openStageAction(row)} sx={{ p: 0.5, color: '#0b3a6f', bgcolor: '#eff6ff', border: '1px solid #bfdbfe', '&:hover': { bgcolor: '#dbeafe' } }}>
+                      <IconButton size="small" onClick={() => setDetailRow(row)} sx={{ p: 0.5, color: '#0b3a6f', bgcolor: '#eff6ff', border: '1px solid #bfdbfe', '&:hover': { bgcolor: '#dbeafe' } }}>
                         <VisibilityRoundedIcon sx={{ fontSize: 17 }} />
                       </IconButton>
                     </Tooltip>
@@ -502,14 +505,19 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
                 <Alert severity="info" sx={{ borderRadius: 2 }}>Sin trazabilidad registrada aún.</Alert>
               )}
             </Stack>
+            {detailRow.token_etapa && !['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado) && (
+              <Alert severity="info" sx={{ borderRadius: 2 }}>
+                La etapa pendiente puede gestionarse desde este tablero. La decisión quedará registrada a nombre del usuario autenticado.
+              </Alert>
+            )}
           </Stack>
         )}
       </DialogContent>
       <DialogActions sx={{ p: 2 }}>
         <Button onClick={() => setDetailRow(null)}>Cerrar</Button>
-        {detailRow && (detailRow.token_accion_hash || detailRow.token) && (
+        {detailRow?.token_etapa && !['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado) && (
           <Button variant="contained" color="primary" onClick={() => openStageAction(detailRow)}>
-            Ir a la gestión del paso
+            Gestionar etapa actual
           </Button>
         )}
       </DialogActions>

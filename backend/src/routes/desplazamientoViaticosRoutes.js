@@ -40,7 +40,7 @@ router.get('/assets/encabezado-correos.png', (_req, res) => res.sendFile(path.jo
 router.get('/assets/logo-formatos.jpg', (_req, res) => res.sendFile(path.join(__dirname, '../assets/logo_formatos.jpg')));
 router.get('/accion/:token', publicLimiter, mostrarAccion);
 router.post('/accion/:token', publicLimiter, procesarAccion);
-router.get('/solicitudes/:id/accion-admin', publicLimiter, abrirAccionAdmin);
+router.post('/solicitudes/:id/accion-admin', auth, abrirAccionAdmin);
 router.get('/prueba/liquidacion/:token', publicLimiter, mostrarDemoLiquidacion);
 router.post('/prueba/liquidacion/:token', publicLimiter, procesarDemoLiquidacion);
 router.get('/prueba/tesoreria/:token', publicLimiter, mostrarDemoTesoreria);

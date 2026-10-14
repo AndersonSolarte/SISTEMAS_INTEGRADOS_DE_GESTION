@@ -2365,17 +2365,34 @@ export default function JuridicaWorkflowPanel() {
                     <Box>
                       <Typography fontWeight={950}>Documentos y anexos del expediente</Typography>
                       <Typography variant="caption" color="text.secondary">
-                        Cualquier asesor o funcionario asignado puede incorporar archivos de soporte o respuestas.
+                        {['entregado', 'cerrado'].includes(selected.estado)
+                          ? 'Los documentos son temporales durante el trámite y se conservan en el hilo de correos institucionales tras su entrega.'
+                          : 'Cualquier asesor o funcionario asignado puede incorporar archivos de soporte o respuestas.'}
                       </Typography>
                     </Box>
-                    <>
-                      <input hidden ref={attachmentRef} type="file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg" onChange={handleAttachment} />
-                      <Button size="small" variant="contained" startIcon={<AttachFileRoundedIcon />} onClick={() => attachmentRef.current?.click()} sx={{ bgcolor: COLORS.blue }}>
-                        Adjuntar
-                      </Button>
-                    </>
+                    {!['entregado', 'cerrado', 'cancelado'].includes(selected.estado) && (
+                      <>
+                        <input hidden ref={attachmentRef} type="file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg" onChange={handleAttachment} />
+                        <Button size="small" variant="contained" startIcon={<AttachFileRoundedIcon />} onClick={() => attachmentRef.current?.click()} sx={{ bgcolor: COLORS.blue, textTransform: 'none', fontWeight: 800 }}>
+                          Adjuntar
+                        </Button>
+                      </>
+                    )}
                   </Stack>
+
+                  {Boolean(selected.metadata?.adjuntos_purgados || ['entregado', 'cerrado'].includes(selected.estado)) && (
+                    <Alert severity="info" sx={{ mt: 1.5, mb: 1, borderRadius: 2, bgcolor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}>
+                      <Typography variant="subtitle2" fontWeight={900}>
+                        Documentos temporales depurados del servidor
+                      </Typography>
+                      <Typography variant="caption" display="block">
+                        Conforme a la política institucional de no saturar almacenamiento, los archivos adjuntos son temporales mientras el expediente está activo y son depurados del servidor al cerrar el trámite. Todos los documentos se conservan permanentemente en el <strong>hilo de correos electrónicos institucionales</strong> enviado a los funcionarios asignados y la jefatura.
+                      </Typography>
+                    </Alert>
+                  )}
+
                   <Stack spacing={1} mt={1.8}>
+                    {/* Archivos activos en base de datos (durante el trámite) */}
                     {(selected.adjuntos || []).map((a) => (
                       <Paper
                         key={a.id}
@@ -2412,7 +2429,46 @@ export default function JuridicaWorkflowPanel() {
                         </Button>
                       </Paper>
                     ))}
-                    {!selected.adjuntos?.length && (
+
+                    {/* Archivos depurados (tras el cierre formal) */}
+                    {(selected.metadata?.adjuntos_depurados || []).map((a, idx) => (
+                      <Paper
+                        key={`dep-${idx}`}
+                        variant="outlined"
+                        sx={{
+                          p: 1.2,
+                          px: 1.6,
+                          borderRadius: 2,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 1,
+                          bgcolor: '#f8fafc',
+                          border: '1px dashed #cbd5e1'
+                        }}
+                      >
+                        <Stack direction="row" spacing={1.2} alignItems="center" sx={{ minWidth: 0 }}>
+                          <AttachFileRoundedIcon sx={{ color: '#64748b' }} />
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography fontWeight={800} fontSize={13.5} color="#334155" noWrap>
+                              {a.nombre_original}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {(Number(a.tamano_bytes) / 1024).toFixed(0)} KB · Depurado el {formatDateBrief(a.fecha_depuracion)}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                        <Chip
+                          size="small"
+                          label="Enviado por Correo Institucional"
+                          variant="outlined"
+                          color="success"
+                          sx={{ fontWeight: 800, fontSize: '0.72rem', bgcolor: '#f0fdf4' }}
+                        />
+                      </Paper>
+                    ))}
+
+                    {!selected.adjuntos?.length && !selected.metadata?.adjuntos_depurados?.length && (
                       <Typography variant="body2" color="text.secondary" sx={{ py: 1, textAlign: 'center' }}>
                         Todavía no hay soportes o respuestas adjuntas en este expediente.
                       </Typography>

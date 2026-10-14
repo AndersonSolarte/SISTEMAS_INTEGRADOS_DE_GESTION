@@ -92,7 +92,7 @@ const getJuridicaCoreStaff = async () => {
   }
 };
 
-// Helper: Enviar notificación institucional por correo con plantilla y anexos
+// Helper: Enviar notificación institucional por correo con plantilla, anexos y conservación de hilo (Email Threading)
 const sendJuridicaNotification = async ({
   caso,
   recipients = [],
@@ -103,7 +103,8 @@ const sendJuridicaNotification = async ({
   badgeColor = '#0b3a6f',
   details = [],
   actionUrl = '',
-  includeAttachments = true
+  includeAttachments = true,
+  isRootEmail = false
 }) => {
   try {
     const targetEmails = Array.from(new Set(
@@ -122,6 +123,27 @@ const sendJuridicaNotification = async ({
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const linkUrl = actionUrl || `${frontendUrl}/gestion-informacion`;
+
+    // Configuración estricta de Hilo de Conversación (Email Threading RFC 2822 / RFC 5322):
+    // Todos los correos de un mismo caso comparten el mismo rootMessageId determinístico e In-Reply-To/References
+    const threadDomain = 'unicesmag.edu.co';
+    const rootMessageId = `<juridica-expediente-${caso.id}-${caso.anio || new Date().getFullYear()}@${threadDomain}>`;
+    const currentMessageId = isRootEmail
+      ? rootMessageId
+      : `<juridica-notif-${caso.id}-${Date.now()}@${threadDomain}>`;
+
+    // Asunto canónico con prefijo "Re:" para agrupar todas las respuestas en el mismo hilo de Gmail/Outlook
+    const canonicalThreadSubject = `[Oficina Jurídica] NRI ${caso.nri} · ${clean(caso.asunto, 55)}`;
+    const finalSubject = isRootEmail
+      ? canonicalThreadSubject
+      : `Re: ${canonicalThreadSubject}`;
+
+    const mailHeaders = isRootEmail
+      ? {}
+      : {
+          'In-Reply-To': rootMessageId,
+          'References': rootMessageId
+        };
 
     const detailRows = details
       .filter((d) => d && d.label && d.value)
@@ -176,13 +198,17 @@ const sendJuridicaNotification = async ({
 
     sendInstitutionalEmail({
       to: targetEmails,
-      subject,
+      subject: finalSubject,
       text,
       html,
-      attachments
+      attachments,
+      messageId: currentMessageId,
+      inReplyTo: isRootEmail ? undefined : rootMessageId,
+      references: isRootEmail ? undefined : rootMessageId,
+      headers: mailHeaders
     }).then((res) => {
       if (res?.success) {
-        console.log(`[juridicaEmail] ✅ Correo entregado a [${targetEmails.join(', ')}] para NRI ${caso.nri} con ${attachments.length} adjuntos.`);
+        console.log(`[juridicaEmail] ✅ Correo entregado a [${targetEmails.join(', ')}] en hilo para NRI ${caso.nri} con ${attachments.length} adjuntos.`);
       } else {
         console.warn(`[juridicaEmail] ⚠️ No se pudo entregar a [${targetEmails.join(', ')}]:`, res?.error);
       }
@@ -345,7 +371,8 @@ const createCase = async (req, res) => {
       { label: 'Fecha límite sugerida', value: caso.fecha_limite ? `${caso.fecha_limite}` : 'Por definir por jefatura' },
       { label: 'Registrado por', value: `${req.user.nombre} (${req.user.cargo || 'Funcionario'})` }
     ],
-    includeAttachments: true
+    includeAttachments: true,
+    isRootEmail: true
   });
 
   res.status(201).json({ success: true, data: await JuridicaCaso.findByPk(caso.id, { include: includeCase() }) });
@@ -737,6 +764,48 @@ const transitionCase = async (req, res) => {
       ],
       includeAttachments: false
     });
+
+    // Depuración automática de documentos temporales del servidor:
+    // Los documentos quedan respaldados exclusivamente en los correos institucionales de los funcionarios.
+    try {
+      const currentAdjuntos = await JuridicaAdjunto.findAll({
+        where: { caso_id: caso.id },
+        attributes: ['id', 'nombre_original', 'tipo', 'tamano_bytes', 'mime_type']
+      });
+
+      if (currentAdjuntos.length > 0) {
+        const depuradosList = currentAdjuntos.map((a) => ({
+          id: String(a.id),
+          nombre_original: a.nombre_original,
+          tipo: a.tipo,
+          tamano_bytes: a.tamano_bytes,
+          mime_type: a.mime_type,
+          fecha_depuracion: new Date().toISOString()
+        }));
+
+        // Eliminar BLOBs físicos para liberar almacenamiento en servidor
+        await JuridicaAdjunto.destroy({ where: { caso_id: caso.id } });
+
+        const updatedMetadata = {
+          ...(caso.metadata || {}),
+          adjuntos_depurados: depuradosList,
+          adjuntos_purgados: true,
+          fecha_depuracion_adjuntos: new Date().toISOString()
+        };
+        await caso.update({ metadata: updatedMetadata });
+
+        await addHistory(
+          caso,
+          req.user.id,
+          'depuracion_adjuntos',
+          previous,
+          next,
+          `Depuración automática de ${currentAdjuntos.length} documento(s) del servidor tras el cierre formal. Los archivos se conservan en el hilo de correos institucionales.`
+        );
+      }
+    } catch (depErr) {
+      console.error('[depuracionAdjuntos] Error al depurar adjuntos:', depErr);
+    }
   }
 
   res.json({ success: true, data: await JuridicaCaso.findByPk(caso.id, { include: includeCase() }) });
@@ -757,6 +826,15 @@ const uploadAttachment = async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'Seleccione un archivo.' });
   const caso = await JuridicaCaso.findOne({ where: { id: req.params.id, ...accessWhere(req.user) } });
   if (!caso) return res.status(404).json({ success: false, message: 'Caso no encontrado.' });
+
+  // Seguridad y política temporal: No permitir cargas a expedientes cerrados/entregados
+  if (['entregado', 'cerrado', 'cancelado'].includes(caso.estado)) {
+    return res.status(400).json({
+      success: false,
+      message: 'No es posible adjuntar archivos a un expediente entregado o cerrado. Los documentos de esta solicitud fueron depurados del servidor.'
+    });
+  }
+
   const adjunto = await JuridicaAdjunto.create({
     caso_id: caso.id, usuario_id: req.user.id, tipo: clean(req.body.tipo, 60) || 'soporte',
     nombre_original: clean(req.file.originalname, 500), mime_type: clean(req.file.mimetype, 150),
@@ -768,7 +846,12 @@ const uploadAttachment = async (req, res) => {
 
 const downloadAttachment = async (req, res) => {
   const adjunto = await JuridicaAdjunto.findByPk(req.params.adjuntoId, { include: [{ model: JuridicaCaso, as: 'caso', attributes: ['id', 'solicitante_id', 'responsable_id'] }] });
-  if (!adjunto) return res.status(404).json({ success: false, message: 'Archivo no encontrado.' });
+  if (!adjunto) {
+    return res.status(404).json({
+      success: false,
+      message: 'El archivo ya fue depurado del servidor tras el cierre del caso. Por favor consulte el archivo directamente en su correo institucional.'
+    });
+  }
   res.setHeader('Content-Type', adjunto.mime_type);
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(adjunto.nombre_original)}`);
   res.send(adjunto.contenido);
