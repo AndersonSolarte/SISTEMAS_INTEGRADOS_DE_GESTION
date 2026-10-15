@@ -209,10 +209,22 @@ const isCargoSubtype = (t = '') => CARGO_SUBTYPES.includes(t) || String(t).start
 
 const getDocumentoYDuracionInfo = (row = {}) => {
   const salida = row?.datos_formulario?.salida || {};
+  const viaticos = row?.datos_formulario?.viaticos || row?.datos_viaticos || {};
   const categoria = salida.categoria || salida.category || '';
   const tipo = salida.tipo || '';
-  const duracionTipo = salida.duracionTipo;
-  const duracionDias = salida.duracionDias;
+  const requestedDays = Number(viaticos.numeroDiasSolicitados || 0);
+  const start = new Date(`${salida.fecha || ''}T${salida.horaInicio || '00:00'}`);
+  const end = new Date(`${salida.fechaRegreso || ''}T${salida.horaFin || '23:59'}`);
+  const calendarDays = Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start
+    ? 0
+    : Math.max(1, Math.ceil((end - start) / 86400000));
+  const viaticosDays = Number.isFinite(requestedDays) && requestedDays > 0
+    ? requestedDays
+    : calendarDays;
+  const duracionDias = Math.max(Number(salida.duracionDias || 0), viaticosDays);
+  const duracionTipo = viaticosDays >= 3
+    ? '3_mas_dias'
+    : (viaticosDays >= 1 ? '1_2_dias' : salida.duracionTipo);
 
   const isDocente = (() => {
     const data = row?.datos_formulario || {};
@@ -239,7 +251,27 @@ const getDocumentoYDuracionInfo = (row = {}) => {
     ? duracionTipo !== 'menos_media_jornada'
     : (Number(duracionDias) >= 1 || (salida.fechaRegreso && salida.fecha && salida.fechaRegreso !== salida.fecha) || (row.tiempo_solicitado_minutos && row.tiempo_solicitado_minutos >= 480));
 
-  const docTipoLabel = isOficio ? 'Oficio' : 'Formato FR-002';
+  const requiereViaticos = String(viaticos.requiereViaticos || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const hasViaticos = viaticos.requiereViaticos === true
+    || requiereViaticos === 'si'
+    || Number(viaticos.numeroDiasSolicitados || 0) > 0;
+  const legalizacionStates = ['pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada', 'finalizada'];
+  const viaticosStates = [
+    'pendiente_tecnico_contable',
+    'pendiente_liquidacion',
+    'pendiente_tesoreria',
+    'pendiente_autorizacion_pago',
+    'en_tramite_viaticos',
+    'en_tramite_tesoreria'
+  ];
+  const docTipoLabel = hasViaticos && legalizacionStates.includes(row.estado)
+    ? 'Formato de legalizaciÃ³n de viÃ¡ticos'
+    : (hasViaticos && viaticosStates.includes(row.estado)
+      ? 'Formato de viÃ¡ticos'
+      : (isOficio ? 'Oficio de salida' : 'Formato de salida'));
 
   let duracionLabel = '';
   let duracionColor = '#0369a1';

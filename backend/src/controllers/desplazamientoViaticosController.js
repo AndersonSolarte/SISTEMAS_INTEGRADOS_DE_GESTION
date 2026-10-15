@@ -155,6 +155,26 @@ const NORMAL_PENDING_STATE_BY_STAGE = {
   gestion_humana: 'pendiente_aprobacion_gestion_humana'
 };
 
+const getEffectiveViaticosDays = (salida = {}, viaticos = {}) => {
+  const requestedDays = Number(viaticos.numeroDiasSolicitados || 0);
+  if (Number.isFinite(requestedDays) && requestedDays > 0) return requestedDays;
+  const start = new Date(`${salida.fecha || ''}T${salida.horaInicio || '00:00'}`);
+  const end = new Date(`${salida.fechaRegreso || ''}T${salida.horaFin || '23:59'}`);
+  const calendarDays = Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start
+    ? 0
+    : Math.max(1, Math.ceil((end - start) / 86400000));
+  return calendarDays;
+};
+
+const normalizeViaticosSalidaDuration = (salida = {}, viaticos = {}) => {
+  const days = getEffectiveViaticosDays(salida, viaticos);
+  return {
+    ...salida,
+    duracionTipo: days >= 3 ? '3_mas_dias' : '1_2_dias',
+    duracionDias: Math.max(1, days)
+  };
+};
+
 const buildNormalReportData = ({ consecutivo, userId, documentoId, jefeUserId, personal, jefe, laboral, salida, viaticos, steps }) => ({
   consecutivo,
   user_id: userId,
@@ -168,9 +188,8 @@ const buildNormalReportData = ({ consecutivo, userId, documentoId, jefeUserId, p
     personal: { nombre: personal.nombre, documento: personal.documento, correo: personal.email },
     laboral,
     salida: {
-      ...salida,
+      ...normalizeViaticosSalidaDuration(salida, viaticos),
       categoria: 'propias_cargo',
-      duracionTipo: 'menos_media_jornada'
     },
     viaticos,
     plan_aprobacion_normal: (steps || []).filter((step) => ['jefe', 'financiera_previa', 'vicerrectoria_dependencia', 'sst', 'rectoria', 'gestion_humana'].includes(step.key)),
@@ -1033,13 +1052,18 @@ const sendFinalizedCopies = async (solicitud) => {
 
   const threadHeaders = getThreadHeaders(solicitud);
   const pdfAttachments = [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean);
+  const normalSalida = normalReport?.datos_formulario?.salida || solicitud.datos_salida || {};
+  const normalDocumentLabel = getEffectiveViaticosDays(normalSalida, solicitud.datos_viaticos || {}) >= 1
+    || normalSalida.duracionTipo !== 'menos_media_jornada'
+    ? 'Oficio de salida'
+    : 'Formato de Reporte de Salida (FR-002)';
 
   const results = [];
   if (collaboratorEmail) {
     results.push(await sendInstitutionalEmail({
       to: collaboratorEmail,
       subject: `${solicitud.consecutivo} | Pago autorizado y comision aprobada - Formatos firmados`,
-      text: `Tesorería/Pagaduría autorizó el pago de la solicitud ${solicitud.consecutivo}. Se adjuntan el Formato de Reporte de Salida (FR-002) y la Liquidación de Viáticos (FR-004) debidamente firmados.`,
+      text: `Tesorería/Pagaduría autorizó el pago de la solicitud ${solicitud.consecutivo}. Se adjuntan el ${normalDocumentLabel} y la Liquidación de Viáticos (FR-004) debidamente firmados.`,
       html: renderInstitutionalTemplate({
         title: 'Trámite Aprobado y Pago Autorizado',
         introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Tesorería / Pagaduría ha autorizado el pago de su anticipo de viáticos. Se remite copia de los dos formatos institucionales (Reporte de Salida y Liquidación de Viáticos) debidamente aprobados y firmados. El módulo de legalización se habilitará automáticamente en la fecha de regreso y dispondrá de tres (3) días hábiles conforme al Acuerdo 001 de 2013.</p>',
@@ -1053,7 +1077,7 @@ const sendFinalizedCopies = async (solicitud) => {
   results.push(...await Promise.all(allInvolvedRecipients.map((email) => sendInstitutionalEmail({
     to: email,
     subject: `${solicitud.consecutivo} | Proceso finalizado y pago autorizado - Formatos firmados`,
-    text: `Se informa que la comisión y liquidación de viáticos ${solicitud.consecutivo} ha completado exitosamente todo el flujo de visto bueno y pago. Se adjuntan los formatos de Reporte de Salida (FR-002) y Liquidación de Viáticos (FR-004) firmados.`,
+    text: `Se informa que la comisión y liquidación de viáticos ${solicitud.consecutivo} ha completado exitosamente todo el flujo de visto bueno y pago. Se adjuntan el ${normalDocumentLabel} y la Liquidación de Viáticos (FR-004) firmados.`,
     html: renderInstitutionalTemplate({
       title: 'Proceso Finalizado · Formatos Aprobados',
       introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Se remite copia final del proceso completado. Tesorería / Pagaduría ha autorizado el pago y la comisión cuenta con el visto bueno de todas las instancias (Jefatura, Vicerrectoría, SST, Gestión Humana, Contabilidad y Tesorería). Se adjuntan los formatos oficiales debidamente firmados.</p>',
@@ -1206,6 +1230,7 @@ const radicarSolicitud = async (req, res) => {
     const issues = validatePayload(req.body);
     if (issues.length) return res.status(400).json({ success: false, message: issues[0], issues });
     const body = req.body;
+    const normalizedSalida = normalizeViaticosSalidaDuration(body.salida, body.viaticos);
     const personal = {
       nombre: clean(req.user?.nombre || body.personal?.nombre, 150),
       documento: clean(req.user?.username || body.personal?.documento, 50),
@@ -1236,7 +1261,7 @@ const radicarSolicitud = async (req, res) => {
         personal,
         jefe,
         laboral,
-        salida: body.salida,
+        salida: normalizedSalida,
         viaticos: body.viaticos,
         steps
       }), { transaction });
@@ -1248,7 +1273,7 @@ const radicarSolicitud = async (req, res) => {
         solicitante_snapshot: personal,
         jefe_snapshot: jefe,
         datos_laborales: laboral,
-        datos_salida: body.salida,
+        datos_salida: normalizedSalida,
         datos_viaticos: {
           ...body.viaticos,
           reporteSalidaSolicitudId: normalReport.id,
@@ -2748,7 +2773,7 @@ const abrirAccionAdminPorReporte = async (req, res) => {
 };
 
 module.exports = {
-  _internals: { approvalForm, buildApprovalPlan, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, parseLiquidationBody, treasuryForm, validatePayload },
+  _internals: { approvalForm, buildApprovalPlan, buildNormalReportData, getEffectiveViaticosDays, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, normalizeViaticosSalidaDuration, parseLiquidationBody, treasuryForm, validatePayload },
   abrirAccionAdmin,
   abrirAccionAdminPorReporte,
   descargarFormato,

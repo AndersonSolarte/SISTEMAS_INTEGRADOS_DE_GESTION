@@ -1268,8 +1268,22 @@ const PROPIAS_CARGO_SUBTYPES = [
 ];
 const isPropiasCargoSubtype = (t = '') => PROPIAS_CARGO_SUBTYPES.includes(t) || String(t).startsWith('otra:');
 
+const getViaticosDurationDays = (solicitud = {}) => {
+  const salida = getSolicitudSalida(solicitud);
+  const viaticos = solicitud.datos_formulario?.viaticos || solicitud.datos_viaticos || {};
+  const requestedDays = Number(viaticos.numeroDiasSolicitados || 0);
+  if (Number.isFinite(requestedDays) && requestedDays > 0) return requestedDays;
+  const start = new Date(`${salida.fecha || ''}T${salida.horaInicio || '00:00'}`);
+  const end = new Date(`${salida.fechaRegreso || ''}T${salida.horaFin || '23:59'}`);
+  const calendarDays = Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start
+    ? 0
+    : Math.max(1, Math.ceil((end - start) / 86400000));
+  return calendarDays;
+};
+
 const isOficioSolicitud = (solicitud = {}) => {
   const salida = getSolicitudSalida(solicitud);
+  if (getViaticosDurationDays(solicitud) >= 1) return true;
   const duracionTipo = salida.duracionTipo;
   if (duracionTipo === 'menos_media_jornada') return false;
   if (duracionTipo === '1_2_dias' || duracionTipo === '3_mas_dias') return true;
