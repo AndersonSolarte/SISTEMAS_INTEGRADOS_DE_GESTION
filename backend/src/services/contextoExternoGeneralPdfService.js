@@ -275,8 +275,7 @@ const reportCoverPage = ({ program, nationalOffer, regionalOffer, aiAnalysis = {
   return [
     ...(fs.existsSync(headerPath) ? [{ image: headerPath, fit: [955, 75], alignment: 'center', margin: [0, 0, 0, 10] }] : []),
     { svg: coverSvg, width: 955, alignment: 'center', margin: [0, 0, 0, 8] },
-    ...aiAnalysisBox(coverAnalysisText, 'MARCO DE REFERENCIA Y CONTEXTO EXTERNO GENERAL (SNIES)'),
-    { text: '', pageBreak: 'after' }
+    ...aiAnalysisBox(coverAnalysisText, 'MARCO DE REFERENCIA Y CONTEXTO EXTERNO GENERAL (SNIES)')
   ];
 };
 
@@ -298,15 +297,15 @@ const labelCountRows = (rows, field) => {
   return Array.from(counts, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 };
 
-const stackedBarChartSvg = ({ data, series, width = 690, height = 260, title = '', subtitle = '', scope = '' }) => {
+const stackedBarChartSvg = ({ data, series, width = 690, height = 300, title = '', subtitle = '', scope = '' }) => {
   const visibleData = data.filter((row) => series.some((item) => number(row[item.key]) > 0));
-  const margin = { left: 48, right: 12, top: 62, bottom: 46 };
+  const margin = { left: 48, right: 18, top: 62, bottom: 46 };
   const chartW = width - margin.left - margin.right;
   const chartH = height - margin.top - margin.bottom;
   const maxStack = Math.max(1, ...visibleData.map((row) => series.reduce((total, item) => total + number(row[item.key]), 0)));
-  const maxValue = maxStack * 1.08;
+  const maxValue = maxStack * 1.15;
   const slotWidth = chartW / Math.max(1, visibleData.length);
-  const barWidth = Math.max(18, Math.min(72, slotWidth * 0.88));
+  const barWidth = Math.max(18, Math.min(62, slotWidth * 0.8));
   const x = (index) => margin.left + slotWidth * index + slotWidth / 2;
   const y = (value) => margin.top + chartH - (number(value) / maxValue) * chartH;
   const grid = Array.from({ length: 5 }, (_, index) => {
@@ -317,8 +316,9 @@ const stackedBarChartSvg = ({ data, series, width = 690, height = 260, title = '
   }).join('');
   const bars = visibleData.map((row, rowIndex) => {
     let cumulative = 0;
+    const totalStack = series.reduce((sum, item) => sum + number(row[item.key]), 0);
     const lastActiveIndex = series.reduce((lastIdx, item, idx) => (number(row[item.key]) > 0 ? idx : lastIdx), -1);
-    return series.map((item, seriesIndex) => {
+    const segments = series.map((item, seriesIndex) => {
       const value = number(row[item.key]);
       const top = y(cumulative + value);
       const bottom = y(cumulative);
@@ -333,13 +333,18 @@ const stackedBarChartSvg = ({ data, series, width = 690, height = 260, title = '
         ? `<path d="M ${bx} ${top + segmentHeight} V ${top + r} A ${r} ${r} 0 0 1 ${bx + r} ${top} H ${bx + barWidth - r} A ${r} ${r} 0 0 1 ${bx + barWidth} ${top + r} V ${top + segmentHeight} Z" fill="${color}"/>`
         : `<rect x="${bx}" y="${top}" width="${barWidth}" height="${segmentHeight}" fill="${color}"/>`;
       const formatted = format.format(value);
-      const externalLabelWidth = Math.max(22, formatted.length * 5 + 8);
-      const labelY = (top + segmentHeight / 2 + (segmentHeight < 18 ? 2.2 : 2.5)).toFixed(1);
-      const label = segmentHeight >= 12 && barWidth >= 22
-        ? `<text x="${x(rowIndex)}" y="${labelY}" text-anchor="middle" font-size="${segmentHeight < 18 ? 7.2 : 8.2}" font-weight="bold" fill="#ffffff">${escapeXml(formatted)}</text>`
-        : `<line x1="${x(rowIndex) + barWidth / 2}" y1="${top + Math.max(3, segmentHeight / 2)}" x2="${x(rowIndex) + barWidth / 2 + 4}" y2="${top + Math.max(3, segmentHeight / 2)}" stroke="#64748b" stroke-width=".8"/><rect x="${x(rowIndex) + barWidth / 2 + 4}" y="${top + Math.max(3, segmentHeight / 2) - 6}" width="${externalLabelWidth}" height="12" rx="3" fill="#fff" stroke="#94a3b8" stroke-width=".6"/><text x="${x(rowIndex) + barWidth / 2 + 4 + externalLabelWidth / 2}" y="${(top + Math.max(3, segmentHeight / 2) + 2.5).toFixed(1)}" text-anchor="middle" font-size="7.8" font-weight="bold" fill="#1e293b">${escapeXml(formatted)}</text>`;
+      let label = '';
+      if (segmentHeight >= 11 && barWidth >= 20) {
+        const labelY = (top + segmentHeight / 2 + (segmentHeight < 16 ? 2.5 : 3.2)).toFixed(1);
+        label = `<text x="${x(rowIndex)}" y="${labelY}" text-anchor="middle" font-size="${segmentHeight < 16 ? 7.2 : 8.5}" font-weight="900" fill="#ffffff">${escapeXml(formatted)}</text>`;
+      } else if (segmentHeight >= 8 && barWidth >= 18) {
+        const labelY = (top + segmentHeight / 2 + 2.2).toFixed(1);
+        label = `<text x="${x(rowIndex)}" y="${labelY}" text-anchor="middle" font-size="6.8" font-weight="900" fill="#ffffff">${escapeXml(formatted)}</text>`;
+      }
       return `${segmentShape}${label}`;
     }).join('');
+
+    return `${segments}`;
   }).join('');
   const labels = visibleData.map((row, index) => {
     const [year, semester] = text(row.periodo).split('-');
@@ -352,7 +357,7 @@ const stackedBarChartSvg = ({ data, series, width = 690, height = 260, title = '
     return `<circle cx="${lx}" cy="52" r="4.5" fill="${item.color || COLORS[index]}"/><text x="${lx + 8}" y="55.5" font-size="9.5" font-weight="bold" fill="#334155">${escapeXml(item.label)}</text>`;
   }).join('');
   const scopeWidth = 68;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect x=".5" y=".5" width="${width - 1}" height="${height - 1}" rx="13" fill="#ffffff" stroke="#cbd9ea"/><text x="18" y="24" font-size="12" font-weight="bold" fill="#0f172a">${escapeXml(title)}</text><text x="18" y="39" font-size="8.5" fill="#64748b">${escapeXml(subtitle)}</text><rect x="${width - scopeWidth - 18}" y="15" width="${scopeWidth}" height="22" rx="11" fill="#2f6fed"/><text x="${width - scopeWidth / 2 - 18}" y="29" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#ffffff">${escapeXml(scope)}</text>${legend}${grid}<line x1="${margin.left}" y1="${margin.top + chartH}" x2="${margin.left + chartW}" y2="${margin.top + chartH}" stroke="#91a4bd"/>${bars}${labels}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect x=".5" y=".5" width="${width - 1}" height="${height - 1}" rx="13" fill="#ffffff" stroke="#cbd9ea"/><text x="18" y="24" font-size="12" font-weight="bold" fill="#0f172a">${escapeXml(title)}</text><text x="18" y="39" font-size="8.5" fill="#64748b">${escapeXml(subtitle)}</text><rect x="${width - scopeWidth - 18}" y="15" width="${scopeWidth}" height="22" rx="11" fill="#2f6fed"/><text x="${width - scopeWidth / 2 - 18}" y="${29}" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#ffffff">${escapeXml(scope)}</text>${legend}${grid}<line x1="${margin.left}" y1="${margin.top + chartH}" x2="${margin.left + chartW}" y2="${margin.top + chartH}" stroke="#91a4bd"/>${bars}${labels}</svg>`;
 };
 
 const trendLineChartSvg = ({ data, series, width = 690, height = 350, subtitle = '', scope = '' }) => {
@@ -463,7 +468,7 @@ const shadedTrendChartSvg = ({ data, series, width = 690, height = 285, scope = 
     .map((row) => ({ ...row, year: periodLabel(row.periodo) }));
   if (!years.length) return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#fff"/><text x="${width / 2}" y="${height / 2}" text-anchor="middle" font-size="11" fill="#64748b">No existen datos para el alcance seleccionado.</text></svg>`;
   const chartLeft = 112;
-  const chartRight = width - 92;
+  const chartRight = width - 20;
   const plotWidth = chartRight - chartLeft;
   const rowTop = 71;
   const rowHeight = 61;
@@ -479,15 +484,11 @@ const shadedTrendChartSvg = ({ data, series, width = 690, height = 285, scope = 
     const y = (value) => top + 5 + (1 - (value - min) / range) * 25;
     const points = values.map((value, index) => `${x(index)},${y(value)}`).join(' ');
     const area = `${chartLeft},${baseline} ${points} ${chartRight},${baseline}`;
-    const first = values.find((value) => value > 0) || 0;
-    const last = [...values].reverse().find((value) => value > 0) || 0;
-    const variation = first > 0 ? ((last - first) / first) * 100 : 0;
-    const trendColor = variation >= 0 ? '#15803d' : '#dc2626';
     const dots = values.map((value, index) => `<circle cx="${x(index)}" cy="${y(value)}" r="3" fill="${item.color}" stroke="#fff" stroke-width="1.2"/><text x="${x(index)}" y="${y(value) - 6}" text-anchor="middle" font-size="6.5" font-weight="bold" fill="${item.color}">${escapeXml(format.format(value))}</text>`).join('');
-    return `<line x1="${chartLeft}" y1="${baseline}" x2="${chartRight}" y2="${baseline}" stroke="#d9e3ef"/><rect x="12" y="${top + 5}" width="91" height="36" rx="8" fill="#fff" stroke="${item.color}" stroke-opacity=".3"/><circle cx="27" cy="${top + 23}" r="9" fill="${item.color}"/><text x="42" y="${top + 26}" font-size="6.8" font-weight="bold" fill="${item.color}">${escapeXml(item.label.toUpperCase())}</text><polygon points="${area}" fill="url(#pdf-shade-${seriesIndex})"/><polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>${dots}<line x1="${chartRight + 7}" y1="${top + 23}" x2="${chartRight + 22}" y2="${top + 23}" stroke="${trendColor}" stroke-dasharray="3 3"/><circle cx="${chartRight + 50}" cy="${top + 23}" r="18" fill="${variation >= 0 ? '#f0fdf4' : '#fff5f5'}" stroke="${trendColor}" stroke-width="1.5" stroke-dasharray="3 2"/><text x="${chartRight + 50}" y="${top + 26}" text-anchor="middle" font-size="7" font-weight="bold" fill="${trendColor}">${variation >= 0 ? '+' : ''}${variation.toFixed(1).replace('.', ',')}%</text>`;
+    return `<line x1="${chartLeft}" y1="${baseline}" x2="${chartRight}" y2="${baseline}" stroke="#d9e3ef"/><rect x="12" y="${top + 5}" width="91" height="36" rx="8" fill="#fff" stroke="${item.color}" stroke-opacity=".3"/><circle cx="27" cy="${top + 23}" r="9" fill="${item.color}"/><text x="42" y="${top + 26}" font-size="6.8" font-weight="bold" fill="${item.color}">${escapeXml(item.label.toUpperCase())}</text><polygon points="${area}" fill="url(#pdf-shade-${seriesIndex})"/><polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>${dots}`;
   }).join('');
   const yearLabels = years.map((row, index) => `<text x="${x(index)}" y="${height - 14}" text-anchor="middle" font-size="${years.length > 14 ? 5.1 : 7}" font-weight="bold" fill="#334155">${escapeXml(row.year)}</text>`).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs>${gradients}</defs><rect x=".5" y=".5" width="${width - 1}" height="${height - 1}" rx="13" fill="#fbfdff" stroke="#cbd9ea"/><text x="18" y="23" font-size="11" font-weight="bold" fill="#0f172a">LÍNEAS DE TENDENCIA CON ÁREAS SOMBREADAS</text><text x="18" y="38" font-size="7.5" fill="#64748b">Evolución por período y variación acumulada por indicador.</text><rect x="${width - 82}" y="14" width="64" height="20" rx="10" fill="#2f6fed"/><text x="${width - 50}" y="27.5" text-anchor="middle" font-size="8" font-weight="bold" fill="#fff">${escapeXml(scope)}</text><text x="${chartRight + 50}" y="53" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#52657c">VARIACIÓN</text><text x="${chartRight + 50}" y="63" text-anchor="middle" font-size="5.5" fill="#64748b">${escapeXml(years[0].year)}–${escapeXml(years[years.length - 1].year)}</text>${rows}${yearLabels}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs>${gradients}</defs><rect x=".5" y=".5" width="${width - 1}" height="${height - 1}" rx="13" fill="#fbfdff" stroke="#cbd9ea"/><text x="18" y="23" font-size="11" font-weight="bold" fill="#0f172a">LÍNEAS DE TENDENCIA CON ÁREAS SOMBREADAS</text><text x="18" y="38" font-size="7.5" fill="#64748b">Evolución por período por indicador.</text><rect x="${width - 82}" y="14" width="64" height="20" rx="10" fill="#2f6fed"/><text x="${width - 50}" y="27.5" text-anchor="middle" font-size="8" font-weight="bold" fill="#fff">${escapeXml(scope)}</text>${rows}${yearLabels}</svg>`;
 };
 
 const bubbleMatrixChartSvg = ({ data, series, width = 690, height = 260, scope = '' }) => {
@@ -961,32 +962,38 @@ const territoryRankingSvg = ({ title, rows, color, width = 250, height = 405 }) 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><filter id="rank-shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f294f" flood-opacity=".12"/></filter></defs><rect x="2" y="2" width="${innerW}" height="${height - 4}" rx="13" fill="#fff" stroke="#d5dfeb" filter="url(#rank-shadow)"/><path d="M15 2H${width - 15}Q${width - 2} 2 ${width - 2} 15V65H2V15Q2 2 15 2Z" fill="${color}"/><circle cx="24" cy="25" r="12" fill="#fff" fill-opacity=".14"/><path d="M18 25h12M24 19v12" stroke="#fff" stroke-width="2" stroke-linecap="round"/><text x="43" y="22" font-size="7.4" font-weight="bold" fill="#fff">RANKING TERRITORIAL</text><text x="43" y="37" font-size="5.5" font-weight="bold" fill="#fff" fill-opacity=".82">${escapeXml(text(title).slice(0, 32))}</text><rect x="13" y="49" width="95" height="19" rx="9.5" fill="#fff"/><text x="60.5" y="62" text-anchor="middle" font-size="5.8" font-weight="bold" fill="${color}">${rows.length} TERRITORIOS</text><rect x="${width - 110}" y="49" width="95" height="19" rx="9.5" fill="#fff" fill-opacity=".14"/><text x="${width - 62.5}" y="62" text-anchor="middle" font-size="5.8" font-weight="bold" fill="#fff">${format.format(total)} PROGRAMAS</text><text x="12" y="84" font-size="5.4" font-weight="bold" letter-spacing=".5" fill="#64748b">TERRITORIO</text><text x="${width - 25}" y="84" text-anchor="middle" font-size="5.4" font-weight="bold" fill="#64748b">TOTAL</text>${rowMarkup}<rect x="10" y="${height - 39}" width="${rowW}" height="29" rx="8" fill="${color}" fill-opacity=".08"/><text x="20" y="${height - 21}" font-size="6.5" font-weight="bold" fill="#183552">TOTAL GENERAL</text><text x="${width - 20}" y="${height - 21}" text-anchor="end" font-size="8.5" font-weight="bold" fill="${color}">${format.format(total)}</text></svg>`;
 };
 
-const geographyPages = ({ rows, regionalRows, program, aiAnalysis = {} }) => {
+const geographyPages = ({ rows = [], regionalRows = [], program, aiAnalysis = {} }) => {
   const geo = loadGeoData();
   if (!geo) return [];
   const national = aggregateGeography(rows, geo);
   const regional = aggregateGeography(regionalRows, geo);
-  const page = (heading, mapRows, type, color, tableTitle, geoKey) => [
-    { text: '', pageBreak: 'before', pageOrientation: 'landscape' },
-    ...sectionHeader(heading, program),
-    {
-      columns: [
-        { svg: geoMapSvg({ geo, rows: mapRows, type, color, title: heading, width: 695, height: 405 }), width: 695 },
-        { svg: territoryRankingSvg({ title: tableTitle, rows: mapRows, color, width: 250, height: 405 }), width: 250 }
-      ],
-      columnGap: 10,
-      alignment: 'center'
-    },
-    ...aiAnalysisBox(
-      aiAnalysis[geoKey] || generateGeoAnalysis(type, heading.includes('REGIONAL') ? 'REGIONAL' : 'NACIONAL', mapRows)
-    )
-  ];
-  return [
-    ...page('MAPA DE MUNICIPIOS · NACIONAL', national.municipalities, 'municipality', '#173f96', 'MUNICIPIOS DESTACADOS', 'geo_municipios_nacional'),
-    ...page('MAPA DE MUNICIPIOS · REGIONAL', regional.municipalities, 'municipality', RED, 'MUNICIPIOS REGIONALES', 'geo_municipios_regional'),
-    ...page('MAPA DE DEPARTAMENTOS · NACIONAL', national.departments, 'department', '#173f96', 'DEPARTAMENTOS DESTACADOS', 'geo_departamentos_nacional'),
-    ...page('MAPA DE DEPARTAMENTOS · REGIONAL', regional.departments, 'department', RED, 'DEPARTAMENTOS REGIONALES', 'geo_departamentos_regional')
-  ];
+  const pages = [];
+
+  const addPageIfHasData = (heading, mapRows, type, color, tableTitle, geoKey) => {
+    const total = (mapRows || []).reduce((acc, r) => acc + number(r.value), 0);
+    if (!mapRows || !mapRows.length || total < 1) return;
+    pages.push([
+      ...sectionHeader(heading, program),
+      {
+        columns: [
+          { svg: geoMapSvg({ geo, rows: mapRows, type, color, title: heading, width: 695, height: 405 }), width: 695 },
+          { svg: territoryRankingSvg({ title: tableTitle, rows: mapRows, color, width: 250, height: 405 }), width: 250 }
+        ],
+        columnGap: 10,
+        alignment: 'center'
+      },
+      ...aiAnalysisBox(
+        aiAnalysis[geoKey] || generateGeoAnalysis(type, heading.includes('REGIONAL') ? 'REGIONAL' : 'NACIONAL', mapRows)
+      )
+    ]);
+  };
+
+  addPageIfHasData('MAPA DE MUNICIPIOS · NACIONAL', national.municipalities, 'municipality', '#173f96', 'MUNICIPIOS DESTACADOS', 'geo_municipios_nacional');
+  addPageIfHasData('MAPA DE MUNICIPIOS · REGIONAL', regional.municipalities, 'municipality', RED, 'MUNICIPIOS REGIONALES', 'geo_municipios_regional');
+  addPageIfHasData('MAPA DE DEPARTAMENTOS · NACIONAL', national.departments, 'department', '#173f96', 'DEPARTAMENTOS DESTACADOS', 'geo_departamentos_nacional');
+  addPageIfHasData('MAPA DE DEPARTAMENTOS · REGIONAL', regional.departments, 'department', RED, 'DEPARTAMENTOS REGIONALES', 'geo_departamentos_regional');
+
+  return pages;
 };
 
 const aggregatePeriods = (rows, fields) => {
@@ -1025,16 +1032,16 @@ const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', pr
   const scopeLabel = text(scope).toUpperCase();
   const scopeColor = scopeLabel === 'REGIONAL' ? RED : '#173f96';
   const credits = rows.map((row) => number(row.numero_creditos)).filter((value) => value > 0);
-  const semesterRows = labelCountRows(rows, 'numero_semestres').map((row) => ({ ...row, label: `${row.label} semestres` }));
+  const semesterRows = labelCountRows(rows, 'numero_semestres').map((row) => ({ ...row, label: `${text(row.label).toUpperCase()} SEMESTRES` }));
   const groups = [
-    { title: 'Reconocimiento MEN', color: '#173f96', items: labelCountRows(rows, 'reconocimiento_men'), icon: 'bank' },
-    { title: 'Sector', color: '#3a9626', items: labelCountRows(rows, 'sector'), icon: 'building' },
-    { title: 'Modalidades', color: '#92278f', items: labelCountRows(rows, 'modalidad'), icon: 'laptop' },
-    { title: 'Número de semestres', color: '#0891a5', items: semesterRows, icon: 'calendar' },
-    { title: 'Rango de créditos académicos', color: '#ea6a0a', items: credits.length ? [
-      { label: 'Mínimo de créditos', value: Math.min(...credits) },
-      { label: 'Máximo de créditos', value: Math.max(...credits) },
-      { label: 'Promedio de créditos', value: Math.round(credits.reduce((a, b) => a + b, 0) / credits.length) }
+    { title: 'RECONOCIMIENTO MEN', color: '#173f96', items: labelCountRows(rows, 'reconocimiento_men').map((r) => ({ ...r, label: text(r.label).toUpperCase() })), icon: 'bank' },
+    { title: 'SECTOR', color: '#3a9626', items: labelCountRows(rows, 'sector').map((r) => ({ ...r, label: text(r.label).toUpperCase() })), icon: 'building' },
+    { title: 'MODALIDADES', color: '#92278f', items: labelCountRows(rows, 'modalidad').map((r) => ({ ...r, label: text(r.label).toUpperCase() })), icon: 'laptop' },
+    { title: 'NÚMERO DE SEMESTRES', color: '#0891a5', items: semesterRows, icon: 'calendar' },
+    { title: 'RANGO DE CRÉDITOS ACADÉMICOS', color: '#ea6a0a', items: credits.length ? [
+      { label: 'MÍNIMO DE CRÉDITOS', value: Math.min(...credits) },
+      { label: 'MÁXIMO DE CRÉDITOS', value: Math.max(...credits) },
+      { label: 'PROMEDIO DE CRÉDITOS', value: Math.round(credits.reduce((a, b) => a + b, 0) / credits.length) }
     ] : [], icon: 'ribbon' }
   ];
   const card = (group, x, y, w, h, compact = false) => {
@@ -1057,13 +1064,14 @@ const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', pr
     const headerTextY = y + (compact ? 15 : 19);
     const body = items.length ? items.map((item, index) => {
       const iy = startY + index * step;
-      const label = text(item.label).length > 28 ? `${text(item.label).slice(0, 27)}…` : text(item.label);
+      const rawLabel = text(item.label).toUpperCase();
+      const label = rawLabel.length > 28 ? `${rawLabel.slice(0, 27)}…` : rawLabel;
       return `<circle cx="${x + 14}" cy="${iy - 2.5}" r="${compact ? 2.5 : 3}" fill="${group.color}"/><text x="${x + 23}" y="${iy}" font-size="${compact ? 7.8 : 9}" font-weight="bold" fill="#334155">${escapeXml(label)}</text><rect x="${x + w - 48}" y="${iy - (compact ? 8.5 : 11)}" width="38" height="${compact ? 12.5 : 16}" rx="${compact ? 4 : 5}" fill="#fff" stroke="${group.color}" stroke-opacity=".4"/><text x="${x + w - 29}" y="${iy + 0.5}" text-anchor="middle" font-size="${compact ? 8.2 : 9.5}" font-weight="bold" fill="${group.color}">${escapeXml(format.format(item.value))}</text>`;
     }).join('') : `<text x="${x + w / 2}" y="${y + h / 2 + 10}" text-anchor="middle" font-size="8.5" fill="#94a3b8">Sin información</text>`;
     if (view === 'orbit') {
-      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="${group.color}" stroke-width="1.4" stroke-opacity=".45"/><text x="${x + 16}" y="${y + 16}" font-size="9" font-weight="bold" fill="${group.color}">${escapeXml(group.title)}</text>${body}`;
+      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="${group.color}" stroke-width="1.4" stroke-opacity=".45"/><text x="${x + 16}" y="${y + 16}" font-size="9" font-weight="bold" fill="${group.color}">${escapeXml(group.title.toUpperCase())}</text>${body}`;
     }
-    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="${group.color}" stroke-opacity=".35"/><rect x="${x}" y="${y}" width="${w}" height="${headerHeight}" rx="12" fill="${group.color}"/><rect x="${x}" y="${y + headerHeight - 9}" width="${w}" height="9" fill="${group.color}"/><text x="${x + w / 2}" y="${headerTextY}" text-anchor="middle" font-size="${compact ? 7.5 : 8.5}" font-weight="bold" fill="#fff">${escapeXml(group.title)}</text>${body}`;
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="${group.color}" stroke-opacity=".35"/><rect x="${x}" y="${y}" width="${w}" height="${headerHeight}" rx="12" fill="${group.color}"/><rect x="${x}" y="${y + headerHeight - 9}" width="${w}" height="9" fill="${group.color}"/><text x="${x + w / 2}" y="${headerTextY}" text-anchor="middle" font-size="${compact ? 7.5 : 8.5}" font-weight="bold" fill="#fff">${escapeXml(group.title.toUpperCase())}</text>${body}`;
   };
   let body = '';
   let calculatedHeight = height;
@@ -1082,7 +1090,7 @@ const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', pr
     const radialCardsConfig = [
       {
         group: groups[0],
-        title: 'Reconocimiento MEN',
+        title: 'RECONOCIMIENTO MEN',
         icon: 'bank',
         card: { x: 25, y: 25, w: 250, h: h0 },
         badge: { x: 150, y: 13 },
@@ -1091,7 +1099,7 @@ const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', pr
       },
       {
         group: groups[1],
-        title: 'Sector',
+        title: 'SECTOR',
         icon: 'building',
         card: { x: 680, y: 25, w: 250, h: h1 },
         badge: { x: 805, y: 13 },
@@ -1100,7 +1108,7 @@ const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', pr
       },
       {
         group: groups[2],
-        title: 'Modalidades',
+        title: 'MODALIDADES',
         icon: 'laptop',
         card: { x: 25, y: 155, w: 250, h: h2 },
         badge: { x: 150, y: 143 },
@@ -1109,7 +1117,7 @@ const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', pr
       },
       {
         group: groups[4],
-        title: 'Rango de créditos académicos',
+        title: 'RANGO DE CRÉDITOS ACADÉMICOS',
         icon: 'ribbon',
         card: { x: 680, y: 155, w: 250, h: h4 },
         badge: { x: 805, y: 143 },
@@ -1118,7 +1126,7 @@ const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', pr
       },
       {
         group: groups[3],
-        title: 'Número de semestres',
+        title: 'NÚMERO DE SEMESTRES',
         icon: 'calendar',
         card: { x: 353, y: 300, w: 250, h: h3 },
         badge: { x: 478, y: 287 },
@@ -1336,38 +1344,60 @@ const offerSingleProgramTableSvg = ({ rows, scope = 'Nacional', width = 580 }) =
   };
 };
 
-const offerPage = ({ rows, regionalRows, program, view, aiAnalysis = {} }) => {
+const offerPage = ({ rows = [], regionalRows = [], program, view, aiAnalysis = {} }) => {
   const analyzedPrograms = labelCountRows(rows, 'nombre_programa');
   const regionalPrograms = labelCountRows(regionalRows, 'nombre_programa');
-  const nationalTable = offerSingleProgramTableSvg({ rows: analyzedPrograms, scope: 'Nacional', width: 690 });
-  const regionalTable = offerSingleProgramTableSvg({ rows: regionalPrograms, scope: 'Regional', width: 690 });
+  const hasNational = rows.length > 0 && analyzedPrograms.reduce((acc, r) => acc + number(r.value), 0) >= 1;
+  const hasRegional = regionalRows.length > 0 && regionalPrograms.reduce((acc, r) => acc + number(r.value), 0) >= 1;
+
+  const pages = [];
   const tablesAnalysisText = aiAnalysis.offer_tables || aiAnalysis.oferta_tablas || generateOfferTablesAnalysis(analyzedPrograms, regionalPrograms);
 
-  return [
-    ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA NACIONAL', program),
-    { svg: nationalTable.svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
-    ...aiAnalysisBox(tablesAnalysisText),
-    { text: '', pageBreak: 'before' },
-    ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA REGIONAL', program),
-    { svg: regionalTable.svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
-    ...aiAnalysisBox(tablesAnalysisText),
-    { text: '', pageBreak: 'before' },
-    ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA NACIONAL', program),
-    { svg: offerSummaryVisualSvg({ rows, view, scope: 'Nacional', program, width: 690 }), width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
-    { text: '', pageBreak: 'before' },
-    ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA NACIONAL', program),
-    ...aiAnalysisBox(
-      aiAnalysis.offer_nacional || aiAnalysis.oferta_nacional || generateOfferAnalysis(rows, regionalRows, 'Nacional')
-    ),
-    { text: '', pageBreak: 'before' },
-    ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA REGIONAL', program),
-    { svg: offerSummaryVisualSvg({ rows: regionalRows, view, scope: 'Regional', program, width: 690 }), width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
-    { text: '', pageBreak: 'before' },
-    ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA REGIONAL', program),
-    ...aiAnalysisBox(
-      aiAnalysis.offer_regional || aiAnalysis.oferta_regional || generateOfferAnalysis(rows, regionalRows, 'Regional')
-    )
-  ];
+  if (hasNational) {
+    const nationalTable = offerSingleProgramTableSvg({ rows: analyzedPrograms, scope: 'Nacional', width: 690 });
+    pages.push([
+      ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA NACIONAL', program),
+      { svg: nationalTable.svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
+      ...aiAnalysisBox(tablesAnalysisText)
+    ]);
+  }
+
+  if (hasRegional) {
+    const regionalTable = offerSingleProgramTableSvg({ rows: regionalPrograms, scope: 'Regional', width: 690 });
+    pages.push([
+      ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA REGIONAL', program),
+      { svg: regionalTable.svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
+      ...aiAnalysisBox(tablesAnalysisText)
+    ]);
+  }
+
+  if (hasNational) {
+    pages.push([
+      ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA NACIONAL', program),
+      { svg: offerSummaryVisualSvg({ rows, view, scope: 'Nacional', program, width: 690 }), width: 690, alignment: 'center', margin: [0, 4, 0, 8] }
+    ]);
+    pages.push([
+      ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA NACIONAL', program),
+      ...aiAnalysisBox(
+        aiAnalysis.offer_nacional || aiAnalysis.oferta_nacional || generateOfferAnalysis(rows, regionalRows, 'Nacional')
+      )
+    ]);
+  }
+
+  if (hasRegional) {
+    pages.push([
+      ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA REGIONAL', program),
+      { svg: offerSummaryVisualSvg({ rows: regionalRows, view, scope: 'Regional', program, width: 690 }), width: 690, alignment: 'center', margin: [0, 4, 0, 8] }
+    ]);
+    pages.push([
+      ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA REGIONAL', program),
+      ...aiAnalysisBox(
+        aiAnalysis.offer_regional || aiAnalysis.oferta_regional || generateOfferAnalysis(rows, regionalRows, 'Regional')
+      )
+    ]);
+  }
+
+  return pages;
 };
 
 const singleMetricCardsChartSvg = ({ data, series, width = 580, height = 300, scope = '', annual = false }) => {
@@ -1444,21 +1474,37 @@ const singleMetricSpecialChartSvg = ({ data, series, type, width = 580, height =
   return frame(`<polygon points="${left},${bottom} ${points} ${right},${bottom}" fill="${item.color}" fill-opacity=".76"/><polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linejoin="miter"/>${labels}`);
 };
 
-const populationPage = ({ title, program, data, charts, selection = {}, pageBreak = false, aiAnalysis = {}, aiGroup = 'ingreso' }) => {
+const populationPage = ({ title, program, data, charts, selection = {}, aiAnalysis = {}, aiGroup = 'ingreso' }) => {
   const selectedScope = text(selection.scope || 'nacional').toLowerCase();
   if (selectedScope === 'ambos') {
-    return charts.flatMap((item, index) => populationPage({
+    return charts.flatMap((item) => populationPage({
       title: `${title} · ${text(item.scope).toUpperCase()}`,
       program,
       data,
       charts,
       selection: { ...selection, scope: text(item.scope).toLowerCase() },
-      pageBreak: pageBreak || index > 0,
       aiAnalysis,
       aiGroup
     }));
   }
   const chart = charts.find((item) => text(item.scope).toLowerCase() === selectedScope) || charts[0];
+  if (!chart) return [];
+
+  const seriesToCheck = [
+    ...(chart.series || []),
+    ...(chart.funnelSeries || []),
+    ...(chart.trendSeries || [])
+  ];
+  const seriesKeys = seriesToCheck.map((s) => s.key).filter(Boolean);
+
+  const hasAtLeastOne = (data || []).some((row) =>
+    seriesKeys.some((key) => number(row[key]) >= 1)
+  );
+
+  if (!hasAtLeastOne) {
+    return []; // No mostrar este gráfico si no tiene datos o si sus datos son 0
+  }
+
   const scopeName = text(chart.scope).toLowerCase();
   const analysisKey = `${aiGroup}_${scopeName}`;
   const customAnalysisText = aiAnalysis[analysisKey];
@@ -1525,15 +1571,39 @@ const populationPage = ({ title, program, data, charts, selection = {}, pageBrea
       ? stackedAreaChartSvg({ data, series: chart.funnelSeries, width: chartWidth, height, scope: chart.scope })
       : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: chartWidth, height, scope: chart.scope });
   } else {
+    height = 300;
     svg = stackedBarChartSvg({ data, series: chart.series, width: chartWidth, height, title: chart.title, subtitle: chart.subtitle, scope: chart.scope });
   }
 
-  return [
-    ...(pageBreak ? [{ text: '', pageBreak: 'before' }] : []),
+  return [[
     ...sectionHeader(title, program),
     { svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
     ...aiAnalysisBox(customAnalysisText || defaultAnalysisText)
-  ];
+  ]];
+};
+
+const joinDocumentPages = (pagesList) => {
+  const validPages = (pagesList || []).filter((page) => Array.isArray(page) && page.length > 0);
+  if (!validPages.length) {
+    return [
+      {
+        text: 'No se encontraron registros con cifras para los criterios seleccionados.',
+        alignment: 'center',
+        margin: [0, 80, 0, 0],
+        fontSize: 13,
+        bold: true,
+        color: '#64748b'
+      }
+    ];
+  }
+  const result = [];
+  validPages.forEach((pageBlocks, index) => {
+    if (index > 0) {
+      result.push({ text: '', pageBreak: 'before' });
+    }
+    result.push(...pageBlocks);
+  });
+  return result;
 };
 
 const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblacional = [], section = 'completo', populationGroup = 'ingreso', visualizations = {}, offerView = 'sequence', aiAnalysis = {} }) => {
@@ -1574,23 +1644,25 @@ const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblaci
       aiGroup: 'graduados'
     })
   };
-  const offerContent = [
-    ...offerPage({ rows: nationalOffer, regionalRows: regionalOffer, program, view: offerView, aiAnalysis }),
-    ...geographyPages({ rows: nationalOffer, regionalRows: regionalOffer, program, aiAnalysis })
+
+  const coverPageBlocks = reportCoverPage({ program, nationalOffer, regionalOffer, aiAnalysis, poblacional });
+  const offerPages = offerPage({ rows: nationalOffer, regionalRows: regionalOffer, program, view: offerView, aiAnalysis });
+  const geoPages = geographyPages({ rows: nationalOffer, regionalRows: regionalOffer, program, aiAnalysis });
+
+  const completePages = [
+    ...(coverPageBlocks && coverPageBlocks.length ? [coverPageBlocks] : []),
+    ...offerPages,
+    ...geoPages,
+    ...(populationSections.ingreso || []),
+    ...(populationSections.matriculados || []),
+    ...(populationSections.graduados || [])
   ];
-  const completeContent = [
-    ...reportCoverPage({ program, nationalOffer, regionalOffer, aiAnalysis, poblacional }),
-    ...offerContent,
-    { text: '', pageBreak: 'before', pageOrientation: 'landscape' },
-    ...populationSections.ingreso,
-    { text: '', pageBreak: 'before' },
-    ...populationSections.matriculados,
-    { text: '', pageBreak: 'before' },
-    ...populationSections.graduados
-  ];
+
   const content = section === 'completo'
-    ? completeContent
-    : section === 'poblacional' ? populationSections[populationGroup] : offerContent;
+    ? joinDocumentPages(completePages)
+    : section === 'poblacional'
+      ? joinDocumentPages(populationSections[populationGroup])
+      : joinDocumentPages([...offerPages, ...geoPages]);
 
   const definition = {
     pageSize: 'LEGAL',

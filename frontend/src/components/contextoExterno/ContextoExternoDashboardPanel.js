@@ -42,6 +42,8 @@ import BubbleChartRoundedIcon from '@mui/icons-material/BubbleChartRounded';
 import PublicRoundedIcon from '@mui/icons-material/PublicRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded';
+import FileDownloadRoundedIcon from '@mui/icons-material/FileDownloadRounded';
+import XLSXStyle from 'xlsx-js-style';
 import {
   Bar,
   BarChart,
@@ -244,26 +246,25 @@ function PopulationStackedChart({ data, groupIndex, scope, scopeBadgeLabel }) {
   ];
   const configuration = configurations[groupIndex] || configurations[0];
   const chartData = data
-    .filter((row) => configuration.series.some((serie) => Number(row[serie.field] || 0) > 0))
-    .map((row) => ({
-      ...row,
-      total_apilado: configuration.series.reduce((total, serie) => total + Number(row[serie.field] || 0), 0)
-    }));
+    .filter((row) => configuration.series.some((serie) => Number(row[serie.field] || 0) > 0));
   const renderSegmentLabel = ({ x, y, width, height, value }) => {
     if (value === null || value === undefined || Number(value) === 0) return null;
     const formatted = numberFormat.format(value);
-    if (height >= 10 && width >= 24) {
-      return <text x={x + width / 2} y={y + height / 2 + (height < 18 ? 2.6 : 3.8)} textAnchor="middle" fill="#fff" fontSize={height < 18 ? 7 : 9} fontWeight="950">{formatted}</text>;
+    if (height >= 10 && width >= 20) {
+      return (
+        <text x={x + width / 2} y={y + height / 2 + (height < 18 ? 2.6 : 3.8)} textAnchor="middle" fill="#fff" fontSize={height < 18 ? 7.2 : 9} fontWeight="950">
+          {formatted}
+        </text>
+      );
     }
-    const labelWidth = Math.max(20, formatted.length * 5.2 + 8);
-    const centerY = y + Math.max(4, height / 2);
-    return (
-      <g pointerEvents="none">
-        <line x1={x + width} y1={centerY} x2={x + width + 4} y2={centerY} stroke="#64748b" strokeWidth=".8" />
-        <rect x={x + width + 4} y={centerY - 7} width={labelWidth} height="14" rx="4" fill="#fff" stroke="#94a3b8" strokeWidth=".7" />
-        <text x={x + width + 4 + labelWidth / 2} y={centerY + 2.5} textAnchor="middle" fill="#263b55" fontSize="7" fontWeight="950">{formatted}</text>
-      </g>
-    );
+    if (height >= 7 && width >= 18) {
+      return (
+        <text x={x + width / 2} y={y + height / 2 + 2.4} textAnchor="middle" fill="#fff" fontSize={6.8} fontWeight="950">
+          {formatted}
+        </text>
+      );
+    }
+    return null;
   };
 
   return (
@@ -451,7 +452,7 @@ function PopulationShadedTrendChart({ data, scope, scopeBadgeLabel }) {
   const width = 1200;
   const height = 390;
   const chartLeft = 185;
-  const chartRight = 1020;
+  const chartRight = 1160;
   const plotWidth = chartRight - chartLeft;
   const rowTop = 82;
   const rowHeight = 88;
@@ -462,7 +463,7 @@ function PopulationShadedTrendChart({ data, scope, scopeBadgeLabel }) {
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: { xs: 1.5, md: 2.2 }, py: 1.45 }}>
         <Box>
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Líneas de tendencia con áreas sombreadas</Typography>
-          <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Evolución comparada por período y variación acumulada por indicador.</Typography>
+          <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Evolución comparada de inscritos, admitidos y primer curso por período.</Typography>
         </Box>
         <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
       </Stack>
@@ -473,8 +474,6 @@ function PopulationShadedTrendChart({ data, scope, scopeBadgeLabel }) {
             <filter id={`shade-dot-${scope}`} x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#0f2f5e" floodOpacity=".2" /></filter>
           </defs>
           <rect x="8" y="8" width={width - 16} height={height - 16} rx="18" fill="#fbfdff" stroke="#d8e3f0" />
-          <text x={chartRight + 82} y="41" textAnchor="middle" fill="#52657c" fontSize="10" fontWeight="900">VARIACIÓN</text>
-          <text x={chartRight + 82} y="55" textAnchor="middle" fill="#64748b" fontSize="8.5">{annualRows[0].year}–{annualRows[annualRows.length - 1].year}</text>
           {series.map((item, seriesIndex) => {
             const values = annualRows.map((row) => Number(row[item.field] || 0));
             const max = Math.max(1, ...values);
@@ -485,10 +484,6 @@ function PopulationShadedTrendChart({ data, scope, scopeBadgeLabel }) {
             const pointY = (value) => top + 7 + (1 - (value - min) / range) * 35;
             const points = values.map((value, index) => `${pointX(index)},${pointY(value)}`).join(' ');
             const areaPoints = `${chartLeft},${baseline} ${points} ${chartRight},${baseline}`;
-            const first = values.find((value) => value > 0) || 0;
-            const last = [...values].reverse().find((value) => value > 0) || 0;
-            const variation = first > 0 ? ((last - first) / first) * 100 : 0;
-            const trendColor = variation >= 0 ? '#15803d' : '#dc2626';
             return (
               <g key={item.field}>
                 <line x1={chartLeft} y1={baseline} x2={chartRight} y2={baseline} stroke="#d9e3ef" strokeWidth="1" />
@@ -504,9 +499,6 @@ function PopulationShadedTrendChart({ data, scope, scopeBadgeLabel }) {
                     <text x={pointX(index)} y={pointY(value) - 11} textAnchor="middle" fill={item.color} fontSize="9.5" fontWeight="950" stroke="#fff" strokeWidth="3" paintOrder="stroke">{numberFormat.format(value)}</text>
                   </g>
                 ))}
-                <line x1={chartRight + 10} y1={top + 31} x2={chartRight + 35} y2={top + 31} stroke={trendColor} strokeWidth="2" strokeDasharray="4 4" />
-                <circle cx={chartRight + 82} cy={top + 31} r="27" fill={variation >= 0 ? '#f0fdf4' : '#fff5f5'} stroke={trendColor} strokeWidth="2" strokeDasharray="4 3" />
-                <text x={chartRight + 82} y={top + 35} textAnchor="middle" fill={trendColor} fontSize="11" fontWeight="950">{variation >= 0 ? '+' : ''}{variation.toLocaleString('es-CO', { maximumFractionDigits: 1 })}%</text>
               </g>
             );
           })}
@@ -2703,11 +2695,11 @@ function SequenceGroup({ title, icon: Icon, color, items }) {
 
 function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChange }) {
   const groups = [
-    { slot: 0, title: 'Reconocimiento MEN', icon: AccountBalanceRoundedIcon, color: '#173f96', items: summary.recognition },
-    { slot: 1, title: 'Sector', icon: BusinessRoundedIcon, color: '#3a9626', items: summary.sectors },
-    { slot: 2, title: 'Modalidades', icon: DevicesRoundedIcon, color: '#92278f', items: summary.modalities },
-    { slot: 4, title: 'Número de semestres', icon: CalendarMonthRoundedIcon, color: '#0891a5', items: summary.semesters },
-    { slot: 3, title: 'Rango de créditos académicos', icon: WorkspacePremiumRoundedIcon, color: '#ea6a0a', items: summary.credits }
+    { slot: 0, title: 'RECONOCIMIENTO MEN', icon: AccountBalanceRoundedIcon, color: '#173f96', items: summary.recognition },
+    { slot: 1, title: 'SECTOR', icon: BusinessRoundedIcon, color: '#3a9626', items: summary.sectors },
+    { slot: 2, title: 'MODALIDADES', icon: DevicesRoundedIcon, color: '#92278f', items: summary.modalities },
+    { slot: 4, title: 'NÚMERO DE SEMESTRES', icon: CalendarMonthRoundedIcon, color: '#0891a5', items: summary.semesters },
+    { slot: 3, title: 'RANGO DE CRÉDITOS ACADÉMICOS', icon: WorkspacePremiumRoundedIcon, color: '#ea6a0a', items: summary.credits }
   ].filter((group) => group.items.length);
   const radialConnectors = [
     { slot: 0, points: '285,145 350,145 408,235', dot: ['408', '235'], color: '#173f96' },
@@ -2918,6 +2910,8 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
   const [error, setError] = useState('');
   const [exportingPdf, setExportingPdf] = useState(false);
   const [pdfError, setPdfError] = useState('');
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [excelError, setExcelError] = useState('');
   const [selectedProgram, setSelectedProgram] = useState(ALL);
   const [summaryView, setSummaryView] = useState(() => window.localStorage.getItem('contextoExternoSummaryViewV4') || 'sequence');
   const [offerScope, setOfferScope] = useState('nacional');
@@ -3113,19 +3107,19 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
         .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'es'));
       const credits = targetOffer.map((row) => Number(row.numero_creditos)).filter((value) => Number.isFinite(value) && value > 0);
       const semesterItems = fieldItems('numero_semestres')
-        .map((item) => ({ ...item, label: `${item.label} semestres` }))
+        .map((item) => ({ ...item, label: `${item.label} SEMESTRES` }))
         .sort((a, b) => Number(a.label.split(' ')[0]) - Number(b.label.split(' ')[0]));
       const average = credits.length ? credits.reduce((total, value) => total + value, 0) / credits.length : 0;
       return {
         total: targetOffer.length,
-        recognition: fieldItems('reconocimiento_men'),
-        sectors: fieldItems('sector'),
-        modalities: fieldItems('modalidad'),
+        recognition: fieldItems('reconocimiento_men').map((r) => ({ ...r, label: String(r.label || '').toLocaleUpperCase('es-CO') })),
+        sectors: fieldItems('sector').map((r) => ({ ...r, label: String(r.label || '').toLocaleUpperCase('es-CO') })),
+        modalities: fieldItems('modalidad').map((r) => ({ ...r, label: String(r.label || '').toLocaleUpperCase('es-CO') })),
         semesters: semesterItems,
         credits: credits.length ? [
-          { label: 'Mínimo de créditos', value: credits.length ? Math.min(...credits) : 0 },
-          { label: 'Máximo de créditos', value: credits.length ? Math.max(...credits) : 0 },
-          { label: 'Promedio de créditos', value: average.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+          { label: 'MÍNIMO DE CRÉDITOS', value: credits.length ? Math.min(...credits) : 0 },
+          { label: 'MÁXIMO DE CRÉDITOS', value: credits.length ? Math.max(...credits) : 0 },
+          { label: 'PROMEDIO DE CRÉDITOS', value: average.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
         ] : []
       };
     };
@@ -3207,6 +3201,203 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
     }
   };
 
+  const handleExportOfferExcel = useCallback(() => {
+    try {
+      setExportingExcel(true);
+      setExcelError('');
+
+      const regionLabel = regionFilter === ALL
+        ? 'Todos'
+        : (REGIONS_DEFINITION.find((r) => r.key === regionFilter)?.label || regionFilter);
+      const now = new Date();
+      const dateFormatted = now.toLocaleString('es-CO');
+
+      const buildSheetForScope = ({
+        title,
+        rows,
+        primaryColor,
+        secondaryColor,
+        accentColor
+      }) => {
+        const total = rows.reduce((acc, row) => acc + (Number(row.total) || 0), 0);
+
+        const aoa = [
+          ['UNIVERSIDAD CESMAG - SISTEMA INTERNO DE ASEGURAMIENTO DE LA CALIDAD (SIAC)'],
+          [`REPORTE DE ${title}`],
+          [`PROGRAMA ANALIZADO: ${selectedProgram === ALL ? 'TODOS LOS PROGRAMAS (VISTA CONSOLIDADA)' : selectedProgram}`],
+          [`FILTROS APLICADOS: Sector: ${sector === ALL ? 'Todos' : sector} | Modalidad: ${modality === ALL ? 'Todos' : modality} | Región: ${regionLabel} | Municipio: ${municipality === ALL ? 'Todos' : municipality}${offerSearch ? ` | Búsqueda: "${offerSearch}"` : ''}`],
+          [`Generado: ${dateFormatted} | Registros en esta hoja: ${numberFormat.format(total)} | Programas listados: ${rows.length}`],
+          [],
+          ['#', 'PROGRAMAS ACADÉMICOS ANALIZADOS', 'TOTAL REGISTROS', '% PARTICIPACIÓN']
+        ];
+
+        if (!rows.length) {
+          aoa.push(['-', 'No se encontraron registros de oferta para los filtros aplicados', 0, 0]);
+        } else {
+          rows.forEach((row, idx) => {
+            const pct = total > 0 ? (Number(row.total || 0) / total) : 0;
+            aoa.push([idx + 1, row.label, Number(row.total || 0), pct]);
+          });
+        }
+
+        const totalRowIndex = aoa.length;
+        aoa.push(['', `TOTAL ${title}`, total, total > 0 ? 1 : 0]);
+
+        const ws = XLSXStyle.utils.aoa_to_sheet(aoa);
+
+        ws['!cols'] = [
+          { wch: 6 },
+          { wch: 68 },
+          { wch: 18 },
+          { wch: 18 }
+        ];
+
+        ws['!merges'] = [
+          { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+          { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } },
+          { s: { r: 3, c: 0 }, e: { r: 3, c: 3 } },
+          { s: { r: 4, c: 0 }, e: { r: 4, c: 3 } }
+        ];
+
+        const borderThin = {
+          top: { style: 'thin', color: { rgb: 'CBD5E1' } },
+          bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
+          left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+          right: { style: 'thin', color: { rgb: 'CBD5E1' } }
+        };
+
+        const headerTableBorder = {
+          top: { style: 'medium', color: { rgb: primaryColor } },
+          bottom: { style: 'medium', color: { rgb: primaryColor } },
+          left: { style: 'thin', color: { rgb: 'FFFFFF' } },
+          right: { style: 'thin', color: { rgb: 'FFFFFF' } }
+        };
+
+        const totalBorder = {
+          top: { style: 'thin', color: { rgb: primaryColor } },
+          bottom: { style: 'double', color: { rgb: primaryColor } },
+          left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+          right: { style: 'thin', color: { rgb: 'CBD5E1' } }
+        };
+
+        const range = XLSXStyle.utils.decode_range(ws['!ref']);
+        for (let r = range.s.r; r <= range.e.r; r += 1) {
+          for (let c = range.s.c; c <= range.e.c; c += 1) {
+            const address = XLSXStyle.utils.encode_cell({ r, c });
+            const cell = ws[address];
+            if (!cell) continue;
+
+            if (r === 0) {
+              cell.s = {
+                font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 12, name: 'Calibri' },
+                fill: { fgColor: { rgb: primaryColor } },
+                alignment: { horizontal: 'center', vertical: 'center' }
+              };
+            } else if (r === 1) {
+              cell.s = {
+                font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11, name: 'Calibri' },
+                fill: { fgColor: { rgb: secondaryColor } },
+                alignment: { horizontal: 'center', vertical: 'center' }
+              };
+            } else if (r === 2) {
+              cell.s = {
+                font: { bold: true, color: { rgb: '0F172A' }, sz: 10, name: 'Calibri' },
+                fill: { fgColor: { rgb: 'F1F5F9' } },
+                alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+              };
+            } else if (r === 3) {
+              cell.s = {
+                font: { italic: true, color: { rgb: '475569' }, sz: 9, name: 'Calibri' },
+                fill: { fgColor: { rgb: 'F8FAFC' } },
+                alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+              };
+            } else if (r === 4) {
+              cell.s = {
+                font: { color: { rgb: '64748B' }, sz: 9, name: 'Calibri' },
+                fill: { fgColor: { rgb: 'F8FAFC' } },
+                alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+              };
+            } else if (r === 6) {
+              cell.s = {
+                font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10.5, name: 'Calibri' },
+                fill: { fgColor: { rgb: primaryColor } },
+                alignment: { horizontal: c === 1 ? 'left' : c === 0 ? 'center' : 'right', vertical: 'center' },
+                border: headerTableBorder
+              };
+            } else if (r === totalRowIndex) {
+              cell.s = {
+                font: { bold: true, color: { rgb: '0F172A' }, sz: 11, name: 'Calibri' },
+                fill: { fgColor: { rgb: accentColor } },
+                alignment: { horizontal: c === 1 ? 'left' : c === 0 ? 'center' : 'right', vertical: 'center' },
+                border: totalBorder,
+                ...(c === 2 ? { numFmt: '#,##0' } : {}),
+                ...(c === 3 ? { numFmt: '0.0%' } : {})
+              };
+            } else if (r > 6 && r < totalRowIndex) {
+              const isOdd = (r - 7) % 2 === 1;
+              cell.s = {
+                font: { color: { rgb: '0F172A' }, sz: 10, name: 'Calibri', bold: c === 2 },
+                fill: { fgColor: { rgb: isOdd ? 'F8FAFC' : 'FFFFFF' } },
+                alignment: {
+                  horizontal: c === 1 ? 'left' : c === 0 ? 'center' : 'right',
+                  vertical: 'center'
+                },
+                border: borderThin,
+                ...(c === 2 ? { numFmt: '#,##0' } : {}),
+                ...(c === 3 ? { numFmt: '0.0%' } : {})
+              };
+            }
+          }
+        }
+
+        return ws;
+      };
+
+      const wb = XLSXStyle.utils.book_new();
+
+      const wsNational = buildSheetForScope({
+        title: 'OFERTA NACIONAL',
+        rows: programSummaries.national,
+        primaryColor: '082B66',
+        secondaryColor: '1E3A8A',
+        accentColor: 'E0ECFF'
+      });
+      XLSXStyle.utils.book_append_sheet(wb, wsNational, 'Oferta Nacional');
+
+      const wsRegional = buildSheetForScope({
+        title: 'OFERTA REGIONAL',
+        rows: programSummaries.regional,
+        primaryColor: 'B5123F',
+        secondaryColor: '991B1B',
+        accentColor: 'FFE4E6'
+      });
+      XLSXStyle.utils.book_append_sheet(wb, wsRegional, 'Oferta Regional');
+
+      const programTag = normalize(selectedProgram === ALL ? 'consolidado' : selectedProgram)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      const dateTag = now.toISOString().slice(0, 10);
+      const filename = `oferta_academica_${programTag || 'general'}_${dateTag}.xlsx`;
+
+      XLSXStyle.writeFile(wb, filename);
+    } catch (err) {
+      console.error('Error al exportar tablas a Excel:', err);
+      setExcelError('Ocurrió un error al generar el archivo Excel.');
+    } finally {
+      setExportingExcel(false);
+    }
+  }, [
+    selectedProgram,
+    sector,
+    modality,
+    regionFilter,
+    municipality,
+    offerSearch,
+    programSummaries
+  ]);
+
   if (loading) {
     return <Box sx={{ minHeight: 460, display: 'grid', placeItems: 'center' }}><Stack alignItems="center" spacing={2}><CircularProgress /><Typography>Cargando Contexto Externo General…</Typography></Stack></Box>;
   }
@@ -3241,6 +3432,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
         <Alert severity="info">Aún no hay datos. Descarga la plantilla “Contexto Externo General” desde Gestión de Bases de Datos y carga el libro diligenciado.</Alert>
       )}
       {pdfError && <Alert severity="warning" onClose={() => setPdfError('')}>{pdfError}</Alert>}
+      {excelError && <Alert severity="error" onClose={() => setExcelError('')}>{excelError}</Alert>}
 
       <Paper elevation={0} sx={{ p: 2.2, border: '2px solid #bfdbfe', borderRadius: 3, bgcolor: '#f8fbff' }}>
         <Stack spacing={1.5}>
@@ -3285,6 +3477,29 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
               <FilterSelect label="Municipio" value={municipality} onChange={setMunicipality} options={offerOptions.municipalities} />
             </Box>
           </Paper>
+
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: -0.5 }}>
+            <Button
+              variant="contained"
+              startIcon={<FileDownloadRoundedIcon />}
+              onClick={handleExportOfferExcel}
+              disabled={exportingExcel}
+              sx={{
+                bgcolor: '#16a34a',
+                '&:hover': { bgcolor: '#15803d' },
+                color: '#fff',
+                fontWeight: 900,
+                py: 1,
+                px: 2.2,
+                borderRadius: 2,
+                boxShadow: '0 2px 8px rgba(22, 163, 74, 0.25)',
+                textTransform: 'none',
+                fontSize: 13.5
+              }}
+            >
+              {exportingExcel ? 'Generando Excel…' : 'Exportar tablas en Excel'}
+            </Button>
+          </Box>
 
           <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' } }}>
             <ProgramSummaryTable title="OFERTA NACIONAL" rows={programSummaries.national} color="#082b66" />
