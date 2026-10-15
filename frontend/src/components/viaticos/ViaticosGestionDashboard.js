@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, LinearProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, LinearProgress, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
@@ -82,6 +82,13 @@ const DEMO_STATS = {
 };
 const stateLabel = (row) => row.legalizacion?.estado === 'legalizacion_vencida' ? 'Legalización vencida' : row.legalizacion?.estado === 'en_revision' ? 'Legalización en revisión' : row.estado === 'pago_autorizado_pendiente_legalizacion' ? 'Pago autorizado – pendiente de legalización' : row.estado === 'no_aprobada' ? 'No aprobada' : row.plan_aprobacion?.[row.paso_actual]?.label ? `Pendiente: ${row.plan_aprobacion[row.paso_actual].label}` : String(row.estado || '').replaceAll('_', ' ');
 
+const currentApprovalStep = (row = {}) => {
+  if (Array.isArray(row.plan_aprobacion)) return row.plan_aprobacion[Number(row.paso_actual || 0)] || null;
+  return row.plan_aprobacion?.[row.paso_actual] || null;
+};
+
+const normalizeSearch = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
 export default function ViaticosGestionDashboard({ user, onBack }) {
   const permissions = useMemo(() => new Set([...(user?.allowedModules || []), ...(user?.modulePermissions || [])].map((item) => typeof item === 'string' ? item : item.module_key)), [user]);
   const isAdmin = user?.role === 'administrador';
@@ -92,6 +99,10 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState(null);
   const [filter, setFilter] = useState('todas');
+  const [search, setSearch] = useState('');
+  const [dependencyFilter, setDependencyFilter] = useState('todas');
+  const [responsibleFilter, setResponsibleFilter] = useState('todas');
+  const [accessScope, setAccessScope] = useState(null);
   const [selected, setSelected] = useState(null);
   const [detailRow, setDetailRow] = useState(null);
   const [editValues, setEditValues] = useState({});
@@ -103,20 +114,49 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
   const load = async () => {
     setLoading(true);
     try {
-      if (canManage) setRows((await getSolicitudesViaticos()).data || []);
+      if (canManage) {
+        const response = await getSolicitudesViaticos();
+        setRows(response.data || []);
+        setAccessScope(response.scope || null);
+      }
       if (canStats) setStats((await getEstadisticasViaticos()).data);
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar la gestión de viáticos.', { variant: 'error' }); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const showingDemo = !loading && rows.length === 0;
+  const showingDemo = isAdmin && !loading && rows.length === 0;
   const displayRows = showingDemo ? DEMO_ROWS : rows;
   const displayStats = showingDemo && !Number(stats?.totals?.solicitudes || 0) ? DEMO_STATS : stats;
-  const filtered = displayRows.filter((row) => rowMatchesFilter(row, filter));
+  const dependencyOptions = useMemo(() => [...new Set(displayRows.map((row) => row.datos_laborales?.dependencia).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')), [displayRows]);
+  const responsibleOptions = useMemo(() => {
+    const map = new Map();
+    displayRows.forEach((row) => {
+      const step = currentApprovalStep(row);
+      if (step?.key) map.set(step.key, step.label || step.key.replaceAll('_', ' '));
+    });
+    return [...map.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label, 'es'));
+  }, [displayRows]);
+  const narrowedRows = useMemo(() => {
+    const needle = normalizeSearch(search);
+    return displayRows.filter((row) => {
+      const step = currentApprovalStep(row);
+      const haystack = normalizeSearch([
+        row.consecutivo,
+        row.solicitante_snapshot?.nombre,
+        row.solicitante_snapshot?.documento,
+        row.datos_laborales?.dependencia,
+        step?.label
+      ].filter(Boolean).join(' '));
+      return (!needle || haystack.includes(needle))
+        && (dependencyFilter === 'todas' || row.datos_laborales?.dependencia === dependencyFilter)
+        && (responsibleFilter === 'todas' || step?.key === responsibleFilter);
+    });
+  }, [dependencyFilter, displayRows, responsibleFilter, search]);
+  const filtered = narrowedRows.filter((row) => rowMatchesFilter(row, filter));
   const filterCounts = useMemo(() => Object.fromEntries(
-    FILTER_OPTIONS.map(({ key }) => [key, displayRows.filter((row) => rowMatchesFilter(row, key)).length])
-  ), [displayRows]);
+    FILTER_OPTIONS.map(({ key }) => [key, narrowedRows.filter((row) => rowMatchesFilter(row, key)).length])
+  ), [narrowedRows]);
   const openReview = (row) => {
     setSelected(row);
     setNotes(row.legalizacion?.observaciones || '');
@@ -230,11 +270,30 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
     ) : <Alert severity="warning" sx={{ mb: 2 }}>El usuario tiene acceso al módulo de Viáticos, pero no tiene habilitado Gestión ni Estadística.</Alert>}
 
     {loading && <LinearProgress sx={{ mb: 2, borderRadius: 99 }} />}
+    {!loading && accessScope?.type === 'assigned' && <Alert severity="info" sx={{ mb: 2, borderRadius: 2.5 }}>
+      <Typography fontWeight={900}>Vista restringida a su dependencia</Typography>
+      <Typography variant="body2">Solo se muestran solicitudes pendientes asignadas a su correo o área institucional y trámites que usted ya revisó. No puede consultar registros de otras dependencias.</Typography>
+    </Alert>}
     {showingDemo && <Alert severity="info" icon={<QueryStatsRoundedIcon />} sx={{ mb: 2, borderRadius: 2.5, border: '1px solid #93c5fd', bgcolor: '#eff6ff', color: '#0f3b73', '& .MuiAlert-message': { width: '100%' } }}>
       <Typography fontWeight={900}>Vista demostrativa · Datos de prueba</Typography>
       <Typography variant="body2">Estos registros y valores son ficticios, no están guardados en la base de datos y no generan correos ni actuaciones del flujo.</Typography>
     </Alert>}
     {!loading && segments.length > 0 && ((tab === 'gestion' && canManage) ? <>
+      <Paper variant="outlined" sx={{ mb: 2, p: 1.5, borderRadius: 3, borderColor: '#dbe5f1', bgcolor: '#f8fafc' }}>
+        <Typography sx={{ mb: 1.1, color: '#334155', fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: .45 }}>Buscar pendientes por responsable y dependencia</Typography>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(220px,1.35fr) minmax(210px,1fr) minmax(210px,1fr) auto' }, gap: 1.1, alignItems: 'center' }}>
+          <TextField size="small" label="Buscar solicitud" placeholder="Consecutivo, colaborador o documento" value={search} onChange={(event) => setSearch(event.target.value)} />
+          <TextField select size="small" label="Pendiente por revisar en" value={responsibleFilter} onChange={(event) => setResponsibleFilter(event.target.value)}>
+            <MenuItem value="todas">Todas las etapas</MenuItem>
+            {responsibleOptions.map((option) => <MenuItem key={option.key} value={option.key}>{option.label}</MenuItem>)}
+          </TextField>
+          <TextField select size="small" label="Dependencia solicitante" value={dependencyFilter} onChange={(event) => setDependencyFilter(event.target.value)}>
+            <MenuItem value="todas">Todas las dependencias</MenuItem>
+            {dependencyOptions.map((dependency) => <MenuItem key={dependency} value={dependency}>{dependency}</MenuItem>)}
+          </TextField>
+          <Button variant="outlined" onClick={() => { setSearch(''); setResponsibleFilter('todas'); setDependencyFilter('todas'); setFilter('todas'); }} sx={{ minHeight: 40, textTransform: 'none', fontWeight: 850 }}>Limpiar</Button>
+        </Box>
+      </Paper>
       <Box
         role="group"
         aria-label="Filtros de solicitudes de viáticos"
@@ -310,6 +369,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
               const legalStatus = legalizationStatus(row);
               const supportCount = row.legalizacion?.adjuntos?.length || 0;
               const canReview = Boolean(row.legalizacion);
+              const canAct = Boolean(row._demo || row.access?.canAct);
               const isTecnicoContableStep = row.estado === 'pendiente_tecnico_contable' || row.token_etapa === 'tecnico_contable';
               const isTesoreriaStep = row.estado === 'pendiente_tesoreria' || row.token_etapa === 'tesoreria';
 
@@ -360,11 +420,11 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
                   <Typography fontWeight={900} sx={{ fontSize: 11, color: '#0b3a6f' }}>{currency(row.liquidacion?.totalAnticipo)}</Typography>
                 </TableCell>
                 <TableCell align="center" sx={{ py: 0.8, px: 1 }}>
-                  {isTecnicoContableStep ? (
+                  {isTecnicoContableStep && canAct ? (
                     <Button size="small" variant="contained" color="primary" onClick={() => openStageAction(row)} sx={{ textTransform: 'none', fontWeight: 850, fontSize: 10, py: 0.4, px: 1.2, borderRadius: 1.5, minWidth: 'auto', whiteSpace: 'nowrap' }}>
                       Liquidar
                     </Button>
-                  ) : isTesoreriaStep ? (
+                  ) : isTesoreriaStep && canAct ? (
                     <Button size="small" variant="contained" color="info" onClick={() => openStageAction(row)} sx={{ textTransform: 'none', fontWeight: 850, fontSize: 10, py: 0.4, px: 1.2, borderRadius: 1.5, minWidth: 'auto', whiteSpace: 'nowrap' }}>
                       Autorizar Pago
                     </Button>
@@ -401,7 +461,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
           solicitud={selected}
           legalizacion={selected?.legalizacion}
           mode="technician"
-          editable={selected?.legalizacion?.estado === 'en_revision' || (selected?._demo && selected?.legalizacion?.estado === 'presentada_demo')}
+          editable={Boolean((selected?.access?.canValidateLegalizacion && selected?.legalizacion?.estado === 'en_revision') || (selected?._demo && selected?.legalizacion?.estado === 'presentada_demo'))}
           values={editValues}
           onValueChange={(id, value) => setEditValues((current) => ({ ...current, [id]: value }))}
           observations={notes}
@@ -445,7 +505,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
           <TextField multiline minRows={3} label="Observaciones de la revisión" value={notes} disabled={selected?._demo || selected?.legalizacion?.estado !== 'en_revision'} onChange={(event) => setNotes(event.target.value)} helperText={selected?.legalizacion?.estado === 'en_revision' ? 'El Técnico Contable puede ajustar los valores y dejar constancia antes de validar.' : 'Consulta de una legalización que ya no admite cambios.'} />
         </Stack>}
       </DialogContent>
-      <DialogActions sx={{ px: { xs: 2, md: 3 }, py: 1.7 }}><Button onClick={() => setSelected(null)}>Cerrar</Button>{selected?._demo && <Chip label="Validación deshabilitada en datos de prueba" color="info" variant="outlined" />}{!selected?._demo && selected?.legalizacion?.estado === 'en_revision' && <Button variant="contained" color="success" startIcon={saving ? <CircularProgress size={18} /> : <CheckCircleRoundedIcon />} disabled={saving} onClick={() => setConfirmValidationOpen(true)}>Validar y finalizar legalización</Button>}</DialogActions>
+      <DialogActions sx={{ px: { xs: 2, md: 3 }, py: 1.7 }}><Button onClick={() => setSelected(null)}>Cerrar</Button>{selected?._demo && <Chip label="Validación deshabilitada en datos de prueba" color="info" variant="outlined" />}{!selected?._demo && selected?.access?.canValidateLegalizacion && selected?.legalizacion?.estado === 'en_revision' && <Button variant="contained" color="success" startIcon={saving ? <CircularProgress size={18} /> : <CheckCircleRoundedIcon />} disabled={saving} onClick={() => setConfirmValidationOpen(true)}>Validar y finalizar legalización</Button>}</DialogActions>
     </Dialog>
     <Dialog open={confirmValidationOpen} onClose={() => !saving && setConfirmValidationOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
       <DialogTitle sx={{ fontWeight: 950, color: '#0b3a6f' }}>Confirmar validación final</DialogTitle>
@@ -505,7 +565,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
                 <Alert severity="info" sx={{ borderRadius: 2 }}>Sin trazabilidad registrada aún.</Alert>
               )}
             </Stack>
-            {detailRow.token_etapa && !['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado) && (
+            {detailRow.access?.canAct && detailRow.token_etapa && !['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado) && (
               <Alert severity="info" sx={{ borderRadius: 2 }}>
                 La etapa pendiente puede gestionarse desde este tablero. La decisión quedará registrada a nombre del usuario autenticado.
               </Alert>
@@ -515,7 +575,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
       </DialogContent>
       <DialogActions sx={{ p: 2 }}>
         <Button onClick={() => setDetailRow(null)}>Cerrar</Button>
-        {detailRow?.token_etapa && !['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado) && (
+        {detailRow?.access?.canAct && detailRow?.token_etapa && !['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado) && (
           <Button variant="contained" color="primary" onClick={() => openStageAction(detailRow)}>
             Gestionar etapa actual
           </Button>

@@ -13,6 +13,7 @@ const { AUTHORIZATION_TEXT, LEGALIZATION_NOTICE, buildXlsxAttachment, calculateD
 const { buildLiquidationPdfAttachment, buildPdfAttachment } = require('../services/desplazamientoViaticos/pdfService');
 const { ensureReporteSalidaPdf } = require('../services/reporteSalidaPdfService');
 const { addColombiaBusinessDays } = require('../utils/colombiaBusinessDays');
+const { canActOnSolicitud } = require('../services/desplazamientoViaticos/accessScope');
 
 const publicBackendUrl = process.env.BACKEND_PUBLIC_URL || process.env.API_PUBLIC_URL || process.env.FRONTEND_URL || 'http://localhost:5000';
 const BASE_DETAIL_NAMES = [
@@ -2666,6 +2667,9 @@ const canManageViaticos = async (user) => user?.role === ROLES.ADMINISTRADOR || 
 const respondWithAdminAction = async (req, res, solicitud) => {
   if (!solicitud) {
     return res.status(404).json({ success: false, message: 'No se encontró la solicitud de viáticos especificada.' });
+  }
+  if (!canActOnSolicitud(req.user, solicitud)) {
+    return res.status(403).json({ success: false, message: 'Esta solicitud no está asignada a su dependencia.' });
   }
 
   const currentPlan = solicitud.plan_aprobacion || [];

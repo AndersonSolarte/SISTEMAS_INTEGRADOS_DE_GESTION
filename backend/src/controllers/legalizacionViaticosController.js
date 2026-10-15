@@ -12,6 +12,7 @@ const { ROLES } = require('../constants/roles');
 const { getDesplazamientoViaticosRecipients, normalizeEmail } = require('../config/desplazamientoViaticosConfig');
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 const { buildLegalizacionPdfBuffer } = require('../services/desplazamientoViaticos/legalizacionPdfService');
+const { canAccessSolicitud, canActOnSolicitud, canValidateLegalizacion, filterSolicitudesForUser } = require('../services/desplazamientoViaticos/accessScope');
 
 const MANAGEMENT_PERMISSION = 'vicerrectoria_financiera.viaticos.gestion';
 const STATS_PERMISSION = 'vicerrectoria_financiera.viaticos.estadistica';
@@ -351,13 +352,30 @@ const listarGestion = async (req, res) => {
     ];
   }
   const solicitudes = await DesplazamientoViaticosSolicitud.findAll({ where, include: includeLegalizacion, order: [['created_at', 'DESC']], limit: 500 });
-  return res.json({ success: true, data: solicitudes.map((row) => ({ ...row.toJSON(), legalizacion: safeLegalizacion(row.legalizacion) })) });
+  const scoped = filterSolicitudesForUser(req.user, solicitudes);
+  return res.json({
+    success: true,
+    scope: {
+      type: req.user.role === ROLES.ADMINISTRADOR ? 'global' : 'assigned',
+      dependencia: req.user.dependencia || req.user.vicerrectoria || '',
+      email: req.user.email
+    },
+    data: scoped.map((row) => ({
+      ...row.toJSON(),
+      legalizacion: safeLegalizacion(row.legalizacion),
+      access: {
+        canAct: canActOnSolicitud(req.user, row),
+        canValidateLegalizacion: canValidateLegalizacion(req.user)
+      }
+    }))
+  });
 };
 
 const obtenerGestion = async (req, res) => {
   if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No tiene permiso para Gestión de Viáticos.' });
   const solicitud = await DesplazamientoViaticosSolicitud.findByPk(req.params.solicitudId, { include: includeLegalizacion });
   if (!solicitud) return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
+  if (!canAccessSolicitud(req.user, solicitud)) return res.status(403).json({ success: false, message: 'Esta solicitud no está asignada a su dependencia.' });
   return res.json({ success: true, data: { ...solicitud.toJSON(), legalizacion: safeLegalizacion(solicitud.legalizacion) } });
 };
 
@@ -365,7 +383,11 @@ const verAdjunto = async (req, res) => {
   const legalizacion = await ViaticosLegalizacion.findByPk(req.params.id);
   if (!legalizacion) return res.status(404).json({ success: false, message: 'Legalización no encontrada.' });
   const owner = Number(legalizacion.user_id) === Number(req.user.id);
-  if (!owner && !(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No autorizado.' });
+  if (!owner) {
+    if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No autorizado.' });
+    const solicitud = await DesplazamientoViaticosSolicitud.findByPk(legalizacion.solicitud_id, { include: includeLegalizacion });
+    if (!canAccessSolicitud(req.user, solicitud)) return res.status(403).json({ success: false, message: 'Esta legalización no está asignada a su dependencia.' });
+  }
   const attachment = (legalizacion.adjuntos || []).find((file) => file.id === req.params.fileId);
   if (attachment) {
     const stored = await ViaticosLegalizacionAdjunto.findOne({
@@ -389,6 +411,7 @@ const validar = async (req, res) => {
   if (!legalizacion) return res.status(404).json({ success: false, message: 'Legalización no encontrada.' });
   if (legalizacion.estado === 'finalizada') return res.status(409).json({ success: false, message: 'La legalización ya fue finalizada.' });
   if (legalizacion.estado !== 'en_revision') return res.status(409).json({ success: false, message: 'La legalización todavía no fue presentada.' });
+  if (!canValidateLegalizacion(req.user) || !canAccessSolicitud(req.user, legalizacion.solicitud)) return res.status(403).json({ success: false, message: 'No tiene autorización para validar esta legalización.' });
   let details = legalizacion.detalles || [];
   if (req.body.detalles) {
     const edited = Array.isArray(req.body.detalles) ? req.body.detalles : JSON.parse(req.body.detalles);
@@ -485,7 +508,10 @@ const descargarPdf = async (req, res) => {
   const legalizacion = await ViaticosLegalizacion.findByPk(req.params.id, { include: [{ model: DesplazamientoViaticosSolicitud, as: 'solicitud', required: true }] });
   if (!legalizacion) return res.status(404).json({ success: false, message: 'Legalización no encontrada.' });
   const owner = Number(legalizacion.user_id) === Number(req.user.id);
-  if (!owner && !(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No autorizado.' });
+  if (!owner) {
+    if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No autorizado.' });
+    if (!canAccessSolicitud(req.user, legalizacion.solicitud)) return res.status(403).json({ success: false, message: 'Esta legalización no está asignada a su dependencia.' });
+  }
   if (legalizacion.estado !== 'finalizada') return res.status(409).json({ success: false, message: 'El PDF final aún no está disponible.' });
   const pdf = await buildLegalizacionPdfBuffer(legalizacion, legalizacion.solicitud);
   res.setHeader('Content-Type', 'application/pdf');
