@@ -2122,9 +2122,18 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                       </>
                     );
                   }
+                  const incluyeViaticos = targetRow?.datos_formulario?.origen_flujo === 'desplazamiento_viaticos'
+                    || targetRow?.origen_flujo === 'desplazamiento_viaticos'
+                    || targetRow?.datos_formulario?.viaticos?.requiereViaticos === true
+                    || targetRow?.datos_formulario?.viaticos?.requiereViaticos === 'Sí';
                   return (
                     <>
                       <Typography>¿Está seguro de que desea eliminar este reporte de salida permanentemente?</Typography>
+                      {incluyeViaticos && (
+                        <Typography color="error" sx={{ mt: 1, fontWeight: 800 }}>
+                          También se eliminarán la solicitud de viáticos vinculada, su legalización, soportes y trazabilidad.
+                        </Typography>
+                      )}
                       <Typography color="error" variant="caption">Esta acción no se puede deshacer.</Typography>
                     </>
                   );

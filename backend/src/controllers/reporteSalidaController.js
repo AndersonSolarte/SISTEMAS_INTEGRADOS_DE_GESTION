@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
-const { DesplazamientoViaticosSolicitud, Documento, PlanAccion, ReporteSalidaAdjunto, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, RecursoHumanoDocente, User, UserModulePermission } = require('../models');
+const { DesplazamientoViaticosSolicitud, Documento, PlanAccion, ReporteSalidaAdjunto, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, RecursoHumanoDocente, User, UserModulePermission, ViaticosLegalizacion, ViaticosLegalizacionAdjunto } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 const {
   getReporteSalidaRecipients,
@@ -2681,6 +2681,78 @@ const deleteSupportFile = (solicitud) => {
       }
     });
   }
+};
+
+const collectLinkedViaticosFiles = (viaticosSolicitud, legalizaciones = []) => {
+  const files = [];
+  const supportFilename = path.basename(String(viaticosSolicitud?.datos_viaticos?.soporteAdjunto?.filename || ''));
+  if (supportFilename) {
+    files.push(path.resolve(__dirname, '../../uploads/desplazamientos_viaticos', supportFilename));
+  }
+  legalizaciones.forEach((legalizacion) => {
+    (legalizacion.adjuntos || []).forEach((attachment) => {
+      if (!attachment?.path) return;
+      const resolved = path.resolve(attachment.path);
+      const legalizacionRoot = path.resolve(__dirname, '../../uploads/legalizaciones_viaticos');
+      if (resolved.startsWith(`${legalizacionRoot}${path.sep}`)) files.push(resolved);
+    });
+  });
+  return files;
+};
+
+const removePhysicalFiles = async (files = []) => {
+  await Promise.all([...new Set(files)].map(async (filePath) => {
+    try {
+      await fs.promises.unlink(filePath);
+    } catch (error) {
+      if (error.code !== 'ENOENT') console.error(`[eliminarSolicitud] No fue posible eliminar ${filePath}:`, error.message);
+    }
+  }));
+};
+
+const deleteSolicitudWithLinkedViaticos = async (solicitud, transaction) => {
+  const physicalFiles = [];
+  let viaticosDeleted = 0;
+  const viaticosSolicitudes = await DesplazamientoViaticosSolicitud.findAll({
+    where: {
+      [Op.or]: [
+        { consecutivo: solicitud.consecutivo },
+        sequelize.where(
+          sequelize.cast(sequelize.json('datos_viaticos.reporteSalidaSolicitudId'), 'text'),
+          String(solicitud.id)
+        )
+      ]
+    },
+    transaction
+  });
+
+  for (const viaticosSolicitud of viaticosSolicitudes) {
+    const legalizaciones = await ViaticosLegalizacion.findAll({
+      where: { solicitud_id: viaticosSolicitud.id },
+      transaction
+    });
+    physicalFiles.push(...collectLinkedViaticosFiles(viaticosSolicitud, legalizaciones));
+    const legalizacionIds = legalizaciones.map((item) => item.id);
+    if (legalizacionIds.length) {
+      await ViaticosLegalizacionAdjunto.destroy({
+        where: { legalizacion_id: { [Op.in]: legalizacionIds } },
+        transaction
+      });
+      await ViaticosLegalizacion.destroy({
+        where: { id: { [Op.in]: legalizacionIds } },
+        transaction
+      });
+    }
+    await viaticosSolicitud.destroy({ transaction });
+    viaticosDeleted += 1;
+  }
+
+  const attachmentKey = getSolicitudAttachmentKey(solicitud);
+  const attachmentWhere = [{ solicitud_id: solicitud.id }];
+  if (attachmentKey) attachmentWhere.push({ storage_key: path.basename(String(attachmentKey)) });
+  await ReporteSalidaAdjunto.destroy({ where: { [Op.or]: attachmentWhere }, transaction });
+  await solicitud.destroy({ transaction });
+  return { physicalFiles, viaticosDeleted };
 };
 
 const buildReporteSalidaAttachments = async (solicitud) => {
@@ -6520,19 +6592,37 @@ const eliminarSolicitud = async (req, res) => {
     }
 
     const grupoId = solicitud.datos_formulario?.grupo_id;
-    if (grupoId) {
-      const solicitudesGrupo = await ReporteSalidaSolicitud.findAll({
+    const solicitudes = grupoId
+      ? await ReporteSalidaSolicitud.findAll({
         where: sequelize.literal(`datos_formulario->>'grupo_id' = :grupoId`),
         replacements: { grupoId }
-      });
-      for (const s of solicitudesGrupo) {
-        await s.destroy();
+      })
+      : [solicitud];
+    const transaction = await sequelize.transaction();
+    const physicalFiles = [];
+    let viaticosDeleted = 0;
+    try {
+      for (const item of solicitudes) {
+        const deletion = await deleteSolicitudWithLinkedViaticos(item, transaction);
+        physicalFiles.push(...deletion.physicalFiles);
+        viaticosDeleted += deletion.viaticosDeleted;
       }
-      return res.json({ success: true, message: `Salida grupal eliminada correctamente (${solicitudesGrupo.length} registros).` });
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
     }
 
-    await solicitud.destroy();
-    res.json({ success: true, message: 'Solicitud eliminada correctamente.' });
+    solicitudes.forEach(deleteSupportFile);
+    await removePhysicalFiles(physicalFiles);
+    const message = grupoId
+      ? `Salida grupal eliminada correctamente (${solicitudes.length} registros).`
+      : 'Solicitud eliminada correctamente.';
+    return res.json({
+      success: true,
+      message: viaticosDeleted ? `${message} También se eliminaron ${viaticosDeleted} solicitud(es) vinculada(s) de viáticos.` : message,
+      deleted: { reportesSalida: solicitudes.length, solicitudesViaticos: viaticosDeleted }
+    });
   } catch (error) {
     console.error('Error al eliminar solicitud:', error);
     res.status(500).json({
