@@ -80,6 +80,15 @@ const buildDriveClient = () => {
     return google.drive({ version: 'v3', auth: apiKey });
   }
 
+  const oauthClientId = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_ID || '').trim();
+  const oauthClientSecret = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_SECRET || '').trim();
+  const oauthRefreshToken = String(process.env.PLAN_ACTION_GOOGLE_REFRESH_TOKEN || '').trim();
+  if (oauthClientId && oauthClientSecret && oauthRefreshToken && /^1\/\//.test(oauthRefreshToken)) {
+    const auth = new google.auth.OAuth2(oauthClientId, oauthClientSecret);
+    auth.setCredentials({ refresh_token: oauthRefreshToken });
+    return google.drive({ version: 'v3', auth });
+  }
+
   const err = new Error('Google Drive no esta configurado. Define una cuenta de servicio o GOOGLE_DRIVE_API_KEY.');
   err.statusCode = 503;
   throw err;

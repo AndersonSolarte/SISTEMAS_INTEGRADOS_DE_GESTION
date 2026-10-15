@@ -1,6 +1,7 @@
 const { Op, col, fn, literal, where: sequelizeWhere } = require('sequelize');
 const path = require('path');
 const fs = require('fs');
+const { google } = require('googleapis');
 const {
   Documento,
   SubProceso,
@@ -773,6 +774,35 @@ const extractGoogleDriveMeta = (rawUrl) => {
 
 
 
+const getAvailableDriveClients = () => {
+  const clients = [];
+
+  const oauthClientId = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_ID || '').trim();
+  const oauthClientSecret = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_SECRET || '').trim();
+  const oauthRefreshToken = String(process.env.PLAN_ACTION_GOOGLE_REFRESH_TOKEN || '').trim();
+
+  if (oauthClientId && oauthClientSecret && oauthRefreshToken && /^1\/\//.test(oauthRefreshToken)) {
+    try {
+      const auth = new google.auth.OAuth2(oauthClientId, oauthClientSecret);
+      auth.setCredentials({ refresh_token: oauthRefreshToken });
+      clients.push({ name: 'oauth_institucional', drive: google.drive({ version: 'v3', auth }) });
+    } catch (e) {
+      console.warn('No se pudo inicializar cliente OAuth institucional de Drive:', e.message);
+    }
+  }
+
+  try {
+    const serviceAccountDrive = buildDriveClient();
+    if (serviceAccountDrive) {
+      clients.push({ name: 'service_account', drive: serviceAccountDrive });
+    }
+  } catch (e) {
+    // Si no está configurada la cuenta de servicio, continuamos
+  }
+
+  return clients;
+};
+
 const descargarDocumentoDirecto = async (req, res) => {
   try {
     const { id } = req.params;
@@ -821,9 +851,8 @@ const descargarDocumentoDirecto = async (req, res) => {
     }
 
     const { fileId, kind } = meta;
-    const drive = buildDriveClient();
 
-    // Helper para generar el enlace de descarga directa en Google Drive
+    // Helper para generar el enlace de redirección si falla la descarga directa por API
     const getDirectDriveUrl = (fId, fKind) => {
       if (fKind === 'google-doc') {
         return `https://docs.google.com/document/d/${fId}/export?format=docx`;
@@ -832,20 +861,35 @@ const descargarDocumentoDirecto = async (req, res) => {
       } else if (fKind === 'google-slide') {
         return `https://docs.google.com/presentation/d/${fId}/export?format=pptx`;
       } else {
-        return `https://drive.google.com/uc?id=${fId}&export=download`;
+        // Redirigir al visor oficial de Drive. El parámetro uc?id=...&export=download
+        // fue deprecado por Google y genera error 403 en drive.usercontent.google.com
+        return `https://drive.google.com/file/d/${fId}/view?usp=sharing`;
       }
     };
 
-    // Obtener metadatos del archivo para saber el nombre y tipo original
+    const driveClients = getAvailableDriveClients();
     let driveFile = null;
-    try {
-      const fileMetadata = await drive.files.get({
-        fileId: fileId,
-        fields: 'name, mimeType, fileExtension'
-      });
-      driveFile = fileMetadata.data;
-    } catch (e) {
-      console.warn('Error al obtener metadatos de Google Drive (redirigiendo al enlace directo):', e.message);
+    let successfulDrive = null;
+
+    for (const clientObj of driveClients) {
+      try {
+        const fileMetadata = await clientObj.drive.files.get({
+          fileId: fileId,
+          fields: 'name, mimeType, fileExtension',
+          supportsAllDrives: true
+        });
+        if (fileMetadata?.data) {
+          driveFile = fileMetadata.data;
+          successfulDrive = clientObj.drive;
+          break;
+        }
+      } catch (err) {
+        // Continuar con el siguiente cliente disponible
+      }
+    }
+
+    if (!successfulDrive) {
+      console.warn(`No se pudo obtener metadatos de Drive para ${fileId} con ningún cliente configurado. Redirigiendo a visor directo.`);
       return res.redirect(getDirectDriveUrl(fileId, kind));
     }
 
@@ -862,7 +906,7 @@ const descargarDocumentoDirecto = async (req, res) => {
       if (kind === 'google-doc') {
         filename = `${cleanTitle}.docx`;
         contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-        streamResponse = await drive.files.export(
+        streamResponse = await successfulDrive.files.export(
           {
             fileId: fileId,
             mimeType: contentType
@@ -872,7 +916,7 @@ const descargarDocumentoDirecto = async (req, res) => {
       } else if (kind === 'google-sheet') {
         filename = `${cleanTitle}.xlsx`;
         contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-        streamResponse = await drive.files.export(
+        streamResponse = await successfulDrive.files.export(
           {
             fileId: fileId,
             mimeType: contentType
@@ -882,7 +926,7 @@ const descargarDocumentoDirecto = async (req, res) => {
       } else if (kind === 'google-slide') {
         filename = `${cleanTitle}.pptx`;
         contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-        streamResponse = await drive.files.export(
+        streamResponse = await successfulDrive.files.export(
           {
             fileId: fileId,
             mimeType: contentType
@@ -895,21 +939,26 @@ const descargarDocumentoDirecto = async (req, res) => {
         filename = `${cleanTitle}.${extension}`;
         contentType = driveFile?.mimeType || MIME_TYPES_BY_EXTENSION[extension] || 'application/octet-stream';
         
-        streamResponse = await drive.files.get(
+        streamResponse = await successfulDrive.files.get(
           {
             fileId: fileId,
-            alt: 'media'
+            alt: 'media',
+            supportsAllDrives: true
           },
           { responseType: 'stream' }
         );
       }
     } catch (streamErr) {
-      console.warn('Error al iniciar stream de Google Drive (redirigiendo al enlace directo):', streamErr.message);
+      console.warn('Error al iniciar stream de Google Drive (redirigiendo al visor directo):', streamErr.message);
       return res.redirect(getDirectDriveUrl(fileId, kind));
     }
 
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    const safeFilename = filename.replace(/["\r\n]/g, '_');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(safeFilename)}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}`
+    );
     res.setHeader('X-Content-Type-Options', 'nosniff');
 
     streamResponse.data
