@@ -7,6 +7,7 @@ const { auth } = require('../middlewares/auth');
 const { publicLimiter } = require('../middlewares/security');
 const {
   abrirAccionAdmin,
+  abrirAccionAdminPorReporte,
   descargarFormato,
   descargarPdf,
   mostrarAccion,
@@ -41,6 +42,7 @@ router.get('/assets/logo-formatos.jpg', (_req, res) => res.sendFile(path.join(__
 router.get('/accion/:token', publicLimiter, mostrarAccion);
 router.post('/accion/:token', publicLimiter, procesarAccion);
 router.post('/solicitudes/:id/accion-admin', auth, abrirAccionAdmin);
+router.post('/solicitudes/reporte/:reporteId/accion-admin', auth, abrirAccionAdminPorReporte);
 router.get('/prueba/liquidacion/:token', publicLimiter, mostrarDemoLiquidacion);
 router.post('/prueba/liquidacion/:token', publicLimiter, procesarDemoLiquidacion);
 router.get('/prueba/tesoreria/:token', publicLimiter, mostrarDemoTesoreria);

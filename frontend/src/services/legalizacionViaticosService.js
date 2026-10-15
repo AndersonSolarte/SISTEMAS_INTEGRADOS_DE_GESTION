@@ -8,6 +8,7 @@ export const getSolicitudViaticos = (id) => api.get(`/legalizacion-viaticos/gest
 export const validarLegalizacion = (id, payload) => api.post(`/legalizacion-viaticos/gestion/${id}/validar`, payload, { timeout: 120000 }).then((response) => response.data);
 export const getEstadisticasViaticos = () => api.get('/legalizacion-viaticos/estadisticas/resumen').then((response) => response.data);
 export const getAccionAdministrativaViaticos = (id) => api.post(`/desplazamientos-viaticos/solicitudes/${id}/accion-admin`).then((response) => response.data);
+export const getAccionAdministrativaViaticosPorReporte = (reporteId) => api.post(`/desplazamientos-viaticos/solicitudes/reporte/${reporteId}/accion-admin`).then((response) => response.data);
 export const attachmentUrl = (legalizacionId, fileId) => `${api.defaults.baseURL}/legalizacion-viaticos/${legalizacionId}/adjuntos/${fileId}`;
 export const legalizacionPdfUrl = (legalizacionId) => `${api.defaults.baseURL}/legalizacion-viaticos/${legalizacionId}/pdf`;
 export const abrirAdjuntoLegalizacion = async (legalizacionId, fileId) => {

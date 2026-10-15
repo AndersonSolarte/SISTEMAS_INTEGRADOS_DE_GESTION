@@ -150,3 +150,72 @@ test('parseLiquidationBody procesa correctamente conceptos diligenciados e ignor
   assert.equal(result.detalles[0].detalle, 'Manutención');
   assert.equal(result.detalles[0].valorTotal, 50000);
 });
+
+const actionFormSolicitud = {
+  id: 42,
+  consecutivo: 'ADF-PP-FR-004-2026-0042',
+  created_at: new Date('2026-08-13T12:00:00-05:00'),
+  estado: 'pendiente',
+  solicitante_snapshot: { nombre: 'COLABORADOR DE PRUEBA', documento: '1085000123', email: 'colaborador@unicesmag.edu.co' },
+  datos_laborales: { dependencia: 'Planeación', cargo: 'Profesional' },
+  datos_salida: { fecha: '2026-08-20', horaInicio: '08:00', fechaRegreso: '2026-08-21', horaFin: '18:00' },
+  datos_viaticos: { lugarVisitar: 'Bogotá', alojamiento: 'Hotel', transporte: 'Aéreo', tipoCuenta: 'Ahorros', entidadBancaria: 'Bancolombia', numeroCuenta: '123456789' },
+  liquidacion: { detalles: [{ detalle: 'Manutención', valorDiario: 50000, dias: 1, valorTotal: 50000 }], totalAnticipo: 50000 },
+  plan_aprobacion: [],
+  trazabilidad: []
+};
+
+test('todos los botones de visto bueno envían las acciones que acepta el backend', () => {
+  const html = _internals.approvalForm(actionFormSolicitud, { key: 'jefe', label: 'Jefe inmediato' }, 'token-aprobacion');
+
+  assert.match(html, /action="\/api\/desplazamientos-viaticos\/accion\/token-aprobacion"/);
+  assert.match(html, /name="accion" value="aprobar" type="submit">Dar visto bueno<\/button>/);
+  assert.match(html, /name="accion" value="rechazar" type="submit" formnovalidate>No aprobar<\/button>/);
+  assert.doesNotMatch(html, /Signatures\(solicitud, currentStepKey\)/);
+});
+
+test('el rechazo delegado conserva obligatoria la observación', () => {
+  const step = {
+    key: 'jefe',
+    label: 'Jefe inmediato',
+    alternateAccessSource: 'programa_alterno',
+    alternateApprovalLabel: 'Programa académico'
+  };
+  const html = _internals.approvalForm(actionFormSolicitud, step, 'token-delegado', { accessSource: 'programa_alterno' });
+
+  assert.match(html, /textarea name="observacion"[^>]+ required/);
+  assert.match(html, /name="accion" value="rechazar" type="submit">No aprobar<\/button>/);
+});
+
+test('liquidación usa valores nativos de botón y permite rechazar sin bloquearse por campos requeridos', () => {
+  const html = _internals.liquidacionForm(actionFormSolicitud, 'token-liquidacion', 'nonce');
+
+  assert.match(html, /name="accion" value="liquidar">Enviar liquidación a Tesorería<\/button>/);
+  assert.match(html, /name="accion" value="rechazar" formnovalidate>Rechazar financiación<\/button>/);
+  assert.doesNotMatch(html, /id="form-accion"/);
+  assert.doesNotMatch(html, /onclick="document\.getElementById\('form-accion'\)/);
+});
+
+test('las dos modalidades de prueba de liquidación envían una sola acción válida', () => {
+  const technicianHtml = _internals.liquidacionForm(actionFormSolicitud, 'token-demo-tecnico', 'nonce', { demo: true, demoCanSubmit: true, demoTechnicianOnly: true });
+  const treasuryHtml = _internals.liquidacionForm(actionFormSolicitud, 'token-demo-tesoreria', 'nonce', { demo: true, demoCanSubmit: true });
+
+  assert.equal((technicianHtml.match(/name="accion"/g) || []).length, 1);
+  assert.equal((treasuryHtml.match(/name="accion"/g) || []).length, 1);
+  assert.match(technicianHtml, /name="accion" value="liquidar">Procesar liquidación de prueba<\/button>/);
+  assert.match(treasuryHtml, /name="accion" value="liquidar">Enviar liquidación de prueba a Tesorería<\/button>/);
+});
+
+test('Tesorería puede autorizar o rechazar aunque existan campos editables requeridos', () => {
+  const html = _internals.treasuryForm(actionFormSolicitud, 'token-tesoreria');
+
+  assert.match(html, /name="accion" value="autorizar_pago" type="submit">Autorizar pago<\/button>/);
+  assert.match(html, /name="accion" value="rechazar_pago" type="submit" formnovalidate>No autorizar pago<\/button>/);
+  assert.match(html, /name="numeroCuenta"[^>]+required/);
+});
+
+test('el flujo anterior de Tesorería conserva su acción tramitar', () => {
+  const html = _internals.legacyTreasuryForm(actionFormSolicitud, 'token-anterior');
+
+  assert.match(html, /name="accion" value="tramitar" type="submit">Tramitar solicitud<\/button>/);
+});

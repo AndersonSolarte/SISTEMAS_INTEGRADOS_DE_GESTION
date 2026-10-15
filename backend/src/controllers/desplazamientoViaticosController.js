@@ -2034,9 +2034,6 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
       ${renderDepartureSignatures(solicitud, currentStepKey)}
 
       <!-- Aviso Normativo -->
-      <div class="fr004-legal"><strong>IMPORTANTE:</strong> ${escapeHtml((viaticos.avisoLegalizacion || LEGALIZATION_NOTICE).replace(/^IMPORTANTE:\s*/i, ''))}</div>Signatures(solicitud, currentStepKey)}
-
-      <!-- Aviso Normativo -->
       <div class="fr004-legal"><strong>IMPORTANTE:</strong> ${escapeHtml((viaticos.avisoLegalizacion || LEGALIZATION_NOTICE).replace(/^IMPORTANTE:\s*/i, ''))}</div>
 
       <!-- Tabla de Liquidación y Firmas Financieras (Si ya fue liquidada o está en Tesorería) -->
@@ -2146,15 +2143,14 @@ const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit 
   const submitButton = demo && !demoCanSubmit
     ? '<button type="button" disabled style="background:#94a3b8;color:#fff;cursor:not-allowed">Vista de prueba — envío a Tesorería deshabilitado</button>'
     : demoTechnicianOnly
-      ? '<button class="primary" type="submit" onclick="document.getElementById(\'form-accion\').value=\'liquidar\';">Procesar liquidación de prueba</button>'
+      ? '<button class="primary" type="submit" name="accion" value="liquidar">Procesar liquidación de prueba</button>'
     : demoCanSubmit
-      ? '<button class="primary" type="submit" onclick="document.getElementById(\'form-accion\').value=\'liquidar\';">Enviar liquidación de prueba a Tesorería</button>'
-    : '<div class="actions"><button class="primary" type="submit" onclick="document.getElementById(\'form-accion\').value=\'liquidar\';">Enviar liquidación a Tesorería</button><button class="bad" type="submit" formnovalidate onclick="document.getElementById(\'form-accion\').value=\'rechazar\';">Rechazar financiación</button></div>';
+      ? '<button class="primary" type="submit" name="accion" value="liquidar">Enviar liquidación de prueba a Tesorería</button>'
+    : '<div class="actions"><button class="primary" type="submit" name="accion" value="liquidar">Enviar liquidación a Tesorería</button><button class="bad" type="submit" name="accion" value="rechazar" formnovalidate>Rechazar financiación</button></div>';
   const formAction = demoCanSubmit
     ? `/api/desplazamientos-viaticos/prueba/liquidacion/${token}`
     : demo ? '#' : `/api/desplazamientos-viaticos/accion/${token}`;
-  const hiddenDemoAction = demo && demoCanSubmit ? '<input type="hidden" name="accion" value="liquidar">' : '<input type="hidden" id="form-accion" name="accion" value="liquidar">';
-  return page('Generar liquidación de viáticos y gastos de viaje', `<form id="liquidacion-form" method="post" action="${formAction}">${hiddenDemoAction}<input id="extra-count" type="hidden" name="extraCount" value="0">${demoNotice}${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true })}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados.</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</section></form>${calculator}`);
+  return page('Generar liquidación de viáticos y gastos de viaje', `<form id="liquidacion-form" method="post" action="${formAction}"><input id="extra-count" type="hidden" name="extraCount" value="0">${demoNotice}${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true })}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados.</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</section></form>${calculator}`);
 };
 
 const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {}) => {
@@ -2170,10 +2166,10 @@ const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {})
     ? `<div class="notice"><strong>Acceso alterno de ${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}.</strong> Utilice este enlace únicamente cuando ${escapeHtml(step.alternateAbsenceRole || step.label)} no esté disponible. La observación es obligatoria y este acceso quedará identificado en la trazabilidad a nombre de ${escapeHtml(step.alternateAuthorityLabel || step.alternateApprovalLabel || 'la autoridad correspondiente')}.</div>`
     : '';
   const observationLabel = alternateObservationRequired ? 'Observación obligatoria de la actuación delegada' : 'Observación (obligatoria si no aprueba)';
-  return page(`Revisión pendiente: ${step.label}`, `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: step.key, formId: 'action-form', isTechnician: false })}${privacyNotice}${delegatedNotice}<label class="observations-label" style="display:block;margin-top:24px;font-weight:700;color:#0b3a6f;">${observationLabel}</label><textarea name="observacion" maxlength="1200" rows="4"${alternateObservationRequired ? ' required' : ''} placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="aprobar" type="submit">Dar visto bueno</button><button class="bad" name="accion" value="rechazar" type="submit">No aprobar</button></div></form>`);
+  return page(`Revisión pendiente: ${step.label}`, `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: step.key, formId: 'action-form', isTechnician: false })}${privacyNotice}${delegatedNotice}<label class="observations-label" style="display:block;margin-top:24px;font-weight:700;color:#0b3a6f;">${observationLabel}</label><textarea name="observacion" maxlength="1200" rows="4"${alternateObservationRequired ? ' required' : ''} placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="aprobar" type="submit">Dar visto bueno</button><button class="bad" name="accion" value="rechazar" type="submit"${alternateObservationRequired ? '' : ' formnovalidate'}>No aprobar</button></div></form>`);
 };
 
-const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / Pagaduría', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false, isTreasury: true })}<p style="margin:16px 0 12px;color:#475569">Revise o corrija los valores de la liquidación y la logística si es necesario, y decida si autoriza el pago.</p><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="autorizar_pago" type="submit">Autorizar pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit">No autorizar pago</button></div></form>`);
+const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / Pagaduría', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false, isTreasury: true })}<p style="margin:16px 0 12px;color:#475569">Revise o corrija los valores de la liquidación y la logística si es necesario, y decida si autoriza el pago.</p><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="autorizar_pago" type="submit">Autorizar pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit" formnovalidate>No autorizar pago</button></div></form>`);
 
 const legacyTreasuryForm = (solicitud, token) => page('Tramitar solicitud en Tesorería', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<div class="notice"><strong>Solicitud iniciada con el flujo anterior.</strong> Esta actuación se conserva únicamente para finalizar correctamente solicitudes que ya estaban en curso.</div><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="primary" name="accion" value="tramitar" type="submit">Tramitar solicitud</button></div></form>`);
 
@@ -2663,66 +2659,94 @@ const descargarPdf = async (req, res) => {
   return res.send(attachment.content || await fs.promises.readFile(attachment.path));
 };
 
+const canManageViaticos = async (user) => user?.role === ROLES.ADMINISTRADOR || Boolean(await UserModulePermission.count({
+  where: { user_id: user?.id, module_key: MANAGEMENT_PERMISSION, can_view: true }
+}));
+
+const respondWithAdminAction = async (req, res, solicitud) => {
+  if (!solicitud) {
+    return res.status(404).json({ success: false, message: 'No se encontró la solicitud de viáticos especificada.' });
+  }
+
+  const currentPlan = solicitud.plan_aprobacion || [];
+  const currentStep = currentPlan[solicitud.paso_actual];
+  if (!currentStep || ['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(solicitud.estado)) {
+    return res.status(409).json({ success: false, message: 'La solicitud no tiene una etapa de aprobación activa.' });
+  }
+
+  const adminToken = createStageToken(solicitud, currentStep, 'admin_dashboard', {
+    id: req.user.id,
+    nombre: req.user.nombre || req.user.name || req.user.email,
+    email: req.user.email
+  });
+  const plan = [...currentPlan];
+  plan[solicitud.paso_actual] = {
+    ...currentStep,
+    actionTokenHashes: [
+      ...(currentStep.actionTokenHashes || []).filter((entry) => entry.source !== 'admin_dashboard'),
+      { source: 'admin_dashboard', hash: hashToken(adminToken) }
+    ]
+  };
+  await solicitud.update({ plan_aprobacion: plan });
+  return res.json({
+    success: true,
+    url: `${publicBackendUrl.replace(/\/$/, '')}/api/desplazamientos-viaticos/accion/${adminToken}`,
+    etapa: currentStep.key,
+    estado: solicitud.estado
+  });
+};
+
 const abrirAccionAdmin = async (req, res) => {
   try {
-    const canManage = req.user?.role === ROLES.ADMINISTRADOR || Boolean(await UserModulePermission.count({
-      where: { user_id: req.user.id, module_key: MANAGEMENT_PERMISSION, can_view: true }
-    }));
-    if (!canManage) {
+    if (!await canManageViaticos(req.user)) {
       return res.status(403).json({ success: false, message: 'No tiene permiso para gestionar solicitudes de viáticos.' });
     }
-
     const { id } = req.params;
     const isNum = !isNaN(Number(id));
     const solicitud = await DesplazamientoViaticosSolicitud.findOne({
-      where: {
-        [Op.or]: [
-          { id: isNum ? Number(id) : 0 },
-          { consecutivo: String(id) }
-        ]
-      }
+      where: { [Op.or]: [{ id: isNum ? Number(id) : 0 }, { consecutivo: String(id) }] }
     });
-
-    if (!solicitud) {
-      return res.status(404).json({ success: false, message: 'No se encontró la solicitud de viáticos especificada.' });
-    }
-
-    const currentPlan = solicitud.plan_aprobacion || [];
-    const currentStep = currentPlan[solicitud.paso_actual];
-
-    if (!currentStep || ['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(solicitud.estado)) {
-      return res.status(409).json({ success: false, message: 'La solicitud no tiene una etapa de aprobación activa.' });
-    }
-
-    const adminToken = createStageToken(solicitud, currentStep, 'admin_dashboard', {
-      id: req.user.id,
-      nombre: req.user.nombre || req.user.name || req.user.email,
-      email: req.user.email
-    });
-    const plan = [...(solicitud.plan_aprobacion || [])];
-    plan[solicitud.paso_actual] = {
-      ...currentStep,
-      actionTokenHashes: [
-        ...(currentStep.actionTokenHashes || []).filter((entry) => entry.source !== 'admin_dashboard'),
-        { source: 'admin_dashboard', hash: hashToken(adminToken) }
-      ]
-    };
-    await solicitud.update({ plan_aprobacion: plan });
-    return res.json({
-      success: true,
-      url: `${publicBackendUrl.replace(/\/$/, '')}/api/desplazamientos-viaticos/accion/${adminToken}`,
-      etapa: currentStep.key,
-      estado: solicitud.estado
-    });
+    return respondWithAdminAction(req, res, solicitud);
   } catch (error) {
     console.error('Error al abrir acción admin:', error);
     return res.status(500).json({ success: false, message: 'No fue posible abrir la gestión de la etapa.' });
   }
 };
 
+const abrirAccionAdminPorReporte = async (req, res) => {
+  try {
+    if (!await canManageViaticos(req.user)) {
+      return res.status(403).json({ success: false, message: 'No tiene permiso para gestionar solicitudes de viáticos.' });
+    }
+    const reporteId = Number(req.params.reporteId);
+    const reporte = Number.isInteger(reporteId) && reporteId > 0
+      ? await ReporteSalidaSolicitud.findByPk(reporteId, { attributes: ['id', 'consecutivo'] })
+      : null;
+    if (!reporte) {
+      return res.status(404).json({ success: false, message: 'No se encontró el reporte de salida especificado.' });
+    }
+    const solicitud = await DesplazamientoViaticosSolicitud.findOne({
+      where: {
+        [Op.or]: [
+          { consecutivo: reporte.consecutivo },
+          sequelize.where(
+            sequelize.cast(sequelize.json('datos_viaticos.reporteSalidaSolicitudId'), 'text'),
+            String(reporte.id)
+          )
+        ]
+      }
+    });
+    return respondWithAdminAction(req, res, solicitud);
+  } catch (error) {
+    console.error('Error al abrir acción de viáticos desde reporte de salida:', error);
+    return res.status(500).json({ success: false, message: 'No fue posible abrir la gestión de viáticos vinculada.' });
+  }
+};
+
 module.exports = {
-  _internals: { buildApprovalPlan, parseLiquidationBody, liquidationRequestDocumentHtml, validatePayload },
+  _internals: { approvalForm, buildApprovalPlan, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, parseLiquidationBody, treasuryForm, validatePayload },
   abrirAccionAdmin,
+  abrirAccionAdminPorReporte,
   descargarFormato,
   descargarPdf,
   mostrarAccion,

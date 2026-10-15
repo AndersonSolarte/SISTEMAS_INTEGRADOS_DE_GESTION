@@ -51,7 +51,20 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import reporteSalidaService from '../../services/reporteSalidaService';
+import { getAccionAdministrativaViaticosPorReporte } from '../../services/legalizacionViaticosService';
 import ReporteSalidaEstadisticas from './ReporteSalidaEstadisticas';
+
+const VIATICOS_SPECIALIZED_STATES = new Set([
+  'pendiente_aprobacion_financiera_previa',
+  'pendiente_financiera_previa',
+  'pendiente_tecnico_contable',
+  'aprobada_gestion_humana',
+  'en_tramite_viaticos',
+  'pendiente_liquidacion',
+  'pendiente_tesoreria',
+  'pendiente_autorizacion_pago',
+  'en_tramite_tesoreria'
+]);
 
 const ACCESS_COPY = {
   planeacion_estrategica: {
@@ -1221,7 +1234,27 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     }
   };
 
+  const openViaticosStageAction = async (row) => {
+    const popup = window.open('about:blank', '_blank');
+    if (!popup) {
+      enqueueSnackbar('El navegador bloqueó la ventana de gestión. Habilite las ventanas emergentes e inténtelo nuevamente.', { variant: 'warning' });
+      return;
+    }
+    popup.opener = null;
+    try {
+      const result = await getAccionAdministrativaViaticosPorReporte(row.id);
+      popup.location.href = result.url;
+    } catch (error) {
+      popup.close();
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible abrir la etapa de viáticos vinculada.', { variant: 'error' });
+    }
+  };
+
   const handleGhActionOpen = (row, type) => {
+    if (VIATICOS_SPECIALIZED_STATES.has(row?.estado)) {
+      openViaticosStageAction(row);
+      return;
+    }
     setGhActionTarget(row);
     setGhActionType(type);
     setGhActionObservation('');
@@ -2009,12 +2042,12 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                               <Stack spacing={0.6}>
                                 {Boolean(row.estado && (row.estado.startsWith('pendiente') || row.estado.includes('pendiente'))) && (
                                   <Stack direction="row" spacing={0.5}>
-                                    <Tooltip title={`Aprobar ${getPendingStageLabel(row.estado)}`} arrow>
+                                    <Tooltip title={VIATICOS_SPECIALIZED_STATES.has(row.estado) ? 'Abrir formulario para aprobar o gestionar esta etapa de viáticos' : `Aprobar ${getPendingStageLabel(row.estado)}`} arrow>
                                       <IconButton size="small" color="success" onClick={() => handleGhActionOpen(row, 'approve')}>
                                         <CheckCircleIcon fontSize="small" />
                                       </IconButton>
                                     </Tooltip>
-                                    <Tooltip title={`Rechazar ${getPendingStageLabel(row.estado)}`} arrow>
+                                    <Tooltip title={VIATICOS_SPECIALIZED_STATES.has(row.estado) ? 'Abrir formulario para aprobar o rechazar esta etapa de viáticos' : `Rechazar ${getPendingStageLabel(row.estado)}`} arrow>
                                       <IconButton size="small" color="error" onClick={() => handleGhActionOpen(row, 'reject')}>
                                         <CancelOutlinedIcon fontSize="small" />
                                       </IconButton>

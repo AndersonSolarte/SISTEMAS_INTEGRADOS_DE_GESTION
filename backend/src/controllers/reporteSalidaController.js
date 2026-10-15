@@ -7155,12 +7155,10 @@ const editarSolicitudAdmin = async (req, res) => {
       }
 
       if (['pendiente_aprobacion_financiera_previa', 'pendiente_tecnico_contable', 'pendiente_tesoreria'].includes(solicitud.estado)) {
-        await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval etapa viaticos:', e));
-        await solicitud.reload();
-        return res.json({
-          success: true,
-          message: `Etapa ${solicitud.estado.replace(/_/g, ' ')} aprobada correctamente por el administrador.`,
-          data: serializeSolicitud(solicitud)
+        return res.status(409).json({
+          success: false,
+          code: 'VIATICOS_SPECIALIZED_ACTION_REQUIRED',
+          message: 'Esta etapa debe gestionarse desde el formulario de viáticos para registrar correctamente la liquidación, el visto bueno o la autorización de pago.'
         });
       }
     }
