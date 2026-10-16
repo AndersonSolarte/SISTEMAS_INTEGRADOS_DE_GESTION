@@ -1,29 +1,34 @@
 const { createWorker } = require('tesseract.js');
 const spanishData = require('@tesseract.js-data/spa');
 
-let workerPromise;
-let recognitionQueue = Promise.resolve();
+const workerPromises = [];
+const recognitionQueues = [];
+let nextWorker = 0;
 
-async function getWorker() {
-  if (!workerPromise) {
-    workerPromise = createWorker(spanishData.code, 1, {
+function poolSize() {
+  return Math.max(1, Math.min(4, Number(process.env.OCR_CONCURRENCY || 2)));
+}
+
+async function getWorker(index) {
+  if (!workerPromises[index]) {
+    workerPromises[index] = createWorker(spanishData.code, 1, {
       langPath: spanishData.langPath,
       gzip: spanishData.gzip,
       cacheMethod: 'readOnly',
       errorHandler: () => {}
     });
   }
-  return workerPromise;
+  return workerPromises[index];
 }
 
-async function runRecognition(image) {
+async function runRecognition(index, image) {
   try {
-    const worker = await getWorker();
+    const worker = await getWorker(index);
     const { data } = await worker.recognize(image);
     return data.text || '';
   } catch (error) {
-    const failedWorker = workerPromise;
-    workerPromise = null;
+    const failedWorker = workerPromises[index];
+    workerPromises[index] = null;
     if (failedWorker) {
       const worker = await failedWorker.catch(() => null);
       await worker?.terminate().catch(() => {});
@@ -33,17 +38,24 @@ async function runRecognition(image) {
 }
 
 function recognizeImage(image) {
-  const task = recognitionQueue.then(() => runRecognition(image));
-  recognitionQueue = task.catch(() => {});
+  const index = nextWorker % poolSize();
+  nextWorker += 1;
+  const queue = recognitionQueues[index] || Promise.resolve();
+  const task = queue.then(() => runRecognition(index, image));
+  recognitionQueues[index] = task.catch(() => {});
   return task;
 }
 
 async function shutdownOcr() {
-  await recognitionQueue.catch(() => {});
-  if (!workerPromise) return;
-  const worker = await workerPromise.catch(() => null);
-  await worker?.terminate().catch(() => {});
-  workerPromise = null;
+  await Promise.all(recognitionQueues.map((queue) => queue?.catch(() => {})));
+  await Promise.all(workerPromises.map(async (workerPromise, index) => {
+    if (!workerPromise) return;
+    const worker = await workerPromise.catch(() => null);
+    await worker?.terminate().catch(() => {});
+    workerPromises[index] = null;
+  }));
+  recognitionQueues.length = 0;
+  nextWorker = 0;
 }
 
 module.exports = { recognizeImage, shutdownOcr };

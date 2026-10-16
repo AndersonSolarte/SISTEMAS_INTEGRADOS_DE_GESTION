@@ -4,7 +4,7 @@ const { Op } = require('sequelize');
 const SaberProDocumentImport = require('../models/SaberProDocumentImport');
 const SaberProDocumentImportItem = require('../models/SaberProDocumentImportItem');
 const { extractPdfBuffer } = require('./saberProTextExtractionService');
-const { parseEvaluatedData, toIsoDate, registrationYear } = require('./saberProDocumentParser');
+const { parseEvaluatedData, validateRegistrationDate } = require('./saberProDocumentParser');
 const {
   queryDocumentsByIdentifications,
   fetchPdfBuffer,
@@ -150,12 +150,15 @@ async function extractItem(item, institutionalRows) {
     const extraction = await extractPdfBuffer(buffer, hints);
     const parsed = parseEvaluatedData(extraction.text, hints);
     if (!parsed.complete) {
+      const detail = parsed.identificationMismatch
+        ? `La cédula leída en el PDF (${parsed.identification}) no coincide con la cédula consultada (${item.identification}).`
+        : `Faltan datos: ${(parsed.missingFields || []).join(', ')}`;
       return {
         status: 'INCOMPLETE',
         registration_number: parsed.registrationNumber || document.registration_number || null,
         exam_date: parsed.examDate,
         document_path: documentPath,
-        message: `Faltan datos: ${(parsed.missingFields || []).join(', ')}`
+        message: detail
       };
     }
     return {
@@ -163,7 +166,7 @@ async function extractItem(item, institutionalRows) {
       registration_number: parsed.registrationNumber,
       exam_date: parsed.examDate,
       document_path: documentPath,
-      message: `PDF institucional leído en memoria mediante ${extraction.method}.`
+      message: `Cédula, EK y fecha validados mediante ${extraction.method}.`
     };
   } catch (error) {
     return {
@@ -187,9 +190,12 @@ async function processImport(importId) {
     const identifications = [...new Set(pending.map((item) => item.identification))];
     const institutionalRows = await queryDocumentsByIdentifications(identifications);
     const institutionalMap = rowsByIdentification(institutionalRows);
-    for (const item of pending) {
-      const outcome = await extractItem(item, institutionalMap.get(item.identification));
-      await item.update(outcome);
+    const concurrency = Math.max(1, Math.min(4, Number(process.env.IMPORT_PROCESS_CONCURRENCY || 2)));
+    for (let index = 0; index < pending.length; index += concurrency) {
+      const batch = pending.slice(index, index + concurrency);
+      const outcomes = await Promise.all(batch.map((item) =>
+        extractItem(item, institutionalMap.get(item.identification))));
+      await Promise.all(batch.map((item, batchIndex) => item.update(outcomes[batchIndex])));
       await refreshCounters(importId);
     }
     await refreshCounters(importId);
@@ -274,17 +280,20 @@ async function createImport(file, userId) {
 }
 
 async function retryImport(importId) {
-  if (activeImportId || await SaberProDocumentImport.count({ where: { status: 'PROCESSING' } })) {
+  if (activeImportId) {
     throw apiError('Ya existe una consulta documental en procesamiento.', 409, 'IMPORT_IN_PROGRESS');
   }
   const record = await SaberProDocumentImport.findByPk(importId);
   if (!record) throw apiError('La consulta no existe.', 404, 'IMPORT_NOT_FOUND');
-  const [affected] = await SaberProDocumentImportItem.update({
+  const retryable = await SaberProDocumentImportItem.count({
+    where: { import_id: importId, status: { [Op.in]: ['PENDING', 'INCOMPLETE', 'ERROR'] } }
+  });
+  if (!retryable) throw apiError('No existen filas pendientes, incompletas o con error.', 409, 'NOTHING_TO_RETRY');
+  await SaberProDocumentImportItem.update({
     status: 'PENDING', message: null, exam_date: null, corrected_by: null, corrected_at: null
   }, {
     where: { import_id: importId, status: { [Op.in]: ['INCOMPLETE', 'ERROR'] } }
   });
-  if (!affected) throw apiError('No existen filas incompletas o con error.', 409, 'NOTHING_TO_RETRY');
   await record.update({ status: 'PROCESSING', finished_at: null });
   await refreshCounters(importId);
   startImport(importId);
@@ -297,15 +306,19 @@ async function correctItem(itemId, values, userId) {
   if (!['INCOMPLETE', 'ERROR'].includes(item.status)) {
     throw apiError('Solo se pueden corregir filas incompletas o con error.', 409, 'ITEM_NOT_REVIEWABLE');
   }
+  if (String(item.message || '').includes('no coincide con la cédula consultada')) {
+    throw apiError('No se puede corregir este registro: la cédula del PDF pertenece a otra persona.',
+      409, 'IDENTIFICATION_MISMATCH');
+  }
   const registrationNumber = String(values.registrationNumber || '').replace(/\s/g, '').toUpperCase();
   if (!/^EKA?\d{8,}$/.test(registrationNumber)) {
     throw apiError('El número de registro EK no tiene un formato válido.', 400, 'INVALID_REGISTRATION');
   }
-  const examDate = toIsoDate(values.examDate);
+  const dateValidation = validateRegistrationDate(registrationNumber, values.examDate);
+  const examDate = dateValidation.examDate;
   if (!examDate) throw apiError('Seleccione una fecha válida.', 400, 'INVALID_DATE');
-  const expectedYear = registrationYear(registrationNumber);
-  if (Number(examDate.slice(0, 4)) !== expectedYear) {
-    throw apiError(`La fecha debe pertenecer al año ${expectedYear}, según el número de registro EK.`,
+  if (!dateValidation.valid) {
+    throw apiError(`La fecha debe pertenecer al año ${dateValidation.expectedYear}, según el número de registro EK.`,
       400, 'DATE_YEAR_MISMATCH');
   }
   await item.update({
@@ -371,9 +384,57 @@ async function createResultWorkbook(importId) {
   return workbook.xlsx.writeBuffer();
 }
 
+async function invalidateStoredDateYearMismatches() {
+  const items = await SaberProDocumentImportItem.findAll({
+    where: {
+      registration_number: { [Op.ne]: null },
+      exam_date: { [Op.ne]: null },
+      status: { [Op.in]: ['EXTRACTED', 'CORRECTED'] }
+    }
+  });
+  const affectedImports = new Set();
+  for (const item of items) {
+    const validation = validateRegistrationDate(item.registration_number, item.exam_date);
+    if (validation.valid) continue;
+    await item.update({
+      status: 'INCOMPLETE',
+      message: validation.expectedYear
+        ? `La fecha debe pertenecer al año ${validation.expectedYear}, según el número de registro EK.`
+        : 'El número de registro EK no permite validar el año de la fecha.'
+    });
+    affectedImports.add(String(item.import_id));
+  }
+  for (const importId of affectedImports) await refreshCounters(importId);
+  return items.filter((item) => item.status === 'INCOMPLETE').length;
+}
+
+async function queueLatestUnverifiedIdentifications() {
+  const latest = await SaberProDocumentImport.findOne({ order: [['created_at', 'DESC']] });
+  if (!latest) return 0;
+  const [affected] = await SaberProDocumentImportItem.update({
+    status: 'PENDING',
+    registration_number: null,
+    exam_date: null,
+    message: 'Pendiente de validar la cédula leída en el PDF.'
+  }, {
+    where: {
+      import_id: latest.id,
+      status: 'EXTRACTED',
+      message: { [Op.notLike]: 'Cédula, EK y fecha validados%' }
+    }
+  });
+  if (affected) {
+    await latest.update({ status: 'PROCESSING', finished_at: null });
+    await refreshCounters(latest.id);
+  }
+  return affected;
+}
+
 async function initialize() {
   await SaberProDocumentImport.sync();
   await SaberProDocumentImportItem.sync();
+  await invalidateStoredDateYearMismatches();
+  await queueLatestUnverifiedIdentifications();
   const interrupted = await SaberProDocumentImport.findOne({
     where: { status: 'PROCESSING' },
     order: [['created_at', 'ASC']]
@@ -392,5 +453,7 @@ module.exports = {
   createTemplateWorkbook,
   createResultWorkbook,
   parseWorkbook,
+  invalidateStoredDateYearMismatches,
+  queueLatestUnverifiedIdentifications,
   normalizeIdentification
 };

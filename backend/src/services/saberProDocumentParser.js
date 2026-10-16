@@ -58,6 +58,24 @@ function registrationYear(value) {
   return match ? Number(match[1]) : null;
 }
 
+function validateRegistrationDate(registrationNumber, value) {
+  const examDate = toIsoDate(value);
+  const expectedYear = registrationYear(registrationNumber);
+  const actualYear = examDate ? Number(examDate.slice(0, 4)) : null;
+  return {
+    examDate,
+    expectedYear,
+    actualYear,
+    valid: Boolean(examDate && expectedYear && actualYear === expectedYear)
+  };
+}
+
+function textContainsIdentification(text, identification) {
+  if (!/^\d{5,20}$/.test(identification)) return false;
+  return String(text || '').split(/\n/).some((line) =>
+    line.replace(/\D/g, '').includes(identification));
+}
+
 function parseEvaluatedData(rawText, hints = {}) {
   const text = normalizeText(rawText);
   const detectedRegistration = firstMatch(text, [
@@ -75,8 +93,11 @@ function parseEvaluatedData(rawText, hints = {}) {
     /\bC\.?[ \t]*C\.?[ \t]*:?[ \t]*([0-9][0-9. \t]{5,14})/iu
   ]);
   if (identification) identification = identification.replace(/\D/g, '');
-  const hintedIdentification = String(hints.identification || '').replace(/\D/g, '');
-  if (/^\d{5,20}$/.test(hintedIdentification)) identification = hintedIdentification;
+  const expectedIdentification = String(hints.identification || '').replace(/\D/g, '');
+  const expectedIdentificationRead = textContainsIdentification(text, expectedIdentification);
+  if (expectedIdentificationRead) identification = expectedIdentification;
+  const identificationMismatch = Boolean(identification && /^\d{5,20}$/.test(expectedIdentification)
+    && identification !== expectedIdentification);
 
   const dateText = firstMatch(text, [
     /fecha\s+de\s+presentaci[oó]n\s+del\s+examen\s+y\s+expedici[oó]n\s+del\s+certificado\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/iu,
@@ -94,21 +115,27 @@ function parseEvaluatedData(rawText, hints = {}) {
   const compactDateText = firstMatch(text, [
     /fecha\s+de\s+presentaci\S+[\s\S]{0,140}?certificado[\s\S]{0,120}?(\d{8})(?!\d)/iu
   ]);
-  const parsedExamDate = toIsoDate(dateText || compactDateText);
-  const expectedYear = registrationYear(registrationNumber);
-  const dateYearMismatch = Boolean(parsedExamDate && expectedYear
-    && Number(parsedExamDate.slice(0, 4)) !== expectedYear);
-  const examDate = dateYearMismatch ? null : parsedExamDate;
+  const dateValidation = validateRegistrationDate(registrationNumber, dateText || compactDateText);
+  const parsedExamDate = dateValidation.examDate;
+  const expectedYear = dateValidation.expectedYear;
+  const dateYearMismatch = Boolean(parsedExamDate && expectedYear && !dateValidation.valid);
+  const examDate = dateValidation.valid ? parsedExamDate : null;
   const missingFields = [];
   if (!registrationNumber) missingFields.push('Número de registro');
   if (!examDate) missingFields.push(dateYearMismatch
     ? `Fecha del examen (debe corresponder al año ${expectedYear} del EK)`
     : 'Fecha de presentación');
-  if (!identification) missingFields.push('Identificación');
+  if (!identification) missingFields.push('Cédula no legible en el PDF');
+  else if (identificationMismatch) {
+    missingFields.push(`La cédula leída en el PDF (${identification}) no coincide con la cédula consultada (${expectedIdentification})`);
+  }
   return {
     registrationNumber,
     examDate,
     identification,
+    expectedIdentification: expectedIdentification || null,
+    expectedIdentificationRead,
+    identificationMismatch,
     complete: missingFields.length === 0,
     missingFields
   };
@@ -119,4 +146,7 @@ function toDisplayDate(value) {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
 }
 
-module.exports = { normalizeText, parseEvaluatedData, toIsoDate, toDisplayDate, registrationYear };
+module.exports = {
+  normalizeText, parseEvaluatedData, toIsoDate, toDisplayDate, registrationYear,
+  validateRegistrationDate
+};
