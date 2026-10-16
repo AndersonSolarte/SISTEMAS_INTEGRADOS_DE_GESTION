@@ -40,6 +40,10 @@ function documentUrl(relativePath) {
 }
 
 function institutionalHttpsAgent() {
+  const rejectUnauthorized = String(
+    process.env.INSTITUTIONAL_TLS_REJECT_UNAUTHORIZED || 'true'
+  ).toLowerCase() !== 'false';
+  if (!rejectUnauthorized) return new https.Agent({ rejectUnauthorized: false });
   const systemCertificates = typeof tls.getCACertificates === 'function'
     ? tls.getCACertificates('system') : [];
   if (!systemCertificates.length) return undefined;
