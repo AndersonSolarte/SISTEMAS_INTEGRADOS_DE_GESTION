@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -23,6 +23,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography
 } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
@@ -43,6 +44,10 @@ import PublicRoundedIcon from '@mui/icons-material/PublicRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded';
 import FileDownloadRoundedIcon from '@mui/icons-material/FileDownloadRounded';
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import html2canvas from 'html2canvas';
+import { useSnackbar } from 'notistack';
 import XLSXStyle from 'xlsx-js-style';
 import {
   Bar,
@@ -62,6 +67,267 @@ import encabezadoCorreosImg from '../../assets/Encabezado_correos.png';
 
 const ALL = 'TODOS';
 const numberFormat = new Intl.NumberFormat('es-CO');
+
+/**
+ * Trims excess whitespace margins from a canvas so the chart content
+ * is cropped "al ras y al filo", maximizing the visible graphic size
+ * without wasting empty margin borders.
+ */
+function trimCanvas(sourceCanvas, padding = 10) {
+  try {
+    const width = sourceCanvas.width;
+    const height = sourceCanvas.height;
+    if (!width || !height) return sourceCanvas;
+
+    const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return sourceCanvas;
+
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+
+    const corners = [
+      0,
+      (width - 1) * 4,
+      ((height - 1) * width) * 4,
+      ((height - 1) * width + (width - 1)) * 4
+    ];
+
+    const isBgPixel = (idx) => {
+      const a = data[idx + 3];
+      if (a < 15) return true;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      if (r >= 244 && g >= 246 && b >= 249) return true;
+      for (let c of corners) {
+        if (Math.abs(r - data[c]) < 12 && Math.abs(g - data[c + 1]) < 12 && Math.abs(b - data[c + 2]) < 12) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    let top = 0;
+    let bottom = height - 1;
+    let left = 0;
+    let right = width - 1;
+
+    scanTop: for (let y = 0; y < height; y += 2) {
+      for (let x = 0; x < width; x += 3) {
+        const idx = (y * width + x) * 4;
+        if (!isBgPixel(idx)) {
+          top = Math.max(0, y - padding);
+          break scanTop;
+        }
+      }
+    }
+
+    scanBottom: for (let y = height - 1; y >= 0; y -= 2) {
+      for (let x = 0; x < width; x += 3) {
+        const idx = (y * width + x) * 4;
+        if (!isBgPixel(idx)) {
+          bottom = Math.min(height - 1, y + padding);
+          break scanBottom;
+        }
+      }
+    }
+
+    scanLeft: for (let x = 0; x < width; x += 2) {
+      for (let y = top; y <= bottom; y += 3) {
+        const idx = (y * width + x) * 4;
+        if (!isBgPixel(idx)) {
+          left = Math.max(0, x - padding);
+          break scanLeft;
+        }
+      }
+    }
+
+    scanRight: for (let x = width - 1; x >= 0; x -= 2) {
+      for (let y = top; y <= bottom; y += 3) {
+        const idx = (y * width + x) * 4;
+        if (!isBgPixel(idx)) {
+          right = Math.min(width - 1, x + padding);
+          break scanRight;
+        }
+      }
+    }
+
+    const trimmedWidth = right - left + 1;
+    const trimmedHeight = bottom - top + 1;
+
+    if (trimmedWidth > 120 && trimmedHeight > 120 && (trimmedWidth < width * 0.98 || trimmedHeight < height * 0.98)) {
+      const trimmedCanvas = document.createElement('canvas');
+      trimmedCanvas.width = trimmedWidth;
+      trimmedCanvas.height = trimmedHeight;
+      const tCtx = trimmedCanvas.getContext('2d');
+      tCtx.fillStyle = '#ffffff';
+      tCtx.fillRect(0, 0, trimmedWidth, trimmedHeight);
+      tCtx.drawImage(sourceCanvas, left, top, trimmedWidth, trimmedHeight, 0, 0, trimmedWidth, trimmedHeight);
+      return trimmedCanvas;
+    }
+
+    return sourceCanvas;
+  } catch (e) {
+    console.warn('Trim canvas skipped:', e);
+    return sourceCanvas;
+  }
+}
+
+function CopyChartButton({ targetRef, title = 'grafico', iconOnly = false, sx = {} }) {
+  const [copying, setCopying] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const { enqueueSnackbar } = useSnackbar();
+
+  const handleCopy = async (e) => {
+    e?.stopPropagation?.();
+    if (!targetRef?.current || copying) return;
+    setCopying(true);
+    try {
+      const el = targetRef.current;
+      const canvas = await html2canvas(el, {
+        scale: 3,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+        ignoreElements: (node) => {
+          return (
+            node?.hasAttribute?.('data-copy-ignore') ||
+            node?.getAttribute?.('data-copy-ignore') === 'true'
+          );
+        }
+      });
+
+      const finalCanvas = trimCanvas(canvas, 12);
+
+      finalCanvas.toBlob(async (blob) => {
+        if (!blob) {
+          setCopying(false);
+          return;
+        }
+
+        let copiedToClipboard = false;
+        try {
+          if (navigator?.clipboard?.write && window.ClipboardItem) {
+            await navigator.clipboard.write([
+              new ClipboardItem({ 'image/png': blob })
+            ]);
+            copiedToClipboard = true;
+          }
+        } catch (err) {
+          console.warn('Clipboard direct copy error, using fallback:', err);
+        }
+
+        if (copiedToClipboard) {
+          setCopied(true);
+          enqueueSnackbar('¡Gráfico copiado al portapapeles! (Listo para pegar con Ctrl+V)', {
+            variant: 'success',
+            autoHideDuration: 3000
+          });
+          setTimeout(() => setCopied(false), 2400);
+        } else {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          const cleanTitle = (title || 'grafico')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9_-]/g, '_');
+          link.download = `${cleanTitle}.png`;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          setCopied(true);
+          enqueueSnackbar('Gráfico descargado en alta resolución (PNG, al ras)', {
+            variant: 'info',
+            autoHideDuration: 3500
+          });
+          setTimeout(() => setCopied(false), 2400);
+        }
+        setCopying(false);
+      }, 'image/png', 1.0);
+    } catch (err) {
+      console.error('Error copying chart:', err);
+      enqueueSnackbar('No se pudo copiar el gráfico', { variant: 'error' });
+      setCopying(false);
+    }
+  };
+
+  if (iconOnly) {
+    return (
+      <Tooltip title={copied ? '¡Copiado!' : 'Copiar gráfico en alta resolución'} arrow>
+        <span>
+          <IconButton
+            data-copy-ignore="true"
+            size="small"
+            onClick={handleCopy}
+            disabled={copying}
+            sx={{
+              border: '1.8px solid #000000',
+              color: copied ? '#16a34a' : '#000000',
+              borderColor: copied ? '#16a34a' : '#000000',
+              bgcolor: copied ? '#f0fdf4' : '#ffffff',
+              p: 0.6,
+              boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+              '&:hover': { bgcolor: '#f1f5f9' },
+              ...sx
+            }}
+          >
+            {copying ? (
+              <CircularProgress size={16} color="inherit" />
+            ) : copied ? (
+              <CheckRoundedIcon sx={{ fontSize: 18 }} />
+            ) : (
+              <ContentCopyRoundedIcon sx={{ fontSize: 18 }} />
+            )}
+          </IconButton>
+        </span>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Tooltip title={copied ? '¡Copiado!' : 'Copiar gráfico en alta resolución (al ras sin bordes vacíos)'} arrow>
+      <span>
+        <Button
+          data-copy-ignore="true"
+          size="small"
+          variant="outlined"
+          onClick={handleCopy}
+          disabled={copying}
+          startIcon={
+            copying ? (
+              <CircularProgress size={14} color="inherit" />
+            ) : copied ? (
+              <CheckRoundedIcon sx={{ fontSize: 16, color: '#16a34a' }} />
+            ) : (
+              <ContentCopyRoundedIcon sx={{ fontSize: 16 }} />
+            )
+          }
+          sx={{
+            textTransform: 'none',
+            fontWeight: 950,
+            fontSize: 11.5,
+            px: 1.4,
+            py: 0.5,
+            borderRadius: 2,
+            borderWidth: '1.8px !important',
+            borderColor: copied ? '#16a34a' : '#000000',
+            color: copied ? '#16a34a' : '#000000',
+            bgcolor: copied ? '#f0fdf4' : '#ffffff',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+            '&:hover': {
+              borderColor: '#000000',
+              bgcolor: '#f8fafc'
+            },
+            ...sx
+          }}
+        >
+          {copying ? 'Copiando…' : copied ? '¡Copiado!' : 'Copiar gráfico'}
+        </Button>
+      </span>
+    </Tooltip>
+  );
+}
 
 const normalize = (value = '') => String(value || '')
   .normalize('NFD')
@@ -215,9 +481,9 @@ function PeriodStackTick({ x, y, payload }) {
   const semesterLabel = semester === '1' ? 'I' : semester === '2' ? 'II' : semester || '—';
   return (
     <g transform={`translate(${x},${y})`}>
-      <rect x="-12" y="7" width="24" height="18" rx="9" fill="#e7edf5" />
-      <text x="0" y="20" textAnchor="middle" fill="#52657c" fontSize="9.5" fontWeight="900">{semesterLabel}</text>
-      <text x="0" y="42" textAnchor="middle" fill="#102a4c" fontSize="10.5" fontWeight="900">{year}</text>
+      <rect x="-13" y="6" width="26" height="19" rx="6" fill="#000000" />
+      <text x="0" y="19.5" textAnchor="middle" fill="#ffffff" fontSize="10" fontWeight="950">{semesterLabel}</text>
+      <text x="0" y="42" textAnchor="middle" fill="#000000" fontSize="11.5" fontWeight="950">{year}</text>
     </g>
   );
 }
@@ -252,14 +518,14 @@ function PopulationStackedChart({ data, groupIndex, scope, scopeBadgeLabel }) {
     const formatted = numberFormat.format(value);
     if (height >= 10 && width >= 20) {
       return (
-        <text x={x + width / 2} y={y + height / 2 + (height < 18 ? 2.6 : 3.8)} textAnchor="middle" fill="#fff" fontSize={height < 18 ? 7.2 : 9} fontWeight="950">
+        <text x={x + width / 2} y={y + height / 2 + (height < 18 ? 2.6 : 3.8)} textAnchor="middle" fill="#fff" fontSize={height < 18 ? 8 : 9.5} fontWeight="950">
           {formatted}
         </text>
       );
     }
     if (height >= 7 && width >= 18) {
       return (
-        <text x={x + width / 2} y={y + height / 2 + 2.4} textAnchor="middle" fill="#fff" fontSize={6.8} fontWeight="950">
+        <text x={x + width / 2} y={y + height / 2 + 2.4} textAnchor="middle" fill="#fff" fontSize={7.5} fontWeight="950">
           {formatted}
         </text>
       );
@@ -268,13 +534,13 @@ function PopulationStackedChart({ data, groupIndex, scope, scopeBadgeLabel }) {
   };
 
   return (
-    <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2.2 }, border: '1px solid #cbd9ea', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#fff' }}>
-      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'flex-start' }} spacing={1.5} sx={{ mb: 1 }}>
+    <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2.2 }, border: '1.8px solid #000000', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#fff' }}>
+      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'flex-start' }} spacing={1.5} sx={{ mb: 1, pr: { md: 16 } }}>
         <Box>
-          <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>{configuration.title}</Typography>
-          <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>{configuration.subtitle}</Typography>
+          <Typography sx={{ color: '#000000', fontWeight: 950, fontSize: 16 }}>{configuration.title}</Typography>
+          <Typography sx={{ color: '#000000', fontSize: 12, fontWeight: 700 }}>{configuration.subtitle}</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 950, px: 1, fontSize: 11.5 }} />
       </Stack>
 
       {!chartData.length ? (
@@ -283,11 +549,11 @@ function PopulationStackedChart({ data, groupIndex, scope, scopeBadgeLabel }) {
         <Box sx={{ width: '100%', height: { xs: 430, md: 500 } }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 36, right: 18, left: 4, bottom: 42 }} barCategoryGap="12%">
-              <CartesianGrid stroke="#e5eaf1" strokeDasharray="3 4" vertical={false} />
-              <XAxis dataKey="periodo" tick={<PeriodStackTick />} interval={0} height={58} axisLine={{ stroke: '#91a4bd' }} tickLine={false} />
-              <YAxis domain={[0, (dataMax) => Math.ceil(Number(dataMax || 0) * 1.2)]} tickFormatter={compactNumber} tick={{ fill: '#52657c', fontSize: 10.5, fontWeight: 700 }} axisLine={false} tickLine={false} width={52} />
-              <RechartsTooltip labelFormatter={(label) => `Período ${label}`} formatter={(value, name) => [numberFormat.format(value), name]} contentStyle={{ borderRadius: 10, border: '1px solid #cbd5e1', boxShadow: '0 8px 22px rgba(15,23,42,.12)' }} />
-              <Legend verticalAlign="top" align="center" iconType="circle" iconSize={9} wrapperStyle={{ top: 2, fontSize: 11, fontWeight: 800 }} />
+              <CartesianGrid stroke="#d8e1ee" strokeDasharray="3 4" vertical={false} />
+              <XAxis dataKey="periodo" tick={<PeriodStackTick />} interval={0} height={58} axisLine={{ stroke: '#000000', strokeWidth: 1.5 }} tickLine={false} />
+              <YAxis domain={[0, (dataMax) => Math.ceil(Number(dataMax || 0) * 1.2)]} tickFormatter={compactNumber} tick={{ fill: '#000000', fontSize: 11, fontWeight: 900 }} axisLine={false} tickLine={false} width={54} />
+              <RechartsTooltip labelFormatter={(label) => `Período ${label}`} formatter={(value, name) => [numberFormat.format(value), name]} contentStyle={{ borderRadius: 10, border: '1.5px solid #000000', boxShadow: '0 8px 22px rgba(15,23,42,.12)', fontWeight: 800 }} />
+              <Legend verticalAlign="top" align="center" iconType="circle" iconSize={10} wrapperStyle={{ top: 2, fontSize: 12, fontWeight: 900, color: '#000000' }} />
               {configuration.series.map((serie, index) => (
                 <Bar key={serie.field} dataKey={serie.field} name={serie.label} stackId="flujo" fill={serie.color} maxBarSize={70} radius={index === configuration.series.length - 1 ? [5, 5, 0, 0] : [0, 0, 0, 0]}>
                   <LabelList dataKey={serie.field} content={renderSegmentLabel} />
@@ -324,19 +590,19 @@ function PopulationTrendChart({ data, groupIndex, scope, scopeBadgeLabel }) {
   const chartData = data.filter((row) => configuration.series.some((serie) => Number(row[serie.field] || 0) > 0));
   const renderPointLabel = ({ x, y, value }) => {
     if (value === null || value === undefined) return null;
-    return <text x={x} y={y - 11} textAnchor="middle" fill="#334155" stroke="#fff" strokeWidth="3" paintOrder="stroke" fontSize="9.5" fontWeight="950">{numberFormat.format(value)}</text>;
+    return <text x={x} y={y - 11} textAnchor="middle" fill="#000000" stroke="#fff" strokeWidth="3" paintOrder="stroke" fontSize="11" fontWeight="950">{numberFormat.format(value)}</text>;
   };
 
   return (
-    <Paper elevation={0} sx={{ border: '1px solid #cbd9ea', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#fff' }}>
-      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={1.2} sx={{ px: { xs: 1.5, md: 2.2 }, py: 1.5 }}>
+    <Paper elevation={0} sx={{ border: '1.8px solid #000000', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#fff' }}>
+      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={1.2} sx={{ px: { xs: 1.5, md: 2.2 }, py: 1.5, pr: { md: 16 } }}>
         <Box>
-          <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Análisis histórico</Typography>
-          <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>{configuration.subtitle}</Typography>
+          <Typography sx={{ color: '#000000', fontWeight: 950, fontSize: 16 }}>Análisis histórico</Typography>
+          <Typography sx={{ color: '#000000', fontSize: 12, fontWeight: 700 }}>{configuration.subtitle}</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 950, px: 1, fontSize: 11.5 }} />
       </Stack>
-      <Box sx={{ px: 2.2, py: 0.8, bgcolor: '#082b66', color: '#fff', textAlign: 'center', fontSize: 12, fontWeight: 950, letterSpacing: 0.5 }}>LÍNEAS DE TENDENCIA</Box>
+      <Box sx={{ px: 2.2, py: 0.8, bgcolor: '#000000', color: '#fff', textAlign: 'center', fontSize: 12.5, fontWeight: 950, letterSpacing: 0.5 }}>LÍNEAS DE TENDENCIA</Box>
 
       {!chartData.length ? (
         <Alert severity="info" sx={{ m: 2 }}>No existen datos para el período y programa seleccionados.</Alert>
@@ -344,13 +610,13 @@ function PopulationTrendChart({ data, groupIndex, scope, scopeBadgeLabel }) {
         <Box sx={{ width: '100%', height: { xs: 420, md: 470 }, p: { xs: 1, md: 1.5 } }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 42, right: 36, left: 8, bottom: 30 }}>
-              <CartesianGrid stroke="#e5eaf1" strokeDasharray="3 4" vertical={false} />
-              <XAxis dataKey="periodo" tickFormatter={(value) => String(value).replace('-', ' · ')} tick={{ fill: '#52657c', fontSize: 10, fontWeight: 800 }} axisLine={{ stroke: '#91a4bd' }} tickLine={false} />
-              <YAxis domain={[0, (dataMax) => Math.ceil(Number(dataMax || 0) * 1.2)]} tickFormatter={compactNumber} tick={{ fill: '#52657c', fontSize: 10.5, fontWeight: 700 }} axisLine={false} tickLine={false} width={52} />
-              <RechartsTooltip labelFormatter={(label) => `Período ${label}`} formatter={(value, name) => [numberFormat.format(value), name]} contentStyle={{ borderRadius: 10, border: '1px solid #cbd5e1', boxShadow: '0 8px 22px rgba(15,23,42,.12)' }} />
-              <Legend verticalAlign="bottom" align="center" iconType="circle" iconSize={9} wrapperStyle={{ bottom: 0, fontSize: 11, fontWeight: 800 }} />
+              <CartesianGrid stroke="#d8e1ee" strokeDasharray="3 4" vertical={false} />
+              <XAxis dataKey="periodo" tickFormatter={(value) => String(value).replace('-', ' · ')} tick={{ fill: '#000000', fontSize: 11, fontWeight: 900 }} axisLine={{ stroke: '#000000', strokeWidth: 1.5 }} tickLine={false} />
+              <YAxis domain={[0, (dataMax) => Math.ceil(Number(dataMax || 0) * 1.2)]} tickFormatter={compactNumber} tick={{ fill: '#000000', fontSize: 11, fontWeight: 900 }} axisLine={false} tickLine={false} width={54} />
+              <RechartsTooltip labelFormatter={(label) => `Período ${label}`} formatter={(value, name) => [numberFormat.format(value), name]} contentStyle={{ borderRadius: 10, border: '1.5px solid #000000', boxShadow: '0 8px 22px rgba(15,23,42,.12)', fontWeight: 800 }} />
+              <Legend verticalAlign="bottom" align="center" iconType="circle" iconSize={10} wrapperStyle={{ bottom: 0, fontSize: 12, fontWeight: 900, color: '#000000' }} />
               {configuration.series.map((serie) => (
-                <Line key={serie.field} type="linear" dataKey={serie.field} name={serie.label} stroke={serie.color} strokeWidth={3} strokeLinejoin="miter" strokeLinecap="square" dot={{ r: 4.2, fill: serie.color, stroke: '#fff', strokeWidth: 1.5 }} activeDot={{ r: 6 }} label={renderPointLabel} connectNulls />
+                <Line key={serie.field} type="linear" dataKey={serie.field} name={serie.label} stroke={serie.color} strokeWidth={3.2} strokeLinejoin="miter" strokeLinecap="square" dot={{ r: 4.5, fill: serie.color, stroke: '#fff', strokeWidth: 1.8 }} activeDot={{ r: 6.5 }} label={renderPointLabel} connectNulls />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -502,7 +768,7 @@ function PopulationShadedTrendChart({ data, scope, scopeBadgeLabel }) {
               </g>
             );
           })}
-          {annualRows.map((row, index) => <text key={row.year} x={pointX(index)} y="360" textAnchor="middle" fill="#334155" fontSize="10" fontWeight="900">{row.year}</text>)}
+          {annualRows.map((row, index) => <text key={row.year} x={pointX(index)} y="360" textAnchor="middle" fill="#000000" fontSize="11" fontWeight="950">{row.year}</text>)}
         </Box>
       </Box>
     </Paper>
@@ -532,13 +798,13 @@ function PopulationBubbleMatrixChart({ data, scope, scopeBadgeLabel }) {
   const radius = (value) => value > 0 ? 4 + Math.sqrt(value / globalMax) * maxBubbleRadius : 0;
 
   return (
-    <Paper elevation={0} sx={{ border: '1px solid #cbd9ea', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#fff' }}>
+    <Paper elevation={0} sx={{ border: '1.8px solid #000000', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#fff' }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: { xs: 1.5, md: 2.2 }, py: 1.45 }}>
         <Box>
-          <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Círculos proporcionales</Typography>
-          <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>El área de cada círculo representa la magnitud del indicador en cada período.</Typography>
+          <Typography sx={{ color: '#000000', fontWeight: 950, fontSize: 16 }}>Círculos proporcionales</Typography>
+          <Typography sx={{ color: '#000000', fontSize: 12, fontWeight: 700 }}>El área de cada círculo representa la magnitud del indicador en cada período.</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 950, px: 1, fontSize: 11.5 }} />
       </Stack>
       <Box sx={{ px: { xs: 0.5, md: 1.4 }, pb: 1.2, overflow: 'hidden' }}>
         <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: '100%', height: 'auto', display: 'block', maxHeight: 390 }}>
@@ -547,8 +813,8 @@ function PopulationBubbleMatrixChart({ data, scope, scopeBadgeLabel }) {
           </defs>
           <rect x="8" y="8" width={width - 16} height={height - 16} rx="18" fill="#fbfdff" stroke="#d8e3f0" />
           <rect x="18" y="24" width={width - 36} height="42" rx="11" fill="#f3f7fc" />
-          <text x="38" y="50" fill="#52657c" fontSize="10" fontWeight="950" letterSpacing=".5">INDICADOR</text>
-          {annualRows.map((row, index) => <text key={row.year} x={chartLeft + index * cellWidth + cellWidth / 2} y="50" textAnchor="middle" fill="#263b56" fontSize="11" fontWeight="950">{row.year}</text>)}
+          <text x="38" y="50" fill="#000000" fontSize="10.5" fontWeight="950" letterSpacing=".5">INDICADOR</text>
+          {annualRows.map((row, index) => <text key={row.year} x={chartLeft + index * cellWidth + cellWidth / 2} y="50" textAnchor="middle" fill="#000000" fontSize="11" fontWeight="950">{row.year}</text>)}
           {series.map((item, rowIndex) => {
             const centerY = 115 + rowIndex * 94;
             return (
@@ -686,8 +952,8 @@ function PopulationStudentJourneyChart({ data, scope, scopeBadgeLabel }) {
           </defs>
           <rect x="8" y="8" width={width - 16} height={height - 16} rx="18" fill="#fbfdff" stroke="#d8e3f0" />
           <rect x="20" y="20" width={width - 40} height="40" rx="11" fill="#f3f7fc" />
-          <text x="38" y="45" fill="#52657c" fontSize="10" fontWeight="950" letterSpacing=".5">ETAPA</text>
-          {annualRows.map((row, index) => <text key={row.year} x={x(index)} y="45" textAnchor="middle" fill="#263b56" fontSize="11" fontWeight="950">{row.year}</text>)}
+          <text x="38" y="45" fill="#000000" fontSize="10.5" fontWeight="950" letterSpacing=".5">ETAPA</text>
+          {annualRows.map((row, index) => <text key={row.year} x={x(index)} y="45" textAnchor="middle" fill="#000000" fontSize="11" fontWeight="950">{row.year}</text>)}
           {series.map((item, seriesIndex) => {
             const values = annualRows.map((row) => Number(row[item.field] || 0));
             const min = Math.min(...values);
@@ -718,7 +984,7 @@ function PopulationStudentJourneyChart({ data, scope, scopeBadgeLabel }) {
           })}
           {series.map((item, index) => {
             const legendX = 330 + index * 235;
-            return <g key={`journey-legend-${item.field}`}><line x1={legendX} y1="341" x2={legendX + 22} y2="341" stroke={item.color} strokeWidth="3" /><circle cx={legendX + 11} cy="341" r="4" fill={item.color} /><text x={legendX + 30} y="345" fill="#52657c" fontSize="9" fontWeight="850">{item.label}</text></g>;
+            return <g key={`journey-legend-${item.field}`}><line x1={legendX} y1="341" x2={legendX + 22} y2="341" stroke={item.color} strokeWidth="3" /><circle cx={legendX + 11} cy="341" r="4" fill={item.color} /><text x={legendX + 30} y="345" fill="#000000" fontSize="10" fontWeight="900">{item.label}</text></g>;
           })}
         </Box>
       </Box>
@@ -862,8 +1128,8 @@ function PopulationConversionChart({ data, scope, scopeBadgeLabel }) {
           </defs>
           <rect x="8" y="8" width={width - 16} height={height - 16} rx="18" fill="#fbfdff" stroke="#d8e3f0" />
           <rect x="20" y="22" width={width - 40} height="42" rx="11" fill="#f3f7fc" />
-          <text x="40" y="48" fill="#52657c" fontSize="10" fontWeight="950">INDICADOR</text>
-          {annualRows.map((row, index) => <text key={row.year} x={left + index * slot + slot / 2} y="48" textAnchor="middle" fill="#263b56" fontSize="11" fontWeight="950">{row.year}</text>)}
+          <text x="40" y="48" fill="#000000" fontSize="10.5" fontWeight="950">INDICADOR</text>
+          {annualRows.map((row, index) => <text key={row.year} x={left + index * slot + slot / 2} y="48" textAnchor="middle" fill="#000000" fontSize="11" fontWeight="950">{row.year}</text>)}
           {rows.map((definition) => (
             <g key={definition.field}>
               <rect x="20" y={definition.y - 44} width={width - 40} height="88" rx="14" fill="#fff" stroke="#e1e9f3" />
@@ -871,7 +1137,7 @@ function PopulationConversionChart({ data, scope, scopeBadgeLabel }) {
               <circle cx="55" cy={definition.y} r="17" fill={definition.color} />
               <text x="55" y={definition.y + 5} textAnchor="middle" fill="#fff" fontSize="12" fontWeight="950">%</text>
               <text x="81" y={definition.y - 3} fill={definition.color} fontSize="11" fontWeight="950">{definition.title.toLocaleUpperCase('es-CO')}</text>
-              <text x="81" y={definition.y + 13} fill="#64748b" fontSize="8.5" fontWeight="750">{definition.formula}</text>
+              <text x="81" y={definition.y + 13} fill="#000000" fontSize="9" fontWeight="850">{definition.formula}</text>
               {annualRows.map((row, index) => {
                 const value = Number(row[definition.field] || 0);
                 const progress = Math.max(0, Math.min(100, value));
@@ -899,7 +1165,7 @@ function PopulationConversionChart({ data, scope, scopeBadgeLabel }) {
               <Typography sx={{ color: comment.color, fontSize: 10, fontWeight: 950 }}>{comment.title}</Typography>
               <Chip label={comment.value} size="small" sx={{ height: 22, bgcolor: '#fff', color: comment.color, fontSize: 10, fontWeight: 950 }} />
             </Stack>
-            <Typography sx={{ mt: 0.65, color: '#52657c', fontSize: 10.5, lineHeight: 1.35 }}>{comment.text}</Typography>
+            <Typography sx={{ mt: 0.65, color: '#000000', fontSize: 11, fontWeight: 700, lineHeight: 1.35 }}>{comment.text}</Typography>
           </Paper>
         ))}
       </Box>
@@ -953,11 +1219,11 @@ function PopulationStackedAreaChart({ data, scope, scopeBadgeLabel }) {
           {Array.from({ length: 6 }, (_, index) => {
             const gridValue = maxValue * (1 - index / 5);
             const gridY = margin.top + index * chartHeight / 5;
-            return <g key={`area-grid-${index}`}><line x1={margin.left} y1={gridY} x2={width - margin.right} y2={gridY} stroke="#dfe7f1" strokeDasharray="4 5" /><text x={margin.left - 12} y={gridY + 4} textAnchor="end" fill="#52657c" fontSize="9" fontWeight="800">{numberFormat.format(Math.round(gridValue))}</text></g>;
+            return <g key={`area-grid-${index}`}><line x1={margin.left} y1={gridY} x2={width - margin.right} y2={gridY} stroke="#dfe7f1" strokeDasharray="4 5" /><text x={margin.left - 12} y={gridY + 4} textAnchor="end" fill="#000000" fontSize="9.5" fontWeight="900">{numberFormat.format(Math.round(gridValue))}</text></g>;
           })}
           {legend.map((item, index) => {
             const lx = width / 2 - 190 + index * 190;
-            return <g key={`area-legend-${item.field}`}><rect x={lx} y="34" width="13" height="13" rx="3" fill={item.color} /><text x={lx + 20} y="45" fill="#334155" fontSize="10" fontWeight="900">{item.label}</text></g>;
+            return <g key={`area-legend-${item.field}`}><rect x={lx} y="34" width="13" height="13" rx="3" fill={item.color} /><text x={lx + 20} y="45" fill="#000000" fontSize="10.5" fontWeight="950">{item.label}</text></g>;
           })}
           {areaLayers.map((item) => {
             const topPoints = item.tops.map((value, index) => `${x(index)},${y(value)}`).join(' ');
@@ -973,7 +1239,7 @@ function PopulationStackedAreaChart({ data, scope, scopeBadgeLabel }) {
           <line x1={margin.left} y1={margin.top + chartHeight} x2={width - margin.right} y2={margin.top + chartHeight} stroke="#8ea2bc" strokeWidth="1.3" />
           {visibleData.map((row, index) => {
             const [year, semester] = String(row.periodo || '').split('-');
-            return <g key={`area-period-${row.periodo}`}><line x1={x(index)} y1={margin.top + chartHeight} x2={x(index)} y2={margin.top + chartHeight + 7} stroke="#8ea2bc" /><text x={x(index)} y={height - 42} textAnchor="middle" fill="#315275" fontSize="8.5" fontWeight="900">{semester === '1' ? 'I' : semester === '2' ? 'II' : semester}</text><text x={x(index)} y={height - 23} textAnchor="middle" fill="#0f2f5e" fontSize="9" fontWeight="950">{year}</text></g>;
+            return <g key={`area-period-${row.periodo}`}><line x1={x(index)} y1={margin.top + chartHeight} x2={x(index)} y2={margin.top + chartHeight + 7} stroke="#8ea2bc" /><text x={x(index)} y={height - 42} textAnchor="middle" fill="#000000" fontSize="9" fontWeight="900">{semester === '1' ? 'I' : semester === '2' ? 'II' : semester}</text><text x={x(index)} y={height - 23} textAnchor="middle" fill="#000000" fontSize="9.5" fontWeight="950">{year}</text></g>;
           })}
         </Box>
       </Box>
@@ -999,15 +1265,15 @@ function PopulationFunnelChart({ data, scope, scopeBadgeLabel }) {
   const stageGap = 5;
 
   return (
-    <Paper elevation={0} sx={{ border: '1px solid #cbd9ea', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#fff' }}>
+    <Paper elevation={0} sx={{ border: '1.8px solid #000000', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#fff' }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: { xs: 1.5, md: 2.2 }, py: 1.5 }}>
         <Box>
-          <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Trayectoria de acceso por período</Typography>
-          <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Comparación visual de inscritos, admitidos y estudiantes que ingresan a primer curso.</Typography>
+          <Typography sx={{ color: '#000000', fontWeight: 950, fontSize: 16 }}>Trayectoria de acceso por período</Typography>
+          <Typography sx={{ color: '#000000', fontSize: 12, fontWeight: 700 }}>Comparación visual de inscritos, admitidos y estudiantes que ingresan a primer curso.</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 950, px: 1, fontSize: 11.5 }} />
       </Stack>
-      <Box sx={{ px: 2.2, py: 0.72, bgcolor: '#082b66', color: '#fff', textAlign: 'center', fontSize: 11.5, fontWeight: 950, letterSpacing: 0.7 }}>EMBUDO COMPARATIVO</Box>
+      <Box sx={{ px: 2.2, py: 0.72, bgcolor: '#000000', color: '#fff', textAlign: 'center', fontSize: 12, fontWeight: 950, letterSpacing: 0.7 }}>EMBUDO COMPARATIVO</Box>
 
       {!chartData.length ? (
         <Alert severity="info" sx={{ m: 2 }}>No existen datos para el período y programa seleccionados.</Alert>
@@ -1026,7 +1292,7 @@ function PopulationFunnelChart({ data, scope, scopeBadgeLabel }) {
                   <rect x="0" y="-18" width="105" height="36" rx="10" fill="#fff" stroke={serie.color} strokeOpacity=".3" />
                   <circle cx="14" cy="0" r="7" fill={serie.color} />
                   <text x="27" y="-2" fill={serie.color} fontSize="9.2" fontWeight="950">{serie.label.toLocaleUpperCase('es-CO')}</text>
-                  <text x="27" y="10" fill="#64748b" fontSize="7.5">Etapa {index + 1}</text>
+                  <text x="27" y="10" fill="#000000" fontSize="8" fontWeight="800">Etapa {index + 1}</text>
                 </g>
               );
             })}
@@ -1036,9 +1302,9 @@ function PopulationFunnelChart({ data, scope, scopeBadgeLabel }) {
               return (
                 <g key={`funnel-period-${row.periodo}`}>
                   {rowIndex > 0 && <line x1={legendWidth + rowIndex * slotWidth} y1="18" x2={legendWidth + rowIndex * slotWidth} y2={canvasHeight - 18} stroke="#e5edf6" strokeDasharray="3 5" />}
-                  <text x={centerX} y="30" textAnchor="middle" fill="#102a4c" fontSize="9.5" fontWeight="950">{year}</text>
-                  <rect x={centerX - 11} y="37" width="22" height="15" rx="7.5" fill="#e7edf5" />
-                  <text x={centerX} y="48" textAnchor="middle" fill="#52657c" fontSize="7.5" fontWeight="900">{semester === '1' ? 'I' : semester === '2' ? 'II' : semester}</text>
+                  <text x={centerX} y="30" textAnchor="middle" fill="#000000" fontSize="10" fontWeight="950">{year}</text>
+                  <rect x={centerX - 12} y="36" width="24" height="16" rx="6" fill="#000000" />
+                  <text x={centerX} y="48" textAnchor="middle" fill="#ffffff" fontSize="8.5" fontWeight="950">{semester === '1' ? 'I' : semester === '2' ? 'II' : semester}</text>
                   {series.map((serie, stageIndex) => {
                     const value = Number(row[serie.field] || 0);
                     const maxSegmentWidth = Math.max(30, Math.min(58, slotWidth * 0.76));
@@ -1236,6 +1502,7 @@ function PopulationSingleMetricAlternative({ data, groupIndex, scope, type }) {
 }
 
 export function PopulationChartSwitcher({ data, groupIndex, selection, onSelectionChange, showScopeSelector = true, scopeBadgeLabel }) {
+  const chartContainerRef = useRef(null);
   const chartType = selection?.chartType || 'stacked';
   const scope = selection?.scope || 'nacional';
   const setChartType = (nextChartType) => onSelectionChange?.({ chartType: nextChartType, scope });
@@ -1269,7 +1536,7 @@ export function PopulationChartSwitcher({ data, groupIndex, selection, onSelecti
     ];
   return (
     <Stack spacing={1.5}>
-      <Paper elevation={0} sx={{ p: 0.9, border: '1px solid #cbd9ea', borderRadius: 3, bgcolor: '#fff', boxShadow: '0 5px 18px rgba(15,43,86,.05)' }}>
+      <Paper elevation={0} sx={{ p: 0.9, border: '1.5px solid #000000', borderRadius: 3, bgcolor: '#fff', boxShadow: '0 5px 18px rgba(15,43,86,.05)' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ xs: 'stretch', md: 'center' }} spacing={1}>
           <Stack direction="row" sx={{ flex: 1, minWidth: 0, p: 0.4, gap: 0.45, overflowX: 'auto', flexWrap: 'nowrap', bgcolor: '#eef3f9', borderRadius: 2.2, scrollbarWidth: 'thin', '&::-webkit-scrollbar': { height: 4 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#bfd0e5', borderRadius: 4 } }}>
             {chartOptions.map(([value, label]) => (
@@ -1279,7 +1546,7 @@ export function PopulationChartSwitcher({ data, groupIndex, selection, onSelecti
                 onClick={() => setChartType(value)}
                 variant={chartType === value ? 'contained' : 'text'}
                 disableElevation
-                sx={{ flex: '0 0 auto', minWidth: 'auto', px: 1.45, py: 0.72, borderRadius: 1.7, whiteSpace: 'nowrap', textTransform: 'none', fontSize: 10.5, fontWeight: 900, color: chartType === value ? '#fff' : '#315275', '&:hover': { bgcolor: chartType === value ? '#245ed3' : '#dde8f5' } }}
+                sx={{ flex: '0 0 auto', minWidth: 'auto', px: 1.45, py: 0.72, borderRadius: 1.7, whiteSpace: 'nowrap', textTransform: 'none', fontSize: 11, fontWeight: 950, color: chartType === value ? '#fff' : '#000000', '&:hover': { bgcolor: chartType === value ? '#245ed3' : '#dde8f5' } }}
               >
                 {label}
               </Button>
@@ -1287,23 +1554,31 @@ export function PopulationChartSwitcher({ data, groupIndex, selection, onSelecti
           </Stack>
           {showScopeSelector && <Stack direction="row" spacing={0.35} sx={{ flex: '0 0 auto', p: 0.4, bgcolor: '#eef3f9', borderRadius: 2.2 }}>
             {['nacional', 'regional'].map((option) => (
-              <Button key={option} size="small" onClick={() => setScope(option)} variant={scope === option ? 'contained' : 'text'} disableElevation sx={{ flex: 1, minWidth: { xs: 105, md: 92 }, px: 1.5, py: 0.72, borderRadius: 1.7, textTransform: 'capitalize', fontSize: 10.5, fontWeight: 900 }}>{option}</Button>
+              <Button key={option} size="small" onClick={() => setScope(option)} variant={scope === option ? 'contained' : 'text'} disableElevation sx={{ flex: 1, minWidth: { xs: 105, md: 92 }, px: 1.5, py: 0.72, borderRadius: 1.7, textTransform: 'capitalize', fontSize: 11, fontWeight: 950, color: scope === option ? '#fff' : '#000000' }}>{option}</Button>
             ))}
           </Stack>}
+          <Box sx={{ flex: '0 0 auto', pl: { md: 0.5 } }}>
+            <CopyChartButton targetRef={chartContainerRef} title={`grafico_${chartType}_${scope}`} />
+          </Box>
         </Stack>
       </Paper>
-      {chartType === 'stacked' && <PopulationStackedChart data={data} groupIndex={groupIndex} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
-      {chartType === 'trend' && <PopulationTrendChart data={data} groupIndex={groupIndex} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
-      {chartType === 'funnel' && groupIndex === 0 && <PopulationFunnelChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
-      {chartType === 'indicators' && groupIndex === 0 && <PopulationIndicatorTrendBoard data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
-      {chartType === 'shaded' && groupIndex === 0 && <PopulationShadedTrendChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
-      {chartType === 'bubbles' && groupIndex === 0 && <PopulationBubbleMatrixChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
-      {chartType === 'periodCards' && groupIndex === 0 && <PopulationPeriodCards data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
-      {chartType === 'journey' && groupIndex === 0 && <PopulationStudentJourneyChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
-      {chartType === 'timeline' && groupIndex === 0 && <PopulationAnnualTimelineChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
-      {chartType === 'conversion' && groupIndex === 0 && <PopulationConversionChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
-      {chartType === 'stackedArea' && groupIndex === 0 && <PopulationStackedAreaChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
-      {groupIndex !== 0 && ['funnel', 'indicators', 'shaded', 'bubbles', 'periodCards', 'journey', 'timeline', 'conversion', 'stackedArea'].includes(chartType) && <PopulationSingleMetricAlternative data={data} groupIndex={groupIndex} scope={scope} type={chartType} />}
+      <Box ref={chartContainerRef} sx={{ position: 'relative' }}>
+        <Box sx={{ position: 'absolute', top: 14, right: 14, zIndex: 10 }}>
+          <CopyChartButton targetRef={chartContainerRef} title={`grafico_${chartType}_${scope}`} />
+        </Box>
+        {chartType === 'stacked' && <PopulationStackedChart data={data} groupIndex={groupIndex} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+        {chartType === 'trend' && <PopulationTrendChart data={data} groupIndex={groupIndex} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+        {chartType === 'funnel' && groupIndex === 0 && <PopulationFunnelChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+        {chartType === 'indicators' && groupIndex === 0 && <PopulationIndicatorTrendBoard data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+        {chartType === 'shaded' && groupIndex === 0 && <PopulationShadedTrendChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+        {chartType === 'bubbles' && groupIndex === 0 && <PopulationBubbleMatrixChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+        {chartType === 'periodCards' && groupIndex === 0 && <PopulationPeriodCards data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+        {chartType === 'journey' && groupIndex === 0 && <PopulationStudentJourneyChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+        {chartType === 'timeline' && groupIndex === 0 && <PopulationAnnualTimelineChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+        {chartType === 'conversion' && groupIndex === 0 && <PopulationConversionChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+        {chartType === 'stackedArea' && groupIndex === 0 && <PopulationStackedAreaChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+        {groupIndex !== 0 && ['funnel', 'indicators', 'shaded', 'bubbles', 'periodCards', 'journey', 'timeline', 'conversion', 'stackedArea'].includes(chartType) && <PopulationSingleMetricAlternative data={data} groupIndex={groupIndex} scope={scope} type={chartType} />}
+      </Box>
     </Stack>
   );
 }
@@ -2135,6 +2410,7 @@ function ExecutiveBubblesSubMap({ rows, features, bbox }) {
 }
 
 function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationalBbox, color, onSelectMunicipality }) {
+  const mapContainerRef = useRef(null);
   const [mapStyle, setMapStyle] = useState('vibrant');
   const mapId = `${type}-${color.replace('#', '')}-${title.replace(/[^a-zA-Z0-9]/g, '')}`;
   const showDepartmentWatermarks = title.includes('REGIONAL');
@@ -2256,16 +2532,16 @@ function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationa
   };
 
   return (
-    <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#fff' }}>
-      <Box sx={{ px: 2, py: 1.4, borderBottom: '1px solid #dbe4f0', bgcolor: '#f8fafc' }}>
+    <Paper ref={mapContainerRef} elevation={0} sx={{ border: '1.8px solid #000000', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#fff' }}>
+      <Box sx={{ px: 2, py: 1.4, borderBottom: '1.5px solid #000000', bgcolor: '#f8fafc' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={1.5}>
           <Stack direction="row" spacing={1.2} alignItems="center">
             <Box sx={{ width: 38, height: 38, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: `${color}14`, color }}>
               {type === 'municipality' ? <PlaceRoundedIcon /> : <MapRoundedIcon />}
             </Box>
             <Box>
-              <Typography sx={{ color: '#102a4c', fontWeight: 950, fontSize: 14 }}>{title}</Typography>
-              <Typography sx={{ color: '#64748b', fontSize: 11 }}>{subtitle}</Typography>
+              <Typography sx={{ color: '#000000', fontWeight: 950, fontSize: 14.5 }}>{title}</Typography>
+              <Typography sx={{ color: '#000000', fontSize: 11.5, fontWeight: 700 }}>{subtitle}</Typography>
             </Box>
           </Stack>
 
@@ -2306,7 +2582,8 @@ function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationa
               </Tabs>
             )}
 
-            <Chip size="small" label={`${numberFormat.format(rows.reduce((acc, row) => acc + row.total, 0))} programas`} sx={{ bgcolor: `${color}14`, color, fontWeight: 900 }} />
+            <Chip size="small" label={`${numberFormat.format(rows.reduce((acc, row) => acc + row.total, 0))} programas`} sx={{ bgcolor: `${color}14`, color, fontWeight: 950, fontSize: 11 }} />
+            <CopyChartButton targetRef={mapContainerRef} title={title} />
           </Stack>
         </Stack>
       </Box>
@@ -2587,19 +2864,19 @@ const getRegionForDepartment = (deptName = '') => {
 
 function SummaryGroup({ title, icon: Icon, color, items }) {
   return (
-    <Paper elevation={0} sx={{ position: 'relative', border: '1px solid #d8e1ee', borderRadius: 2.5, overflow: 'hidden', height: '100%', bgcolor: '#fff', boxShadow: '0 5px 16px rgba(15, 23, 42, .045)' }}>
-      <Box sx={{ height: 4, bgcolor: color }} />
-      <Stack direction="row" spacing={1.1} alignItems="center" sx={{ px: 1.5, py: 1.3, borderBottom: '1px solid #edf1f7' }}>
-        <Box sx={{ width: 34, height: 34, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: `${color}12`, color }}>
+    <Paper elevation={0} sx={{ position: 'relative', border: '1.8px solid #000000', borderRadius: 2.5, overflow: 'hidden', height: '100%', bgcolor: '#fff', boxShadow: '0 5px 16px rgba(15, 23, 42, .06)' }}>
+      <Box sx={{ height: 5, bgcolor: color }} />
+      <Stack direction="row" spacing={1.1} alignItems="center" sx={{ px: 1.5, py: 1.3, borderBottom: '1.5px solid #00000020' }}>
+        <Box sx={{ width: 34, height: 34, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: `${color}18`, color }}>
           <Icon sx={{ fontSize: 20 }} />
         </Box>
-        <Typography sx={{ color: '#183153', fontWeight: 900, fontSize: 12.5, lineHeight: 1.2 }}>{title}</Typography>
+        <Typography sx={{ color: '#000000', fontWeight: 950, fontSize: 13, lineHeight: 1.2 }}>{title}</Typography>
       </Stack>
       <Stack spacing={0} sx={{ px: 1.5, py: 0.7 }}>
         {items.map((item, index) => (
           <Stack key={item.label} direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ minHeight: 39, py: 0.65, borderBottom: index < items.length - 1 ? '1px solid #edf1f7' : 'none' }}>
-            <Typography sx={{ color: '#52657c', fontSize: 11.5, lineHeight: 1.25 }}>{item.label}</Typography>
-            <Box sx={{ flexShrink: 0, minWidth: 48, px: 1, py: 0.38, textAlign: 'center', bgcolor: `${color}0d`, borderRadius: 1.2, color, fontWeight: 950, fontSize: 12.5 }}>
+            <Typography sx={{ color: '#000000', fontWeight: 900, fontSize: 12, lineHeight: 1.25 }}>{item.label}</Typography>
+            <Box sx={{ flexShrink: 0, minWidth: 48, px: 1, py: 0.38, textAlign: 'center', bgcolor: '#ffffff', border: '1.8px solid #000000', borderRadius: 1.2, color: '#000000', fontWeight: 950, fontSize: 13 }}>
               {item.value}
             </Box>
           </Stack>
@@ -2611,17 +2888,17 @@ function SummaryGroup({ title, icon: Icon, color, items }) {
 
 function RadialGroup({ title, icon: Icon, color, items, position }) {
   return (
-    <Paper elevation={0} sx={{ ...position, zIndex: 2, border: `1.5px solid ${color}80`, borderRadius: 2.2, bgcolor: '#fff', boxShadow: '0 8px 24px rgba(15,23,42,.07)' }}>
-      <Box sx={{ position: 'absolute', top: -27, left: '50%', transform: 'translateX(-50%)', width: 48, height: 48, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: '#fff', color, border: `1.5px solid ${color}`, boxShadow: '0 4px 12px rgba(15,23,42,.08)' }}>
+    <Paper elevation={0} sx={{ ...position, zIndex: 2, border: `2px solid ${color}`, borderRadius: 2.2, bgcolor: '#fff', boxShadow: '0 8px 24px rgba(15,23,42,.09)' }}>
+      <Box sx={{ position: 'absolute', top: -27, left: '50%', transform: 'translateX(-50%)', width: 48, height: 48, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: '#fff', color, border: `2px solid ${color}`, boxShadow: '0 4px 12px rgba(15,23,42,.1)' }}>
         <Icon sx={{ fontSize: 25 }} />
       </Box>
-      <Box sx={{ mt: 2.5, px: 1.2, py: 0.8, bgcolor: color, color: '#fff', textAlign: 'center', fontWeight: 900, fontSize: 12.5 }}>{title}</Box>
+      <Box sx={{ mt: 2.5, px: 1.2, py: 0.8, bgcolor: color, color: '#fff', textAlign: 'center', fontWeight: 950, fontSize: 13 }}>{title}</Box>
       <Stack spacing={0.65} sx={{ p: 1, maxHeight: 190, overflowY: 'auto' }}>
         {items.map((item) => (
-          <Stack key={item.label} direction="row" alignItems="center" spacing={0.8} sx={{ minHeight: 34, px: 0.8, py: 0.45, border: `1px solid ${color}60`, borderRadius: 1.3 }}>
+          <Stack key={item.label} direction="row" alignItems="center" spacing={0.8} sx={{ minHeight: 34, px: 0.8, py: 0.45, border: '1px solid #000000', borderRadius: 1.3 }}>
             <Box sx={{ width: 6, height: 6, flexShrink: 0, borderRadius: '50%', bgcolor: color }} />
-            <Typography sx={{ flex: 1, color: '#334155', fontSize: 10.8, lineHeight: 1.15 }}>{item.label}</Typography>
-            <Box sx={{ minWidth: 46, px: 0.8, py: 0.25, border: `1px solid ${color}90`, color: '#102a4c', bgcolor: '#fff', textAlign: 'center', fontSize: 12, fontWeight: 950 }}>{item.value}</Box>
+            <Typography sx={{ flex: 1, color: '#000000', fontWeight: 900, fontSize: 11.5, lineHeight: 1.15 }}>{item.label}</Typography>
+            <Box sx={{ minWidth: 46, px: 0.8, py: 0.25, border: '1.8px solid #000000', color: '#000000', bgcolor: '#fff', textAlign: 'center', fontSize: 12.5, fontWeight: 950, borderRadius: 1 }}>{item.value}</Box>
           </Stack>
         ))}
       </Stack>
@@ -2631,17 +2908,17 @@ function RadialGroup({ title, icon: Icon, color, items, position }) {
 
 function OrbitGroup({ title, icon: Icon, color, items, position }) {
   return (
-    <Paper elevation={0} sx={{ ...position, zIndex: 2, minHeight: 102, pl: { xs: 1.2, md: 5.3 }, pr: 1.5, py: 1.15, border: `1.5px solid ${color}75`, borderRadius: 2.6, bgcolor: '#fff', boxShadow: '0 7px 20px rgba(15,23,42,.06)' }}>
-      <Box sx={{ position: { xs: 'relative', md: 'absolute' }, left: { md: -34 }, top: { md: '50%' }, transform: { md: 'translateY(-50%)' }, width: 62, height: 62, mb: { xs: 0.7, md: 0 }, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: color, color: '#fff', border: '6px solid #fff', outline: `1.5px solid ${color}`, boxShadow: '0 5px 14px rgba(15,23,42,.12)' }}>
+    <Paper elevation={0} sx={{ ...position, zIndex: 2, minHeight: 102, pl: { xs: 1.2, md: 5.3 }, pr: 1.5, py: 1.15, border: `2px solid ${color}`, borderRadius: 2.6, bgcolor: '#fff', boxShadow: '0 7px 20px rgba(15,23,42,.08)' }}>
+      <Box sx={{ position: { xs: 'relative', md: 'absolute' }, left: { md: -34 }, top: { md: '50%' }, transform: { md: 'translateY(-50%)' }, width: 62, height: 62, mb: { xs: 0.7, md: 0 }, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: color, color: '#fff', border: '6px solid #fff', outline: `2px solid ${color}`, boxShadow: '0 5px 14px rgba(15,23,42,.15)' }}>
         <Icon sx={{ fontSize: 29 }} />
       </Box>
-      <Typography sx={{ mb: 0.45, color, fontSize: 12.5, fontWeight: 950 }}>{title}</Typography>
+      <Typography sx={{ mb: 0.45, color, fontSize: 13, fontWeight: 950 }}>{title}</Typography>
       <Box sx={{ overflow: 'visible', pr: 0.3 }}>
         {items.map((item) => (
-          <Stack key={item.label} direction="row" alignItems="center" spacing={0.8} sx={{ minHeight: 27, py: 0.15, borderBottom: '1px solid #edf1f7', '&:last-of-type': { borderBottom: 'none' } }}>
+          <Stack key={item.label} direction="row" alignItems="center" spacing={0.8} sx={{ minHeight: 28, py: 0.2, borderBottom: '1px solid #edf1f7', '&:last-of-type': { borderBottom: 'none' } }}>
             <Box sx={{ width: 5, height: 5, flexShrink: 0, borderRadius: '50%', bgcolor: color }} />
-            <Typography sx={{ flex: 1, color: '#334155', fontSize: 10.5, lineHeight: 1.15 }}>{item.label}</Typography>
-            <Box sx={{ minWidth: 64, px: 0.8, py: 0.15, color: '#102a4c', border: '1px solid #b8c5d6', bgcolor: '#fdfefe', textAlign: 'center', fontSize: 11.5, fontWeight: 950 }}>{item.value}</Box>
+            <Typography sx={{ flex: 1, color: '#000000', fontWeight: 900, fontSize: 11.5, lineHeight: 1.15 }}>{item.label}</Typography>
+            <Box sx={{ minWidth: 64, px: 0.8, py: 0.2, color: '#000000', border: '1.8px solid #000000', bgcolor: '#ffffff', textAlign: 'center', fontSize: 12.5, fontWeight: 950, borderRadius: 1.2 }}>{item.value}</Box>
           </Stack>
         ))}
       </Box>
@@ -2651,17 +2928,17 @@ function OrbitGroup({ title, icon: Icon, color, items, position }) {
 
 function PanelGroup({ title, icon: Icon, color, items }) {
   return (
-    <Paper elevation={0} sx={{ p: { xs: 1.5, lg: 2.2 }, minHeight: { lg: 178 }, height: '100%', border: `1.5px solid ${color}55`, borderRadius: 2.6, bgcolor: '#fff', boxShadow: '0 6px 18px rgba(15,23,42,.05)' }}>
+    <Paper elevation={0} sx={{ p: { xs: 1.5, lg: 2.2 }, minHeight: { lg: 178 }, height: '100%', border: `2px solid ${color}`, borderRadius: 2.6, bgcolor: '#fff', boxShadow: '0 6px 18px rgba(15,23,42,.07)' }}>
       <Stack direction="row" spacing={1.2} alignItems="center" sx={{ mb: 1.2 }}>
         <Box sx={{ width: { xs: 38, lg: 46 }, height: { xs: 38, lg: 46 }, flexShrink: 0, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: color, color: '#fff', boxShadow: `0 4px 10px ${color}35` }}><Icon sx={{ fontSize: { xs: 21, lg: 25 } }} /></Box>
-        <Typography sx={{ color, fontWeight: 950, fontSize: { xs: 13, lg: 15 }, lineHeight: 1.15 }}>{title}</Typography>
+        <Typography sx={{ color, fontWeight: 950, fontSize: { xs: 13.5, lg: 15.5 }, lineHeight: 1.15 }}>{title}</Typography>
       </Stack>
       <Stack spacing={0.65}>
         {items.map((item) => (
-          <Stack key={item.label} direction="row" alignItems="center" spacing={0.9} sx={{ minHeight: { xs: 31, lg: 36 } }}>
+          <Stack key={item.label} direction="row" alignItems="center" spacing={0.9} sx={{ minHeight: 31, lg: 36 }}>
             <Box sx={{ width: 6, height: 6, flexShrink: 0, borderRadius: '50%', bgcolor: color }} />
-            <Typography sx={{ flex: 1, color: '#334155', fontSize: { xs: 10.8, lg: 12 }, lineHeight: 1.2 }}>{item.label}</Typography>
-            <Box sx={{ minWidth: { xs: 62, lg: 76 }, px: 1, py: 0.42, border: '1px solid #b8c5d6', bgcolor: '#fbfdff', color: '#102a4c', textAlign: 'center', fontSize: { xs: 12, lg: 14 }, fontWeight: 950 }}>{item.value}</Box>
+            <Typography sx={{ flex: 1, color: '#000000', fontWeight: 900, fontSize: { xs: 11.5, lg: 12.5 }, lineHeight: 1.2 }}>{item.label}</Typography>
+            <Box sx={{ minWidth: { xs: 62, lg: 76 }, px: 1, py: 0.42, border: '1.8px solid #000000', bgcolor: '#ffffff', color: '#000000', textAlign: 'center', fontSize: { xs: 13, lg: 14.5 }, fontWeight: 950, borderRadius: 1.2 }}>{item.value}</Box>
           </Stack>
         ))}
       </Stack>
@@ -2677,14 +2954,14 @@ function SequenceGroup({ title, icon: Icon, color, items }) {
       </Box>
       <Box sx={{ position: 'absolute', zIndex: 2, top: { xs: 72, lg: 88 }, left: '50%', width: 2, height: { xs: 28, lg: 33 }, bgcolor: color, transform: 'translateX(-50%)' }} />
       <Box sx={{ position: 'absolute', zIndex: 4, top: { xs: 94, lg: 112 }, left: '50%', width: 17, height: 17, borderRadius: '50%', bgcolor: color, border: '3px solid #fff', boxShadow: `0 0 0 1px ${color}`, transform: 'translateX(-50%)' }} />
-      <Paper elevation={0} sx={{ minHeight: { xs: 220, lg: 305 }, p: { xs: 1.35, lg: 1.7 }, pt: { xs: 2.5, lg: 2.8 }, border: `1.5px solid ${color}70`, borderRadius: 2.3, bgcolor: '#fff', boxShadow: '0 7px 20px rgba(15,23,42,.055)' }}>
-        <Typography sx={{ minHeight: { lg: 42 }, mb: 1.1, color, textAlign: 'center', fontWeight: 950, fontSize: { xs: 12.5, lg: 14 }, lineHeight: 1.15 }}>{title}</Typography>
+      <Paper elevation={0} sx={{ minHeight: { xs: 220, lg: 305 }, p: { xs: 1.35, lg: 1.7 }, pt: { xs: 2.5, lg: 2.8 }, border: `2px solid ${color}`, borderRadius: 2.3, bgcolor: '#fff', boxShadow: '0 7px 20px rgba(15,23,42,.07)' }}>
+        <Typography sx={{ minHeight: { lg: 42 }, mb: 1.1, color, textAlign: 'center', fontWeight: 950, fontSize: { xs: 13, lg: 14.5 }, lineHeight: 1.15 }}>{title}</Typography>
         <Stack spacing={0.8}>
           {items.map((item) => (
             <Stack key={item.label} direction="row" alignItems="center" spacing={0.65} sx={{ minHeight: { xs: 34, lg: 39 } }}>
-              <Box sx={{ width: 5, height: 5, flexShrink: 0, borderRadius: '50%', bgcolor: color }} />
-              <Typography sx={{ flex: 1, minWidth: 0, color: '#334155', fontSize: { xs: 10.5, lg: 11.2 }, lineHeight: 1.2 }}>{item.label}</Typography>
-              <Box sx={{ minWidth: { xs: 48, lg: 58 }, px: 0.6, py: 0.35, border: '1px solid #bdc8d6', bgcolor: '#fcfdff', color: '#102a4c', textAlign: 'center', fontSize: { xs: 11, lg: 12.5 }, fontWeight: 950 }}>{item.value}</Box>
+              <Box sx={{ width: 6, height: 6, flexShrink: 0, borderRadius: '50%', bgcolor: color }} />
+              <Typography sx={{ flex: 1, minWidth: 0, color: '#000000', fontWeight: 900, fontSize: { xs: 11.2, lg: 12.2 }, lineHeight: 1.2 }}>{item.label}</Typography>
+              <Box sx={{ minWidth: { xs: 52, lg: 62 }, px: 0.8, py: 0.4, border: '1.8px solid #000000', bgcolor: '#ffffff', color: '#000000', textAlign: 'center', fontSize: { xs: 12.5, lg: 14 }, fontWeight: 950, borderRadius: 1.2 }}>{item.value}</Box>
             </Stack>
           ))}
         </Stack>
@@ -2694,6 +2971,7 @@ function SequenceGroup({ title, icon: Icon, color, items }) {
 }
 
 function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChange }) {
+  const offerGraphicRef = useRef(null);
   const groups = [
     { slot: 0, title: 'RECONOCIMIENTO MEN', icon: AccountBalanceRoundedIcon, color: '#173f96', items: summary.recognition },
     { slot: 1, title: 'SECTOR', icon: BusinessRoundedIcon, color: '#3a9626', items: summary.sectors },
@@ -2762,34 +3040,40 @@ function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChan
 
   return (
     <Stack spacing={1.2}>
-      <Paper elevation={0} sx={{ px: 1.2, py: 1, border: '1px solid #dbe4f0', borderRadius: 2.5, bgcolor: '#fff' }}>
+      <Paper elevation={0} sx={{ px: 1.2, py: 1, border: '1.5px solid #000000', borderRadius: 2.5, bgcolor: '#fff' }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} spacing={1}>
           <Box>
-            <Typography sx={{ color: '#183153', fontWeight: 900, fontSize: 13 }}>Presentación del resumen</Typography>
-            <Typography sx={{ color: '#64748b', fontSize: 10.8 }}>Cambia la composición sin alterar los datos filtrados.</Typography>
+            <Typography sx={{ color: '#000000', fontWeight: 950, fontSize: 13.5 }}>Presentación del resumen</Typography>
+            <Typography sx={{ color: '#000000', fontSize: 11, fontWeight: 700 }}>Cambia la composición sin alterar los datos filtrados.</Typography>
           </Box>
-          <Stack direction="row" spacing={0.8} useFlexGap flexWrap="wrap">
-            <Button size="small" variant={view === 'sequence' ? 'contained' : 'outlined'} onClick={() => onViewChange('sequence')} sx={{ minWidth: 120, fontWeight: 900, textTransform: 'none' }}>Vista secuencia</Button>
-            <Button size="small" variant={view === 'panel' ? 'contained' : 'outlined'} onClick={() => onViewChange('panel')} sx={{ minWidth: 120, fontWeight: 900, textTransform: 'none' }}>Vista panel</Button>
-            <Button size="small" variant={view === 'orbit' ? 'contained' : 'outlined'} onClick={() => onViewChange('orbit')} sx={{ minWidth: 120, fontWeight: 900, textTransform: 'none' }}>Vista órbita</Button>
-            <Button size="small" variant={view === 'radial' ? 'contained' : 'outlined'} onClick={() => onViewChange('radial')} sx={{ minWidth: 120, fontWeight: 900, textTransform: 'none' }}>Vista radial</Button>
-            <Button size="small" variant={view === 'executive' ? 'contained' : 'outlined'} onClick={() => onViewChange('executive')} sx={{ minWidth: 120, fontWeight: 900, textTransform: 'none' }}>Vista ejecutiva</Button>
+          <Stack direction="row" spacing={0.8} useFlexGap flexWrap="wrap" alignItems="center">
+            <Button size="small" variant={view === 'sequence' ? 'contained' : 'outlined'} onClick={() => onViewChange('sequence')} sx={{ minWidth: 120, fontWeight: 950, textTransform: 'none' }}>Vista secuencia</Button>
+            <Button size="small" variant={view === 'panel' ? 'contained' : 'outlined'} onClick={() => onViewChange('panel')} sx={{ minWidth: 120, fontWeight: 950, textTransform: 'none' }}>Vista panel</Button>
+            <Button size="small" variant={view === 'orbit' ? 'contained' : 'outlined'} onClick={() => onViewChange('orbit')} sx={{ minWidth: 120, fontWeight: 950, textTransform: 'none' }}>Vista órbita</Button>
+            <Button size="small" variant={view === 'radial' ? 'contained' : 'outlined'} onClick={() => onViewChange('radial')} sx={{ minWidth: 120, fontWeight: 950, textTransform: 'none' }}>Vista radial</Button>
+            <Button size="small" variant={view === 'executive' ? 'contained' : 'outlined'} onClick={() => onViewChange('executive')} sx={{ minWidth: 120, fontWeight: 950, textTransform: 'none' }}>Vista ejecutiva</Button>
             {onScopeChange && (
               <Box sx={{ ml: { sm: 0.8 }, p: 0.35, display: 'flex', bgcolor: '#edf2f8', borderRadius: 2, border: '1px solid #d6e0ec' }}>
-                <Button size="small" variant={scope === 'nacional' ? 'contained' : 'text'} onClick={() => onScopeChange('nacional')} sx={{ minWidth: 92, borderRadius: 1.5, fontWeight: 950, textTransform: 'none' }}>Nacional</Button>
-                <Button size="small" variant={scope === 'regional' ? 'contained' : 'text'} color={scope === 'regional' ? 'error' : 'primary'} onClick={() => onScopeChange('regional')} sx={{ minWidth: 92, borderRadius: 1.5, fontWeight: 950, textTransform: 'none' }}>Regional</Button>
+                <Button size="small" variant={scope === 'nacional' ? 'contained' : 'text'} onClick={() => onScopeChange('nacional')} sx={{ minWidth: 92, borderRadius: 1.5, fontWeight: 950, textTransform: 'none', color: scope === 'nacional' ? '#fff' : '#000000' }}>Nacional</Button>
+                <Button size="small" variant={scope === 'regional' ? 'contained' : 'text'} color={scope === 'regional' ? 'error' : 'primary'} onClick={() => onScopeChange('regional')} sx={{ minWidth: 92, borderRadius: 1.5, fontWeight: 950, textTransform: 'none', color: scope === 'regional' ? '#fff' : '#000000' }}>Regional</Button>
               </Box>
             )}
+            <Box sx={{ ml: { sm: 1 } }}>
+              <CopyChartButton targetRef={offerGraphicRef} title={`oferta_${view}_${scope}`} />
+            </Box>
           </Stack>
         </Stack>
       </Paper>
 
       {view === 'sequence' ? (
-        <Paper elevation={0} sx={{ width: '100%', p: { xs: 1.5, md: 2.4, lg: 3 }, border: '1px solid #d5dde8', borderRadius: 3.5, bgcolor: '#fbfcfe', boxShadow: '0 12px 32px rgba(15,23,42,.07)', overflow: 'hidden' }}>
-          <Box sx={{ mb: 1.5, textAlign: 'center' }}>
-            <Typography sx={{ color: '#082b66', fontSize: { xs: 15, lg: 18 }, fontWeight: 950 }}>{analysisTitle}</Typography>
-            <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Indicadores de la oferta académica calculados según los filtros aplicados</Typography>
-            <Chip label={`${numberFormat.format(summary.total)} programas analizados`} sx={{ mt: 1, bgcolor: '#082b66', color: '#fff', fontWeight: 900 }} />
+        <Paper ref={offerGraphicRef} elevation={0} sx={{ position: 'relative', width: '100%', p: { xs: 1.2, md: 1.8, lg: 2.2 }, border: '1.8px solid #000000', borderRadius: 3.5, bgcolor: '#ffffff', boxShadow: '0 12px 32px rgba(15,23,42,.07)', overflow: 'hidden' }}>
+          <Box sx={{ position: 'absolute', top: 14, right: 14, zIndex: 10 }}>
+            <CopyChartButton targetRef={offerGraphicRef} title={`oferta_secuencia_${scope}`} />
+          </Box>
+          <Box sx={{ mb: 1.5, textAlign: 'center', pr: { md: 16 }, pl: { md: 16 } }}>
+            <Typography sx={{ color: '#000000', fontSize: { xs: 16, lg: 19 }, fontWeight: 950 }}>{analysisTitle}</Typography>
+            <Typography sx={{ color: '#000000', fontSize: 12, fontWeight: 700 }}>Indicadores de la oferta académica calculados según los filtros aplicados</Typography>
+            <Chip label={`${numberFormat.format(summary.total)} programas analizados`} sx={{ mt: 1, bgcolor: '#000000', color: '#fff', fontWeight: 950, fontSize: 12 }} />
           </Box>
           <Box sx={{ position: 'relative' }}>
             <Box sx={{ display: { xs: 'none', lg: 'block' }, position: 'absolute', zIndex: 0, top: 116, left: '8%', right: '8%', height: 2, bgcolor: '#aeb9c8' }} />
@@ -2799,14 +3083,17 @@ function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChan
           </Box>
         </Paper>
       ) : view === 'panel' ? (
-        <Paper elevation={0} sx={{ width: '100%', p: { xs: 1.5, md: 2.4, lg: 3 }, border: '1px solid #d5dde8', borderRadius: 3.5, bgcolor: '#f8fafc', boxShadow: '0 12px 32px rgba(15,23,42,.08)' }}>
+        <Paper ref={offerGraphicRef} elevation={0} sx={{ position: 'relative', width: '100%', p: { xs: 1.2, md: 1.8, lg: 2.2 }, border: '1.8px solid #000000', borderRadius: 3.5, bgcolor: '#ffffff', boxShadow: '0 12px 32px rgba(15,23,42,.08)' }}>
+          <Box sx={{ position: 'absolute', top: 14, right: 14, zIndex: 10 }}>
+            <CopyChartButton targetRef={offerGraphicRef} title={`oferta_panel_${scope}`} />
+          </Box>
           <Box sx={{ position: 'relative', minHeight: { xs: 88, lg: 108 }, mb: { xs: 1.7, lg: 2.2 }, display: 'flex', alignItems: 'center' }}>
-            <Box sx={{ position: 'absolute', left: { xs: 6, md: 12, lg: 18 }, zIndex: 2, width: { xs: 72, md: 88, lg: 104 }, height: { xs: 72, md: 88, lg: 104 }, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: '#082b66', color: '#fff', boxShadow: '0 8px 20px rgba(8,43,102,.24)' }}>
+            <Box sx={{ position: 'absolute', left: { xs: 6, md: 12, lg: 18 }, zIndex: 2, width: { xs: 72, md: 88, lg: 104 }, height: { xs: 72, md: 88, lg: 104 }, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: '#000000', color: '#fff', boxShadow: '0 8px 20px rgba(0,0,0,.24)' }}>
               <SchoolRoundedIcon sx={{ fontSize: { xs: 38, md: 48, lg: 57 } }} />
             </Box>
-            <Box sx={{ ml: { xs: 6, md: 8, lg: 10 }, width: 'calc(100% - 35px)', height: { xs: 58, lg: 72 }, pl: { xs: 6, md: 8, lg: 10 }, pr: { xs: 2, md: 7 }, display: 'flex', alignItems: 'center', gap: { xs: 1.4, lg: 2.2 }, bgcolor: '#082b66', color: '#fff', clipPath: 'polygon(0 0, 95% 0, 100% 50%, 95% 100%, 0 100%)', boxShadow: '0 7px 18px rgba(8,43,102,.18)' }}>
+            <Box sx={{ ml: { xs: 6, md: 8, lg: 10 }, width: 'calc(100% - 35px)', height: { xs: 58, lg: 72 }, pl: { xs: 6, md: 8, lg: 10 }, pr: { xs: 2, md: 7 }, display: 'flex', alignItems: 'center', gap: { xs: 1.4, lg: 2.2 }, bgcolor: '#000000', color: '#fff', clipPath: 'polygon(0 0, 95% 0, 100% 50%, 95% 100%, 0 100%)', boxShadow: '0 7px 18px rgba(0,0,0,.18)' }}>
               <Typography sx={{ fontSize: { xs: 11.5, md: 15, lg: 18 }, fontWeight: 950 }}>TOTAL PROGRAMAS</Typography>
-              <Box sx={{ minWidth: { xs: 66, md: 100, lg: 125 }, ml: { xs: 'auto', md: 2 }, mr: { md: 'auto' }, px: 1.4, py: { xs: 0.55, lg: 0.8 }, bgcolor: '#fff', color: '#082b66', border: '1px solid #afbdd0', textAlign: 'center', fontSize: { xs: 19, md: 25, lg: 30 }, lineHeight: 1, fontWeight: 950 }}>{numberFormat.format(summary.total)}</Box>
+              <Box sx={{ minWidth: { xs: 66, md: 100, lg: 125 }, ml: { xs: 'auto', md: 2 }, mr: { md: 'auto' }, px: 1.4, py: { xs: 0.55, lg: 0.8 }, bgcolor: '#fff', color: '#000000', border: '1.8px solid #000000', textAlign: 'center', fontSize: { xs: 19, md: 25, lg: 30 }, lineHeight: 1, fontWeight: 950 }}>{numberFormat.format(summary.total)}</Box>
             </Box>
           </Box>
 
@@ -2818,23 +3105,26 @@ function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChan
           </Box>
         </Paper>
       ) : view === 'orbit' ? (
-        <Paper elevation={0} sx={{ p: { xs: 1.3, md: 2 }, border: '1px solid #cbd5e1', borderRadius: 3.5, bgcolor: '#fff', overflow: 'hidden' }}>
-          <Box sx={{ textAlign: 'center', mb: { xs: 2.5, md: 1.5 } }}>
-            <Typography sx={{ color: '#082b66', fontSize: 16, fontWeight: 950 }}>OFERTA DE PROGRAMAS ACADÉMICOS</Typography>
-            <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>{analysisTitle}</Typography>
+        <Paper ref={offerGraphicRef} elevation={0} sx={{ position: 'relative', p: { xs: 1.2, md: 1.8 }, border: '1.8px solid #000000', borderRadius: 3.5, bgcolor: '#fff', overflow: 'hidden' }}>
+          <Box sx={{ position: 'absolute', top: 14, right: 14, zIndex: 10 }}>
+            <CopyChartButton targetRef={offerGraphicRef} title={`oferta_orbita_${scope}`} />
+          </Box>
+          <Box sx={{ textAlign: 'center', mb: { xs: 2.5, md: 1.5 }, pr: { md: 16 }, pl: { md: 16 } }}>
+            <Typography sx={{ color: '#000000', fontSize: 17, fontWeight: 950 }}>OFERTA DE PROGRAMAS ACADÉMICOS</Typography>
+            <Typography sx={{ color: '#000000', fontSize: 12, fontWeight: 700 }}>{analysisTitle}</Typography>
           </Box>
           <Box sx={{ position: 'relative', maxWidth: 980, minHeight: { md: calculatedOrbitGroups.totalHeight }, mx: 'auto' }}>
             <Box component="svg" viewBox={`0 0 950 ${calculatedOrbitGroups.totalHeight}`} preserveAspectRatio="none" sx={{ display: { xs: 'none', md: 'block' }, position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0 }}>
-              {calculatedOrbitGroups.connectors.map((connector) => <polyline key={`orbit-line-${connector.slot}`} points={connector.points} fill="none" stroke={connector.color} strokeWidth="2.2" />)}
+              {calculatedOrbitGroups.connectors.map((connector) => <polyline key={`orbit-line-${connector.slot}`} points={connector.points} fill="none" stroke={connector.color} strokeWidth="2.4" />)}
               {calculatedOrbitGroups.connectors.map((connector) => <circle key={`orbit-dot-${connector.slot}`} cx={connector.dot[0]} cy={connector.dot[1]} r="7" fill={connector.color} stroke="#fff" strokeWidth="3" />)}
             </Box>
 
-            <Box sx={{ position: { xs: 'relative', md: 'absolute' }, zIndex: 1, left: { md: 48 }, top: { md: calculatedOrbitGroups.centerOrbY - 125 }, width: { xs: 220, md: 250 }, height: { xs: 220, md: 250 }, mx: { xs: 'auto', md: 0 }, mb: { xs: 4.5, md: 0 }, borderRadius: '50%', p: 1.1, border: '2px dashed #aeb9c7', bgcolor: '#fff', boxShadow: '0 15px 34px rgba(15,23,42,.1)' }}>
-              <Box sx={{ width: '100%', height: '100%', borderRadius: '50%', display: 'grid', placeItems: 'center', textAlign: 'center', border: '1px solid #d7e0eb', background: 'radial-gradient(circle at 40% 35%,#ffffff 0%,#f8fafc 68%,#eef2f7 100%)' }}>
+            <Box sx={{ position: { xs: 'relative', md: 'absolute' }, zIndex: 1, left: { md: 48 }, top: { md: calculatedOrbitGroups.centerOrbY - 125 }, width: { xs: 220, md: 250 }, height: { xs: 220, md: 250 }, mx: { xs: 'auto', md: 0 }, mb: { xs: 4.5, md: 0 }, borderRadius: '50%', p: 1.1, border: '2px dashed #000000', bgcolor: '#fff', boxShadow: '0 15px 34px rgba(15,23,42,.1)' }}>
+              <Box sx={{ width: '100%', height: '100%', borderRadius: '50%', display: 'grid', placeItems: 'center', textAlign: 'center', border: '1.5px solid #000000', background: 'radial-gradient(circle at 40% 35%,#ffffff 0%,#f8fafc 68%,#eef2f7 100%)' }}>
                 <Box>
-                  <SchoolRoundedIcon sx={{ color: '#082b66', fontSize: 57 }} />
-                  <Typography sx={{ mt: 0.6, color: '#082b66', fontSize: 18, lineHeight: 1.08, fontWeight: 950 }}>OFERTA DE<br />PROGRAMAS<br />ACADÉMICOS</Typography>
-                  <Box sx={{ mt: 1, display: 'inline-flex', minWidth: 70, justifyContent: 'center', px: 1.4, py: 0.45, borderRadius: 1.5, bgcolor: '#082b66', color: '#fff', fontSize: 22, lineHeight: 1, fontWeight: 950 }}>{numberFormat.format(summary.total)}</Box>
+                  <SchoolRoundedIcon sx={{ color: '#000000', fontSize: 57 }} />
+                  <Typography sx={{ mt: 0.6, color: '#000000', fontSize: 18, lineHeight: 1.08, fontWeight: 950 }}>OFERTA DE<br />PROGRAMAS<br />ACADÉMICOS</Typography>
+                  <Box sx={{ mt: 1, display: 'inline-flex', minWidth: 70, justifyContent: 'center', px: 1.4, py: 0.45, borderRadius: 1.5, bgcolor: '#000000', color: '#fff', fontSize: 22, lineHeight: 1, fontWeight: 950 }}>{numberFormat.format(summary.total)}</Box>
                 </Box>
               </Box>
             </Box>
@@ -2847,23 +3137,26 @@ function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChan
           </Box>
         </Paper>
       ) : view === 'radial' ? (
-        <Paper elevation={0} sx={{ p: { xs: 1.3, md: 2 }, border: '1px solid #cbd5e1', borderRadius: 3.5, bgcolor: '#fff', overflow: 'hidden' }}>
-          <Box sx={{ textAlign: 'center', mb: { xs: 2, md: 0 } }}>
-            <Typography sx={{ color: '#082b66', fontSize: 16, fontWeight: 950 }}>{analysisTitle}</Typography>
-            <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Información consolidada de la tabla OFERTA según los filtros aplicados</Typography>
+        <Paper ref={offerGraphicRef} elevation={0} sx={{ position: 'relative', p: { xs: 1.2, md: 1.8 }, border: '1.8px solid #000000', borderRadius: 3.5, bgcolor: '#fff', overflow: 'hidden' }}>
+          <Box sx={{ position: 'absolute', top: 14, right: 14, zIndex: 10 }}>
+            <CopyChartButton targetRef={offerGraphicRef} title={`oferta_radial_${scope}`} />
+          </Box>
+          <Box sx={{ textAlign: 'center', mb: { xs: 2, md: 0 }, pr: { md: 16 }, pl: { md: 16 } }}>
+            <Typography sx={{ color: '#000000', fontSize: 17, fontWeight: 950 }}>{analysisTitle}</Typography>
+            <Typography sx={{ color: '#000000', fontSize: 12, fontWeight: 700 }}>Información consolidada de la tabla OFERTA según los filtros aplicados</Typography>
           </Box>
           <Box sx={{ position: 'relative', maxWidth: 1080, height: { xs: 'auto', md: 700 }, mx: 'auto', mt: { md: 1 } }}>
             <Box component="svg" viewBox="0 0 1000 700" preserveAspectRatio="none" sx={{ display: { xs: 'none', md: 'block' }, position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0 }}>
-              {radialConnectors.map((connector) => <polyline key={`line-${connector.slot}`} points={connector.points} fill="none" stroke={connector.color} strokeWidth="2" />)}
+              {radialConnectors.map((connector) => <polyline key={`line-${connector.slot}`} points={connector.points} fill="none" stroke={connector.color} strokeWidth="2.4" />)}
               {radialConnectors.map((connector) => <circle key={`dot-${connector.slot}`} cx={connector.dot[0]} cy={connector.dot[1]} r="7" fill={connector.color} stroke="#fff" strokeWidth="3" />)}
             </Box>
 
             <Box sx={{ position: { xs: 'relative', md: 'absolute' }, zIndex: 1, left: { md: '50%' }, top: { md: 190 }, transform: { md: 'translateX(-50%)' }, width: { xs: 210, md: 250 }, height: { xs: 210, md: 250 }, mx: { xs: 'auto', md: 0 }, mb: { xs: 4, md: 0 }, borderRadius: '50%', p: 1.2, background: 'conic-gradient(#173f96 0 16%,#edf2f7 16% 20%,#3a9626 20% 36%,#edf2f7 36% 40%,#ea6a0a 40% 56%,#edf2f7 56% 60%,#0891a5 60% 76%,#edf2f7 76% 80%,#92278f 80% 96%,#edf2f7 96% 100%)', boxShadow: '0 16px 36px rgba(15,23,42,.14)' }}>
-              <Box sx={{ width: '100%', height: '100%', borderRadius: '50%', bgcolor: '#fff', border: '1px solid #d7e0eb', display: 'grid', placeItems: 'center', textAlign: 'center' }}>
+              <Box sx={{ width: '100%', height: '100%', borderRadius: '50%', bgcolor: '#fff', border: '1.5px solid #000000', display: 'grid', placeItems: 'center', textAlign: 'center' }}>
                 <Box>
-                  <Typography sx={{ color: '#52657c', fontSize: 12, fontWeight: 800 }}>TOTAL</Typography>
-                  <Typography sx={{ color: '#082b66', fontSize: 23, lineHeight: 1.05, fontWeight: 950 }}>PROGRAMAS</Typography>
-                  <Typography sx={{ mt: 1.1, color: '#082b66', fontSize: 42, lineHeight: 1, fontWeight: 950 }}>{numberFormat.format(summary.total)}</Typography>
+                  <Typography sx={{ color: '#000000', fontSize: 13, fontWeight: 900 }}>TOTAL</Typography>
+                  <Typography sx={{ color: '#000000', fontSize: 24, lineHeight: 1.05, fontWeight: 950 }}>PROGRAMAS</Typography>
+                  <Typography sx={{ mt: 1.1, color: '#000000', fontSize: 44, lineHeight: 1, fontWeight: 950 }}>{numberFormat.format(summary.total)}</Typography>
                 </Box>
               </Box>
             </Box>
@@ -2883,11 +3176,14 @@ function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChan
           </Box>
         </Paper>
       ) : (
-        <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#f6f8fc' }}>
-          <Box sx={{ px: { xs: 2, md: 2.6 }, py: 1.6, bgcolor: '#082b66', color: '#fff' }}>
+        <Paper ref={offerGraphicRef} elevation={0} sx={{ position: 'relative', border: '1.8px solid #000000', borderRadius: 3.5, overflow: 'hidden', bgcolor: '#f6f8fc' }}>
+          <Box sx={{ position: 'absolute', top: 14, right: 14, zIndex: 10 }}>
+            <CopyChartButton targetRef={offerGraphicRef} title={`oferta_ejecutiva_${scope}`} />
+          </Box>
+          <Box sx={{ px: { xs: 2, md: 2.6 }, py: 1.6, bgcolor: '#000000', color: '#fff', pr: { md: 18 } }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={1.5}>
-              <Stack direction="row" spacing={1.3} alignItems="center"><Box sx={{ width: 42, height: 42, borderRadius: 2.2, display: 'grid', placeItems: 'center', bgcolor: 'rgba(255,255,255,.12)' }}><SchoolRoundedIcon /></Box><Box><Typography sx={{ fontWeight: 950, fontSize: 15 }}>{analysisTitle}</Typography><Typography sx={{ color: '#c9d8ef', fontSize: 11.5 }}>Resumen ejecutivo según los filtros aplicados</Typography></Box></Stack>
-              <Stack direction="row" spacing={1.2} alignItems="center"><Typography sx={{ color: '#c9d8ef', fontSize: 11.5, fontWeight: 800 }}>TOTAL DE PROGRAMAS</Typography><Box sx={{ minWidth: 82, px: 2, py: 0.7, borderRadius: 2, bgcolor: '#fff', color: '#082b66', textAlign: 'center', fontSize: 25, lineHeight: 1, fontWeight: 950 }}>{numberFormat.format(summary.total)}</Box></Stack>
+              <Stack direction="row" spacing={1.3} alignItems="center"><Box sx={{ width: 42, height: 42, borderRadius: 2.2, display: 'grid', placeItems: 'center', bgcolor: 'rgba(255,255,255,.16)' }}><SchoolRoundedIcon /></Box><Box><Typography sx={{ fontWeight: 950, fontSize: 16 }}>{analysisTitle}</Typography><Typography sx={{ color: '#ffffff', fontSize: 12, fontWeight: 700 }}>Resumen ejecutivo según los filtros aplicados</Typography></Box></Stack>
+              <Stack direction="row" spacing={1.2} alignItems="center"><Typography sx={{ color: '#ffffff', fontSize: 12, fontWeight: 800 }}>TOTAL DE PROGRAMAS</Typography><Box sx={{ minWidth: 82, px: 2, py: 0.7, borderRadius: 2, bgcolor: '#fff', color: '#000000', border: '1.8px solid #000000', textAlign: 'center', fontSize: 26, lineHeight: 1, fontWeight: 950 }}>{numberFormat.format(summary.total)}</Box></Stack>
             </Stack>
           </Box>
           <Box sx={{ p: { xs: 1.5, md: 2 }, display: 'grid', gap: 1.4, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', xl: 'repeat(5, minmax(0, 1fr))' }, alignItems: 'stretch' }}>{groups.map((group) => <SummaryGroup key={group.title} {...group} />)}</Box>
