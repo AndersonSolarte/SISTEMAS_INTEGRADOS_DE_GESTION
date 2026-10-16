@@ -20,7 +20,7 @@ export default function OficinaJuridicaLandingPage({ user, onBack }) {
       ...normalizePermissions(user.allowedModules), ...normalizePermissions(user.modulePermissions),
       ...normalizePermissions(user.permissions?.modules), ...normalizePermissions(user.modules)
     ];
-    return permissions.includes('oficina_juridica');
+    return permissions.includes('oficina_juridica') || permissions.some((p) => p.startsWith('oficina_juridica.'));
   }, [user]);
 
   if (!hasAccess) return <Fade in><Stack spacing={2.5}>

@@ -82,7 +82,11 @@ const LEGACY_GI_STATS_KEYS = new Set([
   'proyectos_convenios',
   'recurso_humano',
   'saber_pro',
-  'gestion_procesos'
+  'gestion_procesos',
+  'oficina_juridica',
+  'oficina_juridica.jefatura',
+  'oficina_juridica.secretaria',
+  'oficina_juridica.asesor'
 ]);
 
 const POBLACIONAL_DASHBOARD_KEYS = new Set([
@@ -354,6 +358,9 @@ const getUserModulePermissions = async (userId, role) => {
   }
   if (allowedModules.some((key) => key.startsWith('gestion_riesgo_ambiente.')) && !allowedModules.includes('gestion_riesgo_ambiente')) {
     allowedModules.push('gestion_riesgo_ambiente');
+  }
+  if (allowedModules.some((key) => key.startsWith('oficina_juridica.')) && !allowedModules.includes('oficina_juridica')) {
+    allowedModules.push('oficina_juridica');
   }
   const hasStatisticalModule = allowedModules.some((key) => (
     key !== 'estadistica_institucional'
