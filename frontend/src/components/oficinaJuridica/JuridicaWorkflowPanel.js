@@ -2320,64 +2320,82 @@ export default function JuridicaWorkflowPanel() {
 
             <Autocomplete
               freeSolo
-              options={internalUsers}
+              autoHighlight
+              openOnFocus
+              options={Array.isArray(internalUsers) ? internalUsers : []}
               getOptionLabel={(option) => {
                 if (typeof option === 'string') return option;
-                return option.nombre || '';
+                return option?.nombre || '';
+              }}
+              isOptionEqualToValue={(option, val) => {
+                if (!val) return false;
+                if (typeof val === 'string') {
+                  return (option.nombre || '').toLowerCase() === val.toLowerCase() || option.username === val;
+                }
+                return option.id === val.id;
               }}
               filterOptions={(options, state) => {
                 const term = (state.inputValue || '').toLowerCase().trim();
-                if (!term) return options.slice(0, 40);
+                if (!term) return options.slice(0, 30);
                 return options.filter((u) => {
+                  if (typeof u === 'string') return u.toLowerCase().includes(term);
                   const nombre = String(u.nombre || '').toLowerCase();
                   const cedula = String(u.username || '').toLowerCase();
                   const dep = String(u.dependencia || '').toLowerCase();
-                  return nombre.includes(term) || cedula.includes(term) || dep.includes(term);
-                }).slice(0, 40);
+                  const cargo = String(u.cargo || '').toLowerCase();
+                  return nombre.includes(term) || cedula.includes(term) || dep.includes(term) || cargo.includes(term);
+                }).slice(0, 30);
               }}
-              value={form.interesado}
-              onInputChange={(event, newInputValue) => {
+              inputValue={form.interesado || ''}
+              onInputChange={(event, newInputValue, reason) => {
+                if (reason === 'reset') return;
                 setForm((prev) => ({ ...prev, interesado: newInputValue }));
               }}
               onChange={(event, newValue) => {
-                if (typeof newValue === 'object' && newValue !== null) {
+                if (newValue && typeof newValue === 'object') {
                   setForm((prev) => ({
                     ...prev,
-                    interesado: newValue.nombre,
+                    interesado: newValue.nombre || '',
                     dependencia_solicitante: newValue.dependencia || prev.dependencia_solicitante
                   }));
                 } else if (typeof newValue === 'string') {
                   setForm((prev) => ({ ...prev, interesado: newValue }));
-                } else {
+                } else if (!newValue) {
                   setForm((prev) => ({ ...prev, interesado: '' }));
                 }
               }}
-              renderOption={(props, option) => (
-                <Box component="li" {...props} key={option.id} sx={{ py: 0.9, borderBottom: '1px solid #f1f5f9' }}>
-                  <Stack spacing={0.3} sx={{ width: '100%' }}>
-                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                      <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
-                        {option.nombre}
-                      </Typography>
-                      {option.username && (
-                        <Chip
-                          size="small"
-                          label={`C.C. ${option.username}`}
-                          sx={{ height: 20, fontSize: '0.7rem', fontWeight: 800, bgcolor: '#f1f5f9', color: '#334155' }}
-                        />
+              renderOption={(props, option) => {
+                const isObj = typeof option === 'object' && option !== null;
+                const optKey = isObj ? option.id : props.key;
+                return (
+                  <Box component="li" {...props} key={optKey} sx={{ py: 0.9, borderBottom: '1px solid #f1f5f9' }}>
+                    <Stack spacing={0.3} sx={{ width: '100%' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                        <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                          {isObj ? option.nombre : option}
+                        </Typography>
+                        {isObj && option.username && (
+                          <Chip
+                            size="small"
+                            label={`C.C. ${option.username}`}
+                            sx={{ height: 20, fontSize: '0.7rem', fontWeight: 800, bgcolor: '#f1f5f9', color: '#334155' }}
+                          />
+                        )}
+                      </Stack>
+                      {isObj && (
+                        <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600 }}>
+                          🏢 {option.dependencia || 'Sin dependencia registrada'} {option.cargo ? `· ${option.cargo}` : ''}
+                        </Typography>
                       )}
                     </Stack>
-                    <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600 }}>
-                      🏢 {option.dependencia || 'Sin dependencia registrada'} {option.cargo ? `· ${option.cargo}` : ''}
-                    </Typography>
-                  </Stack>
-                </Box>
-              )}
+                  </Box>
+                );
+              }}
               renderInput={(params) => (
                 <TextField
                   {...params}
                   required
-                  label="Interesado / solicitante *"
+                  label="Interesado / solicitante"
                   placeholder="Buscar por nombre o cédula, o digite peticionario..."
                   helperText="Busque por nombre o cédula para auto-llenar la dependencia, o digite libremente si es externo."
                 />
@@ -2600,64 +2618,82 @@ export default function JuridicaWorkflowPanel() {
 
             <Autocomplete
               freeSolo
-              options={internalUsers}
+              autoHighlight
+              openOnFocus
+              options={Array.isArray(internalUsers) ? internalUsers : []}
               getOptionLabel={(option) => {
                 if (typeof option === 'string') return option;
-                return option.nombre || '';
+                return option?.nombre || '';
+              }}
+              isOptionEqualToValue={(option, val) => {
+                if (!val) return false;
+                if (typeof val === 'string') {
+                  return (option.nombre || '').toLowerCase() === val.toLowerCase() || option.username === val;
+                }
+                return option.id === val.id;
               }}
               filterOptions={(options, state) => {
                 const term = (state.inputValue || '').toLowerCase().trim();
-                if (!term) return options.slice(0, 40);
+                if (!term) return options.slice(0, 30);
                 return options.filter((u) => {
+                  if (typeof u === 'string') return u.toLowerCase().includes(term);
                   const nombre = String(u.nombre || '').toLowerCase();
                   const cedula = String(u.username || '').toLowerCase();
                   const dep = String(u.dependencia || '').toLowerCase();
-                  return nombre.includes(term) || cedula.includes(term) || dep.includes(term);
-                }).slice(0, 40);
+                  const cargo = String(u.cargo || '').toLowerCase();
+                  return nombre.includes(term) || cedula.includes(term) || dep.includes(term) || cargo.includes(term);
+                }).slice(0, 30);
               }}
-              value={editForm.interesado}
-              onInputChange={(event, newInputValue) => {
+              inputValue={editForm.interesado || ''}
+              onInputChange={(event, newInputValue, reason) => {
+                if (reason === 'reset') return;
                 setEditForm((prev) => ({ ...prev, interesado: newInputValue }));
               }}
               onChange={(event, newValue) => {
-                if (typeof newValue === 'object' && newValue !== null) {
+                if (newValue && typeof newValue === 'object') {
                   setEditForm((prev) => ({
                     ...prev,
-                    interesado: newValue.nombre,
+                    interesado: newValue.nombre || '',
                     dependencia_solicitante: newValue.dependencia || prev.dependencia_solicitante
                   }));
                 } else if (typeof newValue === 'string') {
                   setEditForm((prev) => ({ ...prev, interesado: newValue }));
-                } else {
+                } else if (!newValue) {
                   setEditForm((prev) => ({ ...prev, interesado: '' }));
                 }
               }}
-              renderOption={(props, option) => (
-                <Box component="li" {...props} key={option.id} sx={{ py: 0.9, borderBottom: '1px solid #f1f5f9' }}>
-                  <Stack spacing={0.3} sx={{ width: '100%' }}>
-                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                      <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
-                        {option.nombre}
-                      </Typography>
-                      {option.username && (
-                        <Chip
-                          size="small"
-                          label={`C.C. ${option.username}`}
-                          sx={{ height: 20, fontSize: '0.7rem', fontWeight: 800, bgcolor: '#f1f5f9', color: '#334155' }}
-                        />
+              renderOption={(props, option) => {
+                const isObj = typeof option === 'object' && option !== null;
+                const optKey = isObj ? option.id : props.key;
+                return (
+                  <Box component="li" {...props} key={optKey} sx={{ py: 0.9, borderBottom: '1px solid #f1f5f9' }}>
+                    <Stack spacing={0.3} sx={{ width: '100%' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                        <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                          {isObj ? option.nombre : option}
+                        </Typography>
+                        {isObj && option.username && (
+                          <Chip
+                            size="small"
+                            label={`C.C. ${option.username}`}
+                            sx={{ height: 20, fontSize: '0.7rem', fontWeight: 800, bgcolor: '#f1f5f9', color: '#334155' }}
+                          />
+                        )}
+                      </Stack>
+                      {isObj && (
+                        <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600 }}>
+                          🏢 {option.dependencia || 'Sin dependencia registrada'} {option.cargo ? `· ${option.cargo}` : ''}
+                        </Typography>
                       )}
                     </Stack>
-                    <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600 }}>
-                      🏢 {option.dependencia || 'Sin dependencia registrada'} {option.cargo ? `· ${option.cargo}` : ''}
-                    </Typography>
-                  </Stack>
-                </Box>
-              )}
+                  </Box>
+                );
+              }}
               renderInput={(params) => (
                 <TextField
                   {...params}
                   required
-                  label="Interesado / solicitante *"
+                  label="Interesado / solicitante"
                   placeholder="Buscar por nombre o cédula, o digite peticionario..."
                 />
               )}
