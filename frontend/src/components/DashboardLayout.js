@@ -13,7 +13,8 @@ import {
   AssignmentTurnedIn as AssignmentTurnedInIcon,
   ReceiptLong as ReceiptLongIcon,
   ChevronLeft as ChevronLeftIcon,
-  MenuOpen as MenuOpenIcon
+  MenuOpen as MenuOpenIcon,
+  Gavel as GavelIcon
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS, ROLES } from '../constants/roles';
@@ -23,6 +24,7 @@ import planMejoramientoService from '../services/planMejoramientoService';
 import strategicPlanningService from '../services/strategicPlanningService';
 import reporteSalidaService from '../services/reporteSalidaService';
 import { getEstadoLegalizacion } from '../services/legalizacionViaticosService';
+import oficinaJuridicaService from '../services/oficinaJuridicaService';
 
 const FIXED_SECTION_ORDER = [
   'planeacion_estrategica',
@@ -63,6 +65,20 @@ function DashboardLayout() {
   const [executionPlanAccess, setExecutionPlanAccess] = useState(null);
   const [reposicionBadge, setReposicionBadge] = useState(null);
   const [legalizacionesPendientes, setLegalizacionesPendientes] = useState(0);
+  const [juridicaBadge, setJuridicaBadge] = useState(0);
+
+  const refrescarBadgeJuridica = useCallback(async () => {
+    if (!user) return;
+    try {
+      const resp = await oficinaJuridicaService.stats();
+      if (resp?.success && resp?.data) {
+        const count = Number(resp.data.vencidos || 0) + Number(resp.data.por_vencer || 0);
+        setJuridicaBadge(count > 0 ? count : 0);
+      }
+    } catch (_) {
+      setJuridicaBadge(0);
+    }
+  }, [user]);
 
   const refrescarBadgePlanAccion = useCallback(async () => {
     if (!user) return;
@@ -126,7 +142,8 @@ function DashboardLayout() {
     refrescarEjecucionAutoevaluacion();
     refrescarBadgeReposicion();
     refrescarLegalizaciones();
-  }, [refrescarBadgePlanAccion, refrescarEjecucionAutoevaluacion, refrescarBadgeReposicion, refrescarLegalizaciones, location.pathname]);
+    refrescarBadgeJuridica();
+  }, [refrescarBadgePlanAccion, refrescarEjecucionAutoevaluacion, refrescarBadgeReposicion, refrescarLegalizaciones, refrescarBadgeJuridica, location.pathname]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -192,6 +209,11 @@ function DashboardLayout() {
 
     if (isPlaneacionGpInfoParent && openedFromPlaneacionGpInfo) {
       return true;
+    }
+
+    if (item.key === 'gestion_juridica') {
+      if (pathname === '/dashboard/gestion-juridica' || pathname === '/dashboard/oficina-juridica') return true;
+      if (pathname === '/dashboard/gestion-informacion' && currentParams.get('card') === 'oficina_juridica') return true;
     }
 
     return false;
@@ -372,7 +394,10 @@ function DashboardLayout() {
     const hasUserMgmt = explicitMenuPermissions.includes('gestion_usuarios') ||
       explicitProcesosDashboards.some((k) => k.startsWith('gestion_usuarios'));
 
-    const hasRealGIModules = (Array.isArray(user?.allowedModules) && user.allowedModules.length > 0) ||
+    const otherAllowedModules = (Array.isArray(user?.allowedModules) ? user.allowedModules : [])
+      .filter((k) => k !== 'oficina_juridica' && !k.startsWith('oficina_juridica.'));
+
+    const hasRealGIModules = otherAllowedModules.length > 0 ||
       (Array.isArray(user?.allowedPoblacionalDashboards) && user.allowedPoblacionalDashboards.length > 0) ||
       (Array.isArray(user?.allowedSaberProDashboards) && user.allowedSaberProDashboards.length > 0) ||
       (Array.isArray(user?.allowedRecursoHumanoDashboards) && user.allowedRecursoHumanoDashboards.length > 0) ||
@@ -509,6 +534,45 @@ function DashboardLayout() {
             }]
           : [])
       ];
+    }
+  }
+
+  // === Inyección dinámica del módulo "Gestión Jurídica" ===
+  const userPermList = [
+    ...(Array.isArray(user?.allowedModules) ? user.allowedModules : []),
+    ...(Array.isArray(user?.modulos_autorizados) ? user.modulos_autorizados : []),
+    ...(Array.isArray(user?.modulePermissions) ? user.modulePermissions : []),
+    ...(Array.isArray(user?.menuPermissions) ? user.menuPermissions : []),
+    ...(Array.isArray(user?.permisosModulos) ? user.permisosModulos : []),
+    ...(Array.isArray(user?.modules) ? user.modules : [])
+  ].map((item) => typeof item === 'string' ? item : item?.module_key || item?.moduleKey || item?.key || '').filter(Boolean);
+
+  const canAccessJuridica = user?.role === ROLES.ADMINISTRADOR ||
+    userPermList.some((k) => k === 'oficina_juridica' || k.startsWith('oficina_juridica.'));
+
+  if (canAccessJuridica) {
+    const juridicaMenuItem = {
+      key: 'gestion_juridica',
+      path: '/dashboard/gestion-juridica',
+      label: 'Gestión Jurídica',
+      icon: <GavelIcon />,
+      badge: juridicaBadge > 0 ? juridicaBadge : undefined
+    };
+
+    if (!menuItems.some((it) => it.key === 'gestion_juridica')) {
+      const giIdx = menuItems.findIndex((it) => it.key === 'gestion_informacion' || (it.section && it.openKey === 'gestion_informacion'));
+      if (giIdx >= 0) {
+        menuItems = [
+          ...menuItems.slice(0, giIdx + 1),
+          juridicaMenuItem,
+          ...menuItems.slice(giIdx + 1)
+        ];
+      } else {
+        const inicioIdx = menuItems.findIndex((it) => it.key === 'dashboard');
+        menuItems = inicioIdx >= 0
+          ? [...menuItems.slice(0, inicioIdx + 1), juridicaMenuItem, ...menuItems.slice(inicioIdx + 1)]
+          : [juridicaMenuItem, ...menuItems];
+      }
     }
   }
 

@@ -4941,8 +4941,12 @@ function GestionInformacion() {
       enqueueSnackbar('No tienes permiso para Gestion de Seguridad Aplicativa.', { variant: 'warning' });
       return;
     }
-    if (key === 'oficina_juridica' && !canAccessOficinaJuridica) {
-      enqueueSnackbar('No tienes permiso para ingresar a la Oficina Jurídica.', { variant: 'warning' });
+    if (key === 'oficina_juridica') {
+      if (!canAccessOficinaJuridica) {
+        enqueueSnackbar('No tienes permiso para ingresar a la Oficina Jurídica.', { variant: 'warning' });
+        return;
+      }
+      navigate('/dashboard/gestion-juridica');
       return;
     }
     if (key === 'poblacional') {

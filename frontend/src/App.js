@@ -30,6 +30,7 @@ import CronogramaMovilidadModule from './components/cronogramaMovilidad/Cronogra
 import SessionTimeoutModal from './components/SessionTimeoutModal';
 import AppSnackbar from './components/AppSnackbar';
 import InstrumentoPublicView from './modules/planeacionEstrategica/autoevaluacion/instrumentos/InstrumentoPublicView';
+import OficinaJuridicaLandingPage from './components/oficinaJuridica/OficinaJuridicaLandingPage';
 import { ROLES } from './constants/roles';
 
 /* Tiempo mínimo que el loader permanece visible antes de iniciar el fade-out */
@@ -193,7 +194,20 @@ function App() {
                     }
                   />
 
-                  {/* Bandeja de revisión Plan de Acción - Planeación Estratégica */}
+                  {/* Módulo de Gestión Jurídica */}
+                  <Route
+                    path="gestion-juridica"
+                    element={
+                      <PrivateRoute>
+                        <OficinaJuridicaLandingPage />
+                      </PrivateRoute>
+                    }
+                  />
+                  <Route
+                    path="oficina-juridica"
+                    element={<Navigate to="/dashboard/gestion-juridica" replace />}
+                  />
+
                   <Route
                     path="plan-accion-revision"
                     element={
