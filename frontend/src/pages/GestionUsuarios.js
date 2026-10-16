@@ -3034,30 +3034,6 @@ function GestionUsuarios() {
                               </Grid>
                             </Box>
                           )}
-
-                          {modulePermissionsForm.allowedModules.includes('oficina_juridica') && (
-                            <Box sx={{ mt: 1.4, pt: 1.2, borderTop: '1px solid #e2e8f0' }}>
-                              <Typography variant="caption" sx={{ display: 'block', mb: 0.5, color: '#475569', fontWeight: 850, textTransform: 'uppercase' }}>
-                                Rol operativo en Oficina Jurídica
-                              </Typography>
-                              <Grid container spacing={0.5}>
-                                {OFICINA_JURIDICA_ROLE_OPTIONS.map((item) => (
-                                  <Grid item xs={12} sm={6} md={4} key={item.key}>
-                                    <FormControlLabel
-                                      control={(
-                                        <Checkbox
-                                          checked={modulePermissionsForm.allowedModules.includes(item.key)}
-                                          onChange={() => handleTogglePermission('allowedModules', item.key)}
-                                          size="small"
-                                        />
-                                      )}
-                                      label={item.label}
-                                    />
-                                  </Grid>
-                                ))}
-                              </Grid>
-                            </Box>
-                          )}
                         </Paper>
                       )}
 
@@ -3091,6 +3067,40 @@ function GestionUsuarios() {
                           </Paper>
                         </Box>
                       )}
+                    </Paper>
+                  </>
+                )}
+
+                { modulePermissionsForm.allowedModules.includes('oficina_juridica') && (
+                  <>
+                    <Divider />
+
+                    <Paper
+                      variant="outlined"
+                      sx={{ p: 2, borderRadius: 2 }}
+                    >
+                      <Typography sx={{ fontWeight: 800, mb: 0.6, color: '#0f172a' }}>Permisos modulares de Oficina Jurídica</Typography>
+                      <Typography variant="body2" sx={{ color: '#64748b', mb: 1.4 }}>
+                        Activa el rol operativo correspondiente para el usuario en la Oficina Jurídica.
+                      </Typography>
+                      <FormGroup>
+                        <Grid container spacing={0.5}>
+                          {OFICINA_JURIDICA_ROLE_OPTIONS.map((item) => (
+                            <Grid item xs={12} sm={6} md={4} key={item.key}>
+                              <FormControlLabel
+                                control={(
+                                  <Checkbox
+                                    checked={modulePermissionsForm.allowedModules.includes(item.key)}
+                                    onChange={() => handleTogglePermission('allowedModules', item.key)}
+                                    size="small"
+                                  />
+                                )}
+                                label={item.label}
+                              />
+                            </Grid>
+                          ))}
+                        </Grid>
+                      </FormGroup>
                     </Paper>
                   </>
                 )}
