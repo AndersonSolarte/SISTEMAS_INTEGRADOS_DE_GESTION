@@ -211,6 +211,12 @@ testConnection()
   .then(async () => {
     validateGoogleRuntimeConfig();
     try {
+      await require('./services/saberProDocumentImportService').initialize();
+      console.log('[saber-pro-documentos] Tablas listas y trabajos pendientes recuperados.');
+    } catch (error) {
+      console.error('[saber-pro-documentos] No fue posible iniciar el módulo:', error?.message || error);
+    }
+    try {
       const User = require('./models/User');
       const { DataTypes } = require('sequelize');
       await User.sync();

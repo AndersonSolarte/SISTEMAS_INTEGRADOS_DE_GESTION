@@ -29,7 +29,7 @@ import ReportProblemRoundedIcon from '@mui/icons-material/ReportProblemRounded';
 import DocumentScannerRoundedIcon from '@mui/icons-material/DocumentScannerRounded';
 import api from '../../services/api';
 import XLSXStyle from 'xlsx-js-style';
-import ExtraccionDocumentos from './ExtraccionDocumentos';
+import ConsultaDocumentosMasiva from './ConsultaDocumentosMasiva';
 
 const BASE_URL = '/planeacion/gestion-informacion/saber-pro/consulta';
 
@@ -1057,7 +1057,7 @@ export default function ConsultaValidacion({ initialSection, allowedSections = [
   const VIEWS = useMemo(() => [
     { key: 'individual', label: 'Consulta Individual',  icon: PersonSearchRoundedIcon, color: '#2563eb' },
     { key: 'masiva',     label: 'Validación Masiva',    icon: UploadFileRoundedIcon,   color: '#10b981' },
-    { key: 'extraccion', label: 'Extraer PDF o imagen', icon: DocumentScannerRoundedIcon, color: '#7c3aed' }
+    { key: 'extraccion', label: 'Consulta masiva de documentos', icon: DocumentScannerRoundedIcon, color: '#7c3aed' }
   ], []);
 
   const visibleViews = useMemo(() => {
@@ -1104,7 +1104,7 @@ export default function ConsultaValidacion({ initialSection, allowedSections = [
 
       {view === 'individual' && <ConsultaIndividual />}
       {view === 'masiva'     && <CargaMasiva />}
-      {view === 'extraccion' && <ExtraccionDocumentos />}
+      {view === 'extraccion' && <ConsultaDocumentosMasiva />}
     </Box>
   );
 }

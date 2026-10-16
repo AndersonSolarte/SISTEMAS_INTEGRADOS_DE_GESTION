@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const XLSX = require('xlsx');
 const { sequelize } = require('../config/database');
 const {
@@ -6,6 +7,63 @@ const {
   PoblacionalContextoExternoGeneral
 } = require('../models');
 const { generateContextoExternoGeneralPdf } = require('../services/contextoExternoGeneralPdfService');
+
+let divipolaGeoIndex = null;
+const getDivipolaGeoIndex = () => {
+  if (divipolaGeoIndex) return divipolaGeoIndex;
+  try {
+    const geoMunicipalityPath = path.resolve(__dirname, '../../../frontend/public/geodata/divipola_municipios.json');
+    if (fs.existsSync(geoMunicipalityPath)) {
+      const data = JSON.parse(fs.readFileSync(geoMunicipalityPath, 'utf8'));
+      const depts = new Set();
+      const munis = new Map();
+      data.forEach((item) => {
+        const depNorm = normalizeKey(item.department_name_normalized || item.department_name);
+        const munNorm = normalizeKey(item.name_normalized || item.name);
+        depts.add(depNorm);
+        if (!munis.has(munNorm)) munis.set(munNorm, []);
+        munis.get(munNorm).push(item);
+      });
+      divipolaGeoIndex = { depts, munis };
+    }
+  } catch (err) {
+    console.error('Error loading divipola for geo normalization:', err);
+  }
+  return divipolaGeoIndex;
+};
+
+const normalizeGeoOffer = (rawMun, rawDept, institucion = '') => {
+  let mun = cleanText(rawMun);
+  let dept = cleanText(rawDept);
+  if (!mun && !dept) return { municipio: null, departamento: null };
+
+  const geo = getDivipolaGeoIndex();
+  if (!geo) return { municipio: mun, departamento: dept };
+
+  const munKey = normalizeKey(mun);
+  const deptKey = normalizeKey(dept);
+
+  const munIsDept = geo.depts.has(munKey) && munKey !== 'BOGOTA_D_C';
+  const deptIsMuni = geo.munis.has(deptKey);
+  const deptIsDept = geo.depts.has(deptKey);
+
+  if (munIsDept && dept && (deptIsMuni || !deptIsDept)) {
+    const temp = mun;
+    mun = dept;
+    dept = temp;
+  }
+
+  if (normalizeKey(mun) === 'CALDAS' && String(institucion || '').toUpperCase().includes('LASALLISTA')) {
+    dept = 'Antioquia';
+  } else if (mun && (!dept || dept === mun)) {
+    const candidates = geo.munis.get(normalizeKey(mun));
+    if (candidates && candidates.length === 1) {
+      dept = candidates[0].department_name;
+    }
+  }
+
+  return { municipio: mun, departamento: dept };
+};
 
 const DATASET_LABEL = 'CONTEXTO EXTERNO GENERAL';
 const SHEETS = [
@@ -158,6 +216,9 @@ const parseWorkbook = (filePath) => {
         const institucion = cleanText(valueOf(row, 'NOMBRE_INSTITUCIÓN', 'NOMBRE INSTITUCION'));
         const nombrePrograma = cleanText(valueOf(row, 'NOMBRE_DEL_PROGRAMA', 'NOMBRE DEL PROGRAMA'));
         if (!institucion || !nombrePrograma) return;
+        const rawMun = cleanText(valueOf(row, 'MUNICIPIO_OFERTA_PROGRAMA', 'MUNICIPIO'));
+        const rawDept = cleanText(valueOf(row, 'DEPARTAMENTO', 'DEPARTAMENTO_OFERTA_PROGRAMA'));
+        const { municipio, departamento } = normalizeGeoOffer(rawMun, rawDept, institucion);
         records.push({
           seccion: definition.seccion,
           hoja_fuente: definition.name,
@@ -169,9 +230,9 @@ const parseWorkbook = (filePath) => {
           modalidad: cleanText(valueOf(row, 'MODALIDAD')),
           numero_creditos: toInteger(valueOf(row, 'NÚMERO CRÉDITOS', 'NUMERO CREDITOS')),
           numero_semestres: toInteger(valueOf(row, 'NÚMERO SEMESTRES', 'NUMERO SEMESTRES')),
-          municipio: cleanText(valueOf(row, 'MUNICIPIO_OFERTA_PROGRAMA')),
+          municipio,
           georeferencia: cleanText(valueOf(row, 'GEOREFERENCIA')),
-          departamento: cleanText(valueOf(row, 'DEPARTAMENTO'))
+          departamento
         });
       }
       accepted += 1;

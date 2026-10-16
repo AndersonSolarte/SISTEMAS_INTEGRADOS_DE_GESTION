@@ -735,7 +735,8 @@ const loadGeoData = () => {
     if (key === 'SAN JOSE DE CUCUTA') add('CUCUTA', item);
     if (key === 'CARTAGENA DE INDIAS') add('CARTAGENA', item);
   });
-  geoCache = { features, bbox: { minLon, maxLon, minLat, maxLat }, municipalityIndex };
+  const departmentSet = new Set(features.map((f) => f.key));
+  geoCache = { features, bbox: { minLon, maxLon, minLat, maxLat }, municipalityIndex, departmentSet };
   return geoCache;
 };
 
@@ -763,9 +764,20 @@ const geoFeatureCenter = (rings = []) => {
 };
 
 const aggregateGeography = (rows, geo) => {
-  const hints = new Map(rows.filter((row) => normalizeGeo(row.municipio) && normalizeGeo(row.departamento)).map((row) => [normalizeGeo(row.municipio), normalizeGeo(row.departamento)]));
+  const departmentSet = geo.departmentSet || new Set((geo.features || []).map((f) => f.key));
+  const sanitizedRows = rows.map((row) => {
+    const mun = text(row.municipio);
+    const dep = text(row.departamento);
+    const munKey = normalizeGeo(mun);
+    const depKey = normalizeGeo(dep);
+    if (munKey !== 'BOGOTA D C' && depKey !== 'BOGOTA D C' && departmentSet.has(munKey) && dep && !departmentSet.has(depKey)) {
+      return { ...row, municipio: dep, departamento: mun };
+    }
+    return row;
+  });
+  const hints = new Map(sanitizedRows.filter((row) => normalizeGeo(row.municipio) && normalizeGeo(row.departamento)).map((row) => [normalizeGeo(row.municipio), normalizeGeo(row.departamento)]));
   const municipalities = new Map(); const departments = new Map();
-  rows.forEach((row) => {
+  sanitizedRows.forEach((row) => {
     const source = text(row.municipio); const sourceKey = normalizeGeo(source);
     if (!sourceKey) return;
     let candidates = geo.municipalityIndex.get(sourceKey) || [];

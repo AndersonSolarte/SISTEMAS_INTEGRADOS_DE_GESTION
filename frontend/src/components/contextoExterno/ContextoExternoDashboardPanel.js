@@ -2970,7 +2970,27 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
     return () => { active = false; };
   }, []);
 
-  const oferta = useMemo(() => payload.oferta || [], [payload.oferta]);
+  const knownDepartmentsSet = useMemo(() => {
+    const set = new Set();
+    (geoDepartments || []).forEach((f) => set.add(normalizeGeo(f.name || f.label)));
+    (municipalityCatalog || []).forEach((m) => set.add(normalizeGeo(m.department_name_normalized || m.department_name)));
+    return set;
+  }, [geoDepartments, municipalityCatalog]);
+
+  const oferta = useMemo(() => {
+    const raw = payload.oferta || [];
+    if (!knownDepartmentsSet.size) return raw;
+    return raw.map((row) => {
+      const sourceMun = String(row.municipio || '').trim();
+      const sourceDept = String(row.departamento || row.department_name || row.depto || '').trim();
+      const munNorm = normalizeGeo(sourceMun);
+      const deptNorm = normalizeGeo(sourceDept);
+      if (munNorm !== 'BOGOTA D C' && deptNorm !== 'BOGOTA D C' && knownDepartmentsSet.has(munNorm) && sourceDept && !knownDepartmentsSet.has(deptNorm)) {
+        return { ...row, municipio: sourceDept, departamento: sourceMun };
+      }
+      return row;
+    });
+  }, [payload.oferta, knownDepartmentsSet]);
   const poblacional = useMemo(() => payload.poblacional || [], [payload.poblacional]);
 
   const offerOptions = useMemo(() => ({
@@ -3045,9 +3065,12 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           candidates = index.get(words.slice(0, length).join(' ')) || [];
         }
       }
-      if (candidates.length <= 1) return candidates[0] || null;
       const departmentKey = normalizeGeo(row.departamento) || departmentHints.get(municipalityKey);
-      return candidates.find((candidate) => normalizeGeo(candidate.department_name_normalized || candidate.department_name) === departmentKey) || null;
+      if (departmentKey) {
+        const match = candidates.find((candidate) => normalizeGeo(candidate.department_name_normalized || candidate.department_name) === departmentKey);
+        if (match) return match;
+      }
+      return candidates[0] || null;
     };
 
     const aggregate = (rows) => {

@@ -75,7 +75,7 @@ const NAV_CONFIG = [
     items: [
       { key: 'individual', label: 'Consulta Individual',   desc: 'Busca resultados por número de documento.',           icon: PersonSearchRoundedIcon, color: '#0891b2' },
       { key: 'masiva',     label: 'Validación Masiva',     desc: 'Carga un Excel/CSV con documentos para validar masivamente.', icon: UploadFileRoundedIcon,   color: '#10b981' },
-      { key: 'extraccion', label: 'Extraer PDF o imagen',  desc: 'Extrae datos y texto de documentos para revisión.', icon: DocumentScannerRoundedIcon, color: '#7c3aed' }
+      { key: 'extraccion', label: 'Consulta masiva de documentos', desc: 'Consulta PDF institucionales en memoria y extrae EK y fecha.', icon: DocumentScannerRoundedIcon, color: '#7c3aed' }
     ]
   }
 ];

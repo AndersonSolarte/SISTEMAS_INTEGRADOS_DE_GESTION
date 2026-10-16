@@ -4,6 +4,16 @@ const multer = require('multer');
 const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { ROLES } = require('../constants/roles');
 const { consultaIndividual, consultaMasiva, downloadConsultaMasivaTemplate } = require('../controllers/consultaValidacionController');
+const {
+  createImport: createDocumentImport,
+  latestImport: latestDocumentImport,
+  getImport: getDocumentImport,
+  retryImport: retryDocumentImport,
+  correctItem: correctDocumentImportItem,
+  viewPdf: viewDocumentImportPdf,
+  downloadTemplate: downloadDocumentImportTemplate,
+  exportImport: exportDocumentImport
+} = require('../controllers/saberProDocumentImportController');
 
 const SABER_PRO_CONSULTA_MODULE_KEYS = [
   'gestion_informacion',
@@ -44,5 +54,13 @@ const canConsultar = hasAnyRoleOrModulePermission({
 router.get('/individual', auth, canConsultar, consultaIndividual);
 router.get('/template', auth, canConsultar, downloadConsultaMasivaTemplate);
 router.post('/masiva', auth, canConsultar, upload.single('archivo'), consultaMasiva);
+router.get('/documentos-masivos/template', auth, canConsultar, downloadDocumentImportTemplate);
+router.get('/documentos-masivos/latest', auth, canConsultar, latestDocumentImport);
+router.get('/documentos-masivos/items/:itemId/pdf', auth, canConsultar, viewDocumentImportPdf);
+router.patch('/documentos-masivos/items/:itemId', auth, canConsultar, correctDocumentImportItem);
+router.get('/documentos-masivos/:id/export', auth, canConsultar, exportDocumentImport);
+router.post('/documentos-masivos/:id/retry', auth, canConsultar, retryDocumentImport);
+router.get('/documentos-masivos/:id', auth, canConsultar, getDocumentImport);
+router.post('/documentos-masivos', auth, canConsultar, upload.single('archivo'), createDocumentImport);
 
 module.exports = router;
