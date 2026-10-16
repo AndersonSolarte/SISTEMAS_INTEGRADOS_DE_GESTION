@@ -33,27 +33,7 @@ const juridicaAccess = async (req, res, next) => {
     return next();
   }
 
-  // 2. Ningún otro administrador tiene acceso
-  if (req.user.role === 'administrador') {
-    return res.status(403).json({
-      success: false,
-      message: 'Acceso restringido. Solo el administrador institucional sgc@unicesmag.edu.co y el personal adscrito a la Oficina Jurídica tienen acceso a este módulo.'
-    });
-  }
-
-  // 3. Debe pertenecer a la Oficina Jurídica
-  const dep = String(req.user.dependencia || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const cargo = String(req.user.cargo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const isJuridica = dep.includes('jurid') || cargo.includes('jurid');
-
-  if (!isJuridica) {
-    return res.status(403).json({
-      success: false,
-      message: 'Acceso restringido exclusivamente al personal de la Oficina Jurídica.'
-    });
-  }
-
-  // 4. Debe tener permiso explícito en el tablero de permisos
+  // 2. Control por permisos: Cualquier otro usuario DEBE tener permiso explícito 'oficina_juridica' otorgado por el administrador
   try {
     const hasPerm = await UserModulePermission.count({
       where: {
@@ -66,7 +46,7 @@ const juridicaAccess = async (req, res, next) => {
     if (hasPerm === 0) {
       return res.status(403).json({
         success: false,
-        message: 'No cuentas con permisos activos en el sistema para ingresar al módulo de Oficina Jurídica.'
+        message: 'Acceso restringido. No cuentas con permisos activos en el sistema para ingresar al módulo de Oficina Jurídica.'
       });
     }
 

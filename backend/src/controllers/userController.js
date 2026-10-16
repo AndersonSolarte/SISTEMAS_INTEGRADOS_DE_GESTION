@@ -2181,16 +2181,7 @@ const updateUserModulePermissions = async (req, res) => {
       .map((x) => String(x || '').trim())
       .filter((x) => GESTION_INFO_MODULE_KEYS.includes(x))));
 
-    // Candado estricto: El permiso 'oficina_juridica' solo puede ser asignado si el usuario
-    // pertenece a la Oficina Jurídica o si es el SuperAdmin sgc@unicesmag.edu.co
-    const depTarget = String(user.dependencia || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    const cargoTarget = String(user.cargo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    const isJuridicaEligible = (String(user.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co') ||
-      depTarget.includes('jurid') || cargoTarget.includes('jurid');
 
-    if (!isJuridicaEligible) {
-      cleanModules = cleanModules.filter((k) => k !== 'oficina_juridica');
-    }
     if (cleanModules.some((key) => key.startsWith('gestion_bases_datos.')) && !cleanModules.includes('gestion_bases_datos')) {
       cleanModules.push('gestion_bases_datos');
     }
