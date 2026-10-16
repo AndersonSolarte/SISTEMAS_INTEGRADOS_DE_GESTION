@@ -44,6 +44,19 @@ async function retryImport(req, res) {
   }
 }
 
+async function clearImports(_req, res) {
+  try {
+    const result = await service.clearImports();
+    return res.json({
+      success: true,
+      data: result,
+      message: 'La consulta temporal fue eliminada de SIAC.'
+    });
+  } catch (error) {
+    return handleError(res, error);
+  }
+}
+
 async function correctItem(req, res) {
   try {
     const result = await service.correctItem(req.params.itemId, req.body || {}, req.user?.id);
@@ -93,6 +106,7 @@ module.exports = {
   latestImport,
   getImport,
   retryImport,
+  clearImports,
   correctItem,
   viewPdf,
   downloadTemplate,

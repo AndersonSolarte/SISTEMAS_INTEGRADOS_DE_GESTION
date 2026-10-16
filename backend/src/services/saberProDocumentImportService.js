@@ -3,6 +3,7 @@ const ExcelJS = require('exceljs');
 const { Op } = require('sequelize');
 const SaberProDocumentImport = require('../models/SaberProDocumentImport');
 const SaberProDocumentImportItem = require('../models/SaberProDocumentImportItem');
+const { sequelize } = require('../config/database');
 const { extractPdfBuffer } = require('./saberProTextExtractionService');
 const {
   parseEvaluatedData, validateRegistrationDate, toIsoDate, toDisplayDate
@@ -404,6 +405,19 @@ async function createResultWorkbook(importId) {
   return workbook.xlsx.writeBuffer();
 }
 
+async function clearImports() {
+  const processing = await SaberProDocumentImport.count({ where: { status: 'PROCESSING' } });
+  if (activeImportId || processing) {
+    throw apiError('Espere a que termine el procesamiento antes de limpiar la consulta.',
+      409, 'IMPORT_IN_PROGRESS');
+  }
+  return sequelize.transaction(async (transaction) => {
+    const deletedItems = await SaberProDocumentImportItem.destroy({ where: {}, transaction });
+    const deletedImports = await SaberProDocumentImport.destroy({ where: {}, transaction });
+    return { deletedImports, deletedItems };
+  });
+}
+
 async function invalidateStoredDateYearMismatches() {
   const items = await SaberProDocumentImportItem.findAll({
     where: {
@@ -472,6 +486,7 @@ module.exports = {
   getItemPdf,
   createTemplateWorkbook,
   createResultWorkbook,
+  clearImports,
   parseWorkbook,
   invalidateStoredDateYearMismatches,
   queueLatestUnverifiedIdentifications,

@@ -12,6 +12,7 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import FindInPageRoundedIcon from '@mui/icons-material/FindInPageRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
+import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded';
 import api from '../../services/api';
 
 const BASE_URL = '/planeacion/gestion-informacion/saber-pro/consulta/documentos-masivos';
@@ -66,6 +67,7 @@ export default function ConsultaDocumentosMasiva() {
   const [examMonth, setExamMonth] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const inputRef = useRef(null);
   const calendarInputRef = useRef(null);
   const expectedExamYear = registrationYear(registrationNumber);
@@ -171,6 +173,24 @@ export default function ConsultaDocumentosMasiva() {
       setNotice({ severity: 'info', text: 'Se reanudó el procesamiento de filas pendientes y con novedad.' });
     } catch (error) {
       setNotice({ severity: 'error', text: error.response?.data?.message || 'No fue posible reintentar las filas.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearConsultation() {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await api.delete(BASE_URL);
+      setData(null);
+      setFilter('ALL');
+      setFile(null);
+      if (inputRef.current) inputRef.current.value = '';
+      setClearConfirmOpen(false);
+      setNotice({ severity: 'success', text: 'La consulta temporal fue eliminada de SIAC.' });
+    } catch (error) {
+      setNotice({ severity: 'error', text: error.response?.data?.message || 'No fue posible limpiar la consulta.' });
     } finally {
       setBusy(false);
     }
@@ -294,6 +314,10 @@ export default function ConsultaDocumentosMasiva() {
                   disabled={data.status === 'PROCESSING'} onClick={exportResults}>
                   Exportar
                 </Button>
+                <Button size="small" color="error" variant="outlined" startIcon={<DeleteSweepRoundedIcon />}
+                  disabled={data.status === 'PROCESSING' || busy} onClick={() => setClearConfirmOpen(true)}>
+                  Limpiar
+                </Button>
               </Stack>
             </Stack>
 
@@ -347,6 +371,23 @@ export default function ConsultaDocumentosMasiva() {
           </>
         )}
       </Paper>
+
+      <Dialog open={clearConfirmOpen} onClose={() => !busy && setClearConfirmOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Limpiar consulta temporal</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mt: 1 }}>
+            Se eliminarán de SIAC todas las filas y resultados temporales de la consulta. Esta acción no modifica
+            la base institucional ni elimina los PDF del servidor de consulta.
+          </Alert>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={busy} onClick={() => setClearConfirmOpen(false)}>Cancelar</Button>
+          <Button color="error" variant="contained" startIcon={<DeleteSweepRoundedIcon />}
+            disabled={busy} onClick={clearConsultation}>
+            {busy ? <CircularProgress size={18} color="inherit" /> : 'Sí, limpiar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={Boolean(reviewItem)} onClose={closeReview} fullWidth maxWidth="xl">
         <DialogTitle>Revisar documento — {reviewItem?.identification}</DialogTitle>
