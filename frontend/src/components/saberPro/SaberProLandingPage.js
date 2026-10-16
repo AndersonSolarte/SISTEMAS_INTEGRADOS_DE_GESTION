@@ -117,7 +117,7 @@ const SABER_PRO_PERMISSION_BY_GROUP = {
   consulta: {
     individual: 'saber_pro_consulta_individual',
     masiva: 'saber_pro_validacion_masiva',
-    extraccion: ['saber_pro_consulta_individual', 'saber_pro_validacion_masiva']
+    extraccion: 'saber_pro_consulta_documentos_masiva'
   }
 };
 

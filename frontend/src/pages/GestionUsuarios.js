@@ -305,7 +305,8 @@ function GestionUsuarios() {
       title: 'Consulta y validación',
       options: [
         { key: 'saber_pro_consulta_individual', label: 'Consulta individual' },
-        { key: 'saber_pro_validacion_masiva', label: 'Validación masiva' }
+        { key: 'saber_pro_validacion_masiva', label: 'Validación masiva' },
+        { key: 'saber_pro_consulta_documentos_masiva', label: 'Consulta masiva de documentos' }
       ]
     },
     {

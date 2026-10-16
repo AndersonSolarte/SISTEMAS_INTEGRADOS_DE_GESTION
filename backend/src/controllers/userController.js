@@ -162,6 +162,7 @@ const POBLACIONAL_DASHBOARD_PERMISSION_KEYS = [
 const SABER_PRO_DASHBOARD_PERMISSION_KEYS = [
   'saber_pro_consulta_individual',
   'saber_pro_validacion_masiva',
+  'saber_pro_consulta_documentos_masiva',
   'saber_pro_individuales_general',
   'saber_pro_individuales_saber_pro',
   'saber_pro_individuales_tyt',
