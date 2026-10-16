@@ -427,6 +427,13 @@ const nextNri = async (year) => {
 };
 
 const createCase = async (req, res) => {
+  const actor = resolveActor(req);
+  if (roleFor(actor) === 'asesor') {
+    return res.status(403).json({
+      success: false,
+      message: 'Los asistentes jurídicos no tienen permitido radicar nuevas solicitudes. Esta función corresponde a Secretaría o Jefatura.'
+    });
+  }
   const year = Number(req.body.anio) || new Date().getFullYear();
   const caso = await JuridicaCaso.create({
     anio: year,

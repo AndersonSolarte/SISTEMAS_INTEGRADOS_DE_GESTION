@@ -493,7 +493,7 @@ export default function JuridicaWorkflowPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [profile, setProfile] = useState({ role: 'solicitante', team: [] });
+  const [profile, setProfile] = useState({ role: '', team: [] });
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState({});
   const [internalUsers, setInternalUsers] = useState([]);
@@ -609,6 +609,7 @@ export default function JuridicaWorkflowPanel() {
       setInternalUsers(usersRes.data || []);
       if (p.data?.role === 'asesor') {
         setScopeFilter((prev) => prev || 'mis_asignados');
+        setTab(0);
       }
     } catch (e) {
       setError(e.response?.data?.message || 'No fue posible cargar la gestión jurídica.');
@@ -1255,7 +1256,9 @@ export default function JuridicaWorkflowPanel() {
                   ? '⚖️ Rol: Jefatura Jurídica'
                   : profile.role === 'asesor'
                   ? '👥 Rol: Asistente Jurídico'
-                  : `Perfil: ${profile.role}${profile.isSimulation ? ` (Simulando a ${formatUserName(profile.actor?.nombre)})` : ''}`
+                  : profile.role === 'administrador'
+                  ? `🛡️ Rol: Administrador General${profile.isSimulation ? ` (Simulando a ${formatUserName(profile.actor?.nombre)})` : ''}`
+                  : 'Cargando rol...'
               }
               sx={{ bgcolor: profile.isSimulation ? '#f59e0b' : '#ffffff25', color: '#fff', fontWeight: 900, textTransform: 'capitalize' }}
             />
@@ -1709,11 +1712,13 @@ export default function JuridicaWorkflowPanel() {
           sx={{ p: 1.5, borderBottom: '1px solid #e2e8f0' }}
         >
           <Tabs value={tab} onChange={(_, value) => setTab(value)}>
-            <Tab icon={<InboxRoundedIcon />} iconPosition="start" label="Bandeja de asuntos" />
-            <Tab icon={<FactCheckRoundedIcon />} iconPosition="start" label="Estadística automática" />
+            <Tab icon={<InboxRoundedIcon />} iconPosition="start" label={profile.role === 'asesor' ? 'Mis casos y expedientes' : 'Bandeja de asuntos'} />
+            {profile.role !== 'asesor' && (
+              <Tab icon={<FactCheckRoundedIcon />} iconPosition="start" label="Estadística automática" />
+            )}
           </Tabs>
           <Stack direction="row" spacing={1} flexWrap="wrap">
-            {profile.role !== 'asesor' && (
+            {['administrador', 'jefatura', 'secretaria'].includes(profile.role) && (
               <Button
                 startIcon={<AddRoundedIcon />}
                 variant="contained"
