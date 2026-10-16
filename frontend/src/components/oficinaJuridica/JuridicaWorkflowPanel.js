@@ -82,7 +82,7 @@ const GROUPS = [
 
 const ACTIONS = {
   asesor: [
-    ['en_estudio', 'Iniciar estudio'],
+    ['en_estudio', 'Confirmar recibido e Iniciar estudio'],
     ['respuesta_revision', 'Enviar a revisión de jefatura']
   ],
   jefatura: [
@@ -98,7 +98,7 @@ const ACTIONS = {
     ['cerrado', 'Cerrar expediente']
   ],
   administrador: [
-    ['en_estudio', 'Iniciar estudio'],
+    ['en_estudio', 'Confirmar recibido e Iniciar estudio'],
     ['respuesta_revision', 'Enviar a revisión'],
     ['aprobado_jefatura', 'Aprobar respuesta'],
     ['devuelto_informacion', 'Devolver con observaciones'],

@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const { Op, fn, col, Sequelize } = require('sequelize');
-const { JuridicaCaso, JuridicaHistorial, JuridicaAdjunto, User } = require('../models');
+const { JuridicaCaso, JuridicaHistorial, JuridicaAdjunto, User, UserModulePermission } = require('../models');
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 
 const USER_FIELDS = ['id', 'nombre', 'email', 'cargo', 'dependencia'];
@@ -521,6 +521,22 @@ const assignCase = async (req, res) => {
       secretario_snapshot: userSnapshot(secretary)
     }
   });
+
+  // Auto-activación de permiso en SIAC: al asignarle un expediente a los asistentes,
+  // el sistema les habilita automáticamente el módulo de Oficina Jurídica si aún no lo tenían activo
+  for (const assignee of assignees) {
+    try {
+      const [perm, created] = await UserModulePermission.findOrCreate({
+        where: { user_id: assignee.id, module_key: 'oficina_juridica' },
+        defaults: { user_id: assignee.id, module_key: 'oficina_juridica', can_view: true, can_create: true, can_edit: true, can_delete: false }
+      });
+      if (!created && !perm.can_view) {
+        await perm.update({ can_view: true });
+      }
+    } catch (permErr) {
+      console.warn('Error auto-activando permiso a asesor asignado:', permErr);
+    }
+  }
 
   const nombresAsignados = assignees.map((u) => u.nombre).join(', ');
   await addHistory(
