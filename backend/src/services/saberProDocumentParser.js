@@ -84,8 +84,11 @@ function parseEvaluatedData(rawText, hints = {}) {
     /\b(EKA?\s*\d{8,})\b/iu
   ])?.replace(/\s/g, '').toUpperCase() || null;
   const hintedRegistration = String(hints.registrationNumber || '').replace(/\s/g, '').toUpperCase();
-  const registrationNumber = /^EKA?\d{8,}$/.test(hintedRegistration)
-    ? hintedRegistration : detectedRegistration;
+  const expectedRegistrationNumber = /^EKA?\d{8,}$/.test(hintedRegistration)
+    ? hintedRegistration : null;
+  const registrationNumber = detectedRegistration;
+  const registrationMismatch = Boolean(registrationNumber && expectedRegistrationNumber
+    && registrationNumber !== expectedRegistrationNumber);
 
   let identification = firstMatch(text, [
     /identificaci[oó]n\s*:?\s*(?:C\.?[ \t]*C\.?|C[ÉE]DULA(?:[ \t]+DE[ \t]+CIUDADAN[IÍ]A)?)?[ \t]*([0-9][0-9. \t]{5,14})/iu,
@@ -120,22 +123,35 @@ function parseEvaluatedData(rawText, hints = {}) {
   const expectedYear = dateValidation.expectedYear;
   const dateYearMismatch = Boolean(parsedExamDate && expectedYear && !dateValidation.valid);
   const examDate = dateValidation.valid ? parsedExamDate : null;
+  const expectedExamDate = toIsoDate(hints.examDate);
+  const examDateMismatch = Boolean(examDate && expectedExamDate && examDate !== expectedExamDate);
   const missingFields = [];
   if (!registrationNumber) missingFields.push('Número de registro');
+  else if (registrationMismatch) {
+    missingFields.push(`El EK leído en el PDF (${registrationNumber}) no coincide con codigo_ek (${expectedRegistrationNumber})`);
+  }
   if (!examDate) missingFields.push(dateYearMismatch
     ? `Fecha del examen (debe corresponder al año ${expectedYear} del EK)`
     : 'Fecha de presentación');
+  else if (examDateMismatch) {
+    missingFields.push(`La fecha leída en el PDF (${examDate}) no coincide con fecha_presentacion_ek (${expectedExamDate})`);
+  }
   if (!identification) missingFields.push('Cédula no legible en el PDF');
   else if (identificationMismatch) {
     missingFields.push(`La cédula leída en el PDF (${identification}) no coincide con la cédula consultada (${expectedIdentification})`);
   }
   return {
     registrationNumber,
+    expectedRegistrationNumber,
+    registrationMismatch,
     examDate,
+    expectedExamDate,
+    examDateMismatch,
     identification,
     expectedIdentification: expectedIdentification || null,
     expectedIdentificationRead,
     identificationMismatch,
+    readComplete: Boolean(registrationNumber && examDate && identification),
     complete: missingFields.length === 0,
     missingFields
   };

@@ -87,7 +87,10 @@ const GESTION_INFO_MODULE_KEYS = [
   'vicerrectoria_financiera.viaticos',
   'vicerrectoria_financiera.viaticos.gestion',
   'vicerrectoria_financiera.viaticos.estadistica',
-  'oficina_juridica'
+  'oficina_juridica',
+  'oficina_juridica.jefatura',
+  'oficina_juridica.secretaria',
+  'oficina_juridica.asesor'
 ];
 const STATISTICAL_MODULE_PERMISSION_KEYS = new Set([
   'poblacional',
@@ -111,7 +114,10 @@ const STATISTICAL_MODULE_PERMISSION_KEYS = new Set([
   'monitor_actividad',
   'seguridad_aplicativa',
   'vicerrectoria_academica',
-  'oficina_juridica'
+  'oficina_juridica',
+  'oficina_juridica.jefatura',
+  'oficina_juridica.secretaria',
+  'oficina_juridica.asesor'
 ]);
 const INTERNACIONALIZACION_DASHBOARD_PERMISSION_KEYS = [
   'internacionalizacion_gestion',
@@ -2202,6 +2208,9 @@ const updateUserModulePermissions = async (req, res) => {
     }
     if (cleanModules.some((key) => key.startsWith('gestion_riesgo_ambiente.')) && !cleanModules.includes('gestion_riesgo_ambiente')) {
       cleanModules.push('gestion_riesgo_ambiente');
+    }
+    if (cleanModules.some((key) => key.startsWith('oficina_juridica.')) && !cleanModules.includes('oficina_juridica')) {
+      cleanModules.push('oficina_juridica');
     }
     if (cleanModules.some((key) => STATISTICAL_MODULE_PERMISSION_KEYS.has(key)) && !cleanModules.includes('estadistica_institucional')) {
       cleanModules.push('estadistica_institucional');

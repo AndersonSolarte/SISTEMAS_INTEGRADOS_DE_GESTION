@@ -60,7 +60,10 @@ const GESTION_INFO_MODULE_KEYS = new Set([
   'vicerrectoria_financiera.viaticos',
   'vicerrectoria_financiera.viaticos.gestion',
   'vicerrectoria_financiera.viaticos.estadistica',
-  'oficina_juridica'
+  'oficina_juridica',
+  'oficina_juridica.jefatura',
+  'oficina_juridica.secretaria',
+  'oficina_juridica.asesor'
 ]);
 
 const GESTION_PROCESOS_DASHBOARD_KEYS = new Set([

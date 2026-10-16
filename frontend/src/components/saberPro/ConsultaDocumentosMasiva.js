@@ -314,9 +314,9 @@ export default function ConsultaDocumentosMasiva() {
                     <TableCell>Fila</TableCell>
                     <TableCell>Identificación</TableCell>
                     <TableCell>Estado</TableCell>
-                    <TableCell>Número de registro</TableCell>
-                    <TableCell>Fecha del examen</TableCell>
-                    <TableCell>Detalle</TableCell>
+                    <TableCell>EK leído (PDF)</TableCell>
+                    <TableCell>Fecha leída (PDF)</TableCell>
+                    <TableCell>Validación contra BD</TableCell>
                     <TableCell align="center">Revisar</TableCell>
                   </TableRow>
                 </TableHead>
@@ -433,7 +433,7 @@ export default function ConsultaDocumentosMasiva() {
                       : 'Primero ingrese un número de registro EK válido.'}
                 </Typography>
               </Box>
-              <Typography sx={{ fontSize: 12, color: '#64748b' }}>Detalle automático: {reviewItem?.message || '—'}</Typography>
+              <Typography sx={{ fontSize: 12, color: '#64748b' }}>Comparación automática: {reviewItem?.message || '—'}</Typography>
             </Stack>
           </Stack>
         </DialogContent>

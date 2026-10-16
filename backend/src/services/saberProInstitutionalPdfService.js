@@ -60,6 +60,7 @@ async function queryDocumentsByIdentifications(identifications) {
       `SELECT
          p.numero_identificacion::text AS identification,
          g.codigo_ek::text AS registration_number,
+         g.fecha_presentacion_ek AS expected_exam_date,
          g.url_ek::text AS document_path,
          g.fecha_registro AS registered_at
        FROM personas p

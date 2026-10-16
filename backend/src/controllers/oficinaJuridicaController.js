@@ -41,14 +41,20 @@ const resolveActor = (reqOrUser) => {
 const roleFor = (user) => {
   if (user?.email === 'sgc@unicesmag.edu.co') return 'administrador';
   if (user?.role === 'administrador') return 'administrador';
+
+  // 1. Prioridad absoluta: Permiso modular explícito asignado en Gestión de Usuarios
+  const perms = (user?.juridicaPermissions || []).map((p) => (typeof p === 'string' ? p : p.module_key));
+  if (perms.includes('oficina_juridica.jefatura')) return 'jefatura';
+  if (perms.includes('oficina_juridica.secretaria')) return 'secretaria';
+  if (perms.includes('oficina_juridica.asesor')) return 'asesor';
+
   const cargo = normalize(user?.cargo);
   const dep = normalize(user?.dependencia);
 
-  // 1. Secretaría: cualquier cargo con 'secretari'
+  // 2. Fallback institucional: Secretaría
   if (cargo.includes('secretari')) return 'secretaria';
 
-  // 2. Jefatura / Asesora Jurídica titular:
-  // Si menciona asesor/jefe/director/coordinador/lider juridico y NO es asistente ni auxiliar
+  // 3. Fallback institucional: Jefatura / Asesora Jurídica titular
   if (
     (cargo.includes('asesor') || cargo.includes('jefe') || cargo.includes('director') || cargo.includes('lider')) &&
     !cargo.includes('asistente') &&
@@ -58,18 +64,7 @@ const roleFor = (user) => {
     return 'jefatura';
   }
 
-  // 3. Asistentes y Abogados ejecutores:
-  // Cualquier asistente, auxiliar, abogado o personal operativo jurídico
-  if (
-    cargo.includes('asistente') ||
-    cargo.includes('auxiliar') ||
-    cargo.includes('abogad') ||
-    cargo.includes('jurid') ||
-    dep.includes('jurid')
-  ) {
-    return 'asesor';
-  }
-
+  // 4. Asistentes y Abogados ejecutores
   return 'asesor';
 };
 const userSnapshot = (user) => user ? ({ id: user.id, nombre: user.nombre, email: user.email, cargo: user.cargo, dependencia: user.dependencia }) : null;
@@ -110,10 +105,10 @@ const getCaseEmailAttachments = async (casoId, maxBytes = 25 * 1024 * 1024) => {
   }
 };
 
-// Helper: Obtener dinámicamente todo el personal ACTIVO adscrito a Oficina Jurídica
-// Si se crea un nuevo usuario activo, aparece de inmediato. Si se inactiva o elimina, desaparece de inmediato.
+// Helper: Obtener dinámicamente todo el personal ACTIVO adscrito a Oficina Jurídica o con permisos explícitos
+// Si se crea un nuevo usuario activo o se le asigna permiso, aparece de inmediato. Si se inactiva o elimina, desaparece.
 const getJuridicaActiveUsers = async () => {
-  return User.findAll({
+  const users = await User.findAll({
     attributes: USER_FIELDS,
     where: {
       estado: 'activo',
@@ -134,6 +129,44 @@ const getJuridicaActiveUsers = async () => {
     },
     order: [['nombre', 'ASC']]
   });
+
+  // Consultar también usuarios activos con permisos explícitos de oficina_juridica
+  const permittedRows = await UserModulePermission.findAll({
+    where: {
+      can_view: true,
+      module_key: {
+        [Op.in]: ['oficina_juridica', 'oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor']
+      }
+    },
+    attributes: ['user_id', 'module_key']
+  });
+
+  const permMap = {};
+  const permUserIds = [];
+  permittedRows.forEach((r) => {
+    if (!permMap[r.user_id]) permMap[r.user_id] = [];
+    permMap[r.user_id].push(r.module_key);
+    permUserIds.push(r.user_id);
+  });
+
+  const existingIds = new Set(users.map((u) => u.id));
+  const missingIds = Array.from(new Set(permUserIds)).filter((id) => !existingIds.has(id));
+
+  let allUsers = [...users];
+  if (missingIds.length > 0) {
+    const extraUsers = await User.findAll({
+      attributes: USER_FIELDS,
+      where: { id: missingIds, estado: 'activo' },
+      order: [['nombre', 'ASC']]
+    });
+    allUsers.push(...extraUsers);
+  }
+
+  allUsers.forEach((u) => {
+    u.juridicaPermissions = permMap[u.id] || u.juridicaPermissions || [];
+  });
+
+  return allUsers;
 };
 
 // Helper: Obtener personal activo agrupado de la Oficina Jurídica
@@ -311,8 +344,31 @@ const accessWhere = (user) => {
 
 const getProfile = async (req, res) => {
   const actor = resolveActor(req);
+  if (actor && (!actor.juridicaPermissions || actor.juridicaPermissions.length === 0)) {
+    try {
+      const actorPerms = await UserModulePermission.findAll({
+        where: {
+          user_id: actor.id,
+          can_view: true,
+          module_key: {
+            [Op.in]: ['oficina_juridica', 'oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor']
+          }
+        },
+        attributes: ['module_key']
+      });
+      actor.juridicaPermissions = actorPerms.map((p) => p.module_key);
+    } catch (err) {
+      console.warn('Error cargando permisos del actor:', err);
+    }
+  }
+
   const juridica = await getJuridicaActiveUsers();
-  const team = juridica.map((u) => ({ ...u.toJSON(), juridica_rol: roleFor(u) }));
+  const team = juridica.map((u) => ({
+    ...(u.toJSON ? u.toJSON() : u),
+    juridica_rol: roleFor(u),
+    juridica_permissions: u.juridicaPermissions || []
+  }));
+
   res.json({
     success: true,
     data: {
@@ -523,7 +579,7 @@ const assignCase = async (req, res) => {
   });
 
   // Auto-activación de permiso en SIAC: al asignarle un expediente a los asistentes,
-  // el sistema les habilita automáticamente el módulo de Oficina Jurídica si aún no lo tenían activo
+  // el sistema les habilita automáticamente el módulo de Oficina Jurídica con rol asesor si aún no lo tenían activo
   for (const assignee of assignees) {
     try {
       const [perm, created] = await UserModulePermission.findOrCreate({
@@ -532,6 +588,20 @@ const assignCase = async (req, res) => {
       });
       if (!created && !perm.can_view) {
         await perm.update({ can_view: true });
+      }
+
+      const hasSubRole = await UserModulePermission.count({
+        where: {
+          user_id: assignee.id,
+          module_key: { [Op.in]: ['oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor'] },
+          can_view: true
+        }
+      });
+      if (hasSubRole === 0) {
+        await UserModulePermission.findOrCreate({
+          where: { user_id: assignee.id, module_key: 'oficina_juridica.asesor' },
+          defaults: { user_id: assignee.id, module_key: 'oficina_juridica.asesor', can_view: true, can_create: true, can_edit: true, can_delete: false }
+        });
       }
     } catch (permErr) {
       console.warn('Error auto-activando permiso a asesor asignado:', permErr);

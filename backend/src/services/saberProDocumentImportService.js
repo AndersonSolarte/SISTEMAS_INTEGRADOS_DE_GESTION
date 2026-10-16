@@ -4,7 +4,9 @@ const { Op } = require('sequelize');
 const SaberProDocumentImport = require('../models/SaberProDocumentImport');
 const SaberProDocumentImportItem = require('../models/SaberProDocumentImportItem');
 const { extractPdfBuffer } = require('./saberProTextExtractionService');
-const { parseEvaluatedData, validateRegistrationDate } = require('./saberProDocumentParser');
+const {
+  parseEvaluatedData, validateRegistrationDate, toIsoDate, toDisplayDate
+} = require('./saberProDocumentParser');
 const {
   queryDocumentsByIdentifications,
   fetchPdfBuffer,
@@ -117,6 +119,13 @@ function selectPdf(rows) {
   });
 }
 
+function institutionalReference(document) {
+  const registrationNumber = String(document?.registration_number || '').replace(/\s/g, '').toUpperCase() || null;
+  const examDate = toIsoDate(document?.expected_exam_date);
+  const label = `Referencia BD: EK ${registrationNumber || 'sin dato'} · fecha ${toDisplayDate(examDate) || 'sin dato'}`;
+  return { registrationNumber, examDate, label };
+}
+
 async function refreshCounters(importId) {
   const items = await SaberProDocumentImportItem.findAll({ where: { import_id: importId }, attributes: ['status'], raw: true });
   const count = (statuses) => items.filter((item) => statuses.includes(item.status)).length;
@@ -141,21 +150,21 @@ async function extractItem(item, institutionalRows) {
     return { status: 'NO_PDF', message: 'La persona existe, pero no tiene una ruta PDF válida.' };
   }
   const documentPath = normalizeRemotePath(document.document_path);
+  const reference = institutionalReference(document);
   const hints = {
     identification: item.identification,
-    registrationNumber: document.registration_number
+    registrationNumber: reference.registrationNumber,
+    examDate: reference.examDate
   };
   try {
     const buffer = await fetchPdfBuffer(documentPath);
     const extraction = await extractPdfBuffer(buffer, hints);
     const parsed = parseEvaluatedData(extraction.text, hints);
     if (!parsed.complete) {
-      const detail = parsed.identificationMismatch
-        ? `La cédula leída en el PDF (${parsed.identification}) no coincide con la cédula consultada (${item.identification}).`
-        : `Faltan datos: ${(parsed.missingFields || []).join(', ')}`;
+      const detail = `${(parsed.missingFields || []).join('. ')}. ${reference.label}.`;
       return {
         status: 'INCOMPLETE',
-        registration_number: parsed.registrationNumber || document.registration_number || null,
+        registration_number: parsed.registrationNumber,
         exam_date: parsed.examDate,
         document_path: documentPath,
         message: detail
@@ -166,12 +175,12 @@ async function extractItem(item, institutionalRows) {
       registration_number: parsed.registrationNumber,
       exam_date: parsed.examDate,
       document_path: documentPath,
-      message: `Cédula, EK y fecha validados mediante ${extraction.method}.`
+      message: `Coincide con codigo_ek y fecha_presentacion_ek. ${reference.label}. Lectura ${extraction.method}.`
     };
   } catch (error) {
     return {
       status: 'ERROR',
-      registration_number: document.registration_number || null,
+      registration_number: null,
       document_path: documentPath,
       message: String(error.message || 'No fue posible procesar el PDF.').slice(0, 700)
     };
@@ -321,11 +330,22 @@ async function correctItem(itemId, values, userId) {
     throw apiError(`La fecha debe pertenecer al año ${dateValidation.expectedYear}, según el número de registro EK.`,
       400, 'DATE_YEAR_MISMATCH');
   }
+  const institutionalRows = await queryDocumentsByIdentifications([item.identification]);
+  const institutionalDocument = selectPdf(institutionalRows);
+  const reference = institutionalReference(institutionalDocument);
+  if (reference.registrationNumber && registrationNumber !== reference.registrationNumber) {
+    throw apiError(`El EK ingresado (${registrationNumber}) no coincide con codigo_ek (${reference.registrationNumber}).`,
+      400, 'REGISTRATION_MISMATCH');
+  }
+  if (reference.examDate && examDate !== reference.examDate) {
+    throw apiError(`La fecha ingresada (${toDisplayDate(examDate)}) no coincide con fecha_presentacion_ek (${toDisplayDate(reference.examDate)}).`,
+      400, 'EXAM_DATE_MISMATCH');
+  }
   await item.update({
     registration_number: registrationNumber,
     exam_date: examDate,
     status: 'CORRECTED',
-    message: 'Información revisada y corregida manualmente.',
+    message: `Información revisada manualmente y validada. ${reference.label}.`,
     corrected_by: userId,
     corrected_at: new Date()
   });
@@ -364,9 +384,9 @@ async function createResultWorkbook(importId) {
     { header: 'Fila original', key: 'row', width: 14 },
     { header: 'Identificación', key: 'identification', width: 22 },
     { header: 'Estado', key: 'status', width: 20 },
-    { header: 'Número de registro', key: 'registration', width: 25 },
-    { header: 'Fecha del examen (DD/MM/AAAA)', key: 'date', width: 31 },
-    { header: 'Detalle', key: 'message', width: 60 }
+    { header: 'EK leído del PDF', key: 'registration', width: 25 },
+    { header: 'Fecha leída del PDF (DD/MM/AAAA)', key: 'date', width: 34 },
+    { header: 'Comparación con codigo_ek y fecha_presentacion_ek', key: 'message', width: 85 }
   ];
   for (const item of record.items || []) {
     const row = sheet.addRow({

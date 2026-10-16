@@ -11,6 +11,7 @@ import AssignmentIndRoundedIcon from '@mui/icons-material/AssignmentIndRounded';
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
 import AutorenewRoundedIcon from '@mui/icons-material/AutorenewRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import EditCalendarRoundedIcon from '@mui/icons-material/EditCalendarRounded';
@@ -27,7 +28,9 @@ import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import OutboxRoundedIcon from '@mui/icons-material/OutboxRounded';
 import PendingActionsRoundedIcon from '@mui/icons-material/PendingActionsRounded';
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
+import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded';
 import ThumbUpAltRoundedIcon from '@mui/icons-material/ThumbUpAltRounded';
 import TimerRoundedIcon from '@mui/icons-material/TimerRounded';
@@ -106,6 +109,27 @@ const ACTIONS = {
     ['entregado', 'Entregar'],
     ['cerrado', 'Cerrar']
   ]
+};
+
+const getAvailableActionsForRole = (role, currentCase) => {
+  const base = ACTIONS[role] || [];
+  if (!currentCase) return base;
+  if (role === 'asesor') {
+    if (['asignado', 'devuelto_informacion'].includes(currentCase.estado)) {
+      return base.filter(([val]) => val === 'en_estudio');
+    }
+    if (currentCase.estado === 'en_estudio') {
+      return base.filter(([val]) => val === 'respuesta_revision');
+    }
+    return [];
+  }
+  if (role === 'secretaria') {
+    if (['aprobado_jefatura', 'pendiente_radicacion_salida'].includes(currentCase.estado)) {
+      return base.filter(([val]) => ['pendiente_radicacion_salida', 'entregado', 'cerrado'].includes(val));
+    }
+    return [];
+  }
+  return base;
 };
 
 const emptyForm = {
@@ -583,6 +607,9 @@ export default function JuridicaWorkflowPanel() {
       setRows(list.data || []);
       setStats(summary.data || {});
       setInternalUsers(usersRes.data || []);
+      if (p.data?.role === 'asesor') {
+        setScopeFilter((prev) => prev || 'mis_asignados');
+      }
     } catch (e) {
       setError(e.response?.data?.message || 'No fue posible cargar la gestión jurídica.');
     } finally {
@@ -620,23 +647,66 @@ export default function JuridicaWorkflowPanel() {
     return { vencidos, porVencer, enTermino, sinLimite };
   }, [rows]);
 
-  // Contadores para filtros de asesor
-  const myAssignedCount = useMemo(() => {
+  // Métricas avanzadas segregadas por rol institucional
+  const roleMetrics = useMemo(() => {
     const uid = Number(effectiveUser?.id);
-    if (!uid) return 0;
-    return rows.filter((r) => {
+    let porAsignar = 0;
+    let enEstudio = 0;
+    let enRevision = 0;
+    let listosDespacho = 0;
+    let devueltos = 0;
+
+    let misAsignados = 0;
+    let misPendientes = 0;
+    let misEnEstudio = 0;
+    let misDevueltos = 0;
+    let misEnRevision = 0;
+    let misFinalizados = 0;
+
+    rows.forEach((r) => {
       const respId = Number(r.responsable_id);
       const isDirect = respId === uid || r.metadata?.responsable_snapshot?.id === uid;
       const ids = (r.metadata?.responsables_ids || []).map(Number);
-      return isDirect || ids.includes(uid);
-    }).length;
+      const isMine = uid && (isDirect || ids.includes(uid));
+
+      if (r.estado === 'pendiente_clasificacion') porAsignar++;
+      if (['asignado', 'en_estudio'].includes(r.estado)) enEstudio++;
+      if (r.estado === 'respuesta_revision') enRevision++;
+      if (['aprobado_jefatura', 'pendiente_radicacion_salida'].includes(r.estado)) listosDespacho++;
+      if (r.estado === 'devuelto_informacion') devueltos++;
+
+      if (isMine) {
+        misAsignados++;
+        if (r.estado === 'asignado') misPendientes++;
+        if (r.estado === 'en_estudio') misEnEstudio++;
+        if (r.estado === 'devuelto_informacion') misDevueltos++;
+        if (r.estado === 'respuesta_revision') misEnRevision++;
+        if (['entregado', 'cerrado'].includes(r.estado)) misFinalizados++;
+      }
+    });
+
+    return {
+      porAsignar,
+      enEstudio,
+      enRevision,
+      listosDespacho,
+      devueltos,
+      misAsignados,
+      misPendientes,
+      misEnEstudio,
+      misDevueltos,
+      misEnRevision,
+      misFinalizados
+    };
   }, [rows, effectiveUser]);
+
+  const myAssignedCount = roleMetrics.misAsignados;
 
   const salidasCount = useMemo(() => {
     return rows.filter((r) => ['aprobado_jefatura', 'pendiente_radicacion_salida', 'respuesta_revision'].includes(r.estado)).length;
   }, [rows]);
 
-  // Filtrado compuesto
+  // Filtrado compuesto con scopes específicos por rol
   const filtered = useMemo(() => {
     return rows.filter((row) => {
       const query = search.toLowerCase();
@@ -656,6 +726,46 @@ export default function JuridicaWorkflowPanel() {
         const isDirect = respId === uid || row.metadata?.responsable_snapshot?.id === uid;
         const ids = (row.metadata?.responsables_ids || []).map(Number);
         matchesScope = isDirect || ids.includes(uid);
+      } else if (scopeFilter === 'por_asignar') {
+        matchesScope = row.estado === 'pendiente_clasificacion';
+      } else if (scopeFilter === 'en_estudio') {
+        matchesScope = ['asignado', 'en_estudio'].includes(row.estado);
+      } else if (scopeFilter === 'en_revision') {
+        matchesScope = row.estado === 'respuesta_revision';
+      } else if (scopeFilter === 'ready_dispatch') {
+        matchesScope = ['aprobado_jefatura', 'pendiente_radicacion_salida'].includes(row.estado);
+      } else if (scopeFilter === 'devueltos') {
+        matchesScope = row.estado === 'devuelto_informacion';
+      } else if (scopeFilter === 'mis_pendientes') {
+        const uid = Number(effectiveUser?.id);
+        const respId = Number(row.responsable_id);
+        const isDirect = respId === uid || row.metadata?.responsable_snapshot?.id === uid;
+        const ids = (row.metadata?.responsables_ids || []).map(Number);
+        matchesScope = (isDirect || ids.includes(uid)) && row.estado === 'asignado';
+      } else if (scopeFilter === 'mis_en_estudio') {
+        const uid = Number(effectiveUser?.id);
+        const respId = Number(row.responsable_id);
+        const isDirect = respId === uid || row.metadata?.responsable_snapshot?.id === uid;
+        const ids = (row.metadata?.responsables_ids || []).map(Number);
+        matchesScope = (isDirect || ids.includes(uid)) && row.estado === 'en_estudio';
+      } else if (scopeFilter === 'mis_devueltos') {
+        const uid = Number(effectiveUser?.id);
+        const respId = Number(row.responsable_id);
+        const isDirect = respId === uid || row.metadata?.responsable_snapshot?.id === uid;
+        const ids = (row.metadata?.responsables_ids || []).map(Number);
+        matchesScope = (isDirect || ids.includes(uid)) && row.estado === 'devuelto_informacion';
+      } else if (scopeFilter === 'mis_en_revision') {
+        const uid = Number(effectiveUser?.id);
+        const respId = Number(row.responsable_id);
+        const isDirect = respId === uid || row.metadata?.responsable_snapshot?.id === uid;
+        const ids = (row.metadata?.responsables_ids || []).map(Number);
+        matchesScope = (isDirect || ids.includes(uid)) && row.estado === 'respuesta_revision';
+      } else if (scopeFilter === 'mis_finalizados') {
+        const uid = Number(effectiveUser?.id);
+        const respId = Number(row.responsable_id);
+        const isDirect = respId === uid || row.metadata?.responsable_snapshot?.id === uid;
+        const ids = (row.metadata?.responsables_ids || []).map(Number);
+        matchesScope = (isDirect || ids.includes(uid)) && ['entregado', 'cerrado'].includes(row.estado);
       } else if (scopeFilter === 'vencidos') {
         const alert = getTermAlert(row.fecha_limite, row.estado, row.fecha_ingreso);
         matchesScope = alert.status === 'vencido';
@@ -696,8 +806,12 @@ export default function JuridicaWorkflowPanel() {
 
   const isSuperAdmin = String(authUser?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
   const isJefatura = profile.role === 'jefatura';
-  // La secretaría NO puede asignar expedientes. Solo la Jefatura o el SuperAdmin (en vista real)
+  // La secretaría y los asistentes NO pueden asignar expedientes. Solo la Jefatura o el SuperAdmin (en vista real)
   const canAssign = (!profile.isSimulation && isSuperAdmin) || isJefatura;
+  // Solo Secretaría, Jefatura y Administrador pueden modificar datos de radicación básica
+  const canEditCase = ['administrador', 'jefatura', 'secretaria'].includes(profile.role);
+  // Solo Jefatura y Administrador pueden conceder prórrogas de términos legales
+  const canProrroga = ['administrador', 'jefatura'].includes(profile.role);
 
   const handleSwitchPerspective = async (userId) => {
     setBusy(true);
@@ -983,20 +1097,35 @@ export default function JuridicaWorkflowPanel() {
     }
   };
 
-  const handleTransition = async () => {
-    if (!transition.estado) return;
+  const handleDirectTransition = async (nextState, comment = '', extraPayload = {}) => {
+    if (!nextState || !selected) return;
     setBusy(true);
+    setError('');
     try {
-      const response = await oficinaJuridicaService.transition(selected.id, transition);
+      const response = await oficinaJuridicaService.transition(selected.id, {
+        estado: nextState,
+        comentario: comment || '',
+        ...extraPayload
+      });
       replaceRow(response.data);
+      setSelected(response.data);
       setTransition({ estado: '', comentario: '', radicado: '', despacho: '', resultado: '' });
-      setNotice('Estado actualizado con trazabilidad.');
+      setNotice('Estado del expediente actualizado correctamente.');
       await Promise.all([refreshSelected(selected.id), refreshStats()]);
     } catch (e) {
-      setError(e.response?.data?.message || 'No fue posible actualizar el estado.');
+      setError(e.response?.data?.message || 'No fue posible actualizar el estado del expediente.');
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleTransition = async () => {
+    if (!transition.estado) return;
+    await handleDirectTransition(transition.estado, transition.comentario, {
+      radicado: transition.radicado,
+      despacho: transition.despacho,
+      resultado: transition.resultado
+    });
   };
 
   const handleImport = async (event) => {
@@ -1066,7 +1195,7 @@ export default function JuridicaWorkflowPanel() {
 
   return (
     <Stack spacing={2.2}>
-      {/* Banner Principal */}
+      {/* Banner Principal Diferenciado por Rol Operativo */}
       <Paper
         elevation={0}
         sx={{
@@ -1075,32 +1204,59 @@ export default function JuridicaWorkflowPanel() {
           color: '#fff',
           overflow: 'hidden',
           position: 'relative',
-          background: 'linear-gradient(120deg,#091b3d 0%,#1745a5 58%,#0e7490 100%)'
+          background: profile.role === 'secretaria'
+            ? 'linear-gradient(135deg, #0b1f45 0%, #1e293b 50%, #78350f 100%)'
+            : profile.role === 'jefatura'
+            ? 'linear-gradient(135deg, #0b1f45 0%, #1e1b4b 50%, #312e81 100%)'
+            : profile.role === 'asesor'
+            ? 'linear-gradient(135deg, #0b1f45 0%, #064e3b 50%, #065f46 100%)'
+            : 'linear-gradient(120deg,#091b3d 0%,#1745a5 58%,#0e7490 100%)',
+          boxShadow: '0 8px 30px rgba(11, 31, 69, 0.15)'
         }}
       >
         <Box sx={{ position: 'absolute', width: 260, height: 260, borderRadius: '50%', bgcolor: '#ffffff10', right: -60, top: -110 }} />
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2} alignItems={{ md: 'center' }}>
           <Stack direction="row" spacing={2} alignItems="center">
             <Avatar sx={{ width: 58, height: 58, bgcolor: '#ffffff18', border: '1px solid #ffffff40' }}>
-              <GavelRoundedIcon sx={{ fontSize: 32 }} />
+              {profile.role === 'secretaria' ? '📋' : profile.role === 'jefatura' ? '⚖️' : profile.role === 'asesor' ? '👥' : <GavelRoundedIcon sx={{ fontSize: 32 }} />}
             </Avatar>
             <Box>
-              <Typography variant="h4" sx={{ fontWeight: 950, fontSize: { xs: 24, md: 31 } }}>
-                Gestión de Asuntos Jurídicos
+              <Typography variant="h4" sx={{ fontWeight: 950, fontSize: { xs: 22, md: 29 } }}>
+                {profile.role === 'secretaria'
+                  ? 'Panel Secretaría Jurídica · Radicación y Despacho'
+                  : profile.role === 'jefatura'
+                  ? 'Panel Jefatura Jurídica · Dirección, Asignación y Control'
+                  : profile.role === 'asesor'
+                  ? 'Panel Asistente Jurídico · Mis Expedientes Asignados'
+                  : 'Gestión de Asuntos Jurídicos · Oficina Jurídica'}
               </Typography>
-              <Typography sx={{ color: '#dbeafe', mt: 0.4 }}>
-                Control de términos legales, radicación de derechos de petición, órdenes de salida y expediente digital.
+              <Typography sx={{ color: '#dbeafe', mt: 0.4, fontSize: { xs: '0.85rem', md: '0.94rem' }, maxWidth: 850 }}>
+                {profile.role === 'secretaria'
+                  ? 'Recepción de solicitudes externas e internas, sistematización, monitoreo de términos legales y despacho de radicados de salida.'
+                  : profile.role === 'jefatura'
+                  ? 'Dirección jurídica institucional, asignación y reasignación de expedientes a asesores, supervisión de términos improrrogables y aprobación de respuestas.'
+                  : profile.role === 'asesor'
+                  ? 'Estudio exhaustivo de antecedentes, proyección sustentada de respuestas jurídicas y emisión de visto bueno para aprobación final.'
+                  : 'Control institucional de términos legales, radicación de derechos de petición, órdenes de salida y expediente digital.'}
               </Typography>
             </Box>
           </Stack>
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
             <Chip
               icon={<TimerRoundedIcon sx={{ fontSize: 16, color: '#0284c7 !important' }} />}
               label="Control de Términos Ley 1755"
               sx={{ bgcolor: '#fff', color: COLORS.blue, fontWeight: 900 }}
             />
             <Chip
-              label={`Perfil: ${profile.role}${profile.isSimulation ? ` (Simulando a ${formatUserName(profile.actor?.nombre)})` : ''}`}
+              label={
+                profile.role === 'secretaria'
+                  ? '📋 Rol: Secretaría Jurídica'
+                  : profile.role === 'jefatura'
+                  ? '⚖️ Rol: Jefatura Jurídica'
+                  : profile.role === 'asesor'
+                  ? '👥 Rol: Asistente Jurídico'
+                  : `Perfil: ${profile.role}${profile.isSimulation ? ` (Simulando a ${formatUserName(profile.actor?.nombre)})` : ''}`
+              }
               sx={{ bgcolor: profile.isSimulation ? '#f59e0b' : '#ffffff25', color: '#fff', fontWeight: 900, textTransform: 'capitalize' }}
             />
           </Stack>
@@ -1262,74 +1418,285 @@ export default function JuridicaWorkflowPanel() {
         </Paper>
       )}
 
-      {/* Métricas Pastel Interactivas (Unificadas - Sin duplicación) */}
+      {/* Métricas Pastel Interactivas Diferenciadas por Rol */}
       <Stack direction="row" flexWrap="wrap" gap={1.2}>
-        <Metric
-          icon={InboxRoundedIcon}
-          label="TOTAL ASUNTOS"
-          value={stats.total}
-          helper="Bandeja general"
-          pastelBg="#f0f7ff"
-          pastelBorder="#dbeafe"
-          accentColor="#1d4ed8"
-          onClick={handleSelectAll}
-          active={!stateFilter && !termFilter && !scopeFilter}
-        />
-        <Metric
-          icon={PersonRoundedIcon}
-          label="MIS ASIGNADOS"
-          value={myAssignedCount}
-          helper="Mi carga de trabajo"
-          pastelBg="#f0fdfa"
-          pastelBorder="#ccfbf1"
-          accentColor="#0f766e"
-          onClick={() => handleSelectScope('mis_asignados')}
-          active={scopeFilter === 'mis_asignados'}
-        />
-        <Metric
-          icon={PendingActionsRoundedIcon}
-          label="EN TRÁMITE"
-          value={stats.abiertos}
-          helper="Bandeja activa"
-          pastelBg="#fffbeb"
-          pastelBorder="#fef3c7"
-          accentColor="#d97706"
-          onClick={() => handleSelectStateMetric('asignado')}
-          active={stateFilter === 'asignado' && !scopeFilter && !termFilter}
-        />
-        <Metric
-          icon={AlarmRoundedIcon}
-          label="POR VENCER (≤ 5 D.H.)"
-          value={stats.por_vencer ?? termCounts.porVencer}
-          helper="Alerta preventiva"
-          pastelBg="#fefce8"
-          pastelBorder="#fef08a"
-          accentColor="#ca8a04"
-          onClick={() => handleSelectScope('por_vencer')}
-          active={scopeFilter === 'por_vencer'}
-        />
-        <Metric
-          icon={WarningAmberRoundedIcon}
-          label="VENCIDOS"
-          value={stats.vencidos ?? termCounts.vencidos}
-          helper="Término legal superado"
-          pastelBg="#fff1f2"
-          pastelBorder="#fecdd3"
-          accentColor="#e11d48"
-          onClick={() => handleSelectScope('vencidos')}
-          active={scopeFilter === 'vencidos'}
-        />
-        <Metric
-          icon={CheckCircleRoundedIcon}
-          label="FINALIZADOS"
-          value={stats.cerrados}
-          helper="Entregados o cerrados"
-          pastelBg="#f0fdf4"
-          pastelBorder="#bbf7d0"
-          accentColor="#16a34a"
-          onClick={() => handleSelectStateMetric('entregado')}
-          active={stateFilter === 'entregado' && !scopeFilter && !termFilter}
-        />
+        {profile.role === 'jefatura' ? (
+          <>
+            <Metric
+              icon={InboxRoundedIcon}
+              label="TOTAL ASUNTOS"
+              value={stats.total}
+              helper="Bandeja general"
+              pastelBg="#f0f7ff"
+              pastelBorder="#dbeafe"
+              accentColor="#1d4ed8"
+              onClick={handleSelectAll}
+              active={!stateFilter && !termFilter && !scopeFilter}
+            />
+            <Metric
+              icon={AssignmentIndRoundedIcon}
+              label="PENDIENTES ASIGNAR"
+              value={roleMetrics.porAsignar}
+              helper="Requieren designación"
+              pastelBg="#fff7ed"
+              pastelBorder="#fed7aa"
+              accentColor="#c2410c"
+              onClick={() => handleSelectScope('por_asignar')}
+              active={scopeFilter === 'por_asignar'}
+            />
+            <Metric
+              icon={PendingActionsRoundedIcon}
+              label="EN ESTUDIO ASESORES"
+              value={roleMetrics.enEstudio}
+              helper="En elaboración"
+              pastelBg="#ecfeff"
+              pastelBorder="#a5f3fc"
+              accentColor="#0e7490"
+              onClick={() => handleSelectScope('en_estudio')}
+              active={scopeFilter === 'en_estudio'}
+            />
+            <Metric
+              icon={FactCheckRoundedIcon}
+              label="PARA MI REVISIÓN"
+              value={roleMetrics.enRevision}
+              helper="Respuestas proyectadas"
+              pastelBg="#f5f3ff"
+              pastelBorder="#ddd6fe"
+              accentColor="#7c3aed"
+              onClick={() => handleSelectScope('en_revision')}
+              active={scopeFilter === 'en_revision'}
+            />
+            <Metric
+              icon={AlarmRoundedIcon}
+              label="POR VENCER (≤ 5 D.H.)"
+              value={stats.por_vencer ?? termCounts.porVencer}
+              helper="Alerta de términos"
+              pastelBg="#fefce8"
+              pastelBorder="#fef08a"
+              accentColor="#ca8a04"
+              onClick={() => handleSelectScope('por_vencer')}
+              active={scopeFilter === 'por_vencer'}
+            />
+            <Metric
+              icon={CheckCircleRoundedIcon}
+              label="FINALIZADOS"
+              value={stats.cerrados}
+              helper="Entregados o cerrados"
+              pastelBg="#f0fdf4"
+              pastelBorder="#bbf7d0"
+              accentColor="#16a34a"
+              onClick={() => handleSelectStateMetric('entregado')}
+              active={stateFilter === 'entregado' && !scopeFilter && !termFilter}
+            />
+          </>
+        ) : profile.role === 'secretaria' ? (
+          <>
+            <Metric
+              icon={InboxRoundedIcon}
+              label="TOTAL RADICADOS"
+              value={stats.total}
+              helper="Solicitudes recibidas"
+              pastelBg="#f0f7ff"
+              pastelBorder="#dbeafe"
+              accentColor="#1d4ed8"
+              onClick={handleSelectAll}
+              active={!stateFilter && !termFilter && !scopeFilter}
+            />
+            <Metric
+              icon={OutboxRoundedIcon}
+              label="POR ENVIAR A JEFATURA"
+              value={roleMetrics.porAsignar}
+              helper="Pendientes clasificación"
+              pastelBg="#fffbeb"
+              pastelBorder="#fef3c7"
+              accentColor="#b45309"
+              onClick={() => handleSelectScope('por_asignar')}
+              active={scopeFilter === 'por_asignar'}
+            />
+            <Metric
+              icon={PendingActionsRoundedIcon}
+              label="EN TRÁMITE JURÍDICO"
+              value={roleMetrics.enEstudio + roleMetrics.enRevision}
+              helper="Con asesores / jefatura"
+              pastelBg="#ecfeff"
+              pastelBorder="#a5f3fc"
+              accentColor="#0e7490"
+              onClick={() => handleSelectScope('en_estudio')}
+              active={scopeFilter === 'en_estudio'}
+            />
+            <Metric
+              icon={TaskAltRoundedIcon}
+              label="LISTOS PARA DESPACHO"
+              value={roleMetrics.listosDespacho}
+              helper="Aprobados por Jefatura"
+              pastelBg="#ecfdf5"
+              pastelBorder="#a7f3d0"
+              accentColor="#047857"
+              onClick={() => handleSelectScope('ready_dispatch')}
+              active={scopeFilter === 'ready_dispatch'}
+            />
+            <Metric
+              icon={AlarmRoundedIcon}
+              label="POR VENCER (≤ 5 D.H.)"
+              value={stats.por_vencer ?? termCounts.porVencer}
+              helper="Alerta preventiva"
+              pastelBg="#fefce8"
+              pastelBorder="#fef08a"
+              accentColor="#ca8a04"
+              onClick={() => handleSelectScope('por_vencer')}
+              active={scopeFilter === 'por_vencer'}
+            />
+            <Metric
+              icon={CheckCircleRoundedIcon}
+              label="DESPACHADOS / CERRADOS"
+              value={stats.cerrados}
+              helper="Salidas entregadas"
+              pastelBg="#f0fdf4"
+              pastelBorder="#bbf7d0"
+              accentColor="#16a34a"
+              onClick={() => handleSelectStateMetric('entregado')}
+              active={stateFilter === 'entregado' && !scopeFilter && !termFilter}
+            />
+          </>
+        ) : profile.role === 'asesor' ? (
+          <>
+            <Metric
+              icon={PersonRoundedIcon}
+              label="MIS ASIGNADOS"
+              value={roleMetrics.misAsignados}
+              helper="Mi carga de trabajo"
+              pastelBg="#f0fdfa"
+              pastelBorder="#ccfbf1"
+              accentColor="#0f766e"
+              onClick={() => handleSelectScope('mis_asignados')}
+              active={scopeFilter === 'mis_asignados'}
+            />
+            <Metric
+              icon={HourglassTopRoundedIcon}
+              label="POR CONFIRMAR RECIBIDO"
+              value={roleMetrics.misPendientes}
+              helper="Designados a mi nombre"
+              pastelBg="#eff6ff"
+              pastelBorder="#bfdbfe"
+              accentColor="#1d4ed8"
+              onClick={() => handleSelectScope('mis_pendientes')}
+              active={scopeFilter === 'mis_pendientes'}
+            />
+            <Metric
+              icon={PendingActionsRoundedIcon}
+              label="EN ESTUDIO / PROYECCIÓN"
+              value={roleMetrics.misEnEstudio}
+              helper="Proyectando respuesta"
+              pastelBg="#ecfeff"
+              pastelBorder="#a5f3fc"
+              accentColor="#0e7490"
+              onClick={() => handleSelectScope('mis_en_estudio')}
+              active={scopeFilter === 'mis_en_estudio'}
+            />
+            <Metric
+              icon={WarningAmberRoundedIcon}
+              label="DEVUELTOS CON AJUSTES"
+              value={roleMetrics.misDevueltos}
+              helper="Observaciones de jefatura"
+              pastelBg="#fff1f2"
+              pastelBorder="#fecdd3"
+              accentColor="#e11d48"
+              onClick={() => handleSelectScope('mis_devueltos')}
+              active={scopeFilter === 'mis_devueltos'}
+            />
+            <Metric
+              icon={FactCheckRoundedIcon}
+              label="EN REVISIÓN JEFATURA"
+              value={roleMetrics.misEnRevision}
+              helper="Esperando visto bueno"
+              pastelBg="#f5f3ff"
+              pastelBorder="#ddd6fe"
+              accentColor="#7c3aed"
+              onClick={() => handleSelectScope('mis_en_revision')}
+              active={scopeFilter === 'mis_en_revision'}
+            />
+            <Metric
+              icon={CheckCircleRoundedIcon}
+              label="FINALIZADOS CON MI VB"
+              value={roleMetrics.misFinalizados}
+              helper="Concluidos exitosamente"
+              pastelBg="#f0fdf4"
+              pastelBorder="#bbf7d0"
+              accentColor="#16a34a"
+              onClick={() => handleSelectScope('mis_finalizados')}
+              active={scopeFilter === 'mis_finalizados'}
+            />
+          </>
+        ) : (
+          <>
+            <Metric
+              icon={InboxRoundedIcon}
+              label="TOTAL ASUNTOS"
+              value={stats.total}
+              helper="Bandeja general"
+              pastelBg="#f0f7ff"
+              pastelBorder="#dbeafe"
+              accentColor="#1d4ed8"
+              onClick={handleSelectAll}
+              active={!stateFilter && !termFilter && !scopeFilter}
+            />
+            <Metric
+              icon={PersonRoundedIcon}
+              label="MIS ASIGNADOS"
+              value={myAssignedCount}
+              helper="Mi carga de trabajo"
+              pastelBg="#f0fdfa"
+              pastelBorder="#ccfbf1"
+              accentColor="#0f766e"
+              onClick={() => handleSelectScope('mis_asignados')}
+              active={scopeFilter === 'mis_asignados'}
+            />
+            <Metric
+              icon={PendingActionsRoundedIcon}
+              label="EN TRÁMITE"
+              value={stats.abiertos}
+              helper="Bandeja activa"
+              pastelBg="#fffbeb"
+              pastelBorder="#fef3c7"
+              accentColor="#d97706"
+              onClick={() => handleSelectStateMetric('asignado')}
+              active={stateFilter === 'asignado' && !scopeFilter && !termFilter}
+            />
+            <Metric
+              icon={AlarmRoundedIcon}
+              label="POR VENCER (≤ 5 D.H.)"
+              value={stats.por_vencer ?? termCounts.porVencer}
+              helper="Alerta preventiva"
+              pastelBg="#fefce8"
+              pastelBorder="#fef08a"
+              accentColor="#ca8a04"
+              onClick={() => handleSelectScope('por_vencer')}
+              active={scopeFilter === 'por_vencer'}
+            />
+            <Metric
+              icon={WarningAmberRoundedIcon}
+              label="VENCIDOS"
+              value={stats.vencidos ?? termCounts.vencidos}
+              helper="Término legal superado"
+              pastelBg="#fff1f2"
+              pastelBorder="#fecdd3"
+              accentColor="#e11d48"
+              onClick={() => handleSelectScope('vencidos')}
+              active={scopeFilter === 'vencidos'}
+            />
+            <Metric
+              icon={CheckCircleRoundedIcon}
+              label="FINALIZADOS"
+              value={stats.cerrados}
+              helper="Entregados o cerrados"
+              pastelBg="#f0fdf4"
+              pastelBorder="#bbf7d0"
+              accentColor="#16a34a"
+              onClick={() => handleSelectStateMetric('entregado')}
+              active={stateFilter === 'entregado' && !scopeFilter && !termFilter}
+            />
+          </>
+        )}
       </Stack>
 
       {/* Contenedor Principal */}
@@ -1346,18 +1713,20 @@ export default function JuridicaWorkflowPanel() {
             <Tab icon={<FactCheckRoundedIcon />} iconPosition="start" label="Estadística automática" />
           </Tabs>
           <Stack direction="row" spacing={1} flexWrap="wrap">
-            <Button
-              startIcon={<AddRoundedIcon />}
-              variant="contained"
-              onClick={() => {
-                setForm(emptyForm);
-                applyPresetToForm(DERECHO_PETICION_PRESETS[1]); // 15 días hábiles regla general
-                setCreateOpen(true);
-              }}
-              sx={{ fontWeight: 850, bgcolor: COLORS.blue }}
-            >
-              Nueva solicitud
-            </Button>
+            {profile.role !== 'asesor' && (
+              <Button
+                startIcon={<AddRoundedIcon />}
+                variant="contained"
+                onClick={() => {
+                  setForm(emptyForm);
+                  applyPresetToForm(DERECHO_PETICION_PRESETS[1]); // 15 días hábiles regla general
+                  setCreateOpen(true);
+                }}
+                sx={{ fontWeight: 850, bgcolor: COLORS.blue }}
+              >
+                {profile.role === 'secretaria' ? 'Radicar solicitud (Entrada)' : 'Nueva solicitud'}
+              </Button>
+            )}
             {['administrador', 'jefatura', 'secretaria'].includes(profile.role) && (
               <>
                 <input hidden ref={importRef} type="file" accept=".xlsx" onChange={handleImport} />
@@ -1367,7 +1736,7 @@ export default function JuridicaWorkflowPanel() {
               </>
             )}
             <Button startIcon={<DownloadRoundedIcon />} variant="outlined" onClick={handleExport}>
-              Exportar Excel
+              {profile.role === 'asesor' ? 'Exportar mis expedientes' : 'Exportar Excel'}
             </Button>
           </Stack>
         </Stack>
@@ -1761,25 +2130,27 @@ export default function JuridicaWorkflowPanel() {
                       {/* Acciones */}
                       <TableCell align="center" sx={{ py: 0.7, px: 0.4, width: 75, maxWidth: 75, whiteSpace: 'nowrap' }}>
                         <Stack direction="row" spacing={0.3} justifyContent="center" alignItems="center">
-                          <Tooltip title="Editar datos del expediente" arrow placement="top">
-                            <IconButton
-                              size="small"
-                              className="action-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEdit(row);
-                              }}
-                              sx={{
-                                color: '#0284c7',
-                                p: 0.5,
-                                borderRadius: 1.5,
-                                transition: 'all 0.15s ease',
-                                '&:hover': { bgcolor: '#e0f2fe', color: '#0369a1' }
-                              }}
-                            >
-                              <EditRoundedIcon sx={{ fontSize: 16 }} />
-                            </IconButton>
-                          </Tooltip>
+                          {canEditCase && (
+                            <Tooltip title="Editar datos del expediente" arrow placement="top">
+                              <IconButton
+                                size="small"
+                                className="action-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEdit(row);
+                                }}
+                                sx={{
+                                  color: '#0284c7',
+                                  p: 0.5,
+                                  borderRadius: 1.5,
+                                  transition: 'all 0.15s ease',
+                                  '&:hover': { bgcolor: '#e0f2fe', color: '#0369a1' }
+                                }}
+                              >
+                                <EditRoundedIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
+                          )}
 
                           <Tooltip title="Abrir expediente completo" arrow placement="top">
                             <IconButton
@@ -2412,7 +2783,7 @@ export default function JuridicaWorkflowPanel() {
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} alignItems="center">
-              {selected && (
+              {selected && canEditCase && (
                 <Button
                   size="small"
                   startIcon={<EditRoundedIcon />}
@@ -2438,6 +2809,46 @@ export default function JuridicaWorkflowPanel() {
           {selected && (
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1.5fr) minmax(300px,.7fr)' }, gap: 2.5 }}>
               <Stack spacing={2}>
+                {/* BANNER DESTACADO DE DEVOLUCIÓN CON RETROALIMENTACIÓN DE JEFATURA */}
+                {selected.estado === 'devuelto_informacion' && (
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      p: 2.2,
+                      borderRadius: 3,
+                      bgcolor: '#fff1f2',
+                      border: '2px solid #fecdd3',
+                      boxShadow: '0 4px 16px rgba(225, 29, 72, 0.08)'
+                    }}
+                  >
+                    <Stack direction="row" spacing={1.2} alignItems="center" mb={1}>
+                      <WarningAmberRoundedIcon sx={{ color: '#e11d48', fontSize: 24 }} />
+                      <Typography fontWeight={950} color="#9f1239" fontSize="0.98rem">
+                        Expediente Devuelto con Retroalimentación de Jefatura
+                      </Typography>
+                    </Stack>
+                    <Typography variant="body2" color="#881337" fontWeight={600} mb={1}>
+                      La Asesora Jurídica / Jefatura revisó el proyecto de respuesta y solicitó ajustes previos a la aprobación definitiva:
+                    </Typography>
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        p: 1.8,
+                        borderRadius: 2,
+                        bgcolor: '#ffffff',
+                        border: '1.5px solid #fda4af',
+                        color: '#4c0519',
+                        fontWeight: 650,
+                        fontSize: '0.86rem',
+                        whiteSpace: 'pre-wrap',
+                        lineHeight: 1.5
+                      }}
+                    >
+                      {selected.devolucion || selected.observaciones || 'Se requieren correcciones, ajustes normativos o ampliación de antecedentes antes de emitir la aprobación definitiva.'}
+                    </Paper>
+                  </Paper>
+                )}
+
                 {/* SEMÁFORO DESTACADO DE TÉRMINOS */}
                 {selectedTermProgress && (
                   <Paper
@@ -2456,20 +2867,22 @@ export default function JuridicaWorkflowPanel() {
                           Contabilización de Términos Legales
                         </Typography>
                       </Stack>
-                      <Button
-                        size="small"
-                        startIcon={<EditCalendarRoundedIcon />}
-                        onClick={() => {
-                          setProrrogaData({
-                            fecha_limite: selected.fecha_limite || '',
-                            motivo: ''
-                          });
-                          setProrrogaOpen(true);
-                        }}
-                        sx={{ textTransform: 'none', fontWeight: 800 }}
-                      >
-                        Ajustar término / Prórroga
-                      </Button>
+                      {canProrroga && (
+                        <Button
+                          size="small"
+                          startIcon={<EditCalendarRoundedIcon />}
+                          onClick={() => {
+                            setProrrogaData({
+                              fecha_limite: selected.fecha_limite || '',
+                              motivo: ''
+                            });
+                            setProrrogaOpen(true);
+                          }}
+                          sx={{ textTransform: 'none', fontWeight: 800 }}
+                        >
+                          Ajustar término / Prórroga
+                        </Button>
+                      )}
                     </Stack>
 
                     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1.5, my: 1.5 }}>
@@ -2872,31 +3285,237 @@ export default function JuridicaWorkflowPanel() {
                   </Paper>
                 )}
 
-                {profile.role === 'secretaria' && !['aprobado_jefatura', 'pendiente_radicacion_salida', 'entregado', 'cerrado'].includes(selected?.estado) ? (
-                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, bgcolor: '#fffbeb', borderColor: '#fde68a' }}>
-                    <Stack direction="row" spacing={1} alignItems="center" mb={0.8}>
-                      <InfoOutlinedIcon sx={{ color: '#b45309', fontSize: 20 }} />
-                      <Typography fontWeight={900} color="#92400e" fontSize="0.9rem">
-                        En trámite con la Asesora Jurídica
+                {/* ACCIONES SEGREGADAS POR ROL OPERATIVO */}
+                {profile.role === 'secretaria' ? (
+                  !['aprobado_jefatura', 'pendiente_radicacion_salida', 'entregado', 'cerrado'].includes(selected?.estado) ? (
+                    <Paper variant="outlined" sx={{ p: 2.2, borderRadius: 3, bgcolor: '#fffbeb', borderColor: '#fde68a' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" mb={0.8}>
+                        <InfoOutlinedIcon sx={{ color: '#b45309', fontSize: 20 }} />
+                        <Typography fontWeight={900} color="#92400e" fontSize="0.9rem">
+                          En Trámite con Jefatura y Asesores
+                        </Typography>
+                      </Stack>
+                      <Typography variant="body2" color="#78350f" fontSize="0.82rem">
+                        Estado actual: <strong>{STATE[selected?.estado]?.[0] || selected?.estado}</strong>.
+                        <br />
+                        Este caso se encuentra en análisis técnico y revisión jurídica. La Secretaría podrá radicar la salida institucional y realizar el despacho tan pronto la Asesora Jurídica apruebe la respuesta final (estado <em>&quot;Aprobado por jefatura&quot;</em>).
                       </Typography>
-                    </Stack>
-                    <Typography variant="body2" color="#78350f" fontSize="0.82rem">
-                      Estado actual: <strong>{STATE[selected?.estado]?.[0] || selected?.estado}</strong>. Una vez la Asesora Jurídica revise y apruebe la respuesta final (estado &quot;Aprobado por jefatura&quot;), la Secretaría podrá registrar el radicado de salida y despachar la respuesta al peticionario.
-                    </Typography>
-                  </Paper>
-                ) : (ACTIONS[profile.role] || []).length > 0 && (
-                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
-                    <Typography fontWeight={950}>Actualizar trámite</Typography>
+                    </Paper>
+                  ) : (
+                    <Paper elevation={0} sx={{ p: 2.2, borderRadius: 3, bgcolor: '#f0fdfa', border: '1.5px solid #99f6e4' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+                        <SendRoundedIcon sx={{ color: '#0d9488' }} />
+                        <Typography fontWeight={950} color="#115e59">
+                          Radicación de Salida y Despacho
+                        </Typography>
+                      </Stack>
+                      <Typography variant="body2" color="#134e4a" fontSize="0.82rem" mb={1.5}>
+                        Expediente aprobado por la Jefatura Jurídica. Registre el radicado de salida oficial y despache al peticionario:
+                      </Typography>
+
+                      <TextField
+                        select
+                        fullWidth
+                        size="small"
+                        label="Acción de Secretaría"
+                        value={transition.estado || 'pendiente_radicacion_salida'}
+                        onChange={(e) => setTransition({ ...transition, estado: e.target.value })}
+                        sx={{ mb: 1.5, bgcolor: '#fff' }}
+                      >
+                        <MenuItem value="pendiente_radicacion_salida">Asignar radicado de salida</MenuItem>
+                        <MenuItem value="entregado">Marcar entregado y despachado</MenuItem>
+                        <MenuItem value="cerrado">Cerrar expediente definitivamente</MenuItem>
+                      </TextField>
+
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Número de radicado de salida"
+                        placeholder="Ej: OF-JUR-2026-0042"
+                        value={transition.radicado}
+                        onChange={(e) => setTransition({ ...transition, radicado: e.target.value })}
+                        sx={{ mb: 1.5, bgcolor: '#fff' }}
+                      />
+
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Medio de despacho / entrega"
+                        placeholder="Ej: Correo electrónico al peticionario, ventanilla única..."
+                        value={transition.despacho}
+                        onChange={(e) => setTransition({ ...transition, despacho: e.target.value })}
+                        sx={{ mb: 1.5, bgcolor: '#fff' }}
+                      />
+
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={2}
+                        size="small"
+                        label="Comentario de despacho"
+                        placeholder="Detalles del envío o notificación..."
+                        value={transition.comentario}
+                        onChange={(e) => setTransition({ ...transition, comentario: e.target.value })}
+                        sx={{ mb: 1.5, bgcolor: '#fff' }}
+                      />
+
+                      <Button
+                        fullWidth
+                        disabled={busy}
+                        variant="contained"
+                        color="success"
+                        startIcon={<SendRoundedIcon />}
+                        onClick={() => {
+                          const targetState = transition.estado || 'pendiente_radicacion_salida';
+                          handleDirectTransition(targetState, transition.comentario || 'Radicación de salida y despacho registrada por secretaría.', {
+                            radicado: transition.radicado,
+                            despacho: transition.despacho
+                          });
+                        }}
+                        sx={{ fontWeight: 900, py: 1.1, borderRadius: 2 }}
+                      >
+                        Registrar Salida / Despacho
+                      </Button>
+                    </Paper>
+                  )
+                ) : profile.role === 'asesor' ? (
+                  ['asignado', 'devuelto_informacion'].includes(selected?.estado) ? (
+                    <Paper elevation={0} sx={{ p: 2.2, borderRadius: 3, bgcolor: '#eff6ff', border: '1.5px solid #bfdbfe' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+                        <PendingActionsRoundedIcon sx={{ color: '#2563eb' }} />
+                        <Typography fontWeight={950} color="#1e40af">
+                          Confirmación de Recibido
+                        </Typography>
+                      </Stack>
+                      <Typography variant="body2" color="#1e3a8a" fontSize="0.82rem" mb={1.5}>
+                        {selected?.estado === 'devuelto_informacion'
+                          ? 'El expediente fue devuelto con retroalimentación de Jefatura. Confirma el reinicio de estudio para proceder con los ajustes solicitados.'
+                          : 'Asunto asignado a tu cargo. Confirma el recibido para registrar formalmente el inicio del trámite e iniciar la proyección.'}
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={2}
+                        size="small"
+                        label="Nota de confirmación (Opcional)"
+                        placeholder="Ej: Recibido conforme, procedo con el análisis de antecedentes..."
+                        value={transition.comentario}
+                        onChange={(e) => setTransition({ ...transition, comentario: e.target.value })}
+                        sx={{ mb: 1.5, bgcolor: '#fff' }}
+                      />
+                      <Button
+                        fullWidth
+                        variant="contained"
+                        disabled={busy}
+                        startIcon={<PlayArrowRoundedIcon />}
+                        onClick={() => handleDirectTransition('en_estudio', transition.comentario || 'Recibido formalmente por el asesor jurídico asignado.')}
+                        sx={{ fontWeight: 900, py: 1.1, borderRadius: 2 }}
+                      >
+                        Confirmar Recibido e Iniciar Estudio
+                      </Button>
+                    </Paper>
+                  ) : selected?.estado === 'en_estudio' ? (
+                    <Paper elevation={0} sx={{ p: 2.2, borderRadius: 3, bgcolor: '#f5f3ff', border: '1.5px solid #ddd6fe' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+                        <FactCheckRoundedIcon sx={{ color: '#7c3aed' }} />
+                        <Typography fontWeight={950} color="#5b21b6">
+                          Enviar a Revisión de Jefatura
+                        </Typography>
+                      </Stack>
+                      <Typography variant="body2" color="#4c1d95" fontSize="0.82rem" mb={1.5}>
+                        Adjunta el documento borrador en <strong>&quot;Anexos y Soportes&quot;</strong> y emite tu Visto Bueno antes de enviar a revisión.
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={2}
+                        size="small"
+                        label="Observaciones para la Jefatura"
+                        placeholder="Resumen del sentido del concepto o respuesta..."
+                        value={transition.comentario}
+                        onChange={(e) => setTransition({ ...transition, comentario: e.target.value })}
+                        sx={{ mb: 1.5, bgcolor: '#fff' }}
+                      />
+                      <Button
+                        fullWidth
+                        variant="contained"
+                        disabled={busy}
+                        startIcon={<FactCheckRoundedIcon />}
+                        onClick={() => handleDirectTransition('respuesta_revision', transition.comentario || 'Propuesta de respuesta enviada a revisión de jefatura.')}
+                        sx={{
+                          fontWeight: 900,
+                          py: 1.1,
+                          borderRadius: 2,
+                          bgcolor: '#7c3aed',
+                          '&:hover': { bgcolor: '#6d28d9' }
+                        }}
+                      >
+                        Enviar a Revisión de Jefatura
+                      </Button>
+                    </Paper>
+                  ) : (
+                    <Paper variant="outlined" sx={{ p: 2.2, borderRadius: 3, bgcolor: '#f8fafc', borderColor: '#e2e8f0' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+                        <CheckCircleOutlineRoundedIcon sx={{ color: '#059669', fontSize: 22 }} />
+                        <Typography fontWeight={950} color="#0f172a" fontSize="0.92rem">
+                          {selected?.estado === 'respuesta_revision' ? 'En Revisión de Jefatura' : 'Trámite en Gestión Final'}
+                        </Typography>
+                      </Stack>
+                      <Typography variant="body2" color="#475569" fontSize="0.82rem" lineHeight={1.5}>
+                        {selected?.estado === 'respuesta_revision'
+                          ? 'El expediente se encuentra en revisión con la Asesora Jurídica. Si requiere ajustes, se te devolverá con comentarios.'
+                          : `Expediente en estado "${STATE[selected?.estado]?.[0] || selected?.estado}". La Secretaría efectúa el despacho de salida.`}
+                      </Typography>
+                    </Paper>
+                  )
+                ) : (
+                  /* ROL JEFATURA / ADMINISTRADOR */
+                  <Paper variant="outlined" sx={{ p: 2.2, borderRadius: 3 }}>
+                    <Typography fontWeight={950} mb={1}>Trámite y Control de Jefatura</Typography>
+
+                    {selected?.estado === 'respuesta_revision' && (
+                      <Stack spacing={1.5} mb={2}>
+                        <Button
+                          fullWidth
+                          variant="contained"
+                          color="success"
+                          startIcon={<CheckCircleRoundedIcon />}
+                          disabled={busy}
+                          onClick={() => handleDirectTransition('aprobado_jefatura', transition.comentario || 'Respuesta revisada y aprobada por la Jefatura Jurídica. Lista para despacho institucional.')}
+                          sx={{ fontWeight: 900, py: 1, borderRadius: 2 }}
+                        >
+                          Aprobar Respuesta (Listo para Despacho)
+                        </Button>
+                        <Button
+                          fullWidth
+                          variant="outlined"
+                          color="error"
+                          startIcon={<WarningAmberRoundedIcon />}
+                          disabled={busy}
+                          onClick={() => {
+                            if (!transition.comentario?.trim()) {
+                              setError('Por favor indique las observaciones o motivos de devolución en el campo inferior de comentarios.');
+                              return;
+                            }
+                            handleDirectTransition('devuelto_informacion', transition.comentario, { devolucion: transition.comentario });
+                          }}
+                          sx={{ fontWeight: 900, py: 1, borderRadius: 2 }}
+                        >
+                          Devolver al Asesor con Retroalimentación
+                        </Button>
+                      </Stack>
+                    )}
+
                     <TextField
                       select
                       fullWidth
                       size="small"
-                      label="Siguiente estado"
+                      label="Cambiar estado a..."
                       value={transition.estado}
                       onChange={(e) => setTransition({ ...transition, estado: e.target.value })}
-                      sx={{ mt: 2 }}
+                      sx={{ mt: 0.5 }}
                     >
-                      {ACTIONS[profile.role].map(([value, label]) => (
+                      {(getAvailableActionsForRole(profile.role, selected) || ACTIONS.jefatura).map(([value, label]) => (
                         <MenuItem key={value} value={value}>{label}</MenuItem>
                       ))}
                     </TextField>
@@ -2929,21 +3548,23 @@ export default function JuridicaWorkflowPanel() {
                       multiline
                       minRows={3}
                       size="small"
-                      label="Comentario obligatorio para la trazabilidad"
+                      label="Comentario / Retroalimentación obligatoria"
+                      placeholder="Ingrese los motivos, instrucciones para el asesor o detalles de trazabilidad..."
                       value={transition.comentario}
                       onChange={(e) => setTransition({ ...transition, comentario: e.target.value })}
                       sx={{ mt: 1.5 }}
                     />
+
                     <Button
                       fullWidth
                       disabled={!transition.estado || busy}
                       variant="contained"
-                      color="success"
+                      color="primary"
                       startIcon={<AutorenewRoundedIcon />}
                       onClick={handleTransition}
-                      sx={{ mt: 1.5 }}
+                      sx={{ mt: 1.5, fontWeight: 900, borderRadius: 2 }}
                     >
-                      Registrar avance
+                      Registrar Avance de Jefatura
                     </Button>
                   </Paper>
                 )}

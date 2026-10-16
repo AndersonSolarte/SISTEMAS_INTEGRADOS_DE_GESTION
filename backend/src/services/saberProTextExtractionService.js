@@ -298,7 +298,7 @@ async function* renderPdfCandidates(buffer) {
 }
 
 function complete(text, hints) {
-  return parseEvaluatedData(text, hints).complete;
+  return parseEvaluatedData(text, hints).readComplete;
 }
 
 async function extractPdfBuffer(buffer, hints = {}) {

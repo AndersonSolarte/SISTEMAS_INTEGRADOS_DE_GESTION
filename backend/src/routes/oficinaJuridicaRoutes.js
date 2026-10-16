@@ -4,6 +4,7 @@ const controller = require('../controllers/oficinaJuridicaController');
 const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { ROLES } = require('../constants/roles');
 
+const { Op } = require('sequelize');
 const { UserModulePermission } = require('../models');
 
 const router = express.Router();
@@ -24,6 +25,17 @@ const juridicaAccess = async (req, res, next) => {
         const { User } = require('../models');
         const simUser = await User.findByPk(simId);
         if (simUser && simUser.estado === 'activo') {
+          const simPerms = await UserModulePermission.findAll({
+            where: {
+              user_id: simUser.id,
+              can_view: true,
+              module_key: {
+                [Op.in]: ['oficina_juridica', 'oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor']
+              }
+            },
+            attributes: ['module_key']
+          });
+          simUser.juridicaPermissions = simPerms.map((p) => p.module_key);
           req.simulatedUser = simUser;
         }
       } catch (simErr) {
@@ -33,23 +45,27 @@ const juridicaAccess = async (req, res, next) => {
     return next();
   }
 
-  // 2. Control por permisos: Cualquier otro usuario DEBE tener permiso explícito 'oficina_juridica' otorgado por el administrador
+  // 2. Control por permisos: Cualquier otro usuario DEBE tener permiso explícito en Oficina Jurídica otorgado por el administrador
   try {
-    const hasPerm = await UserModulePermission.count({
+    const userPerms = await UserModulePermission.findAll({
       where: {
         user_id: req.user.id,
         can_view: true,
-        module_key: 'oficina_juridica'
-      }
+        module_key: {
+          [Op.in]: ['oficina_juridica', 'oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor']
+        }
+      },
+      attributes: ['module_key']
     });
 
-    if (hasPerm === 0) {
+    if (!userPerms || userPerms.length === 0) {
       return res.status(403).json({
         success: false,
         message: 'Acceso restringido. No cuentas con permisos activos en el sistema para ingresar al módulo de Oficina Jurídica.'
       });
     }
 
+    req.user.juridicaPermissions = userPerms.map((p) => p.module_key);
     return next();
   } catch (err) {
     console.error('Error verificando permisos de Oficina Jurídica:', err);
