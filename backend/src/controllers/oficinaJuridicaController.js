@@ -1045,6 +1045,7 @@ const stats = async (req, res) => {
     return limit >= today && limit <= fiveDaysLater;
   }).length;
 
+  const isAdviser = roleFor(actor) === 'asesor';
   res.json({
     success: true,
     data: {
@@ -1056,7 +1057,7 @@ const stats = async (req, res) => {
       estados: countBy('estado'),
       grupos: countBy('grupo'),
       dependencias: countBy('dependencia_solicitante'),
-      responsables: Object.entries(rows.reduce((acc, r) => { const n = r.responsable?.nombre || 'Sin asignar'; acc[n] = (acc[n] || 0) + 1; return acc; }, {})).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
+      responsables: isAdviser ? [] : Object.entries(rows.reduce((acc, r) => { const n = r.responsable?.nombre || 'Sin asignar'; acc[n] = (acc[n] || 0) + 1; return acc; }, {})).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
     }
   });
 };

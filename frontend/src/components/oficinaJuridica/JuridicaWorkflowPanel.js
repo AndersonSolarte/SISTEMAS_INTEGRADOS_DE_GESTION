@@ -5,16 +5,24 @@ import {
   LinearProgress, MenuItem, Paper, Select, Stack, Tab, Tabs, Table, TableBody, TableCell,
   TableContainer, TableHead, TablePagination, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
+import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded';
 import AlarmRoundedIcon from '@mui/icons-material/AlarmRounded';
 import AssignmentIndRoundedIcon from '@mui/icons-material/AssignmentIndRounded';
+import AssignmentReturnRoundedIcon from '@mui/icons-material/AssignmentReturnRounded';
+import AssignmentRoundedIcon from '@mui/icons-material/AssignmentRounded';
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
 import AutorenewRoundedIcon from '@mui/icons-material/AutorenewRounded';
+import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded';
+import BusinessCenterRoundedIcon from '@mui/icons-material/BusinessCenterRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import EditCalendarRoundedIcon from '@mui/icons-material/EditCalendarRounded';
+import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded';
 import FilterAltOffRoundedIcon from '@mui/icons-material/FilterAltOffRounded';
@@ -24,16 +32,20 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import HourglassTopRoundedIcon from '@mui/icons-material/HourglassTopRounded';
 import InboxRoundedIcon from '@mui/icons-material/InboxRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import MarkEmailUnreadRoundedIcon from '@mui/icons-material/MarkEmailUnreadRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import OutboxRoundedIcon from '@mui/icons-material/OutboxRounded';
 import PendingActionsRoundedIcon from '@mui/icons-material/PendingActionsRounded';
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
+import PolicyRoundedIcon from '@mui/icons-material/PolicyRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
+import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded';
 import ThumbUpAltRoundedIcon from '@mui/icons-material/ThumbUpAltRounded';
 import TimerRoundedIcon from '@mui/icons-material/TimerRounded';
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import { useAuth } from '../../context/AuthContext';
 import oficinaJuridicaService from '../../services/oficinaJuridicaService';
@@ -266,8 +278,6 @@ function Metric({
   helper,
   onClick,
   active,
-  pastelBg = '#f0f7ff',
-  pastelBorder = '#dbeafe',
   accentColor = '#1d4ed8'
 }) {
   return (
@@ -277,13 +287,13 @@ function Metric({
       sx={{
         p: 1.4,
         px: 1.6,
-        borderRadius: 3,
-        border: active ? `2px solid ${accentColor}` : `1px solid ${pastelBorder}`,
-        bgcolor: pastelBg,
+        borderRadius: 2.5,
+        border: active ? `1.5px solid ${accentColor}` : '1px solid #e2e8f0',
+        bgcolor: '#ffffff',
         flex: '1 1 155px',
         minWidth: 150,
         cursor: onClick ? 'pointer' : 'default',
-        boxShadow: active ? `0 6px 18px ${accentColor}25` : '0 1px 3px rgba(15,23,42,0.03)',
+        boxShadow: active ? `0 4px 14px ${accentColor}18` : '0 1px 3px rgba(15,23,42,0.03)',
         transition: 'all .2s ease',
         position: 'relative',
         overflow: 'hidden',
@@ -291,7 +301,7 @@ function Metric({
           ? {
               transform: 'translateY(-2px)',
               borderColor: accentColor,
-              boxShadow: `0 8px 20px ${accentColor}20`
+              boxShadow: `0 6px 16px ${accentColor}15`
             }
           : {}
       }}
@@ -303,7 +313,7 @@ function Metric({
             top: 0,
             left: 0,
             right: 0,
-            height: 3.5,
+            height: 3,
             bgcolor: accentColor
           }}
         />
@@ -311,23 +321,22 @@ function Metric({
       <Stack direction="row" spacing={1.2} alignItems="center">
         <Avatar
           sx={{
-            bgcolor: '#ffffff',
+            bgcolor: `${accentColor}10`,
             color: accentColor,
-            width: 38,
-            height: 38,
+            width: 36,
+            height: 36,
             borderRadius: 2,
-            border: `1px solid ${pastelBorder}`,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+            border: `1px solid ${accentColor}25`
           }}
         >
-          <Icon sx={{ fontSize: 20 }} />
+          <Icon sx={{ fontSize: 19 }} />
         </Avatar>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography
             variant="caption"
             sx={{
               color: '#64748b',
-              fontWeight: 850,
+              fontWeight: 800,
               letterSpacing: 0.4,
               fontSize: '0.67rem',
               display: 'block',
@@ -339,7 +348,7 @@ function Metric({
           </Typography>
           <Typography
             sx={{
-              fontWeight: 950,
+              fontWeight: 900,
               color: '#0f172a',
               lineHeight: 1.15,
               fontSize: '1.4rem'
@@ -1218,8 +1227,16 @@ export default function JuridicaWorkflowPanel() {
         <Box sx={{ position: 'absolute', width: 260, height: 260, borderRadius: '50%', bgcolor: '#ffffff10', right: -60, top: -110 }} />
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2} alignItems={{ md: 'center' }}>
           <Stack direction="row" spacing={2} alignItems="center">
-            <Avatar sx={{ width: 58, height: 58, bgcolor: '#ffffff18', border: '1px solid #ffffff40' }}>
-              {profile.role === 'secretaria' ? '📋' : profile.role === 'jefatura' ? '⚖️' : profile.role === 'asesor' ? '👥' : <GavelRoundedIcon sx={{ fontSize: 32 }} />}
+            <Avatar sx={{ width: 56, height: 56, bgcolor: '#ffffff18', border: '1px solid #ffffff40', color: '#fff' }}>
+              {profile.role === 'secretaria' ? (
+                <AssignmentRoundedIcon sx={{ fontSize: 30 }} />
+              ) : profile.role === 'jefatura' ? (
+                <GavelRoundedIcon sx={{ fontSize: 30 }} />
+              ) : profile.role === 'asesor' ? (
+                <BusinessCenterRoundedIcon sx={{ fontSize: 30 }} />
+              ) : (
+                <AdminPanelSettingsRoundedIcon sx={{ fontSize: 30 }} />
+              )}
             </Avatar>
             <Box>
               <Typography variant="h4" sx={{ fontWeight: 950, fontSize: { xs: 22, md: 29 } }}>
@@ -1249,18 +1266,29 @@ export default function JuridicaWorkflowPanel() {
               sx={{ bgcolor: '#fff', color: COLORS.blue, fontWeight: 900 }}
             />
             <Chip
+              icon={
+                profile.role === 'secretaria' ? (
+                  <AssignmentRoundedIcon sx={{ fontSize: '15px !important', color: '#fff !important' }} />
+                ) : profile.role === 'jefatura' ? (
+                  <GavelRoundedIcon sx={{ fontSize: '15px !important', color: '#fff !important' }} />
+                ) : profile.role === 'asesor' ? (
+                  <BusinessCenterRoundedIcon sx={{ fontSize: '15px !important', color: '#fff !important' }} />
+                ) : (
+                  <ShieldRoundedIcon sx={{ fontSize: '15px !important', color: '#fff !important' }} />
+                )
+              }
               label={
                 profile.role === 'secretaria'
-                  ? '📋 Rol: Secretaría Jurídica'
+                  ? 'Rol: Secretaría Jurídica'
                   : profile.role === 'jefatura'
-                  ? '⚖️ Rol: Jefatura Jurídica'
+                  ? 'Rol: Jefatura Jurídica'
                   : profile.role === 'asesor'
-                  ? '👥 Rol: Asistente Jurídico'
+                  ? 'Rol: Asistente Jurídico'
                   : profile.role === 'administrador'
-                  ? `🛡️ Rol: Administrador General${profile.isSimulation ? ` (Simulando a ${formatUserName(profile.actor?.nombre)})` : ''}`
+                  ? `Rol: Administrador General${profile.isSimulation ? ` (Simulando a ${formatUserName(profile.actor?.nombre)})` : ''}`
                   : 'Cargando rol...'
               }
-              sx={{ bgcolor: profile.isSimulation ? '#f59e0b' : '#ffffff25', color: '#fff', fontWeight: 900, textTransform: 'capitalize' }}
+              sx={{ bgcolor: profile.isSimulation ? '#f59e0b' : '#ffffff25', color: '#fff', fontWeight: 900, textTransform: 'none' }}
             />
           </Stack>
         </Stack>
@@ -1275,8 +1303,8 @@ export default function JuridicaWorkflowPanel() {
           elevation={0}
           sx={{
             p: 2,
-            borderRadius: 3.5,
-            border: profile.isSimulation ? '2px solid #f59e0b' : '1.5px solid #dbeafe',
+            borderRadius: 3,
+            border: profile.isSimulation ? '1.5px solid #f59e0b' : '1px solid #dbeafe',
             bgcolor: profile.isSimulation ? '#fffdf7' : '#f8fbff',
             boxShadow: profile.isSimulation ? '0 4px 16px rgba(245, 158, 11, 0.12)' : '0 2px 8px rgba(37, 99, 235, 0.05)'
           }}
@@ -1286,15 +1314,14 @@ export default function JuridicaWorkflowPanel() {
               <Stack direction="row" spacing={1.5} alignItems="center">
                 <Avatar
                   sx={{
-                    width: 38,
-                    height: 38,
+                    width: 36,
+                    height: 36,
                     bgcolor: profile.isSimulation ? '#fef3c7' : '#eff6ff',
                     color: profile.isSimulation ? '#b45309' : '#1d4ed8',
-                    border: profile.isSimulation ? '1px solid #fde68a' : '1px solid #bfdbfe',
-                    fontSize: '1.1rem'
+                    border: profile.isSimulation ? '1px solid #fde68a' : '1px solid #bfdbfe'
                   }}
                 >
-                  🧪
+                  <TuneRoundedIcon sx={{ fontSize: 20 }} />
                 </Avatar>
                 <Box>
                   <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -1302,13 +1329,15 @@ export default function JuridicaWorkflowPanel() {
                     {profile.isSimulation ? (
                       <Chip
                         size="small"
+                        icon={<BadgeRoundedIcon sx={{ fontSize: '13px !important', color: '#b45309 !important' }} />}
                         label={`Viendo como: ${profile.actor?.nombre || 'Funcionario'} (${profile.actor?.cargo || 'Oficina Jurídica'} · Rol: ${profile.role?.toUpperCase()})`}
                         sx={{ bgcolor: '#fef3c7', color: '#b45309', fontWeight: 900, border: '1px solid #fde68a', fontSize: '0.74rem' }}
                       />
                     ) : (
                       <Chip
                         size="small"
-                        label="👑 Modo Real: SuperAdmin SGC (Control Total)"
+                        icon={<ShieldRoundedIcon sx={{ fontSize: '13px !important', color: '#047857 !important' }} />}
+                        label="Modo Real: Administrador General SGC"
                         sx={{ bgcolor: '#ecfdf5', color: '#047857', fontWeight: 900, border: '1px solid #a7f3d0', fontSize: '0.74rem' }}
                       />
                     )}
@@ -1324,10 +1353,11 @@ export default function JuridicaWorkflowPanel() {
                   size="small"
                   variant="outlined"
                   color="warning"
+                  startIcon={<CloseRoundedIcon sx={{ fontSize: 16 }} />}
                   onClick={() => handleSwitchPerspective(null)}
                   sx={{ fontWeight: 800, textTransform: 'none', borderRadius: 2 }}
                 >
-                  ✕ Salir de Simulación (Restaurar SuperAdmin)
+                  Salir de Simulación (Restaurar Administrador)
                 </Button>
               )}
             </Stack>
@@ -1341,6 +1371,7 @@ export default function JuridicaWorkflowPanel() {
               <Button
                 size="small"
                 variant={!profile.isSimulation ? 'contained' : 'outlined'}
+                startIcon={<AdminPanelSettingsRoundedIcon sx={{ fontSize: 16 }} />}
                 onClick={() => handleSwitchPerspective(null)}
                 sx={{
                   textTransform: 'none',
@@ -1352,7 +1383,7 @@ export default function JuridicaWorkflowPanel() {
                   '&:hover': { bgcolor: !profile.isSimulation ? '#172554' : '#f1f5f9' }
                 }}
               >
-                👑 SuperAdmin (Control Total)
+                SuperAdmin SGC
               </Button>
 
               {jefaturaList.map((j) => (
@@ -1360,6 +1391,7 @@ export default function JuridicaWorkflowPanel() {
                   key={j.id}
                   size="small"
                   variant={profile.actor?.id === j.id ? 'contained' : 'outlined'}
+                  startIcon={<GavelRoundedIcon sx={{ fontSize: 16 }} />}
                   onClick={() => handleSwitchPerspective(j.id)}
                   sx={{
                     textTransform: 'none',
@@ -1371,7 +1403,7 @@ export default function JuridicaWorkflowPanel() {
                     '&:hover': { bgcolor: profile.actor?.id === j.id ? '#6d28d9' : '#f5f3ff' }
                   }}
                 >
-                  ⚖️ Jefatura ({formatUserName(j.nombre)})
+                  Jefatura ({formatUserName(j.nombre)})
                 </Button>
               ))}
 
@@ -1380,6 +1412,7 @@ export default function JuridicaWorkflowPanel() {
                   key={s.id}
                   size="small"
                   variant={profile.actor?.id === s.id ? 'contained' : 'outlined'}
+                  startIcon={<AssignmentRoundedIcon sx={{ fontSize: 16 }} />}
                   onClick={() => handleSwitchPerspective(s.id)}
                   sx={{
                     textTransform: 'none',
@@ -1391,17 +1424,17 @@ export default function JuridicaWorkflowPanel() {
                     '&:hover': { bgcolor: profile.actor?.id === s.id ? '#0369a1' : '#f0f9ff' }
                   }}
                 >
-                  📋 Secretaría ({formatUserName(s.nombre)})
+                  Secretaría ({formatUserName(s.nombre)})
                 </Button>
               ))}
 
               <FormControl size="small" sx={{ minWidth: 260 }}>
                 <InputLabel id="sim-asistente-label" sx={{ fontSize: '0.8rem', fontWeight: 700 }}>
-                  👥 Asistentes Jurídicos Activos ({asesorList.length})
+                  Asistentes Jurídicos Activos ({asesorList.length})
                 </InputLabel>
                 <Select
                   labelId="sim-asistente-label"
-                  label={`👥 Asistentes Jurídicos Activos (${asesorList.length})`}
+                  label={`Asistentes Jurídicos Activos (${asesorList.length})`}
                   value={asesorList.some((u) => u.id === profile.actor?.id) ? profile.actor.id : ''}
                   onChange={(e) => handleSwitchPerspective(e.target.value)}
                   sx={{ height: 32, fontSize: '0.8rem', borderRadius: 2 }}
@@ -1411,7 +1444,8 @@ export default function JuridicaWorkflowPanel() {
                   </MenuItem>
                   {asesorList.map((asistente) => (
                     <MenuItem key={asistente.id} value={asistente.id} sx={{ fontSize: '0.8rem' }}>
-                      👤 {formatUserName(asistente.nombre)} ({asistente.cargo || 'Asistente'})
+                      <PersonRoundedIcon sx={{ fontSize: 16, mr: 0.8, color: '#64748b' }} />
+                      {formatUserName(asistente.nombre)} ({asistente.cargo || 'Asistente'})
                     </MenuItem>
                   ))}
                 </Select>
@@ -1564,67 +1598,55 @@ export default function JuridicaWorkflowPanel() {
         ) : profile.role === 'asesor' ? (
           <>
             <Metric
-              icon={PersonRoundedIcon}
+              icon={AssignmentIndRoundedIcon}
               label="MIS ASIGNADOS"
               value={roleMetrics.misAsignados}
               helper="Mi carga de trabajo"
-              pastelBg="#f0fdfa"
-              pastelBorder="#ccfbf1"
               accentColor="#0f766e"
               onClick={() => handleSelectScope('mis_asignados')}
               active={scopeFilter === 'mis_asignados'}
             />
             <Metric
-              icon={HourglassTopRoundedIcon}
+              icon={MarkEmailUnreadRoundedIcon}
               label="POR CONFIRMAR RECIBIDO"
               value={roleMetrics.misPendientes}
               helper="Designados a mi nombre"
-              pastelBg="#eff6ff"
-              pastelBorder="#bfdbfe"
               accentColor="#1d4ed8"
               onClick={() => handleSelectScope('mis_pendientes')}
               active={scopeFilter === 'mis_pendientes'}
             />
             <Metric
-              icon={PendingActionsRoundedIcon}
+              icon={EditNoteRoundedIcon}
               label="EN ESTUDIO / PROYECCIÓN"
               value={roleMetrics.misEnEstudio}
               helper="Proyectando respuesta"
-              pastelBg="#ecfeff"
-              pastelBorder="#a5f3fc"
               accentColor="#0e7490"
               onClick={() => handleSelectScope('mis_en_estudio')}
               active={scopeFilter === 'mis_en_estudio'}
             />
             <Metric
-              icon={WarningAmberRoundedIcon}
+              icon={AssignmentReturnRoundedIcon}
               label="DEVUELTOS CON AJUSTES"
               value={roleMetrics.misDevueltos}
               helper="Observaciones de jefatura"
-              pastelBg="#fff1f2"
-              pastelBorder="#fecdd3"
               accentColor="#e11d48"
               onClick={() => handleSelectScope('mis_devueltos')}
               active={scopeFilter === 'mis_devueltos'}
             />
             <Metric
-              icon={FactCheckRoundedIcon}
+              icon={PolicyRoundedIcon}
               label="EN REVISIÓN JEFATURA"
               value={roleMetrics.misEnRevision}
               helper="Esperando visto bueno"
-              pastelBg="#f5f3ff"
-              pastelBorder="#ddd6fe"
               accentColor="#7c3aed"
               onClick={() => handleSelectScope('mis_en_revision')}
               active={scopeFilter === 'mis_en_revision'}
             />
             <Metric
-              icon={CheckCircleRoundedIcon}
+              icon={TaskAltRoundedIcon}
               label="FINALIZADOS CON MI VB"
               value={roleMetrics.misFinalizados}
               helper="Concluidos exitosamente"
-              pastelBg="#f0fdf4"
-              pastelBorder="#bbf7d0"
               accentColor="#16a34a"
               onClick={() => handleSelectScope('mis_finalizados')}
               active={scopeFilter === 'mis_finalizados'}
@@ -1712,10 +1734,16 @@ export default function JuridicaWorkflowPanel() {
           sx={{ p: 1.5, borderBottom: '1px solid #e2e8f0' }}
         >
           <Tabs value={tab} onChange={(_, value) => setTab(value)}>
-            <Tab icon={<InboxRoundedIcon />} iconPosition="start" label={profile.role === 'asesor' ? 'Mis casos y expedientes' : 'Bandeja de asuntos'} />
-            {profile.role !== 'asesor' && (
-              <Tab icon={<FactCheckRoundedIcon />} iconPosition="start" label="Estadística automática" />
-            )}
+            <Tab
+              icon={<InboxRoundedIcon />}
+              iconPosition="start"
+              label={profile.role === 'asesor' ? 'Mis casos y expedientes' : 'Bandeja de asuntos'}
+            />
+            <Tab
+              icon={<FactCheckRoundedIcon />}
+              iconPosition="start"
+              label={profile.role === 'asesor' ? 'Mi control de términos' : 'Estadística y control institucional'}
+            />
           </Tabs>
           <Stack direction="row" spacing={1} flexWrap="wrap">
             {['administrador', 'jefatura', 'secretaria'].includes(profile.role) && (
@@ -1795,11 +1823,11 @@ export default function JuridicaWorkflowPanel() {
                   sx={{ fontSize: '0.82rem', bgcolor: '#fff', borderRadius: 2 }}
                 >
                   <MenuItem value="">Todos los términos</MenuItem>
-                  <MenuItem value="vencidos" sx={{ color: '#dc2626', fontWeight: 700, fontSize: '0.82rem' }}>🚨 Vencidos ({termCounts.vencidos})</MenuItem>
-                  <MenuItem value="por_vencer" sx={{ color: '#d97706', fontWeight: 700, fontSize: '0.82rem' }}>⏰ Por vencer ≤ 5 d.h. ({termCounts.porVencer})</MenuItem>
-                  <MenuItem value="en_termino" sx={{ color: '#059669', fontWeight: 700, fontSize: '0.82rem' }}>🟢 En término ({termCounts.enTermino})</MenuItem>
-                  <MenuItem value="sin_limite" sx={{ fontSize: '0.82rem' }}>⚪ Sin fecha límite ({termCounts.sinLimite})</MenuItem>
-                  <MenuItem value="finalizados" sx={{ fontSize: '0.82rem' }}>✓ Finalizados</MenuItem>
+                  <MenuItem value="vencidos" sx={{ color: '#dc2626', fontWeight: 700, fontSize: '0.82rem' }}>• Vencidos ({termCounts.vencidos})</MenuItem>
+                  <MenuItem value="por_vencer" sx={{ color: '#d97706', fontWeight: 700, fontSize: '0.82rem' }}>• Por vencer ≤ 5 d.h. ({termCounts.porVencer})</MenuItem>
+                  <MenuItem value="en_termino" sx={{ color: '#059669', fontWeight: 700, fontSize: '0.82rem' }}>• En término ({termCounts.enTermino})</MenuItem>
+                  <MenuItem value="sin_limite" sx={{ fontSize: '0.82rem' }}>• Sin fecha límite ({termCounts.sinLimite})</MenuItem>
+                  <MenuItem value="finalizados" sx={{ fontSize: '0.82rem' }}>• Finalizados / Atendidos</MenuItem>
                 </Select>
               </FormControl>
 
@@ -2231,14 +2259,18 @@ export default function JuridicaWorkflowPanel() {
             />
           </>
         ) : (
-          /* Tab de Estadística Automática */
+          /* Tab de Estadística / Control de Términos */
           <Box sx={{ p: 2.5, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2,1fr)' }, gap: 2 }}>
             <Paper variant="outlined" sx={{ p: 2.2, borderRadius: 3, gridColumn: { md: 'span 2' } }}>
-              <Typography fontWeight={950} mb={1}>
-                Cumplimiento y Control de Términos Legales
+              <Typography fontWeight={950} mb={0.5} sx={{ color: '#0f172a' }}>
+                {profile.role === 'asesor'
+                  ? 'Mi Control de Términos y Rendimiento'
+                  : 'Cumplimiento y Control de Términos Legales Institucionales'}
               </Typography>
               <Typography variant="body2" color="text.secondary" mb={2}>
-                Monitoreo preventivo del vencimiento de plazos según la Ley 1755 de 2015 y términos institucionales.
+                {profile.role === 'asesor'
+                  ? 'Monitoreo preventivo del vencimiento de plazos de mis expedientes asignados según la Ley 1755 de 2015.'
+                  : 'Monitoreo preventivo del vencimiento de plazos según la Ley 1755 de 2015 y términos institucionales.'}
               </Typography>
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={3}>
@@ -2268,12 +2300,19 @@ export default function JuridicaWorkflowPanel() {
               </Grid>
             </Paper>
 
-            {[
-              ['Distribución por estado', stats.estados],
-              ['Carga por responsable', stats.responsables],
-              ['Tipos de asunto', stats.grupos],
-              ['Dependencias solicitantes', stats.dependencias]
-            ].map(([title, items]) => (
+            {(profile.role === 'asesor'
+              ? [
+                  ['Mis expedientes por estado', stats.estados],
+                  ['Tipos de asunto asignados', stats.grupos],
+                  ['Dependencias solicitantes', stats.dependencias]
+                ]
+              : [
+                  ['Distribución por estado', stats.estados],
+                  ['Carga por responsable (Equipo Jurídico)', stats.responsables],
+                  ['Tipos de asunto', stats.grupos],
+                  ['Dependencias solicitantes', stats.dependencias]
+                ]
+            ).map(([title, items]) => (
               <Paper key={title} variant="outlined" sx={{ p: 2.2, borderRadius: 3 }}>
                 <Typography fontWeight={950} mb={2}>{title}</Typography>
                 <Stack spacing={1.2}>
@@ -2388,9 +2427,12 @@ export default function JuridicaWorkflowPanel() {
                         )}
                       </Stack>
                       {isObj && (
-                        <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600 }}>
-                          🏢 {option.dependencia || 'Sin dependencia registrada'} {option.cargo ? `· ${option.cargo}` : ''}
-                        </Typography>
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <AccountBalanceRoundedIcon sx={{ fontSize: 13, color: '#0284c7' }} />
+                          <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600 }}>
+                            {option.dependencia || 'Sin dependencia registrada'} {option.cargo ? `· ${option.cargo}` : ''}
+                          </Typography>
+                        </Stack>
                       )}
                     </Stack>
                   </Box>
@@ -2686,9 +2728,12 @@ export default function JuridicaWorkflowPanel() {
                         )}
                       </Stack>
                       {isObj && (
-                        <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600 }}>
-                          🏢 {option.dependencia || 'Sin dependencia registrada'} {option.cargo ? `· ${option.cargo}` : ''}
-                        </Typography>
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <AccountBalanceRoundedIcon sx={{ fontSize: 13, color: '#0284c7' }} />
+                          <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600 }}>
+                            {option.dependencia || 'Sin dependencia registrada'} {option.cargo ? `· ${option.cargo}` : ''}
+                          </Typography>
+                        </Stack>
                       )}
                     </Stack>
                   </Box>
