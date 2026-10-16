@@ -61,6 +61,7 @@ async function renderPdfCandidates(buffer) {
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
     if (pageNumber === 1) {
       candidates.push(thresholdImage(await loadImage(cropCanvas(canvas, 0.58, 0.92)), 200));
+      candidates.push(thresholdImage(await loadImage(cropCanvas(canvas, 0.58, 0.92)), 215));
     }
     candidates.push(cropCanvas(canvas, 0, 0.58));
     candidates.push(cropCanvas(canvas, 0.42, 1));
