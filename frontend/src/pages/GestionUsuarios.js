@@ -357,7 +357,7 @@ function GestionUsuarios() {
   ];
 
   const { enqueueSnackbar } = useSnackbar();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, refreshProfile } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
@@ -1494,10 +1494,23 @@ function GestionUsuarios() {
     setPermissionsSaving(true);
     try {
       const response = await userService.updateModulePermissions(permissionsUser.id, modulePermissionsForm);
+      const requestedSaberPro = modulePermissionsForm.allowedSaberProDashboards || [];
+      const savedSaberPro = response?.data?.allowedSaberProDashboards || [];
+      const rejectedSaberPro = requestedSaberPro.filter((key) => !savedSaberPro.includes(key));
+      if (rejectedSaberPro.length > 0) {
+        throw new Error('El servidor no reconoció todos los permisos de Saber Pro. Reinicie el backend actualizado e intente guardar nuevamente.');
+      }
+
+      if (Number(permissionsUser.id) === Number(currentUser?.id) && typeof refreshProfile === 'function') {
+        await refreshProfile();
+      }
       enqueueSnackbar(response.message || 'Permisos actualizados', { variant: 'success' });
-      handleClosePermissionsDialog();
+      setOpenPermissionsDialog(false);
+      setPermissionsUser(null);
+      setExpandedDatabasePermissionSections({ backup: false, data: false });
+      setModulePermissionsForm({ menuPermissions: [], allowedModules: [], allowedGestionProcesosDashboards: [], allowedPoblacionalDashboards: [], allowedSaberProDashboards: [], allowedRecursoHumanoDashboards: [], allowedInfraestructuraFisicaDashboards: [], allowedPlanAccionDashboards: [], allowedInternacionalizacionDashboards: [] });
     } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'Error al guardar permisos', { variant: 'error' });
+      enqueueSnackbar(error.response?.data?.message || error.message || 'Error al guardar permisos', { variant: 'error' });
     } finally {
       setPermissionsSaving(false);
     }

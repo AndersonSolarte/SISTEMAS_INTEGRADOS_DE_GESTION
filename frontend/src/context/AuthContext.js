@@ -38,6 +38,18 @@ export const AuthProvider = ({ children }) => {
     authService.touchSessionActivity();
   }, []);
 
+  const refreshProfile = useCallback(async () => {
+    if (!authService.isAuthenticated()) {
+      return { success: false, message: 'Token no disponible' };
+    }
+    const profile = await authService.getProfile();
+    if (profile?.success && profile?.data?.user) {
+      setUser(profile.data.user);
+      return { success: true, user: profile.data.user };
+    }
+    return { success: false, message: 'No fue posible recuperar perfil' };
+  }, []);
+
   useEffect(() => {
     let mounted = true;
 
@@ -166,7 +178,7 @@ export const AuthProvider = ({ children }) => {
 
   // Optimizamos el valor del contexto con useMemo para evitar re-renderizados
   const value = useMemo(() => ({
-    user, loading, loginWithGoogle, hydrateFromToken, logout,
+    user, loading, loginWithGoogle, hydrateFromToken, refreshProfile, logout,
     isAuthenticated: () => !!user,
     isAdmin: () => user?.role === 'administrador',
     hasAnyRole,
@@ -174,7 +186,7 @@ export const AuthProvider = ({ children }) => {
     sessionTimeoutReason,
     confirmRelogin,
     cancelSessionTimeout,
-  }), [user, loading, logout, showSessionTimeoutModal, sessionTimeoutReason, confirmRelogin, cancelSessionTimeout]);
+  }), [user, loading, refreshProfile, logout, showSessionTimeoutModal, sessionTimeoutReason, confirmRelogin, cancelSessionTimeout]);
 
   return (
     <AuthContext.Provider value={value}>
