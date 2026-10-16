@@ -229,33 +229,9 @@ function GestionUsuarios() {
     ...ACADEMIC_PROGRAM_PERMISSION_OPTIONS.map((item) => ({ ...item, group: 'Vicerrectoría Académica' }))
   ];
   const OFICINA_JURIDICA_ROLE_OPTIONS = [
-    {
-      key: 'oficina_juridica.jefatura',
-      label: 'Jefe Oficina Jurídica / Asesora Jurídica Titular',
-      badge: 'Dirección & Asignación',
-      color: '#1d4ed8',
-      bg: '#eff6ff',
-      borderColor: '#bfdbfe',
-      desc: 'Control integral del módulo, radicación de solicitudes, asignación y reasignación de expedientes a los asistentes jurídicos, devolución con observaciones y aprobación final de respuestas.'
-    },
-    {
-      key: 'oficina_juridica.secretaria',
-      label: 'Secretario (a) Oficina Jurídica',
-      badge: 'Radicación & Despacho',
-      color: '#b45309',
-      bg: '#fffbeb',
-      borderColor: '#fde68a',
-      desc: 'Primer contacto: recepción y sistematización de solicitudes de entrada, monitoreo de términos, radicación de salida y despacho final de respuestas aprobadas al peticionario (sin facultades de asignación).'
-    },
-    {
-      key: 'oficina_juridica.asesor',
-      label: 'Asistente Jurídico / Abogado Ejecutor',
-      badge: 'Estudio & Visto Bueno',
-      color: '#047857',
-      bg: '#ecfdf5',
-      borderColor: '#a7f3d0',
-      desc: 'Bandeja de expedientes asignados, confirmación de recibido, estudio de antecedentes, proyección de respuesta jurídica y registro de visto bueno para revisión de jefatura.'
-    }
+    { key: 'oficina_juridica.jefatura', label: 'Jefe Oficina Jurídica' },
+    { key: 'oficina_juridica.secretaria', label: 'Secretario (a) Oficina Jurídica' },
+    { key: 'oficina_juridica.asesor', label: 'Asistente Jurídico' }
   ];
   const DATABASE_BACKUP_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => [
     'gestion_bases_datos.respaldo_descargar',
@@ -3060,65 +3036,25 @@ function GestionUsuarios() {
                           )}
 
                           {modulePermissionsForm.allowedModules.includes('oficina_juridica') && (
-                            <Box sx={{ mt: 1.5, pt: 1.5, borderTop: '1.5px solid #bfdbfe' }}>
-                              <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1e3a8a', mb: 0.4 }}>
-                                ⚖️ Rol Operativo en Oficina Jurídica (Interfaz Diferenciada)
+                            <Box sx={{ mt: 1.4, pt: 1.2, borderTop: '1px solid #e2e8f0' }}>
+                              <Typography variant="caption" sx={{ display: 'block', mb: 0.5, color: '#475569', fontWeight: 850, textTransform: 'uppercase' }}>
+                                Rol operativo en Oficina Jurídica
                               </Typography>
-                              <Typography variant="caption" sx={{ display: 'block', color: '#475569', mb: 1.2, lineHeight: 1.35 }}>
-                                Selecciona el rol operativo exclusivo para este usuario. Cada rol cuenta con una interfaz y paneles propios que no se mezclan entre sí:
-                              </Typography>
-                              <Grid container spacing={1.2}>
-                                {OFICINA_JURIDICA_ROLE_OPTIONS.map((item) => {
-                                  const isRoleSelected = modulePermissionsForm.allowedModules.includes(item.key);
-                                  return (
-                                    <Grid item xs={12} key={item.key}>
-                                      <Paper
-                                        elevation={0}
-                                        onClick={() => handleTogglePermission('allowedModules', item.key)}
-                                        sx={{
-                                          p: 1.2,
-                                          borderRadius: 2,
-                                          cursor: 'pointer',
-                                          border: isRoleSelected ? `2px solid ${item.color}` : '1px solid #cbd5e1',
-                                          bgcolor: isRoleSelected ? item.bg : '#ffffff',
-                                          transition: 'all 0.15s ease',
-                                          '&:hover': { borderColor: item.color, bgcolor: item.bg }
-                                        }}
-                                      >
-                                        <Stack direction="row" spacing={1.2} alignItems="flex-start">
-                                          <Checkbox
-                                            checked={isRoleSelected}
-                                            onChange={() => handleTogglePermission('allowedModules', item.key)}
-                                            size="small"
-                                            sx={{ p: 0.3, mt: 0.2, color: item.color, '&.Mui-checked': { color: item.color } }}
-                                          />
-                                          <Box sx={{ flex: 1 }}>
-                                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ mb: 0.3 }}>
-                                              <Typography sx={{ fontWeight: 850, fontSize: '0.88rem', color: isRoleSelected ? item.color : '#1e293b' }}>
-                                                {item.label}
-                                              </Typography>
-                                              <Chip
-                                                size="small"
-                                                label={item.badge}
-                                                sx={{
-                                                  height: 20,
-                                                  fontSize: '0.68rem',
-                                                  fontWeight: 800,
-                                                  bgcolor: isRoleSelected ? '#ffffff' : item.bg,
-                                                  color: item.color,
-                                                  border: `1px solid ${item.borderColor}`
-                                                }}
-                                              />
-                                            </Stack>
-                                            <Typography variant="caption" sx={{ display: 'block', color: '#64748b', fontSize: '0.78rem', lineHeight: 1.3 }}>
-                                              {item.desc}
-                                            </Typography>
-                                          </Box>
-                                        </Stack>
-                                      </Paper>
-                                    </Grid>
-                                  );
-                                })}
+                              <Grid container spacing={0.5}>
+                                {OFICINA_JURIDICA_ROLE_OPTIONS.map((item) => (
+                                  <Grid item xs={12} sm={6} md={4} key={item.key}>
+                                    <FormControlLabel
+                                      control={(
+                                        <Checkbox
+                                          checked={modulePermissionsForm.allowedModules.includes(item.key)}
+                                          onChange={() => handleTogglePermission('allowedModules', item.key)}
+                                          size="small"
+                                        />
+                                      )}
+                                      label={item.label}
+                                    />
+                                  </Grid>
+                                ))}
                               </Grid>
                             </Box>
                           )}
