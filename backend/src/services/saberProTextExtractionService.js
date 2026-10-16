@@ -99,6 +99,21 @@ function cropRgb(img, startRatio, endRatio) {
   };
 }
 
+function cropRgbRegion(img, startXRatio, startYRatio, endXRatio, endYRatio) {
+  const startX = Math.floor(img.width * startXRatio);
+  const startY = Math.floor(img.height * startYRatio);
+  const endX = Math.ceil(img.width * endXRatio);
+  const endY = Math.ceil(img.height * endYRatio);
+  const width = Math.max(1, endX - startX);
+  const height = Math.max(1, endY - startY);
+  const out = new Uint8Array(width * height * 3);
+  for (let y = 0; y < height; y += 1) {
+    const sourceStart = ((startY + y) * img.width + startX) * 3;
+    out.set(img.data.subarray(sourceStart, sourceStart + (width * 3)), y * width * 3);
+  }
+  return { width, height, data: out };
+}
+
 function thresholdRgb(img, threshold = 200) {
   const out = new Uint8Array(img.data.length);
   for (let i = 0; i < img.data.length; i += 3) {
@@ -164,8 +179,16 @@ async function* renderPdfCandidatesWithPdftoppm(buffer) {
     if (pageNumber === 1) {
       const band = cropRgb(img, 0.58, 0.92);
       yield encodeRgbToPng(thresholdRgb(band, 200));
-      yield encodeRgbToPng(cropRgb(img, 0, 0.58));
+
+      const highResolution = renderPageWithPdftoppm(buffer, pageNumber, 396);
+      if (highResolution) {
+        const identificationBand = cropRgbRegion(highResolution, 0.25, 0.18, 0.80, 0.56);
+        yield encodeRgbToPng(thresholdRgb(identificationBand, 175));
+        yield encodeRgbToPng(thresholdRgb(identificationBand, 220));
+      }
+
       yield encodeRgbToPng(thresholdRgb(band, 215));
+      yield encodeRgbToPng(cropRgb(img, 0, 0.58));
     } else {
       yield encodeRgbToPng(cropRgb(img, 0, 0.58));
     }
@@ -178,15 +201,21 @@ async function* renderPdfCandidatesWithPdftoppm(buffer) {
 async function* renderPdfCandidatesWithCanvas(buffer) {
   const { createCanvas, loadImage } = require('@napi-rs/canvas');
 
-  const cropCanvas = (source, startRatio, endRatio) => {
-    const startY = Math.floor(source.height * startRatio);
-    const endY = Math.ceil(source.height * endRatio);
-    const target = createCanvas(source.width, endY - startY);
+  const cropCanvasRegion = (source, startXRatio, startYRatio, endXRatio, endYRatio) => {
+    const startX = Math.floor(source.width * startXRatio);
+    const startY = Math.floor(source.height * startYRatio);
+    const endX = Math.ceil(source.width * endXRatio);
+    const endY = Math.ceil(source.height * endYRatio);
+    const target = createCanvas(endX - startX, endY - startY);
     target.getContext('2d').drawImage(
-      source, 0, startY, source.width, endY - startY,
-      0, 0, source.width, endY - startY
+      source, startX, startY, endX - startX, endY - startY,
+      0, 0, endX - startX, endY - startY
     );
     return target.toBuffer('image/png');
+  };
+
+  const cropCanvas = (source, startRatio, endRatio) => {
+    return cropCanvasRegion(source, 0, startRatio, 1, endRatio);
   };
 
   const thresholdImage = (image, threshold = 200) => {
@@ -235,9 +264,22 @@ async function* renderPdfCandidatesWithCanvas(buffer) {
     const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
     if (pageNumber === 1) {
-      yield thresholdImage(await loadImage(cropCanvas(canvas, 0.58, 0.92)), 200);
+      // La fecha se conserva a 4.5x: a mayor escala algunos trazos de los
+      // certificados escaneados se unen y Tesseract altera el año.
+      const dateBand = cropCanvas(canvas, 0.58, 0.92);
+      yield thresholdImage(await loadImage(dateBand), 200);
+
+      // La cédula, en cambio, requiere más resolución. Se procesa únicamente
+      // la franja superior central para no encarecer el OCR de toda la página.
+      const idViewport = page.getViewport({ scale: 5.5 });
+      const idCanvas = createCanvas(Math.ceil(idViewport.width), Math.ceil(idViewport.height));
+      await page.render({ canvasContext: idCanvas.getContext('2d'), viewport: idViewport }).promise;
+      const identificationBand = cropCanvasRegion(idCanvas, 0.25, 0.18, 0.80, 0.56);
+      yield thresholdImage(await loadImage(identificationBand), 175);
+      yield thresholdImage(await loadImage(identificationBand), 220);
+
+      yield thresholdImage(await loadImage(dateBand), 215);
       yield cropCanvas(canvas, 0, 0.58);
-      yield thresholdImage(await loadImage(cropCanvas(canvas, 0.58, 0.92)), 215);
     } else {
       yield cropCanvas(canvas, 0, 0.58);
     }
