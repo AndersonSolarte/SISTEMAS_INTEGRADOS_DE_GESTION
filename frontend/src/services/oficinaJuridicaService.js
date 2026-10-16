@@ -2,6 +2,7 @@ import api from './api';
 
 const oficinaJuridicaService = {
   getProfile: () => api.get('/oficina-juridica/perfil').then((r) => r.data),
+  getInternalUsers: () => api.get('/oficina-juridica/usuarios-internos').then((r) => r.data),
   list: (params = {}) => api.get('/oficina-juridica/casos', { params }).then((r) => r.data),
   get: (id) => api.get(`/oficina-juridica/casos/${id}`).then((r) => r.data),
   create: (payload) => {

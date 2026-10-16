@@ -73,6 +73,7 @@ const upload = multer({
 
 router.use(auth, juridicaAccess);
 router.get('/perfil', controller.getProfile);
+router.get('/usuarios-internos', controller.getInternalUsers);
 router.get('/casos', controller.listCases);
 router.post('/casos', upload.array('archivos', 10), controller.createCase);
 router.get('/casos/:id', controller.getCase);

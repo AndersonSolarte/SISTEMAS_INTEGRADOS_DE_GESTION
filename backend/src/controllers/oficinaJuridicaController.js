@@ -1054,8 +1054,23 @@ const importExcel = async (req, res) => {
   res.json({ success: true, data: { imported, updated, skipped, total: imported + updated } });
 };
 
+const getInternalUsers = async (req, res) => {
+  try {
+    const users = await User.findAll({
+      attributes: ['id', 'nombre', 'username', 'email', 'dependencia', 'cargo'],
+      where: { estado: 'activo' },
+      order: [['nombre', 'ASC']]
+    });
+    res.json({ success: true, data: users });
+  } catch (err) {
+    console.error('Error al obtener usuarios internos:', err);
+    res.status(500).json({ success: false, message: 'Error al obtener usuarios internos.' });
+  }
+};
+
 module.exports = {
   getProfile,
+  getInternalUsers,
   listCases,
   getCase,
   createCase,

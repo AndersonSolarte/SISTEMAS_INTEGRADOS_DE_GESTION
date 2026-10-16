@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Avatar, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  Alert, Autocomplete, Avatar, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, Divider, FormControl, FormControlLabel, FormGroup, Grid, IconButton, InputLabel,
   LinearProgress, MenuItem, Paper, Select, Stack, Tab, Tabs, Table, TableBody, TableCell,
   TableContainer, TableHead, TablePagination, TableRow, TextField, Tooltip, Typography
@@ -472,6 +472,7 @@ export default function JuridicaWorkflowPanel() {
   const [profile, setProfile] = useState({ role: 'solicitante', team: [] });
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState({});
+  const [internalUsers, setInternalUsers] = useState([]);
 
   // Filtros
   const [search, setSearch] = useState('');
@@ -572,14 +573,16 @@ export default function JuridicaWorkflowPanel() {
     setLoading(true);
     setError('');
     try {
-      const [p, list, summary] = await Promise.all([
+      const [p, list, summary, usersRes] = await Promise.all([
         oficinaJuridicaService.getProfile(),
         oficinaJuridicaService.list(),
-        oficinaJuridicaService.stats()
+        oficinaJuridicaService.stats(),
+        oficinaJuridicaService.getInternalUsers().catch(() => ({ data: [] }))
       ]);
       setProfile(p.data);
       setRows(list.data || []);
       setStats(summary.data || {});
+      setInternalUsers(usersRes.data || []);
     } catch (e) {
       setError(e.response?.data?.message || 'No fue posible cargar la gestión jurídica.');
     } finally {
@@ -1944,17 +1947,78 @@ export default function JuridicaWorkflowPanel() {
               sx={{ gridColumn: { md: 'span 2' } }}
             />
 
-            <TextField
-              required
-              label="Interesado / solicitante"
+            <Autocomplete
+              freeSolo
+              options={internalUsers}
+              getOptionLabel={(option) => {
+                if (typeof option === 'string') return option;
+                return option.nombre || '';
+              }}
+              filterOptions={(options, state) => {
+                const term = (state.inputValue || '').toLowerCase().trim();
+                if (!term) return options.slice(0, 40);
+                return options.filter((u) => {
+                  const nombre = String(u.nombre || '').toLowerCase();
+                  const cedula = String(u.username || '').toLowerCase();
+                  const dep = String(u.dependencia || '').toLowerCase();
+                  return nombre.includes(term) || cedula.includes(term) || dep.includes(term);
+                }).slice(0, 40);
+              }}
               value={form.interesado}
-              onChange={(e) => setForm({ ...form, interesado: e.target.value })}
+              onInputChange={(event, newInputValue) => {
+                setForm((prev) => ({ ...prev, interesado: newInputValue }));
+              }}
+              onChange={(event, newValue) => {
+                if (typeof newValue === 'object' && newValue !== null) {
+                  setForm((prev) => ({
+                    ...prev,
+                    interesado: newValue.nombre,
+                    dependencia_solicitante: newValue.dependencia || prev.dependencia_solicitante
+                  }));
+                } else if (typeof newValue === 'string') {
+                  setForm((prev) => ({ ...prev, interesado: newValue }));
+                } else {
+                  setForm((prev) => ({ ...prev, interesado: '' }));
+                }
+              }}
+              renderOption={(props, option) => (
+                <Box component="li" {...props} key={option.id} sx={{ py: 0.9, borderBottom: '1px solid #f1f5f9' }}>
+                  <Stack spacing={0.3} sx={{ width: '100%' }}>
+                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                      <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                        {option.nombre}
+                      </Typography>
+                      {option.username && (
+                        <Chip
+                          size="small"
+                          label={`C.C. ${option.username}`}
+                          sx={{ height: 20, fontSize: '0.7rem', fontWeight: 800, bgcolor: '#f1f5f9', color: '#334155' }}
+                        />
+                      )}
+                    </Stack>
+                    <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600 }}>
+                      🏢 {option.dependencia || 'Sin dependencia registrada'} {option.cargo ? `· ${option.cargo}` : ''}
+                    </Typography>
+                  </Stack>
+                </Box>
+              )}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  required
+                  label="Interesado / solicitante *"
+                  placeholder="Buscar por nombre o cédula, o digite peticionario..."
+                  helperText="Busque por nombre o cédula para auto-llenar la dependencia, o digite libremente si es externo."
+                />
+              )}
             />
 
             <TextField
               label="Dependencia solicitante"
+              placeholder="Auto-completada al seleccionar usuario, o digite..."
               value={form.dependencia_solicitante}
               onChange={(e) => setForm({ ...form, dependencia_solicitante: e.target.value })}
+              helperText="Se auto-completa al seleccionar un usuario interno, o puede editarla libremente."
             />
 
             <TextField
@@ -2163,15 +2227,74 @@ export default function JuridicaWorkflowPanel() {
               sx={{ gridColumn: { md: 'span 2' } }}
             />
 
-            <TextField
-              required
-              label="Interesado / solicitante"
+            <Autocomplete
+              freeSolo
+              options={internalUsers}
+              getOptionLabel={(option) => {
+                if (typeof option === 'string') return option;
+                return option.nombre || '';
+              }}
+              filterOptions={(options, state) => {
+                const term = (state.inputValue || '').toLowerCase().trim();
+                if (!term) return options.slice(0, 40);
+                return options.filter((u) => {
+                  const nombre = String(u.nombre || '').toLowerCase();
+                  const cedula = String(u.username || '').toLowerCase();
+                  const dep = String(u.dependencia || '').toLowerCase();
+                  return nombre.includes(term) || cedula.includes(term) || dep.includes(term);
+                }).slice(0, 40);
+              }}
               value={editForm.interesado}
-              onChange={(e) => setEditForm({ ...editForm, interesado: e.target.value })}
+              onInputChange={(event, newInputValue) => {
+                setEditForm((prev) => ({ ...prev, interesado: newInputValue }));
+              }}
+              onChange={(event, newValue) => {
+                if (typeof newValue === 'object' && newValue !== null) {
+                  setEditForm((prev) => ({
+                    ...prev,
+                    interesado: newValue.nombre,
+                    dependencia_solicitante: newValue.dependencia || prev.dependencia_solicitante
+                  }));
+                } else if (typeof newValue === 'string') {
+                  setEditForm((prev) => ({ ...prev, interesado: newValue }));
+                } else {
+                  setEditForm((prev) => ({ ...prev, interesado: '' }));
+                }
+              }}
+              renderOption={(props, option) => (
+                <Box component="li" {...props} key={option.id} sx={{ py: 0.9, borderBottom: '1px solid #f1f5f9' }}>
+                  <Stack spacing={0.3} sx={{ width: '100%' }}>
+                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                      <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                        {option.nombre}
+                      </Typography>
+                      {option.username && (
+                        <Chip
+                          size="small"
+                          label={`C.C. ${option.username}`}
+                          sx={{ height: 20, fontSize: '0.7rem', fontWeight: 800, bgcolor: '#f1f5f9', color: '#334155' }}
+                        />
+                      )}
+                    </Stack>
+                    <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600 }}>
+                      🏢 {option.dependencia || 'Sin dependencia registrada'} {option.cargo ? `· ${option.cargo}` : ''}
+                    </Typography>
+                  </Stack>
+                </Box>
+              )}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  required
+                  label="Interesado / solicitante *"
+                  placeholder="Buscar por nombre o cédula, o digite peticionario..."
+                />
+              )}
             />
 
             <TextField
               label="Dependencia solicitante"
+              placeholder="Auto-completada o digite..."
               value={editForm.dependencia_solicitante}
               onChange={(e) => setEditForm({ ...editForm, dependencia_solicitante: e.target.value })}
             />
