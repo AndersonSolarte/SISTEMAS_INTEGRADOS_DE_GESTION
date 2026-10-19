@@ -34,7 +34,7 @@ const setReporteSalidaFeatureState = async (enabled, userId = null) => {
 };
 
 const getReporteSalidaRecipients = () => ({
-  gestionHumana: String(process.env.REPORTE_SALIDA_GESTION_HUMANA_EMAIL || 'talento.humano@unicesmag.edu.co').trim().toLowerCase(),
+  gestionHumana: String(process.env.REPORTE_SALIDA_GESTION_HUMANA_EMAIL || 'talentohumano.reportes@unicesmag.edu.co').trim().toLowerCase(),
   sst: String(process.env.REPORTE_SALIDA_SST_EMAIL || 'seguridadysalud@unicesmag.edu.co').trim().toLowerCase(),
   proyeccionSocial: String(process.env.REPORTE_SALIDA_PROYECCION_SOCIAL_EMAIL || 'proyeccionsocial@unicesmag.edu.co').trim().toLowerCase()
 });
@@ -42,7 +42,7 @@ const getReporteSalidaRecipients = () => ({
 const getReposicionGlobalViewerEmails = () => {
   const configured = String(
     process.env.REPOSICION_GLOBAL_VIEWER_EMAILS
-      || 'adsolarte@unicesmag.edu.co,sgc@unicesmag.edu.co'
+      || 'talentohumano.reportes@unicesmag.edu.co,sgc@unicesmag.edu.co'
   );
 
   return [...new Set(

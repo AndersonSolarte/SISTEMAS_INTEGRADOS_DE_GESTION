@@ -9,7 +9,7 @@ test('usa exclusivamente las dos cuentas institucionales por defecto', () => {
 
   try {
     assert.deepEqual(getReposicionGlobalViewerEmails(), [
-      'adsolarte@unicesmag.edu.co',
+      'talentohumano.reportes@unicesmag.edu.co',
       'sgc@unicesmag.edu.co'
     ]);
   } finally {

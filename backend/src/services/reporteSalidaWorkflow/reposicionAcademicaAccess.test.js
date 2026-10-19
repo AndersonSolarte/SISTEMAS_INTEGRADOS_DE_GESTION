@@ -55,8 +55,9 @@ test('solo las dos cuentas nominativas tienen vista global de tiempo por reponer
   delete process.env.REPOSICION_GLOBAL_VIEWER_EMAILS;
 
   try {
-    assert.equal(isGlobalReposicionViewer({ email: 'adsolarte@unicesmag.edu.co' }), true);
+    assert.equal(isGlobalReposicionViewer({ email: 'talentohumano.reportes@unicesmag.edu.co' }), true);
     assert.equal(isGlobalReposicionViewer({ email: 'SGC@UNICESMAG.EDU.CO' }), true);
+    assert.equal(isGlobalReposicionViewer({ email: 'adsolarte@unicesmag.edu.co' }), false);
     assert.equal(isGlobalReposicionViewer({ email: 'otro.usuario@unicesmag.edu.co' }), false);
     assert.equal(isGlobalReposicionViewer({ email: '' }), false);
   } finally {
