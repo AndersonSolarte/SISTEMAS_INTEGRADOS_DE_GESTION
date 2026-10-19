@@ -50,6 +50,8 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import reporteSalidaService from '../../services/reporteSalidaService';
 import { getAccionAdministrativaViaticosPorReporte } from '../../services/legalizacionViaticosService';
 import ReporteSalidaEstadisticas from './ReporteSalidaEstadisticas';
@@ -207,6 +209,24 @@ const CARGO_SUBTYPES = [
 ];
 const isCargoSubtype = (t = '') => CARGO_SUBTYPES.includes(t) || String(t).startsWith('otra:');
 
+const TEMPORARY_DOCUMENT_APPROVAL_STATES = new Set([
+  'pendiente_aprobacion_proyeccion_social',
+  'pendiente_aprobacion_jefe',
+  'pendiente_jefe',
+  'pendiente_aprobacion_financiera_previa',
+  'pendiente_financiera_previa',
+  'pendiente_aprobacion_vicerrectoria_academica',
+  'pendiente_aprobacion_rectoria',
+  'pendiente_aprobacion_gestion_humana',
+  'pendiente_gestion_humana',
+  'pendiente_aprobacion_sst',
+  'pendiente_sst'
+]);
+
+const hasTemporaryDocuments = (row = {}) => (
+  TEMPORARY_DOCUMENT_APPROVAL_STATES.has(String(row?.estado || '').trim().toLowerCase())
+);
+
 const getDocumentoYDuracionInfo = (row = {}) => {
   const salida = row?.datos_formulario?.salida || {};
   const viaticos = row?.datos_formulario?.viaticos || row?.datos_viaticos || {};
@@ -221,10 +241,11 @@ const getDocumentoYDuracionInfo = (row = {}) => {
   const viaticosDays = Number.isFinite(requestedDays) && requestedDays > 0
     ? requestedDays
     : calendarDays;
-  const duracionDias = Math.max(Number(salida.duracionDias || 0), viaticosDays);
-  const duracionTipo = viaticosDays >= 3
+  const manualDays = Number(salida.cantidadDiasSolicitados ?? salida.duracionDias ?? 0);
+  const duracionDias = Number.isInteger(manualDays) && manualDays > 0 ? manualDays : viaticosDays;
+  const duracionTipo = salida.duracionTipo || (viaticosDays >= 3
     ? '3_mas_dias'
-    : (viaticosDays >= 1 ? '1_2_dias' : salida.duracionTipo);
+    : (viaticosDays >= 1 ? '1_2_dias' : ''));
 
   const isDocente = (() => {
     const data = row?.datos_formulario || {};
@@ -249,7 +270,7 @@ const getDocumentoYDuracionInfo = (row = {}) => {
 
   const isOficio = duracionTipo
     ? duracionTipo !== 'menos_media_jornada'
-    : (Number(duracionDias) >= 1 || (salida.fechaRegreso && salida.fecha && salida.fechaRegreso !== salida.fecha) || (row.tiempo_solicitado_minutos && row.tiempo_solicitado_minutos >= 480));
+    : (Number(duracionDias) >= (isDocente ? 2 : 1) || (row.tiempo_solicitado_minutos && row.tiempo_solicitado_minutos >= (isDocente ? 960 : 480)));
 
   const requiereViaticos = String(viaticos.requiereViaticos || '')
     .normalize('NFD')
@@ -291,7 +312,7 @@ const getDocumentoYDuracionInfo = (row = {}) => {
       duracionBorder = '#fde68a';
     } else if (duracionTipo === '3_mas_dias') {
       const numDias = Number(duracionDias) >= 3 ? duracionDias : 3;
-      duracionLabel = numDias > 3 ? `${numDias} días` : '3 días o más';
+      duracionLabel = `${numDias} días`;
       duracionColor = '#6b21a8';
       duracionBg = '#faf5ff';
       duracionBorder = '#e9d5ff';
@@ -810,6 +831,13 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const [ghActionObservation, setGhActionObservation] = useState('');
   const [ghActionSubmitting, setGhActionSubmitting] = useState(false);
   const ghActionSubmittingRef = useRef(false);
+  const [documentsDialogOpen, setDocumentsDialogOpen] = useState(false);
+  const [documentsTarget, setDocumentsTarget] = useState(null);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsError, setDocumentsError] = useState('');
+  const [documentsPreview, setDocumentsPreview] = useState({ documento: null, soporte: null });
+  const [activePreview, setActivePreview] = useState('documento');
+  const documentsRequestRef = useRef(0);
   
   // Estados para modal de reposición parcial GH
   const [repDialogOpen, setRepDialogOpen] = useState(false);
@@ -820,6 +848,70 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const [repMinutosAbonados, setRepMinutosAbonados] = useState('');
   const [repEstado, setRepEstado] = useState('programada');
   const [repObservacion, setRepObservacion] = useState('');
+
+  const revokeDocumentPreviews = useCallback((previews = {}) => {
+    ['documento', 'soporte'].forEach((key) => {
+      if (previews?.[key]?.url) URL.revokeObjectURL(previews[key].url);
+    });
+  }, []);
+
+  const closeDocumentsDialog = useCallback(() => {
+    documentsRequestRef.current += 1;
+    setDocumentsDialogOpen(false);
+    setDocumentsTarget(null);
+    setDocumentsError('');
+    setDocumentsPreview((current) => {
+      revokeDocumentPreviews(current);
+      return { documento: null, soporte: null };
+    });
+  }, [revokeDocumentPreviews]);
+
+  const openDocumentsDialog = useCallback(async (row) => {
+    const requestId = documentsRequestRef.current + 1;
+    documentsRequestRef.current = requestId;
+    setDocumentsDialogOpen(true);
+    setDocumentsTarget(row);
+    setDocumentsLoading(true);
+    setDocumentsError('');
+    setActivePreview('documento');
+    setDocumentsPreview((current) => {
+      revokeDocumentPreviews(current);
+      return { documento: null, soporte: null };
+    });
+
+    const [documentResult, supportResult] = await Promise.allSettled([
+      api.get(`/reporte-salida/solicitudes/${row.id}/documento-temporal`, { responseType: 'blob' }),
+      api.get(`/reporte-salida/solicitudes/${row.id}/soporte-temporal`, { responseType: 'blob' })
+    ]);
+
+    if (documentsRequestRef.current !== requestId) return;
+
+    if (documentResult.status !== 'fulfilled') {
+      setDocumentsLoading(false);
+      setDocumentsError('No fue posible consultar el formato u oficio de esta solicitud. Verifique que continúe pendiente de aprobación.');
+      return;
+    }
+
+    const nextPreview = {
+      documento: {
+        url: URL.createObjectURL(documentResult.value.data),
+        contentType: documentResult.value.headers?.['content-type'] || 'application/pdf'
+      },
+      soporte: supportResult.status === 'fulfilled'
+        ? {
+          url: URL.createObjectURL(supportResult.value.data),
+          contentType: supportResult.value.headers?.['content-type'] || 'application/octet-stream'
+        }
+        : null
+    };
+    setDocumentsPreview(nextPreview);
+    setDocumentsLoading(false);
+  }, [revokeDocumentPreviews]);
+
+  useEffect(() => () => {
+    documentsRequestRef.current += 1;
+    revokeDocumentPreviews(documentsPreview);
+  }, [documentsPreview, revokeDocumentPreviews]);
 
   const fetchSolicitudes = useCallback(async () => {
     setLoading(true);
@@ -2072,6 +2164,13 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                           <TableCell sx={{ py: 0.8, px: 0.8 }}>
                             {canManageAll ? (
                               <Stack spacing={0.6}>
+                                {hasTemporaryDocuments(row) && (
+                                  <Tooltip title="Consultar formato/oficio y soporte adjunto" arrow>
+                                    <IconButton size="small" color="primary" onClick={() => openDocumentsDialog(row)} sx={{ width: 'fit-content' }}>
+                                      <VisibilityOutlinedIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
                                 {Boolean(row.estado && (row.estado.startsWith('pendiente') || row.estado.includes('pendiente'))) && (
                                   <Stack direction="row" spacing={0.5}>
                                     <Tooltip title={VIATICOS_SPECIALIZED_STATES.has(row.estado) ? 'Abrir formulario para aprobar o gestionar esta etapa de viáticos' : `Aprobar ${getPendingStageLabel(row.estado)}`} arrow>
@@ -2107,7 +2206,15 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                 </Stack>
                               </Stack>
                             ) : (
-                              isDiligenciaPersonalRow(row) ? (
+                              <Stack spacing={0.6}>
+                                {hasTemporaryDocuments(row) && (
+                                  <Tooltip title="Consultar formato/oficio y soporte adjunto" arrow>
+                                    <IconButton size="small" color="primary" onClick={() => openDocumentsDialog(row)} sx={{ width: 'fit-content' }}>
+                                      <VisibilityOutlinedIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+                                {isDiligenciaPersonalRow(row) ? (
                                 hasValidatedReposicion(row) ? (
                                   <Stack spacing={0.3}>
                                     <Chip
@@ -2140,7 +2247,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                     </Typography>
                                   </Stack>
                                 )
-                              ) : '-'
+                                ) : '-'}
+                              </Stack>
                             )}
                           </TableCell>
                         </TableRow>
@@ -2169,6 +2277,74 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                 }}
               />
             </Paper>
+            <Dialog
+              open={documentsDialogOpen}
+              onClose={closeDocumentsDialog}
+              maxWidth="lg"
+              fullWidth
+              PaperProps={{ sx: { height: { xs: '92vh', md: '88vh' }, borderRadius: 3 } }}
+            >
+              <DialogTitle sx={{ fontWeight: 900, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                Documentos temporales · {documentsTarget?.consecutivo || 'Solicitud'}
+              </DialogTitle>
+              <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <Box sx={{ px: 2, py: 1.25, borderBottom: '1px solid #e2e8f0', bgcolor: '#fff' }}>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+                    <Button
+                      variant={activePreview === 'documento' ? 'contained' : 'outlined'}
+                      startIcon={<DescriptionOutlinedIcon />}
+                      onClick={() => setActivePreview('documento')}
+                      disabled={!documentsPreview.documento}
+                    >
+                      Formato / Oficio
+                    </Button>
+                    <Button
+                      variant={activePreview === 'soporte' ? 'contained' : 'outlined'}
+                      startIcon={<DownloadIcon />}
+                      onClick={() => setActivePreview('soporte')}
+                      disabled={!documentsPreview.soporte}
+                    >
+                      Soporte adjunto
+                    </Button>
+                    {!documentsLoading && !documentsPreview.soporte && !documentsError && (
+                      <Typography sx={{ fontSize: 12, color: '#64748b' }}>Esta solicitud no tiene soporte adjunto.</Typography>
+                    )}
+                    {documentsPreview[activePreview]?.url && (
+                      <Button
+                        component="a"
+                        href={documentsPreview[activePreview].url}
+                        target="_blank"
+                        rel="noreferrer"
+                        startIcon={<OpenInNewOutlinedIcon />}
+                        sx={{ ml: { sm: 'auto !important' }, textTransform: 'none' }}
+                      >
+                        Abrir en otra pestaña
+                      </Button>
+                    )}
+                  </Stack>
+                </Box>
+                {documentsLoading ? (
+                  <Stack alignItems="center" justifyContent="center" spacing={1.5} sx={{ flex: 1, minHeight: 360 }}>
+                    <CircularProgress />
+                    <Typography color="text.secondary">Cargando documentos...</Typography>
+                  </Stack>
+                ) : documentsError ? (
+                  <Alert severity="warning" sx={{ m: 2 }}>{documentsError}</Alert>
+                ) : documentsPreview[activePreview]?.url ? (
+                  <Box
+                    component="iframe"
+                    title={`${activePreview} ${documentsTarget?.consecutivo || ''}`}
+                    src={documentsPreview[activePreview].url}
+                    sx={{ width: '100%', flex: 1, minHeight: 460, border: 0, bgcolor: '#e5e7eb' }}
+                  />
+                ) : (
+                  <Alert severity="info" sx={{ m: 2 }}>Seleccione un documento disponible para consultarlo.</Alert>
+                )}
+              </DialogContent>
+              <DialogActions sx={{ borderTop: '1px solid #e2e8f0', px: 2 }}>
+                <Button onClick={closeDocumentsDialog} variant="contained">Cerrar</Button>
+              </DialogActions>
+            </Dialog>
 {/* Modal de Eliminacion */}
             <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
               <DialogTitle>Confirmar Eliminación</DialogTitle>

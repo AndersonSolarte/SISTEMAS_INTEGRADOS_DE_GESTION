@@ -84,6 +84,7 @@ const INITIAL_FORM = {
     entidadDestino: '',
     duracionTipo: 'menos_media_jornada',
     duracionDias: 0,
+    cantidadDiasSolicitados: 0,
     codigoDependencia: '',
     destinatarioTratamiento: 'Señor',
     destinatarioNombre: '',
@@ -241,16 +242,13 @@ const convert24To12 = (time24) => {
   if (!time24) return '';
   const str = String(time24).trim();
   if (!str) return '';
-  if (/am|pm/i.test(str)) return str;
-
-  const [hStr, mStr] = str.split(':');
-  const h = parseInt(hStr, 10);
-  if (isNaN(h) || mStr === undefined) return str;
-  const mClean = mStr.replace(/[^0-9]/g, '');
-  if (!mClean) return str;
+  const match = str.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return '';
+  const h = Number(match[1]);
+  const mClean = match[2];
   const ampm = h >= 12 ? 'pm' : 'am';
   const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${mClean.padStart(2, '0')} ${ampm}`;
+  return `${h12}:${mClean} ${ampm}`;
 };
 
 const REQUIRES_ADJUNTO = [
@@ -350,9 +348,9 @@ const WORK_BLOCKS = [
 ];
 
 const timeToMinutes = (time) => {
-  const [hours, minutes] = String(time || '').split(':').map(Number);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
-  return hours * 60 + minutes;
+  const match = String(time || '').trim().match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
 };
 
 const parseDateOnly = (date) => {
@@ -458,6 +456,9 @@ const getBusinessDateIssue = (date, label) => {
 };
 
 const getRangeIssue = ({ startDate, endDate, startTime, endTime, minutes, label }) => {
+  if ((startTime && timeToMinutes(startTime) == null) || (endTime && timeToMinutes(endTime) == null)) {
+    return 'Seleccione una hora válida de la lista.';
+  }
   if (startDate) {
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -1288,17 +1289,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     return participantes.every(p => esDocenteAcad(p.cargo, form.laboral.vicerrectoria));
   })();
 
-  const isOficioSolicitud = isDocenteAcademico
-    // Para docentes: cualquier segmento con días (incluido menos_media_jornada = 1 día) genera oficio
-    ? (form.salida.duracionTipo === 'menos_media_jornada' ||
-       form.salida.duracionTipo === '1_2_dias' ||
-       form.salida.duracionTipo === '3_mas_dias')
-    // Para no-docentes: solo 1_2_dias y 3_mas_dias
-    : (form.salida.duracionTipo !== 'menos_media_jornada' && (
-        form.salida.duracionTipo === '1_2_dias' ||
-        form.salida.duracionTipo === '3_mas_dias' ||
-        Number(form.salida.duracionDias) >= 1
-      ));
+  const isOficioSolicitud = form.salida.duracionTipo !== 'menos_media_jornada' && (
+    form.salida.duracionTipo === '1_2_dias' ||
+    form.salida.duracionTipo === '3_mas_dias' ||
+    Number(form.salida.duracionDias) >= (isDocenteAcademico ? 2 : 1)
+  );
 
 
 
@@ -2923,7 +2918,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   salida={{ ...form.salida, requiereViaticos: form.viaticos?.requiereViaticos }}
                   fieldSx={duracionDiasFieldSx}
                   locked={isDiligenciaPersonal}
-                  onChange={(field, value) => update('salida', field, value)}
+                  onChange={(field, value) => {
+                    update('salida', field, value);
+                    if (field === 'duracionDias') update('salida', 'cantidadDiasSolicitados', value);
+                  }}
                   isDocente={isDocenteAcademico}
                 />
               )}
@@ -3286,10 +3284,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 )}
               </Box>
             )}
-
-            {salidaRangeIssue && <Alert severity="warning">{salidaRangeIssue}</Alert>}
-
-
 
             <Alert severity="info" icon={false} sx={{ mt: 1, '& .MuiAlert-message': { width: '100%' } }}>
               <Typography sx={{ fontSize: 13, color: '#0f172a', textAlign: 'center' }}>

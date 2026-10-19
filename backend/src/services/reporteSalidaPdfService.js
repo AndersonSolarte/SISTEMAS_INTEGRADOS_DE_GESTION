@@ -271,6 +271,46 @@ const isDocentePdf = (solicitud = {}) => {
   return /\bdocente\b/.test(c) || rol.includes('docente') || tipoContrato.includes('docente');
 };
 
+const getReporteSalidaAttachmentName = (solicitud = {}) => {
+  const data = solicitud?.datos_formulario || {};
+  const salida = data.salida || {};
+  const rawName = data.adjunto_metadata?.nombre_original
+    || data.viaticos?.soporteAdjunto?.originalName
+    || data.viaticos?.soporteAdjunto?.filename
+    || data.adjunto_path
+    || salida.adjunto_path
+    || salida.adjunto_url
+    || '';
+  return rawName ? path.basename(String(rawName)) : '';
+};
+
+const getReporteSalidaAnnexLabel = (solicitud = {}) => {
+  const data = solicitud?.datos_formulario || {};
+  const salida = data.salida || {};
+  const participantes = Array.isArray(data.participantes) ? data.participantes : [];
+  const estudiantes = Array.isArray(salida.estudiantesList || salida.estudiantes)
+    ? (salida.estudiantesList || salida.estudiantes)
+    : [];
+  const isMultiple = Boolean(data.is_salida_multiple || data.isSalidaMultiple);
+  const attachmentName = getReporteSalidaAttachmentName(solicitud);
+  const annexes = [];
+
+  if (attachmentName) annexes.push(attachmentName);
+  if (estudiantes.length > 0) {
+    annexes.push(isMultiple && participantes.length > 1
+      ? 'Listado Docentes y Estudiantes'
+      : 'Listado Estudiantes');
+  } else if (isMultiple && participantes.length > 1) {
+    annexes.push('Listado Docentes / Colaboradores');
+  }
+
+  const configuredAnnex = String(salida.oficioAnexos || '').trim();
+  const isGenericConfiguredAnnex = /^(ninguno|soporte adjunto en plataforma)$/i.test(configuredAnnex);
+  if (!annexes.length && configuredAnnex && !isGenericConfiguredAnnex) annexes.push(configuredAnnex);
+
+  return annexes.join('; ') || 'Ninguno';
+};
+
 const getReposicionPdfInfo = (solicitud = {}) => {
   const data = solicitud.datos_formulario || {};
   const salida = data.salida || {};
@@ -285,7 +325,7 @@ const getReposicionPdfInfo = (solicitud = {}) => {
   const isDocente = isDocentePdf(solicitud);
   const durationLabels = isDocente
     ? {
-        menos_media_jornada: '1 día',
+        menos_media_jornada: 'Hasta 1 día',
         '1_2_dias': '2 días',
         '3_mas_dias': '3 o más días'
       }
@@ -296,11 +336,7 @@ const getReposicionPdfInfo = (solicitud = {}) => {
       };
 
   const stateLabels = { no_aplica: 'No aplica', pendiente: 'Pendiente', programada: 'Programada', cumplida: 'Cumplida', incumplida: 'Incumplida' };
-  const attachmentName = data.adjunto_metadata?.nombre_original
-    || data.adjunto_path
-    || salida.adjunto_path
-    || salida.adjunto_url
-    || '';
+  const attachmentName = getReporteSalidaAttachmentName(solicitud);
   return {
     applies: Boolean(solicitud.reposicion_aplica),
     total,
@@ -311,41 +347,145 @@ const getReposicionPdfInfo = (solicitud = {}) => {
     contractLevel: solicitud.reposicion_nivel_contratacion || data.laboral?.nivelContratacion || 'No registrado',
     durationLabel: durationLabels[salida.duracionTipo] || salida.duracionTipo || 'No registrado',
     stateLabel: stateLabels[solicitud.reposicion_estado] || solicitud.reposicion_estado || 'Pendiente',
-    attachmentName: attachmentName ? path.basename(String(attachmentName)) : '',
+    attachmentName,
     reposicion
   };
 };
 
-const buildReposicionPdfSection = (solicitud = {}, sectionTitle = 'Informacion de reposicion de tiempo') => {
+const buildReposicionPdfSection = (solicitud = {}, sectionTitle = 'INFORMACIÓN DE REPOSICIÓN DE TIEMPO') => {
   const info = getReposicionPdfInfo(solicitud);
   if (!info.applies) return [];
+  const salida = solicitud?.datos_formulario?.salida || {};
+  const isDocenteHastaUnDia = isDocentePdf(solicitud)
+    && salida.duracionTipo === 'menos_media_jornada';
+
+  const stateDescriptions = {
+    pendiente: 'Pendiente de programar o validar el tiempo de reposición.',
+    programada: 'El plan de reposición ya fue programado.',
+    cumplida: 'El tiempo de reposición fue completado.',
+    incumplida: 'El plan de reposición presenta un incumplimiento.'
+  };
+  const stateKey = String(solicitud.reposicion_estado || 'pendiente').toLowerCase();
+  const summaryCell = (label, value, options = {}) => ({
+    stack: [
+      {
+        text: String(label || '').toUpperCase(),
+        bold: true,
+        fontSize: 6.7,
+        color: options.labelColor || '#475569',
+        characterSpacing: 0.25,
+        margin: [0, 0, 0, 2]
+      },
+      {
+        text: value || 'No registrado',
+        bold: options.bold !== false,
+        fontSize: options.fontSize || 8.4,
+        color: options.valueColor || '#0f172a'
+      },
+      ...(options.detail ? [{
+        text: options.detail,
+        fontSize: 6.5,
+        color: '#64748b',
+        margin: [0, 2, 0, 0]
+      }] : [])
+    ],
+    fillColor: options.fillColor || '#f8fafc'
+  });
+
   const rows = [
-    [{ text: 'Jornada diaria:', bold: true }, { text: formatMinutes(info.daily) }, {}, {}],
-    [{ text: 'Perfil laboral:', bold: true }, { text: info.profileLabel }, { text: 'Nivel de contratacion:', bold: true }, { text: info.contractLevel }],
-    [{ text: 'Duracion del permiso:', bold: true }, { text: info.durationLabel }, { text: 'Estado de reposicion:', bold: true }, { text: info.stateLabel }],
-    [{ text: 'Tiempo por reponer:', bold: true }, { text: formatMinutes(info.total) }, { text: 'Saldo pendiente:', bold: true }, { text: formatMinutes(info.pending) }],
-    [{ text: 'Tiempo abonado:', bold: true }, { text: formatMinutes(info.paid) }, { text: 'Soporte adjunto:', bold: true }, { text: info.attachmentName || 'No adjuntado' }]
+    [
+      summaryCell('Jornada diaria', formatMinutes(info.daily)),
+      summaryCell('Perfil laboral', info.profileLabel, { fontSize: 8 })
+    ],
+    [
+      summaryCell('Duración del permiso', info.durationLabel),
+      summaryCell('Estado de reposición', info.stateLabel, {
+        valueColor: stateKey === 'cumplida' ? '#166534' : (stateKey === 'incumplida' ? '#b91c1c' : '#92400e'),
+        fillColor: stateKey === 'cumplida' ? '#f0fdf4' : (stateKey === 'incumplida' ? '#fef2f2' : '#fffbeb'),
+        detail: stateDescriptions[stateKey] || 'Estado registrado para el seguimiento de la reposición.'
+      })
+    ]
   ];
+  if (isDocenteHastaUnDia) {
+    rows.push([
+      summaryCell('Tiempo por reponer', formatMinutes(info.total), { valueColor: '#0b3a6f' }),
+      summaryCell('Referencia del permiso', solicitud.consecutivo || 'Sin consecutivo', { fontSize: 7.8, bold: false, fillColor: '#ffffff' })
+    ]);
+  } else {
+    rows.push(
+      [
+        summaryCell('Tiempo por reponer', formatMinutes(info.total), { valueColor: '#0b3a6f' }),
+        summaryCell('Saldo pendiente', formatMinutes(info.pending), { valueColor: info.pending > 0 ? '#b45309' : '#166534' })
+      ],
+      [
+        summaryCell('Tiempo abonado', formatMinutes(info.paid)),
+        summaryCell('Soporte adjunto', info.attachmentName || 'No adjuntado', { fontSize: 7.2, bold: false })
+      ],
+      [
+        summaryCell('Nivel de contratación', info.contractLevel, { fontSize: 7.8, bold: false, fillColor: '#ffffff' }),
+        summaryCell('Referencia del permiso', solicitud.consecutivo || 'Sin consecutivo', { fontSize: 7.8, bold: false, fillColor: '#ffffff' })
+      ]
+    );
+  }
   const plan = info.reposicion || {};
   if (plan.fecha || plan.horaInicio || plan.observacion) {
     rows.push([
-      { text: 'Plan informado:', bold: true },
-      { text: [formatDate(plan.fecha), formatTimeAmPm(plan.horaInicio)].filter(Boolean).join(' ') || 'Sin fecha definida' },
-      { text: 'Finalizacion:', bold: true },
-      { text: [formatDate(plan.fechaFin || plan.fecha), formatTimeAmPm(plan.horaFin)].filter(Boolean).join(' ') || 'Sin fecha definida' }
+      summaryCell('Inicio del plan informado', [formatDate(plan.fecha), formatTimeAmPm(plan.horaInicio)].filter(Boolean).join(' ') || 'Sin fecha definida'),
+      summaryCell('Finalización del plan', [formatDate(plan.fechaFin || plan.fecha), formatTimeAmPm(plan.horaFin)].filter(Boolean).join(' ') || 'Sin fecha definida')
     ]);
-    if (plan.observacion) rows.push([{ text: 'Observacion:', bold: true }, { text: plan.observacion, colSpan: 3 }, {}, {}]);
+    if (plan.observacion) rows.push([{
+      ...summaryCell('Observación del plan', plan.observacion, { bold: false, fillColor: '#ffffff' }),
+      colSpan: 2
+    }, {}]);
   }
   if (solicitud.observacion_gestion_humana) {
-    rows.push([
-      { text: 'Seguimiento de reposicion:', bold: true },
-      { text: solicitud.observacion_gestion_humana, colSpan: 3 },
-      {}, {}
-    ]);
+    rows.push([{
+      ...summaryCell('Seguimiento de reposición', solicitud.observacion_gestion_humana, { bold: false, fillColor: '#eff6ff' }),
+      colSpan: 2
+    }, {}]);
   }
+
   return [
-    { table: { widths: ['*'], body: [[{ text: sectionTitle, bold: true, fillColor: '#dbeafe', color: '#0b3a6f', margin: [5, 3, 5, 3] }]] }, margin: [0, 4, 0, 3] },
-    { table: { widths: ['22%', '28%', '22%', '28%'], body: rows }, layout: 'lightHorizontalLines', margin: [0, 0, 0, 8] }
+    {
+      unbreakable: true,
+      stack: [
+        {
+          table: {
+            widths: ['*'],
+            body: [[{
+              text: sectionTitle,
+              bold: true,
+              fontSize: 8.2,
+              fillColor: '#dbeafe',
+              color: '#0b3a6f',
+              margin: [6, 4, 6, 4]
+            }]]
+          },
+          layout: 'noBorders'
+        },
+        {
+          text: 'Resumen del tiempo que debe reponerse por la salida y del avance registrado por Gestión del Talento Humano.',
+          fontSize: 7,
+          color: '#475569',
+          fillColor: '#eff6ff',
+          margin: [7, 4, 7, 5]
+        },
+        {
+          table: { widths: ['50%', '50%'], body: rows },
+          layout: {
+            hLineWidth: () => 0.5,
+            vLineWidth: () => 0.5,
+            hLineColor: () => '#cbd5e1',
+            vLineColor: () => '#cbd5e1',
+            paddingLeft: () => 7,
+            paddingRight: () => 7,
+            paddingTop: () => 5,
+            paddingBottom: () => 5
+          }
+        }
+      ],
+      margin: [0, 4, 0, 8]
+    }
   ];
 };
 
@@ -688,30 +828,32 @@ const getViaticosDurationDays = (salida = {}, solicitud = {}) => {
 };
 
 const isOficioSalida = (salida = {}, solicitud = {}) => {
-  if (getViaticosDurationDays(salida, solicitud) >= 1) return true;
   const duracionTipo = salida.duracionTipo;
-  if (duracionTipo === 'menos_media_jornada') return false;
+  const inferredDays = getViaticosDurationDays(salida, solicitud);
+  if (duracionTipo === 'menos_media_jornada') return inferredDays >= 2;
   if (duracionTipo === '1_2_dias' || duracionTipo === '3_mas_dias') return true;
-  if (salida.duracionDias && Number(salida.duracionDias) >= 1) return true;
-  if (salida.fechaRegreso && salida.fecha && salida.fechaRegreso !== salida.fecha) return true;
-  if (solicitud?.tiempo_solicitado_minutos && Number(solicitud.tiempo_solicitado_minutos) >= 480) return true;
+  const minimumDays = isDocentePdf(solicitud) ? 2 : 1;
+  if (inferredDays >= minimumDays) return true;
+  if (salida.duracionDias && Number(salida.duracionDias) >= minimumDays) return true;
+  if (solicitud?.tiempo_solicitado_minutos && Number(solicitud.tiempo_solicitado_minutos) >= minimumDays * 480) return true;
   return false;
 };
 
 const getOficioDuracionInfo = (salida = {}, solicitud = {}) => {
   const isDocente = isDocentePdf(solicitud);
   const viaticosDays = getViaticosDurationDays(salida, solicitud);
-  const duracionDias = Math.max(Number(salida.duracionDias || 0), viaticosDays);
-  const duracionTipo = viaticosDays >= 3
+  const manualDays = Number(salida.cantidadDiasSolicitados ?? salida.duracionDias ?? 0);
+  const duracionDias = Number.isInteger(manualDays) && manualDays > 0 ? manualDays : viaticosDays;
+  const duracionTipo = salida.duracionTipo || (viaticosDays >= 3
     ? '3_mas_dias'
-    : (viaticosDays >= 1 ? '1_2_dias' : salida.duracionTipo);
+    : (viaticosDays >= 1 ? '1_2_dias' : ''));
 
   if (isDocente) {
     if (duracionTipo === 'menos_media_jornada') {
       return {
         codigo: 'menos_media_jornada',
         label: 'Hasta 1 día',
-        tipoDocumento: 'Oficio de Solicitud (Hasta 1 día)',
+        tipoDocumento: 'Formato de Reporte de Salida (Hasta 1 día)',
         instancia: 'Artículo 51 Estatuto Docente (Literal a): Otorgado por el Director del Programa o quien haga sus veces como jefe inmediato del docente -> Gestión del Talento Humano'
       };
     }
@@ -1201,7 +1343,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   let cuerpoPrincipal = finalOficioCuerpo || '';
   let agradecimientoTexto = '';
 
-  const matchAgradecimiento = cuerpoPrincipal.match(/\n\n(Agradezc[oa] la atenci[oó]n[\s\S]*)$/i);
+  const matchAgradecimiento = cuerpoPrincipal.match(/\n\n(Agradezc(?:o|emos)\s+(?:la|su)\s+atenci[oó]n[\s\S]*)$/i);
   if (matchAgradecimiento) {
     agradecimientoTexto = matchAgradecimiento[1].trim();
     cuerpoPrincipal = cuerpoPrincipal.slice(0, matchAgradecimiento.index).trim();
@@ -1232,7 +1374,9 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
 
   return {
     pageSize: 'LETTER',
-    pageMargins: [55, 96, 55, 56],
+    // El fondo institucional reserva su franja inferior para logos y datos de contacto.
+    // Este margen evita que tablas o títulos entren en esa zona fija del membrete.
+    pageMargins: [55, 96, 55, 130],
     defaultStyle: { font: PDF_FONT_FAMILY, fontSize: 10, color: '#000000', lineHeight: 1.1 },
     background: () => ({
       image: fr013Background,
@@ -1297,24 +1441,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
         }
       ] : []),
 
-      ...(agradecimientoTexto ? [
-        { text: agradecimientoTexto, alignment: 'justify', margin: [0, 0, 0, 6] }
-      ] : []),
-      
-      { text: finalOficioDespedida, margin: [0, 0, 0, 8] },
-      
-      // Signatures container
-      {
-        unbreakable: true,
-        table: {
-          widths: ['50%', '50%'],
-          body: signatureTableBody
-        },
-        layout: 'borders',
-        margin: [0, 0, 0, 10]
-      },
-
-      // Tabla de extracto / datos de control institucional (ubicada abajo)
+      // Datos de control institucional, antes del agradecimiento y del cierre.
       {
         unbreakable: true,
         table: {
@@ -1367,8 +1494,25 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       },
 
       ...buildReposicionPdfSection(solicitud, 'REPOSICION DE TIEMPO ASOCIADA A LA SALIDA'),
+
+      ...(agradecimientoTexto ? [
+        { text: agradecimientoTexto, alignment: 'justify', margin: [0, 0, 0, 6] }
+      ] : []),
+
+      { text: finalOficioDespedida, margin: [0, 0, 0, 8] },
+
+      // Las firmas permanecen despues del agradecimiento y del cierre.
+      {
+        unbreakable: true,
+        table: {
+          widths: ['50%', '50%'],
+          body: signatureTableBody
+        },
+        layout: 'borders',
+        margin: [0, 0, 0, 10]
+      },
       
-      { text: `Anexos: ${salida.oficioAnexos || (estudiantesRows.length > 0 ? ((isSalidaMultiple && participantes.length > 1) ? 'Listado Docentes y Estudiantes' : 'Listado Estudiantes') : ((isSalidaMultiple && participantes.length > 1) ? 'Listado Docentes / Colaboradores' : 'Ninguno'))}`, fontSize: 7.6, margin: [0, 0, 0, 1] },
+      { text: `Anexos: ${getReporteSalidaAnnexLabel(solicitud)}`, fontSize: 7.6, margin: [0, 0, 0, 1] },
       { text: `Proyecto: ${salida.oficioProyecto || 'Proyección Social y Extensión'}`, fontSize: 7.6, margin: [0, 0, 0, 8] },
       
       // Anexo 1: Listado Docentes / Colaboradores (SOLO para salidas grupales con más de 1 participante)
@@ -2263,10 +2407,13 @@ module.exports = {
   formatMinutes,
   getReposicionPdfInfo,
   buildReposicionPdfSection,
+  getReporteSalidaAttachmentName,
+  getReporteSalidaAnnexLabel,
   isDocentePdf,
   getDuracionLabelFR002,
   getOficioDuracionInfo,
   getViaticosDurationDays,
-  isOficioSalida
+  isOficioSalida,
+  buildOficioPdfDefinition
 };
 

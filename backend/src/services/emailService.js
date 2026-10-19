@@ -631,6 +631,8 @@ module.exports = {
   escapeHtml,
   _internals: {
     sanitizeEmailText,
-    repairMojibake
+    repairMojibake,
+    getSandboxRecipient,
+    isEmailDeliveryEnabled
   }
 };

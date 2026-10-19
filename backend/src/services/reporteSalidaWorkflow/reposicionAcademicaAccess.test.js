@@ -13,13 +13,17 @@ const {
   resolveReposicionValues,
   resolveReposicionAbono,
   sanitizeFreeText,
+  formatFirmaDuracionDetalle,
   buildAdminTraceDetail,
   getInitialApprovalSummary
 } = require('../../controllers/reporteSalidaController');
 const {
   ensureReporteSalidaPdf,
   getReposicionPdfInfo,
-  buildReposicionPdfSection
+  buildReposicionPdfSection,
+  getReporteSalidaAttachmentName,
+  getReporteSalidaAnnexLabel,
+  buildOficioPdfDefinition
 } = require('../reporteSalidaPdfService');
 
 test('la reposicion aplica exclusivamente a diligencia personal', () => {
@@ -444,8 +448,10 @@ test('el PDF conserva la parametrizacion completa de una salida con reposicion',
   assert.equal(info.attachmentName, 'soporte-permiso.pdf');
   assert.equal(info.durationLabel, 'Entre 1 y 2 días');
   const section = buildReposicionPdfSection(solicitud);
-  assert.equal(section.length, 2);
-  assert.match(JSON.stringify(section), /Seguimiento de reposicion/);
+  assert.equal(section.length, 1);
+  assert.equal(section[0].unbreakable, true);
+  assert.match(JSON.stringify(section), /Resumen del tiempo que debe reponerse/);
+  assert.match(JSON.stringify(section), /seguimiento de reposición/i);
   assert.match(JSON.stringify(section), /soporte-permiso\.pdf/);
 });
 
@@ -461,14 +467,122 @@ test('el PDF omite el tiempo calculado y muestra el valor declarado como tiempo 
 
   const sectionText = JSON.stringify(buildReposicionPdfSection(solicitud));
 
-  assert.match(sectionText, /Tiempo por reponer/);
+  assert.match(sectionText, /tiempo por reponer/i);
   assert.match(sectionText, /2h 00m/);
   assert.doesNotMatch(sectionText, /Tiempo solicitado/);
   assert.doesNotMatch(sectionText, /15h 30m/);
 });
 
+test('el formato docente muestra hasta un dia y usa el nombre original del adjunto como anexo', () => {
+  const solicitud = {
+    consecutivo: 'RS-TEST-HASTA-UN-DIA',
+    solicitante_snapshot: { cargo: 'Docente tiempo completo' },
+    reposicion_aplica: true,
+    reposicion_minutos: 120,
+    reposicion_estado: 'pendiente',
+    datos_formulario: {
+      laboral: { cargo: 'Docente tiempo completo' },
+      salida: {
+        duracionTipo: 'menos_media_jornada',
+        oficioAnexos: 'Ninguno'
+      },
+      adjunto_path: 'archivo-interno-1792420295990.pdf',
+      adjunto_metadata: {
+        nombre_original: 'Programa Foro Trabajo Seguridad Social 2026.pdf'
+      }
+    }
+  };
+
+  const info = getReposicionPdfInfo(solicitud);
+  assert.equal(info.durationLabel, 'Hasta 1 día');
+  assert.equal(getReporteSalidaAttachmentName(solicitud), 'Programa Foro Trabajo Seguridad Social 2026.pdf');
+  assert.equal(getReporteSalidaAnnexLabel(solicitud), 'Programa Foro Trabajo Seguridad Social 2026.pdf');
+  const sectionText = JSON.stringify(buildReposicionPdfSection(solicitud));
+  assert.match(sectionText, /Hasta 1 día/);
+  assert.match(sectionText, /Tiempo por reponer/i);
+  assert.match(sectionText, /Referencia del permiso/i);
+  assert.doesNotMatch(sectionText, /Saldo pendiente/i);
+  assert.doesNotMatch(sectionText, /Tiempo abonado/i);
+  assert.doesNotMatch(sectionText, /Soporte adjunto/i);
+  assert.doesNotMatch(sectionText, /Nivel de contratación/i);
+});
+
 test('el PDF no agrega el bloque de reposicion a otros tipos de salida', () => {
   assert.deepEqual(buildReposicionPdfSection({ reposicion_aplica: false }), []);
+});
+
+test('la interfaz de firmas omite horas en permisos por dias sin reposicion', () => {
+  assert.equal(formatFirmaDuracionDetalle({
+    label: '4 d\u00edas',
+    tiempoMinutos: 4980,
+    reposicionAplica: false
+  }), '4 d\u00edas');
+});
+
+test('la interfaz de firmas muestra horas para hasta un dia y cuando existe reposicion', () => {
+  assert.equal(formatFirmaDuracionDetalle({
+    label: 'Hasta 1 d\u00eda',
+    tiempoMinutos: 390,
+    mostrarHorasSiempre: true
+  }), 'Hasta 1 d\u00eda (6h 30m)');
+
+  assert.equal(formatFirmaDuracionDetalle({
+    label: '2 d\u00edas',
+    tiempoMinutos: 960,
+    reposicionAplica: true
+  }), '2 d\u00edas (16h 00m)');
+});
+
+test('el oficio ubica las tablas institucionales antes del agradecimiento y las firmas despues del cierre', () => {
+  const solicitud = {
+    consecutivo: 'RS-ORDEN-OFICIO',
+    created_at: new Date('2026-10-19T15:25:19.075Z'),
+    solicitante_snapshot: {
+      nombre: 'DOCENTE DE PRUEBA',
+      username: '123456',
+      cargo: 'Docente tiempo completo'
+    },
+    jefe_snapshot: {
+      nombre: 'JEFE DE PRUEBA',
+      cargo: 'Director de Programa'
+    },
+    reposicion_aplica: true,
+    reposicion_minutos: 120,
+    reposicion_estado: 'pendiente',
+    datos_formulario: {
+      personal: { nombre: 'DOCENTE DE PRUEBA', documento: '123456' },
+      laboral: { cargo: 'Docente tiempo completo', dependencia: 'Programa de prueba' },
+      salida: {
+        duracionTipo: '3_mas_dias',
+        duracionDias: 4,
+        fecha: '2026-10-20',
+        fechaRegreso: '2026-10-23',
+        horaInicio: '07:00',
+        horaFin: '18:00',
+        alcance: 'Nacional',
+        municipio: 'Duitama',
+        entidadDestino: 'Entidad de prueba',
+        motivo: 'Capacitacion',
+        oficioCuerpo: 'Contenido principal del oficio.\n\nAgradezco la atencion prestada y la colaboracion brindada para el tramite de la presente solicitud.'
+      }
+    },
+    trazabilidad: []
+  };
+
+  const definition = buildOficioPdfDefinition(solicitud, '', '');
+  const controlIndex = definition.content.findIndex((node) =>
+    node?.table?.body?.[0]?.[0]?.text === 'DATOS DE CONTROL INSTITUCIONAL DE LA SOLICITUD');
+  const reposicionIndex = definition.content.findIndex((node) =>
+    JSON.stringify(node).includes('REPOSICION DE TIEMPO ASOCIADA A LA SALIDA'));
+  const agradecimientoIndex = definition.content.findIndex((node) =>
+    typeof node?.text === 'string' && node.text.startsWith('Agradezco la atencion'));
+  const firmaIndex = definition.content.findIndex((node) =>
+    Array.isArray(node?.table?.widths) && node.table.widths[0] === '50%' && node.table.widths[1] === '50%');
+
+  assert.ok(controlIndex >= 0);
+  assert.ok(reposicionIndex > controlIndex);
+  assert.ok(agradecimientoIndex > reposicionIndex);
+  assert.ok(firmaIndex > agradecimientoIndex);
 });
 
 test('la aprobacion administrativa regenera el PDF de un oficio individual', async () => {

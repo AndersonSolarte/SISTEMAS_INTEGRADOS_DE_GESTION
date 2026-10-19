@@ -6,7 +6,7 @@ const getColumns = (shouldRequestReposicionHoras) =>
     ? 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(260px, 1.2fr)'
     : 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr)';
 
-const normalizeTimeString = (rawInput, isBlur = true) => {
+export const normalizeTimeString = (rawInput, isBlur = true) => {
   if (!rawInput) return '';
   const str = String(rawInput).trim();
   if (!str) return '';
@@ -21,6 +21,7 @@ const normalizeTimeString = (rawInput, isBlur = true) => {
     const period = (digitsOnlyMatch[2] || userPeriod || '').toLowerCase().replace(/\./g, '');
     const h = parseInt(digits.length === 3 ? digits.slice(0, 1) : digits.slice(0, 2), 10);
     const m = parseInt(digits.slice(-2), 10);
+    if (h < 0 || h > 23 || m < 0 || m > 59) return '';
     let finalH = h;
     if (period.startsWith('p') && finalH < 12) finalH += 12;
     else if (period.startsWith('a') && finalH === 12) finalH = 0;
@@ -41,7 +42,7 @@ const normalizeTimeString = (rawInput, isBlur = true) => {
     let m = parseInt(ampmMatch[2], 10);
     let period = (ampmMatch[3] || userPeriod || '').toLowerCase().replace(/\./g, '');
 
-    if (h < 0 || h > 24 || m < 0 || m > 59) return str;
+    if (h < 0 || h > 24 || m < 0 || m > 59) return '';
 
     if (period.startsWith('p') && h < 12) {
       h += 12;
@@ -63,7 +64,8 @@ const normalizeTimeString = (rawInput, isBlur = true) => {
     return `${h.toString().padStart(2, '0')}:00`;
   }
 
-  return str;
+  // Nunca conservar texto libre dentro de un campo de hora.
+  return '';
 };
 
 export const TimeAutocomplete = ({
@@ -196,9 +198,9 @@ const ReposicionTimeFields = ({ form, inputSx, isDaily = false, update }) => (
 );
 
 export const timeToMinutes = (time) => {
-  const [hours, minutes] = String(time || '').split(':').map(Number);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
-  return hours * 60 + minutes;
+  const match = String(time || '').trim().match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
 };
 
 export const getFieldDateTimeErrors = ({

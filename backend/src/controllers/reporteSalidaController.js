@@ -981,16 +981,17 @@ const parseDateOnly = (date) => {
 };
 
 const timeToMinutes = (time) => {
-  const [hours, minutes] = String(time || '').split(':').map(Number);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
-  return hours * 60 + minutes;
+  const match = String(time || '').trim().match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
 };
 
 const formatTimeAmPmLabel = (time24) => {
   if (!time24) return '';
-  const [hStr, mStr] = String(time24).split(':');
-  const h = parseInt(hStr, 10);
-  if (Number.isNaN(h)) return String(time24);
+  const match = String(time24).trim().match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return '';
+  const h = Number(match[1]);
+  const mStr = match[2];
   const ampm = h >= 12 ? 'pm' : 'am';
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${mStr || '00'} ${ampm}`;
@@ -1214,16 +1215,12 @@ const isAcademicTeacherSolicitud = (solicitud = {}) => {
 
 /**
  * Devuelve true si la solicitud corresponde a un docente de la Vicerrectoría Académica
- * que requiere permiso remunerado con oficio (cualquier segmento de días: 1, 2 o 3+).
- *
- * Para docentes, el segmento 'menos_media_jornada' equivale a "1 día" normativo con oficio,
- * a diferencia del personal administrativo donde equivale a un reporte sin oficio.
+ * que requiere permiso remunerado con oficio (2 o más días).
  */
 const isDocentePermisoRemunerado = (solicitud = {}) => {
   if (!isAcademicTeacherSolicitud(solicitud)) return false;
   const salida = getSolicitudSalida(solicitud);
-  // Para docentes: los tres segmentos generan permiso remunerado con oficio
-  return ['menos_media_jornada', '1_2_dias', '3_mas_dias'].includes(salida.duracionTipo);
+  return ['1_2_dias', '3_mas_dias'].includes(salida.duracionTipo);
 };
 
 /**
@@ -1231,10 +1228,10 @@ const isDocentePermisoRemunerado = (solicitud = {}) => {
  *   1  → "1 día"   (duracionTipo === 'menos_media_jornada')
  *   2  → "2 días"  (duracionTipo === '1_2_dias')
  *   3+ → días solicitados ≥ 3 (duracionTipo === '3_mas_dias')
- * Retorna null si la solicitud no corresponde a un docente con permiso remunerado.
+ * Retorna null si la solicitud no corresponde a un docente académico.
  */
 const getDocentePermisoSegmento = (solicitud = {}) => {
-  if (!isDocentePermisoRemunerado(solicitud)) return null;
+  if (!isAcademicTeacherSolicitud(solicitud)) return null;
   const salida = getSolicitudSalida(solicitud);
   if (salida.duracionTipo === 'menos_media_jornada') return 1;
   if (salida.duracionTipo === '1_2_dias') return 2;
@@ -1283,13 +1280,14 @@ const getViaticosDurationDays = (solicitud = {}) => {
 
 const isOficioSolicitud = (solicitud = {}) => {
   const salida = getSolicitudSalida(solicitud);
-  if (getViaticosDurationDays(solicitud) >= 1) return true;
   const duracionTipo = salida.duracionTipo;
-  if (duracionTipo === 'menos_media_jornada') return false;
+  const inferredDays = getViaticosDurationDays(solicitud);
+  if (duracionTipo === 'menos_media_jornada') return inferredDays >= 2;
   if (duracionTipo === '1_2_dias' || duracionTipo === '3_mas_dias') return true;
-  if (salida.duracionDias && Number(salida.duracionDias) >= 1) return true;
-  if (salida.fechaRegreso && salida.fecha && salida.fechaRegreso !== salida.fecha) return true;
-  if (solicitud.tiempo_solicitado_minutos && Number(solicitud.tiempo_solicitado_minutos) >= 480) return true;
+  const minimumDays = isAcademicTeacherSolicitud(solicitud) ? 2 : 1;
+  if (inferredDays >= minimumDays) return true;
+  if (salida.duracionDias && Number(salida.duracionDias) >= minimumDays) return true;
+  if (solicitud.tiempo_solicitado_minutos && Number(solicitud.tiempo_solicitado_minutos) >= minimumDays * 480) return true;
   return false;
 };
 
@@ -2504,6 +2502,9 @@ const validateRadicacionPayload = (payload, user) => {
     for (let i = 0; i < salida.terapiasList.length; i++) {
       const t = salida.terapiasList[i];
       if (!t.fecha || !t.horaInicio || !t.horaFin) return `Complete fecha, hora inicio y hora fin para la terapia #${i + 1}.`;
+      if (timeToMinutes(t.horaInicio) == null || timeToMinutes(t.horaFin) == null) {
+        return `Seleccione horas válidas para la terapia #${i + 1}.`;
+      }
     }
   } else {
     const isSaludNoTerapias = (salida.categoria || salida.category) === 'salud' && salida.tipo !== 'terapias';
@@ -2515,6 +2516,9 @@ const validateRadicacionPayload = (payload, user) => {
       if (!salida.fecha || !salida.fechaRegreso || !salida.horaInicio || !salida.horaFin) {
         return 'Debe indicar fecha de salida, hora de salida, fecha de regreso y hora de regreso.';
       }
+    }
+    if (timeToMinutes(salida.horaInicio) == null || (salida.horaFin && timeToMinutes(salida.horaFin) == null)) {
+      return 'Seleccione horas de salida y regreso válidas.';
     }
   }
 
@@ -2811,14 +2815,16 @@ const buildTerapiasHtml = (solicitud) => {
 };
 
 const getReporteSalidaEmailLabel = (solicitud) => {
+  // Para docentes, el primer segmento es un formato de hasta un día, no un oficio.
+  const segmento = getDocentePermisoSegmento(solicitud);
+  if (segmento === 1) return 'REPORTE DE SALIDA - HASTA 1 DÍA';
+
   if (!isOficioSolicitud(solicitud)) return 'REPORTE DE SALIDA';
 
-  // Etiquetas específicas para permisos remunerados de docentes
-  const segmento = getDocentePermisoSegmento(solicitud);
+  // Desde dos días, el trámite docente sí corresponde a un oficio.
   if (segmento !== null) {
-    if (segmento === 1) return 'SOLICITUD DE PERMISO - 1 DÍA';
-    if (segmento === 2) return 'SOLICITUD DE PERMISO - 2 DÍAS';
-    return 'SOLICITUD DE PERMISO - 3 O MÁS DÍAS';
+    if (segmento === 2) return 'OFICIO DE SOLICITUD DE SALIDA - 2 DÍAS';
+    return 'OFICIO DE SOLICITUD DE SALIDA - 3 O MÁS DÍAS';
   }
 
   const salida = getSolicitudSalida(solicitud);
@@ -3042,10 +3048,14 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   }
 
   return {
-    success: results.some((result) => result.success),
-    messageId: results.find((result) => result.messageId)?.messageId || null,
+    success: results.some((result) => result.success && !result.suppressed),
+    suppressed: results.length > 0 && results.every((result) => result.suppressed),
+    messageId: results.find((result) => result.success && !result.suppressed && result.messageId)?.messageId || null,
     recipients: results,
-    error: results.filter((result) => !result.success).map((result) => `${result.email}: ${result.error || 'no enviado'}`).join(' | ')
+    error: results
+      .filter((result) => !result.success && !result.suppressed)
+      .map((result) => `${result.email}: ${result.error || 'no enviado'}`)
+      .join(' | ')
   };
 };
 
@@ -4161,13 +4171,16 @@ const radicarSolicitud = async (req, res) => {
       const userRows = await getUserProfileLaboralRows();
       const { rows: rhRows } = await getLatestAdministrativos();
 
-      const duracionDiasSolicitada = Number(salida.duracionDias || 0);
+      const cantidadDiasDigitada = Number(salida.cantidadDiasSolicitados || 0);
+      const duracionDiasSolicitada = Number.isInteger(cantidadDiasDigitada) && cantidadDiasDigitada > 0
+        ? cantidadDiasDigitada
+        : Number(salida.duracionDias || 0);
       const isDocenteAcademicoRadicando =
         isDocenteCargo(req.body.laboral?.cargo || req.user.cargo || '') &&
         isVicerrectoriaAcademica(canonicalVicerrectoriaName(req.body.laboral?.vicerrectoria || req.user.vicerrectoria || ''));
 
       const isOficio = isDocenteAcademicoRadicando
-        ? ['menos_media_jornada', '1_2_dias', '3_mas_dias'].includes(salida.duracionTipo)
+        ? ['1_2_dias', '3_mas_dias'].includes(salida.duracionTipo)
         : (salida.duracionTipo !== 'menos_media_jornada' && (
             salida.duracionTipo === '1_2_dias' ||
             salida.duracionTipo === '3_mas_dias' ||
@@ -4199,13 +4212,10 @@ const radicarSolicitud = async (req, res) => {
         let oficioDirigidoARectoria = false;
         let oficioAuthorityName = '';
         let oficioAuthorityEmail = '';
-        let oficioDestinatarioEsJefeInmediato = false;
 
         if (isDocenteAcademicoRadicando) {
           const durTipo = salida.duracionTipo;
-          if (durTipo === 'menos_media_jornada') {
-            oficioDestinatarioEsJefeInmediato = true;
-          } else if (durTipo === '1_2_dias') {
+          if (durTipo === '1_2_dias') {
             oficioAuthorityName = userVicerrectoriaName || 'Vicerrectoria Academica';
             oficioAuthorityEmail = getDependencyEmail(oficioAuthorityName) || ACADEMIC_VICERRECTORIA_EMAIL;
           } else {
@@ -4223,11 +4233,7 @@ const radicarSolicitud = async (req, res) => {
           ? await getAuthorityRecipient(oficioAuthorityName, oficioAuthorityEmail)
           : null;
 
-        if (oficioDestinatarioEsJefeInmediato) {
-          destinatarioNombre = 'DIRECTOR(A) DE PROGRAMA / JEFE INMEDIATO';
-          destinatarioCargo = 'Director(a) del Programa';
-          destinatarioEmpresa = 'Universidad CESMAG';
-        } else if (oficioAuthorityName) {
+        if (oficioAuthorityName) {
           destinatarioNombre = authorityRecipient?.nombre || oficioAuthorityName.toUpperCase();
           destinatarioCargo = authorityRecipient?.cargo || (oficioDirigidoARectoria ? 'Rectoria' : oficioAuthorityName);
           destinatarioDireccionEmail = authorityRecipient?.email || oficioAuthorityEmail;
@@ -4246,11 +4252,9 @@ const radicarSolicitud = async (req, res) => {
         const tipoLabel = getTipoLabel(salida.tipo);
         if (isDocenteAcademicoRadicando) {
           const durTipo = salida.duracionTipo;
-          const segmentoText = durTipo === 'menos_media_jornada'
-            ? 'un (1) dia'
-            : durTipo === '1_2_dias'
-              ? 'dos (2) dias'
-              : `${duracionDiasSolicitada || 3} dias`;
+          const segmentoText = durTipo === '1_2_dias'
+            ? 'dos (2) dias'
+            : `${duracionDiasSolicitada || 3} dias`;
           oficioAsunto = `Solicitud de permiso remunerado - ${segmentoText} - ${tipoLabel}`;
         } else {
           oficioAsunto = `Solicitud de permiso de salida grupal - ${tipoLabel}`;
@@ -4378,6 +4382,7 @@ const radicarSolicitud = async (req, res) => {
               municipio: (salida.categoria === 'propias_cargo' && ['Nacional', 'Regional'].includes(salida.alcance)) ? sanitizeText(salida.municipio || '', 100) : '',
               duracionTipo: sanitizeText(salida.duracionTipo || 'menos_media_jornada', 50),
               duracionDias: isOficio ? (duracionDiasSolicitada || 1) : 0,
+              cantidadDiasSolicitados: isOficio ? (duracionDiasSolicitada || 1) : 0,
               incluyeEstudiantes: salida.tipo === 'proyeccion_social' ? Boolean(salida.incluyeEstudiantes) : false,
               estudiantesList: (salida.tipo === 'proyeccion_social' && salida.incluyeEstudiantes) ? (salida.estudiantesList || salida.estudiantes || []) : [],
               codigoDependencia: sanitizeText(codigoDependencia || '', 50),
@@ -4529,7 +4534,10 @@ const radicarSolicitud = async (req, res) => {
         : diffBusinessMinutes(salida.fecha, salida.fechaRegreso, salida.horaInicio, salida.horaFin);
     }
     const isOficio = salida.duracionTipo && salida.duracionTipo !== 'menos_media_jornada';
-    const duracionDiasSolicitada = parseInt(salida.duracionDias, 10);
+    const cantidadDiasDigitada = parseInt(salida.cantidadDiasSolicitados, 10);
+    const duracionDiasSolicitada = Number.isInteger(cantidadDiasDigitada) && cantidadDiasDigitada > 0
+      ? cantidadDiasDigitada
+      : parseInt(salida.duracionDias, 10);
     const selectedVicerrectoriaName = canonicalVicerrectoriaName(req.body.laboral?.vicerrectoria || req.user.vicerrectoria || '');
     const isSaludNoAdjuntoDeclarado = (salida.categoria || salida.category) === 'salud' && salida.noCuentaAdjunto === true;
     const declaracionSinAdjunto = isSaludNoAdjuntoDeclarado
@@ -4592,7 +4600,6 @@ const radicarSolicitud = async (req, res) => {
 
       // ── Determinación del destinatario del oficio ──────────────────────────────
       // Para docentes de la Vicerrectoría Académica aplica la normativa institucional:
-      //   Segmento 1 día  → dirigido al Jefe Inmediato (Director del Programa)
       //   Segmento 2 días → dirigido a la Vicerrectoría Académica
       //   Segmento 3+ días → dirigido al Rector de la UNICESMAG
       // Para el demás personal se mantiene la lógica previa:
@@ -4604,17 +4611,10 @@ const radicarSolicitud = async (req, res) => {
       let oficioDirigidoARectoria;
       let oficioAuthorityName;
       let oficioAuthorityEmail;
-      let oficioDestinatarioEsJefeInmediato = false;
 
       if (isDocenteAcademicoRequest) {
         const durTipo = salida.duracionTipo;
-        if (durTipo === 'menos_media_jornada') {
-          // 1 día → Jefe Inmediato (Director del Programa)
-          oficioDestinatarioEsJefeInmediato = true;
-          oficioDirigidoARectoria = false;
-          oficioAuthorityName = '';
-          oficioAuthorityEmail = '';
-        } else if (durTipo === '1_2_dias') {
+        if (durTipo === '1_2_dias') {
           // 2 días → Vicerrectoría Académica
           oficioDirigidoARectoria = false;
           oficioAuthorityName = userVicerrectoriaName || 'Vicerrectoria Academica';
@@ -4637,13 +4637,7 @@ const radicarSolicitud = async (req, res) => {
         : null;
 
       // 2. Destinatario
-      if (oficioDestinatarioEsJefeInmediato) {
-        // Docente 1 día: dirigido al Director del Programa (jefe inmediato)
-        destinatarioNombre = (jefeSnapshot.nombre || '').toUpperCase();
-        destinatarioCargo = jefeSnapshot.cargo || 'Director(a) del Programa';
-        destinatarioDireccionEmail = jefeSnapshot.email || '';
-        destinatarioEmpresa = 'Universidad CESMAG';
-      } else if (oficioAuthorityName) {
+      if (oficioAuthorityName) {
         destinatarioNombre = authorityRecipient?.nombre || oficioAuthorityName.toUpperCase();
         destinatarioCargo = authorityRecipient?.cargo || (oficioDirigidoARectoria ? 'Rectoria' : oficioAuthorityName);
         destinatarioDireccionEmail = authorityRecipient?.email || oficioAuthorityEmail;
@@ -4874,6 +4868,7 @@ const radicarSolicitud = async (req, res) => {
           municipio: (salida.categoria === 'propias_cargo' && ['Nacional', 'Regional'].includes(salida.alcance)) ? sanitizeText(salida.municipio || '', 100) : '',
           duracionTipo: sanitizeText(salida.duracionTipo || 'menos_media_jornada', 50),
           duracionDias: isOficio ? duracionDiasSolicitada : 0,
+          cantidadDiasSolicitados: isOficio ? duracionDiasSolicitada : 0,
           codigoDependencia: sanitizeText(codigoDependencia || '', 50),
           destinatarioTratamiento: sanitizeText(destinatarioTratamiento || '', 100),
           destinatarioNombre: sanitizeText(destinatarioNombre || '', 255),
@@ -4945,9 +4940,17 @@ const radicarSolicitud = async (req, res) => {
         const radAttachments = [pdfAttachment];
         if (supportAttachment) radAttachments.push(supportAttachment);
         const radResult = await sendColaboradorRadicacionEmail(solicitud, radAttachments.filter(Boolean));
+        const radDelivered = Boolean(radResult?.success && !radResult?.suppressed);
+        console.log('[reporte-salida] Radicacion colaborador:', {
+          consecutivo: solicitud.consecutivo,
+          email: solicitud.solicitante_snapshot?.email || '',
+          success: Boolean(radResult?.success),
+          suppressed: Boolean(radResult?.suppressed),
+          error: radResult?.error || ''
+        });
         
         // Guardamos el messageId por destinatario para mantener el hilo en cada bandeja.
-        const thread_message_id = radResult?.messageId || null;
+        const thread_message_id = radDelivered ? (radResult?.messageId || null) : null;
         const dependenciaInfoResult = await sendDependenciaRadicacionInfoEmail(solicitud, token, [pdfAttachment, supportAttachment].filter(Boolean));
         console.log('[reporte-salida] Radicacion dependencia:', {
           consecutivo: solicitud.consecutivo,
@@ -4966,6 +4969,7 @@ const radicarSolicitud = async (req, res) => {
         }
 
         const emailResult = await sendJefeRadicacionApprovalEmail(solicitud, token, jefeAttachments.filter(Boolean));
+        const jefeDelivered = Boolean(emailResult?.success && !emailResult?.suppressed);
         console.log('[reporte-salida] Radicacion jefe inmediato:', {
           consecutivo: solicitud.consecutivo,
           email: getInitialApprovalRecipientEmail(solicitud) || solicitud.jefe_snapshot?.email || '',
@@ -4973,30 +4977,62 @@ const radicarSolicitud = async (req, res) => {
           error: emailResult?.error || ''
         });
         
-        const trazabilidadConDependencia = appendTrace(
+        const eventoCorreoColaborador = radResult?.suppressed
+          ? 'correo_colaborador_radicacion_omitido'
+          : (radDelivered ? 'correo_colaborador_radicacion_enviado' : 'correo_colaborador_radicacion_error');
+        const trazabilidadConColaborador = appendTrace(
           solicitud,
-          dependenciaInfoResult.success ? 'correo_dependencia_radicacion_enviado' : 'correo_dependencia_radicacion_omitido',
+          eventoCorreoColaborador,
           req.user,
-          { error: dependenciaInfoResult.error || dependenciaInfoResult.reason || '' }
+          {
+            email: solicitud.solicitante_snapshot?.email || '',
+            error: radResult?.error || '',
+            suppressed: Boolean(radResult?.suppressed)
+          }
+        );
+        const trazabilidadConDependencia = appendTrace(
+          { trazabilidad: trazabilidadConColaborador },
+          dependenciaInfoResult.success
+            ? 'correo_dependencia_radicacion_enviado'
+            : (dependenciaInfoResult.suppressed ? 'correo_dependencia_radicacion_omitido' : 'correo_dependencia_radicacion_error'),
+          req.user,
+          {
+            error: dependenciaInfoResult.error || dependenciaInfoResult.reason || '',
+            suppressed: Boolean(dependenciaInfoResult.suppressed)
+          }
         );
 
         await solicitud.update({
-          correo_jefe_enviado_at: emailResult.success ? new Date() : null,
+          correo_jefe_enviado_at: jefeDelivered ? new Date() : null,
           datos_formulario: mergeThreadMessageIds(solicitud, {
             thread_message_id,
             thread_message_id_colaborador: thread_message_id,
             thread_message_id_dependencia: dependenciaInfoResult?.messageId,
-            thread_message_id_jefe: emailResult?.messageId
+            thread_message_id_jefe: jefeDelivered ? emailResult?.messageId : null
           }),
           trazabilidad: appendTrace(
             { trazabilidad: trazabilidadConDependencia },
-            emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error',
+            jefeDelivered
+              ? 'correo_jefe_enviado'
+              : (emailResult?.suppressed ? 'correo_jefe_omitido' : 'correo_jefe_error'),
             req.user,
-            { error: emailResult.error || '' }
+            {
+              error: emailResult.error || '',
+              suppressed: Boolean(emailResult?.suppressed)
+            }
           )
         });
       } catch (bgError) {
         console.error('Error en segundo plano (Reporte Salida PDF/Email):', bgError);
+        try {
+          await solicitud.update({
+            trazabilidad: appendTrace(solicitud, 'procesamiento_radicacion_error', req.user, {
+              error: bgError?.message || String(bgError)
+            })
+          });
+        } catch (traceError) {
+          console.error('Error guardando trazabilidad del fallo de radicacion:', traceError);
+        }
       }
     });
   } catch (error) {
@@ -5145,6 +5181,113 @@ const verSoporteGrupoDesdeCorreo = async (req, res) => {
   }
 };
 
+const REPORTE_SALIDA_APPROVAL_PENDING_STATES = new Set([
+  'pendiente_aprobacion_proyeccion_social',
+  'pendiente_aprobacion_jefe',
+  'pendiente_jefe',
+  'pendiente_aprobacion_financiera_previa',
+  'pendiente_financiera_previa',
+  'pendiente_aprobacion_vicerrectoria_academica',
+  'pendiente_aprobacion_rectoria',
+  'pendiente_aprobacion_gestion_humana',
+  'pendiente_gestion_humana',
+  'pendiente_aprobacion_sst',
+  'pendiente_sst'
+]);
+
+const isPendingReporteSalidaApproval = (estado = '') => (
+  REPORTE_SALIDA_APPROVAL_PENDING_STATES.has(String(estado || '').trim().toLowerCase())
+);
+
+const canViewTemporarySolicitudDocuments = async (solicitud, user) => {
+  if (!solicitud || !user || !isPendingReporteSalidaApproval(solicitud.estado)) return false;
+  const access = await resolveSeguimientoAccess(user);
+  if (!access.canViewReporteSalida) return false;
+  if (access.canViewAll) return true;
+  if (access.academicAssignmentScope) {
+    const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(user);
+    return isAssignedBoss(solicitud, user, academicAuthorityUserIds);
+  }
+  return false;
+};
+
+const setTemporaryDocumentHeaders = (res, contentType, filename) => {
+  const safeFilename = String(filename || 'documento')
+    .replace(/[\r\n"]/g, '')
+    .slice(0, 240);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Content-Type', contentType || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"`);
+};
+
+const verDocumentoTemporalAutenticado = async (req, res) => {
+  try {
+    const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
+    if (!solicitud) return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
+    if (!(await canViewTemporarySolicitudDocuments(solicitud, req.user))) {
+      return res.status(403).json({
+        success: false,
+        message: isPendingReporteSalidaApproval(solicitud.estado)
+          ? 'No tiene permiso para consultar los documentos de esta solicitud.'
+          : 'El documento temporal solo est\u00e1 disponible mientras la solicitud se encuentra en aprobaci\u00f3n.'
+      });
+    }
+    const pdfAttachment = await ensureReporteSalidaPdf(solicitud);
+    setTemporaryDocumentHeaders(res, 'application/pdf', pdfAttachment.filename);
+    return fs.createReadStream(pdfAttachment.path).pipe(res);
+  } catch (error) {
+    console.error('[verDocumentoTemporalAutenticado] Error:', error);
+    return res.status(500).json({ success: false, message: 'No fue posible generar el documento temporal.' });
+  }
+};
+
+const verSoporteTemporalAutenticado = async (req, res) => {
+  try {
+    const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
+    if (!solicitud) return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
+    if (!(await canViewTemporarySolicitudDocuments(solicitud, req.user))) {
+      return res.status(403).json({
+        success: false,
+        message: isPendingReporteSalidaApproval(solicitud.estado)
+          ? 'No tiene permiso para consultar los documentos de esta solicitud.'
+          : 'El soporte temporal solo est\u00e1 disponible mientras la solicitud se encuentra en aprobaci\u00f3n.'
+      });
+    }
+    const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
+    if (!supportAttachment) {
+      return res.status(404).json({ success: false, message: 'Esta solicitud no tiene soporte adjunto.' });
+    }
+    setTemporaryDocumentHeaders(
+      res,
+      supportAttachment.contentType || 'application/octet-stream',
+      supportAttachment.filename
+    );
+    if (supportAttachment.content) return res.send(supportAttachment.content);
+    if (supportAttachment.path && fs.existsSync(supportAttachment.path)) {
+      return fs.createReadStream(supportAttachment.path).pipe(res);
+    }
+    return res.status(404).json({ success: false, message: 'El soporte adjunto ya no est\u00e1 disponible.' });
+  } catch (error) {
+    console.error('[verSoporteTemporalAutenticado] Error:', error);
+    return res.status(500).json({ success: false, message: 'No fue posible consultar el soporte adjunto.' });
+  }
+};
+
+const formatFirmaDuracionDetalle = ({
+  label,
+  tiempoMinutos = 0,
+  reposicionAplica = false,
+  mostrarHorasSiempre = false,
+  fallbackHoras = 'Jornada laboral'
+} = {}) => {
+  if (!reposicionAplica && !mostrarHorasSiempre) return String(label || '');
+  const totalMinutos = Number(tiempoMinutos || 0);
+  const horas = totalMinutos > 0 ? formatMinutes(totalMinutos) : fallbackHoras;
+  return `${label} (${horas})`;
+};
+
 const renderReporteSalidaReviewPage = ({
   res,
   solicitud,
@@ -5184,11 +5327,11 @@ const renderReporteSalidaReviewPage = ({
     : 'No requiere viáticos';
 
   // ── Identificación del tipo de trámite y duración normativa ──
-  const esDocente = isDocentePermisoRemunerado(solicitud);
+  const esDocente = isAcademicTeacherSolicitud(solicitud);
   const segmentoDocente = getDocentePermisoSegmento(solicitud);
-  const duracionDias = Number(salida.duracionDias || (salida.duracionTipo === 'menos_media_jornada' ? 1 : 0));
+  const duracionDias = Number(salida.cantidadDiasSolicitados || salida.duracionDias || (salida.duracionTipo === 'menos_media_jornada' ? 1 : 0));
   const tiempoMinutos = solicitud?.tiempo_solicitado_minutos || 0;
-  const tiempoTexto = formatMinutes(tiempoMinutos);
+  const reposicionAplica = solicitud?.reposicion_aplica === true;
 
   let bannerTitulo = '';
   let bannerSubtitulo = '';
@@ -5199,27 +5342,32 @@ const renderReporteSalidaReviewPage = ({
 
   if (esDocente) {
     if (segmentoDocente === 1 || salida.duracionTipo === 'menos_media_jornada') {
-      bannerTitulo = 'SOLICITUD DE PERMISO — HASTA 1 DÍA';
-      bannerSubtitulo = 'Competencia normativa: Otorgado por el Director del Programa o quien haga sus veces como jefe inmediato del docente.';
+      bannerTitulo = 'REPORTE DE SALIDA — HASTA 1 DÍA';
+      bannerSubtitulo = 'Formato institucional: visto bueno del Director del Programa o quien haga sus veces como jefe inmediato del docente.';
       bannerBg = '#ecfdf5';
       bannerBorder = '#6ee7b7';
       bannerColor = '#065f46';
-      duracionDetalle = `1 día (${tiempoTexto || 'Jornada completa'})`;
+      duracionDetalle = formatFirmaDuracionDetalle({
+        label: 'Hasta 1 día',
+        tiempoMinutos,
+        mostrarHorasSiempre: true,
+        fallbackHoras: 'Jornada completa'
+      });
     } else if (segmentoDocente === 2 || salida.duracionTipo === '1_2_dias') {
-      bannerTitulo = 'SOLICITUD DE PERMISO — DOS (2) DÍAS';
+      bannerTitulo = 'OFICIO DE SOLICITUD DE SALIDA — DOS (2) DÍAS';
       bannerSubtitulo = 'Competencia normativa: Otorgado por el Vicerrector Académico con el visto bueno del Director del Programa.';
       bannerBg = '#eff6ff';
       bannerBorder = '#93c5fd';
       bannerColor = '#1e40af';
-      duracionDetalle = `2 días (${tiempoTexto || '2 jornadas completas'})`;
+      duracionDetalle = formatFirmaDuracionDetalle({ label: '2 días', tiempoMinutos, reposicionAplica });
     } else {
       const diasNum = Math.max(3, duracionDias);
-      bannerTitulo = `SOLICITUD DE PERMISO — TRES (3) DÍAS EN ADELANTE (${diasNum} DÍAS)`;
+      bannerTitulo = `OFICIO DE SOLICITUD DE SALIDA — TRES (3) DÍAS EN ADELANTE (${diasNum} DÍAS)`;
       bannerSubtitulo = 'Competencia normativa: Otorgado por el Rector de la UNICESMAG previo visto bueno del Director del Programa y del Vicerrector Académico.';
       bannerBg = '#fffbeb';
       bannerBorder = '#fcd34d';
       bannerColor = '#92400e';
-      duracionDetalle = `${diasNum} días (${tiempoTexto})`;
+      duracionDetalle = formatFirmaDuracionDetalle({ label: `${diasNum} días`, tiempoMinutos, reposicionAplica });
     }
   } else {
     if (salida.duracionTipo === 'menos_media_jornada') {
@@ -5228,14 +5376,22 @@ const renderReporteSalidaReviewPage = ({
       bannerBg = '#f8fafc';
       bannerBorder = '#cbd5e1';
       bannerColor = '#334155';
-      duracionDetalle = `Hasta media jornada (${tiempoTexto})`;
+      duracionDetalle = formatFirmaDuracionDetalle({
+        label: 'Hasta media jornada',
+        tiempoMinutos,
+        mostrarHorasSiempre: true
+      });
     } else if (salida.duracionTipo === '1_2_dias') {
       bannerTitulo = 'OFICIO DE SOLICITUD DE SALIDA — 1 A 2 DÍAS';
       bannerSubtitulo = 'Trámite por días: Visto bueno del Jefe Inmediato y aprobación por Vicerrectoría / Gestión Humana.';
       bannerBg = '#eff6ff';
       bannerBorder = '#93c5fd';
       bannerColor = '#1e40af';
-      duracionDetalle = `${duracionDias || '1 a 2'} días (${tiempoTexto})`;
+      duracionDetalle = formatFirmaDuracionDetalle({
+        label: `${duracionDias || '1 a 2'} días`,
+        tiempoMinutos,
+        reposicionAplica
+      });
     } else {
       const diasNum = Math.max(3, duracionDias);
       bannerTitulo = `OFICIO DE SOLICITUD DE SALIDA — TRES (3) O MÁS DÍAS (${diasNum} DÍAS)`;
@@ -5243,7 +5399,7 @@ const renderReporteSalidaReviewPage = ({
       bannerBg = '#fffbeb';
       bannerBorder = '#fcd34d';
       bannerColor = '#92400e';
-      duracionDetalle = `${diasNum} días (${tiempoTexto})`;
+      duracionDetalle = formatFirmaDuracionDetalle({ label: `${diasNum} días`, tiempoMinutos, reposicionAplica });
     }
   }
 
@@ -9256,7 +9412,8 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         : (salida.pais || 'San Juan de Pasto');
       const alcance = salida.alcance || 'Local';
       const destinoCompleto = `${destino} (${alcance})`;
-      const tiempoTexto = formatMinutes(solicitudes[0]?.tiempo_solicitado_minutos || 0);
+      const tiempoMinutos = solicitudes[0]?.tiempo_solicitado_minutos || 0;
+      const grupoReposicionAplica = solicitudes.some((item) => item?.reposicion_aplica === true);
 
       // Determinación de tipo de trámite grupal
       const allDocentes = solicitudes.every(s =>
@@ -9264,7 +9421,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         isVicerrectoriaAcademica(s.datos_formulario?.laboral?.vicerrectoria || s.solicitante_snapshot?.vicerrectoria || '')
       );
       const grupoDuracionTipo = salida.duracionTipo || 'menos_media_jornada';
-      const duracionDias = Number(salida.duracionDias || (grupoDuracionTipo === 'menos_media_jornada' ? 1 : 0));
+      const duracionDias = Number(salida.cantidadDiasSolicitados || salida.duracionDias || (grupoDuracionTipo === 'menos_media_jornada' ? 1 : 0));
 
       let bannerTitulo = '';
       let bannerSubtitulo = '';
@@ -9280,14 +9437,23 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
           bannerBg = '#ecfdf5';
           bannerBorder = '#6ee7b7';
           bannerColor = '#065f46';
-          duracionDetalle = `1 día (${tiempoTexto || 'Jornada laboral'})`;
+          duracionDetalle = formatFirmaDuracionDetalle({
+            label: 'Hasta 1 día',
+            tiempoMinutos,
+            mostrarHorasSiempre: true,
+            fallbackHoras: 'Jornada laboral'
+          });
         } else if (grupoDuracionTipo === '1_2_dias') {
           bannerTitulo = 'SALIDA GRUPAL — DOS DÍAS';
           bannerSubtitulo = 'Competencia normativa: Visto bueno de Direcciones de Programa y Aprobación de Vicerrectoría Académica.';
           bannerBg = '#eff6ff';
           bannerBorder = '#93c5fd';
           bannerColor = '#1e40af';
-          duracionDetalle = `2 días (${tiempoTexto || '2 jornadas'})`;
+          duracionDetalle = formatFirmaDuracionDetalle({
+            label: '2 días',
+            tiempoMinutos,
+            reposicionAplica: grupoReposicionAplica
+          });
         } else {
           const diasNum = Math.max(3, duracionDias);
           bannerTitulo = `SALIDA GRUPAL — ${diasNum} DÍAS EN ADELANTE`;
@@ -9295,7 +9461,11 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
           bannerBg = '#fffbeb';
           bannerBorder = '#fcd34d';
           bannerColor = '#92400e';
-          duracionDetalle = `${diasNum} días (${tiempoTexto})`;
+          duracionDetalle = formatFirmaDuracionDetalle({
+            label: `${diasNum} días`,
+            tiempoMinutos,
+            reposicionAplica: grupoReposicionAplica
+          });
         }
       } else {
         bannerTitulo = `REPORTE DE SALIDA INSTITUCIONAL GRUPAL (${solicitudes.length} INTEGRANTES)`;
@@ -9303,7 +9473,20 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         bannerBg = '#f8fafc';
         bannerBorder = '#cbd5e1';
         bannerColor = '#334155';
-        duracionDetalle = `${tiempoTexto} por persona`;
+        if (grupoDuracionTipo === 'menos_media_jornada') {
+          duracionDetalle = formatFirmaDuracionDetalle({
+            label: 'Hasta 1 día',
+            tiempoMinutos,
+            mostrarHorasSiempre: true,
+            fallbackHoras: 'Jornada laboral por persona'
+          });
+        } else {
+          duracionDetalle = formatFirmaDuracionDetalle({
+            label: `${duracionDias || 2} días`,
+            tiempoMinutos,
+            reposicionAplica: grupoReposicionAplica
+          });
+        }
       }
 
       const hasAttachment = Boolean(getSolicitudAttachmentKey(leaderSol));
@@ -10570,10 +10753,14 @@ module.exports = {
   verSoporteDesdeCorreo,
   verDocumentoPdfGrupoDesdeCorreo,
   verSoporteGrupoDesdeCorreo,
+  verDocumentoTemporalAutenticado,
+  verSoporteTemporalAutenticado,
   // Helper functions exported for testing
   isAcademicTeacherSolicitud,
   isDocentePermisoRemunerado,
   getDocentePermisoSegmento,
+  isOficioSolicitud,
+  getReporteSalidaEmailLabel,
   getOfficialAuthorityEmailForActor,
   getInitialApprovalRecipientEmail,
   getJefeCopyRecipientEmail,
@@ -10588,6 +10775,8 @@ module.exports = {
   resolveReposicionValues,
   resolveReposicionAbono,
   sanitizeFreeText,
+  isPendingReporteSalidaApproval,
+  formatFirmaDuracionDetalle,
   buildAdminTraceDetail,
   getInitialApprovalSummary,
   getGroupInitialApprovalRecipients,

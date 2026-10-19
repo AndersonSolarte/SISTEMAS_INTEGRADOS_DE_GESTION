@@ -59,7 +59,9 @@ const {
   verDocumentoPdfDesdeCorreo,
   verSoporteDesdeCorreo,
   verDocumentoPdfGrupoDesdeCorreo,
-  verSoporteGrupoDesdeCorreo
+  verSoporteGrupoDesdeCorreo,
+  verDocumentoTemporalAutenticado,
+  verSoporteTemporalAutenticado
 } = require('../controllers/reporteSalidaController');
 const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { publicLimiter } = require('../middlewares/security');
@@ -129,6 +131,8 @@ router.post('/upload-adjunto', auth, upload.single('adjunto'), async (req, res) 
 router.post('/solicitudes', auth, radicarSolicitud);
 router.get('/seguimiento/badge', auth, getSeguimientoBadge);
 router.get('/seguimiento', auth, getSeguimientoPersonal);
+router.get('/solicitudes/:id/documento-temporal', auth, verDocumentoTemporalAutenticado);
+router.get('/solicitudes/:id/soporte-temporal', auth, verSoporteTemporalAutenticado);
 router.get(
   '/solicitudes',
   auth,
