@@ -693,7 +693,7 @@ function DashboardLayout() {
   );
   const totalReposiciones = mostrarReposicionPermanente
     ? Number(reposicionBadge?.counts?.institutionalPending || 0)
-    : (reposicionBadge?.counts?.ownPending || 0) + (reposicionBadge?.counts?.bossPending || 0);
+    : Number(reposicionBadge?.counts?.bossPending || 0);
 
   if (mostrarReposicion && (mostrarReposicionPermanente || totalReposiciones > 0)) {
     const reposicionItem = { 

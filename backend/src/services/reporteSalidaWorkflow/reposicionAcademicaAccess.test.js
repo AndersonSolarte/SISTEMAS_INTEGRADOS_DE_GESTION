@@ -49,7 +49,7 @@ test('la reposicion aplica exclusivamente a diligencia personal', () => {
   }
 });
 
-test('solo las dos cuentas nominativas acceden al modulo de tiempo por reponer', () => {
+test('solo las dos cuentas nominativas tienen vista global de tiempo por reponer', () => {
   const previous = process.env.REPOSICION_GLOBAL_VIEWER_EMAILS;
   delete process.env.REPOSICION_GLOBAL_VIEWER_EMAILS;
 

@@ -2147,8 +2147,8 @@ const resolveSeguimientoAccess = async (user) => {
 
   return {
     canView: canViewReporteSalida || canViewEstadisticas,
-    canViewReposicionModule: globalReposicionViewer,
-    canManageReposicionModule: globalReposicionViewer,
+    canViewReposicionModule: globalReposicionViewer || bossPending > 0,
+    canManageReposicionModule: globalReposicionViewer || bossPending > 0,
     canViewReporteSalida,
     canViewEstadisticas,
     canViewReporteSalidaByPermission,
@@ -6644,13 +6644,14 @@ const actualizarReposicion = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
     const tienePrivilegio = isGlobalReposicionViewer(req.user);
-    if (!tienePrivilegio) {
-      return res.status(403).json({ success: false, message: 'No tienes permiso para gestionar reposiciones de tiempo.' });
-    }
-    
     const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
     if (!solicitud) {
       return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
+    }
+
+    const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
+    if (!tienePrivilegio && !isAssignedBoss(solicitud, req.user, academicAuthorityUserIds)) {
+      return res.status(403).json({ success: false, message: 'Solo puede gestionar la reposicion de colaboradores asignados a su equipo.' });
     }
 
     if (!solicitud.reposicion_aplica) {
@@ -10523,11 +10524,18 @@ const getReposicionesPropias = async (req, res) => {
 
 const getReposicionesEquipo = async (req, res) => {
   try {
-    if (!isGlobalReposicionViewer(req.user)) {
+    const access = await resolveSeguimientoAccess(req.user);
+    if (!access.canViewReposicionModule) {
       return res.status(403).json({ success: false, message: 'No tienes permiso para consultar este módulo.' });
     }
     const incluirCumplidas = req.query.incluir_cumplidas === 'true';
-    const whereClause = buildReposicionModuleWhere({ incluirCumplidas });
+    const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
+    const whereClause = access.canViewAll
+      ? buildReposicionModuleWhere({ incluirCumplidas })
+      : {
+        ...buildReposicionModuleWhere({ incluirCumplidas }),
+        ...bossScopeWhere(req.user, academicAuthorityUserIds)
+      };
 
     const solicitudes = await ReporteSalidaSolicitud.findAll({
       where: whereClause,

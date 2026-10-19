@@ -379,7 +379,12 @@ export default function TiempoReponer() {
       setLoading(true);
       const nextAccess = await fetchAccess();
       if (nextAccess?.canViewReposicionModule) {
-        await Promise.all([fetchMisReposiciones(), fetchEquipoReposiciones()]);
+        if (nextAccess?.canViewAll || nextAccess?.permanentModuleAccess) {
+          await Promise.all([fetchMisReposiciones(), fetchEquipoReposiciones()]);
+        } else {
+          setMisReposiciones([]);
+          await fetchEquipoReposiciones();
+        }
       } else {
         setMisReposiciones([]);
         setEquipoReposiciones([]);
@@ -604,6 +609,11 @@ export default function TiempoReponer() {
         {isGlobalView && (
           <Alert severity="info" sx={{ m: 2, mb: 0 }}>
             Vista institucional: se muestran todas las solicitudes con tiempo pendiente por reponer.
+          </Alert>
+        )}
+        {!isGlobalView && access?.canViewReposicionModule && (
+          <Alert severity="info" sx={{ m: 2, mb: 0 }}>
+            Vista de equipo: se muestran únicamente las solicitudes aprobadas de sus colaboradores con tiempo pendiente por reponer.
           </Alert>
         )}
         {access?.canViewReposicionModule && (
