@@ -358,6 +358,8 @@ const buildReposicionPdfSection = (solicitud = {}, sectionTitle = 'INFORMACIÓN 
   const salida = solicitud?.datos_formulario?.salida || {};
   const isDocenteHastaUnDia = isDocentePdf(solicitud)
     && salida.duracionTipo === 'menos_media_jornada';
+  const isAdministrativoHastaMediaJornada = !isDocentePdf(solicitud)
+    && salida.duracionTipo === 'menos_media_jornada';
 
   const stateDescriptions = {
     pendiente: 'Pendiente de programar o validar el tiempo de reposición.',
@@ -409,6 +411,11 @@ const buildReposicionPdfSection = (solicitud = {}, sectionTitle = 'INFORMACIÓN 
   if (isDocenteHastaUnDia) {
     rows.push([
       summaryCell('Tiempo por reponer', formatMinutes(info.total), { valueColor: '#0b3a6f' }),
+      summaryCell('Referencia del permiso', solicitud.consecutivo || 'Sin consecutivo', { fontSize: 7.8, bold: false, fillColor: '#ffffff' })
+    ]);
+  } else if (isAdministrativoHastaMediaJornada) {
+    rows.push([
+      summaryCell('Saldo pendiente', formatMinutes(info.pending), { valueColor: info.pending > 0 ? '#b45309' : '#166534' }),
       summaryCell('Referencia del permiso', solicitud.consecutivo || 'Sin consecutivo', { fontSize: 7.8, bold: false, fillColor: '#ffffff' })
     ]);
   } else {

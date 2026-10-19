@@ -455,8 +455,10 @@ test('el PDF conserva la parametrizacion completa de una salida con reposicion',
   assert.match(JSON.stringify(section), /soporte-permiso\.pdf/);
 });
 
-test('el PDF omite el tiempo calculado y muestra el valor declarado como tiempo por reponer', () => {
+test('el formato administrativo de hasta media jornada omite los cuatro campos solicitados', () => {
   const solicitud = {
+    consecutivo: 'RS-ADMIN-MEDIA-JORNADA',
+    solicitante_snapshot: { cargo: 'Administrativo' },
     tiempo_solicitado_minutos: 930,
     reposicion_aplica: true,
     reposicion_minutos: 120,
@@ -467,8 +469,13 @@ test('el PDF omite el tiempo calculado y muestra el valor declarado como tiempo 
 
   const sectionText = JSON.stringify(buildReposicionPdfSection(solicitud));
 
-  assert.match(sectionText, /tiempo por reponer/i);
+  assert.match(sectionText, /Saldo pendiente/i);
+  assert.match(sectionText, /Referencia del permiso/i);
   assert.match(sectionText, /2h 00m/);
+  assert.doesNotMatch(sectionText, /Tiempo por reponer/i);
+  assert.doesNotMatch(sectionText, /Tiempo abonado/i);
+  assert.doesNotMatch(sectionText, /Soporte adjunto/i);
+  assert.doesNotMatch(sectionText, /Nivel de contratación/i);
   assert.doesNotMatch(sectionText, /Tiempo solicitado/);
   assert.doesNotMatch(sectionText, /15h 30m/);
 });
