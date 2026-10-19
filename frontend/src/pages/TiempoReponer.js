@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Paper,
@@ -285,12 +285,50 @@ const getAbonoMinutes = (hours, minutes) => (
   ((Number(hours) || 0) * 60) + (Number(minutes) || 0)
 );
 
+const normalizeFilterText = (value) => String(value ?? '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const getReposicionDependencia = (row) => (
+  row?.datos_formulario?.laboral?.dependencia
+  || row?.datos_formulario?.personal?.dependencia
+  || row?.solicitante_snapshot?.dependencia
+  || row?.dependencia
+  || 'Sin dependencia registrada'
+);
+
+const collectSearchableValues = (value, values = []) => {
+  if (value === null || value === undefined) return values;
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectSearchableValues(item, values));
+    return values;
+  }
+  if (typeof value === 'object') {
+    Object.values(value).forEach((item) => collectSearchableValues(item, values));
+    return values;
+  }
+  values.push(String(value));
+  return values;
+};
+
+const matchesGeneralSearch = (row, query) => {
+  const terms = normalizeFilterText(query).split(' ').filter(Boolean);
+  if (!terms.length) return true;
+  const searchableText = normalizeFilterText(collectSearchableValues(row).join(' '));
+  return terms.every((term) => searchableText.includes(term));
+};
+
 export default function TiempoReponer() {
   const [tabIndex, setTabIndex] = useState(0);
   const [misReposiciones, setMisReposiciones] = useState([]);
   const [equipoReposiciones, setEquipoReposiciones] = useState([]);
   const [access, setAccess] = useState(undefined);
   const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dependenciaFilter, setDependenciaFilter] = useState('');
   const { enqueueSnackbar } = useSnackbar();
   
   const [openDialog, setOpenDialog] = useState(false);
@@ -524,7 +562,29 @@ export default function TiempoReponer() {
   );
 
   const isGlobalView = Boolean(access?.canViewAll || access?.permanentModuleAccess);
-  const ownRows = isGlobalView ? [] : misReposiciones;
+  const ownSourceRows = useMemo(
+    () => (isGlobalView ? [] : misReposiciones),
+    [isGlobalView, misReposiciones]
+  );
+  const dependenciaOptions = useMemo(() => {
+    const options = new Map();
+    [...ownSourceRows, ...equipoReposiciones].forEach((row) => {
+      const label = String(getReposicionDependencia(row)).trim();
+      const key = normalizeFilterText(label);
+      if (key && !options.has(key)) options.set(key, label);
+    });
+    return [...options.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
+  }, [ownSourceRows, equipoReposiciones]);
+  const filterRows = (rows) => rows.filter((row) => {
+    const matchesDependencia = !dependenciaFilter
+      || normalizeFilterText(getReposicionDependencia(row)) === dependenciaFilter;
+    return matchesDependencia && matchesGeneralSearch(row, searchTerm);
+  });
+  const ownRows = filterRows(ownSourceRows);
+  const equipoRows = filterRows(equipoReposiciones);
+  const hasActiveFilters = Boolean(searchTerm.trim() || dependenciaFilter);
 
   if (!loading && access !== undefined && !access?.canViewReposicionModule) {
     return (
@@ -546,17 +606,60 @@ export default function TiempoReponer() {
             Vista institucional: se muestran todas las solicitudes con tiempo pendiente por reponer.
           </Alert>
         )}
-        {ownRows.length > 0 && equipoReposiciones.length === 0 && (
+        {access?.canViewReposicionModule && (
+          <Box
+            sx={{
+              p: 2,
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'minmax(320px, 1fr) minmax(240px, 360px) auto' },
+              gap: 1.5,
+              alignItems: 'center'
+            }}
+          >
+            <TextField
+              label="Buscar en todos los campos"
+              placeholder="Nombre, cédula, consecutivo, cargo, motivo..."
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              size="small"
+              fullWidth
+            />
+            <TextField
+              select
+              label="Dependencia"
+              value={dependenciaFilter}
+              onChange={(event) => setDependenciaFilter(event.target.value)}
+              size="small"
+              fullWidth
+            >
+              <MenuItem value="">Todas las dependencias</MenuItem>
+              {dependenciaOptions.map((option) => (
+                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+              ))}
+            </TextField>
+            <Button
+              variant="text"
+              onClick={() => {
+                setSearchTerm('');
+                setDependenciaFilter('');
+              }}
+              disabled={!hasActiveFilters}
+            >
+              Limpiar
+            </Button>
+          </Box>
+        )}
+        {ownRows.length > 0 && equipoRows.length === 0 && (
           <Box sx={{ p: 3 }}>
             {renderTable(ownRows, false)}
           </Box>
         )}
-        {equipoReposiciones.length > 0 && ownRows.length === 0 && (
+        {equipoRows.length > 0 && ownRows.length === 0 && (
           <Box sx={{ p: 3 }}>
-            {renderTable(equipoReposiciones, true)}
+            {renderTable(equipoRows, true)}
           </Box>
         )}
-        {ownRows.length > 0 && equipoReposiciones.length > 0 && (
+        {ownRows.length > 0 && equipoRows.length > 0 && (
           <>
             <Tabs
               value={tabIndex}
@@ -572,16 +675,18 @@ export default function TiempoReponer() {
               {renderTable(ownRows, false)}
             </TabPanel>
             <TabPanel value={tabIndex} index={1}>
-              {renderTable(equipoReposiciones, true)}
+              {renderTable(equipoRows, true)}
             </TabPanel>
           </>
         )}
-        {ownRows.length === 0 && equipoReposiciones.length === 0 && (
+        {ownRows.length === 0 && equipoRows.length === 0 && (
           <Box sx={{ p: 3 }}>
              {loading ? (
                <Stack direction="row" justifyContent="center"><CircularProgress size={24} /></Stack>
              ) : (
-               <Typography variant="body2" color="text.secondary" align="center">No hay reposiciones registradas.</Typography>
+               <Typography variant="body2" color="text.secondary" align="center">
+                 {hasActiveFilters ? 'No se encontraron solicitudes que coincidan con los filtros.' : 'No hay reposiciones registradas.'}
+               </Typography>
              )}
           </Box>
         )}
