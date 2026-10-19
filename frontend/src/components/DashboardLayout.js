@@ -69,6 +69,21 @@ function DashboardLayout() {
 
   const refrescarBadgeJuridica = useCallback(async () => {
     if (!user) return;
+    const isSuperAdmin = String(user?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
+    const perms = [
+      ...(Array.isArray(user?.allowedModules) ? user.allowedModules : []),
+      ...(Array.isArray(user?.modulos_autorizados) ? user.modulos_autorizados : []),
+      ...(Array.isArray(user?.modulePermissions) ? user.modulePermissions : []),
+      ...(Array.isArray(user?.menuPermissions) ? user.menuPermissions : []),
+      ...(Array.isArray(user?.permisosModulos) ? user.permisosModulos : []),
+      ...(Array.isArray(user?.modules) ? user.modules : [])
+    ].map((item) => typeof item === 'string' ? item : item?.module_key || item?.moduleKey || item?.key || '').filter(Boolean);
+
+    if (!isSuperAdmin && !perms.some((k) => k === 'oficina_juridica' || k.startsWith('oficina_juridica.'))) {
+      setJuridicaBadge(0);
+      return;
+    }
+
     try {
       const resp = await oficinaJuridicaService.stats();
       if (resp?.success && resp?.data) {
@@ -547,8 +562,11 @@ function DashboardLayout() {
     ...(Array.isArray(user?.modules) ? user.modules : [])
   ].map((item) => typeof item === 'string' ? item : item?.module_key || item?.moduleKey || item?.key || '').filter(Boolean);
 
-  const canAccessJuridica = user?.role === ROLES.ADMINISTRADOR ||
-    userPermList.some((k) => k === 'oficina_juridica' || k.startsWith('oficina_juridica.'));
+  const isSuperAdmin = String(user?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
+  const hasExplicitJuridicaPerm = userPermList.some((k) => k === 'oficina_juridica' || k.startsWith('oficina_juridica.'));
+
+  // Otros administradores NO ven gestión jurídica a menos que tengan el permiso explícito otorgado
+  const canAccessJuridica = isSuperAdmin || hasExplicitJuridicaPerm;
 
   if (canAccessJuridica) {
     const juridicaMenuItem = {

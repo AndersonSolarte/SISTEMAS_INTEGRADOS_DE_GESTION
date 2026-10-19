@@ -616,6 +616,8 @@ const canViewOficinaJuridica = (user) => {
   );
   if (hasExplicitPerm) return true;
 
+  if (String(user?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co') return true;
+
   // Los administradores generales sin asignación explícita no ven jurídica por defecto
   if (user?.role === ROLES.ADMINISTRADOR) return false;
 

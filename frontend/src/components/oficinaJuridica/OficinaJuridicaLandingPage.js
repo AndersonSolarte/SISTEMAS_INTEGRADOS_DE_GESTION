@@ -19,7 +19,8 @@ export default function OficinaJuridicaLandingPage({ user: propUser, onBack }) {
 
   const hasAccess = useMemo(() => {
     if (!user) return false;
-    if (user.role === ROLES.ADMINISTRADOR) return true;
+    const isSuperAdmin = String(user.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
+    if (isSuperAdmin) return true;
     const permissions = [
       ...normalizePermissions(user.allowedModules), ...normalizePermissions(user.modulePermissions),
       ...normalizePermissions(user.permissions?.modules), ...normalizePermissions(user.modules),
