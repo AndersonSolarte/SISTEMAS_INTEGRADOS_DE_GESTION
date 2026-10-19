@@ -6,6 +6,7 @@ const { Op } = require('sequelize');
 const {
   bossScopeWhere,
   isAssignedBoss,
+  isOwnReposicionSolicitud,
   isAcademicAuthorityAssignment,
   isReposicionEligibleSalida,
   resolveHoraCatedraDuration,
@@ -124,15 +125,35 @@ test('la cuenta global solo ve el modulo cuando existen reposiciones institucion
   }).canViewReposicionModule, true);
 });
 
-test('el permiso institucional habilita el modulo solo mientras existan reposiciones pendientes', () => {
-  assert.equal(resolveSeguimientoModuleVisibility({
+test('el permiso institucional habilita el modulo solo mientras existan reposiciones pendientes y permite gestionarlas', () => {
+  const withoutPending = resolveSeguimientoModuleVisibility({
     canViewInstitutionalReposicionByPermission: true,
     institutionalPending: 0
-  }).canViewReposicionModule, false);
-  assert.equal(resolveSeguimientoModuleVisibility({
+  });
+  assert.equal(withoutPending.canViewReposicionModule, false);
+  assert.equal(withoutPending.canViewAllReposiciones, true);
+  assert.equal(withoutPending.canManageAllReposiciones, true);
+  assert.equal(withoutPending.canManageReposicionModule, true);
+
+  const withPending = resolveSeguimientoModuleVisibility({
     canViewInstitutionalReposicionByPermission: true,
     institutionalPending: 3
-  }).canViewReposicionModule, true);
+  });
+  assert.equal(withPending.canViewReposicionModule, true);
+  assert.equal(withPending.canViewAllReposiciones, true);
+  assert.equal(withPending.canManageAllReposiciones, true);
+  assert.equal(withPending.canManageReposicionModule, true);
+});
+
+test('las solicitudes propias se identifican como solo lectura y las de los demas se pueden gestionar', () => {
+  const ownById = { user_id: 374, solicitante_snapshot: { email: 'adsolarte@unicesmag.edu.co' } };
+  const ownByEmail = { user_id: 999, solicitante_snapshot: { email: 'ADSOLARTE@UNICESMAG.EDU.CO' } };
+  const otherCollaborator = { user_id: 49, solicitante_snapshot: { email: 'emachicanoy@unicesmag.edu.co' } };
+  const currentUser = { id: 374, email: 'adsolarte@unicesmag.edu.co' };
+
+  assert.equal(isOwnReposicionSolicitud(ownById, currentUser), true);
+  assert.equal(isOwnReposicionSolicitud(ownByEmail, currentUser), true);
+  assert.equal(isOwnReposicionSolicitud(otherCollaborator, currentUser), false);
 });
 
 test('tiempo por reponer es un permiso valido pero no se hereda automaticamente por ser administrador', () => {

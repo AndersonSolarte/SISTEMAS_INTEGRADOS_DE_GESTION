@@ -458,122 +458,125 @@ export default function TiempoReponer() {
     }
   };
 
-  const renderTable = (data, isEquipo = false) => (
-    <TableContainer component={Paper} elevation={0} variant="outlined">
-      <Table size="small">
-        <TableHead sx={{ bgcolor: '#f1f5f9' }}>
-          <TableRow>
-            <TableCell><strong>Consecutivo</strong></TableCell>
-            {isEquipo && <TableCell><strong>Colaborador(a)</strong></TableCell>}
-            <TableCell><strong>Fecha de Salida</strong></TableCell>
-            <TableCell><strong>Reposición</strong></TableCell>
-            <TableCell><strong>Observaciones</strong></TableCell>
-            {isEquipo && <TableCell><strong>Acción</strong></TableCell>}
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {data.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={isEquipo ? 6 : 4} align="center" sx={{ py: 3 }}>
-                <Typography variant="body2" color="text.secondary">No hay reposiciones registradas.</Typography>
-              </TableCell>
-            </TableRow>
-          ) : (
-            data.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>{row.consecutivo}</TableCell>
-                {isEquipo && <TableCell>{row.datos_formulario?.personal?.nombre || row.solicitante_snapshot?.nombre}</TableCell>}
-                <TableCell>{formatDate(row.datos_formulario?.salida?.fecha)}</TableCell>
-                <TableCell sx={{ minWidth: 155 }}>
-                  <Stack spacing={0.6}>
-                    <Chip
-                      size="small"
-                      label={row.reposicion_estado === 'cumplida' ? 'Cumplida' : 'Pendiente'}
-                      sx={{
-                        bgcolor: row.reposicion_estado === 'cumplida' ? '#d1fae5' : '#fef3c7',
-                        color: row.reposicion_estado === 'cumplida' ? '#065f46' : '#92400e',
-                        fontWeight: 800,
-                        width: 'fit-content'
-                      }}
-                    />
-                    <Box sx={{ fontSize: 11, lineHeight: 1.4, color: '#334155' }}>
-                      <div><strong>Total:</strong> {formatElapsed(row.reposicion_minutos || row.tiempo_solicitado_minutos || 0)}</div>
-                      <div><strong>Abonado:</strong> {formatElapsed(row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0)}</div>
-                      <div><strong>Pendiente:</strong> {(() => {
-                        const total = row.reposicion_minutos || row.tiempo_solicitado_minutos || 0;
-                        const pagado = row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0;
-                        return formatElapsed(Math.max(0, total - pagado));
-                      })()}</div>
-                    </Box>
-                  </Stack>
-                </TableCell>
-                <TableCell sx={{ minWidth: 200, maxWidth: 300 }}>
-                  {(() => {
-                    const isRechazada = row.estado === 'no_aprobada';
-                    const rejInfo = isRechazada ? getRejectionInfo(row) : null;
-                    const jefeObs = isRechazada ? (rejInfo?.observacion || getJefeObservacion(row)) : getJefeObservacion(row);
-                    const ghObs = row.observacion_gestion_humana || '';
-                    return (
-                      <Stack spacing={0.8}>
-                        {isRechazada ? (
-                          <Box>
-                            <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#b91c1c', display: 'block', mb: 0.2 }}>
-                              No aprobada por {rejInfo?.actorName || 'Jefe / Autoridad'}:
-                            </Typography>
-                            <Typography sx={{ fontSize: 10.5, color: '#991b1b', fontStyle: 'italic', display: 'inline' }}>
-                              "{jefeObs || 'Sin observación especificada.'}"
-                            </Typography>
-                          </Box>
-                        ) : (
-                          jefeObs && (
-                            <Box>
-                              <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#475569', display: 'inline-block', mr: 0.5 }}>
-                                Jefe / Autoridad:
-                              </Typography>
-                              <Typography sx={{ fontSize: 10.5, color: '#64748b', fontStyle: 'italic', display: 'inline' }}>"{jefeObs}"</Typography>
-                            </Box>
-                          )
-                        )}
-                        {ghObs ? (
-                          <Box>
-                            <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#0f766e', mb: 0.3 }}>Talento Humano:</Typography>
-                            <Box sx={{ fontSize: 10.5, color: '#334155', maxHeight: 80, overflowY: 'auto', bgcolor: '#f8fafc', p: 0.5, borderRadius: 1, border: '1px solid #e2e8f0' }}>
-                              {ghObs.split('\n').map((line, idx) => (
-                                <Typography key={idx} sx={{ fontSize: 10, lineHeight: 1.3, borderBottom: idx < ghObs.split('\n').length - 1 ? '1px dashed #e2e8f0' : 'none', pb: 0.3, mb: 0.3 }}>
-                                  {line}
-                                </Typography>
-                              ))}
-                            </Box>
-                          </Box>
-                        ) : (
-                          !isRechazada && !jefeObs && <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontStyle: 'italic' }}>Sin observaciones</Typography>
-                        )}
-                      </Stack>
-                    );
-                  })()}
-                </TableCell>
-                {isEquipo && (
-                  <TableCell>
-                    {row.canManageReposicion ? (
-                      <Button size="small" variant="outlined" onClick={() => handleUpdateClick(row)}>Gestionar</Button>
-                    ) : (
-                      <Typography variant="caption" color="text.secondary">Solo consulta</Typography>
-                    )}
-                  </TableCell>
-                )}
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </TableContainer>
-  );
-
   const isGlobalView = Boolean(access?.canViewAllReposiciones);
-  const ownSourceRows = useMemo(
-    () => (isGlobalView ? [] : misReposiciones),
-    [isGlobalView, misReposiciones]
-  );
+
+  const renderTable = (data, isEquipo = false) => {
+    const showActionsColumn = isEquipo;
+    const totalColumns = 4 + (isEquipo ? 1 : 0) + (showActionsColumn ? 1 : 0);
+
+    return (
+      <TableContainer component={Paper} elevation={0} variant="outlined">
+        <Table size="small">
+          <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+            <TableRow>
+              <TableCell><strong>Consecutivo</strong></TableCell>
+              {isEquipo && <TableCell><strong>Colaborador(a)</strong></TableCell>}
+              <TableCell><strong>Fecha de Salida</strong></TableCell>
+              <TableCell><strong>Reposición</strong></TableCell>
+              <TableCell><strong>Observaciones</strong></TableCell>
+              {showActionsColumn && <TableCell><strong>Acción</strong></TableCell>}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {data.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={totalColumns} align="center" sx={{ py: 3 }}>
+                  <Typography variant="body2" color="text.secondary">No hay reposiciones registradas.</Typography>
+                </TableCell>
+              </TableRow>
+            ) : (
+              data.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>{row.consecutivo}</TableCell>
+                  {isEquipo && <TableCell>{row.datos_formulario?.personal?.nombre || row.solicitante_snapshot?.nombre}</TableCell>}
+                  <TableCell>{formatDate(row.datos_formulario?.salida?.fecha)}</TableCell>
+                  <TableCell sx={{ minWidth: 155 }}>
+                    <Stack spacing={0.6}>
+                      <Chip
+                        size="small"
+                        label={row.reposicion_estado === 'cumplida' ? 'Cumplida' : 'Pendiente'}
+                        sx={{
+                          bgcolor: row.reposicion_estado === 'cumplida' ? '#d1fae5' : '#fef3c7',
+                          color: row.reposicion_estado === 'cumplida' ? '#065f46' : '#92400e',
+                          fontWeight: 800,
+                          width: 'fit-content'
+                        }}
+                      />
+                      <Box sx={{ fontSize: 11, lineHeight: 1.4, color: '#334155' }}>
+                        <div><strong>Total:</strong> {formatElapsed(row.reposicion_minutos || row.tiempo_solicitado_minutos || 0)}</div>
+                        <div><strong>Abonado:</strong> {formatElapsed(row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0)}</div>
+                        <div><strong>Pendiente:</strong> {(() => {
+                          const total = row.reposicion_minutos || row.tiempo_solicitado_minutos || 0;
+                          const pagado = row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0;
+                          return formatElapsed(Math.max(0, total - pagado));
+                        })()}</div>
+                      </Box>
+                    </Stack>
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 200, maxWidth: 300 }}>
+                    {(() => {
+                      const isRechazada = row.estado === 'no_aprobada';
+                      const rejInfo = isRechazada ? getRejectionInfo(row) : null;
+                      const jefeObs = isRechazada ? (rejInfo?.observacion || getJefeObservacion(row)) : getJefeObservacion(row);
+                      const ghObs = row.observacion_gestion_humana || '';
+                      return (
+                        <Stack spacing={0.8}>
+                          {isRechazada ? (
+                            <Box>
+                              <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#b91c1c', display: 'block', mb: 0.2 }}>
+                                No aprobada por {rejInfo?.actorName || 'Jefe / Autoridad'}:
+                              </Typography>
+                              <Typography sx={{ fontSize: 10.5, color: '#991b1b', fontStyle: 'italic', display: 'inline' }}>
+                                "{jefeObs || 'Sin observación especificada.'}"
+                              </Typography>
+                            </Box>
+                          ) : (
+                            jefeObs && (
+                              <Box>
+                                <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#475569', display: 'inline-block', mr: 0.5 }}>
+                                  Jefe / Autoridad:
+                                </Typography>
+                                <Typography sx={{ fontSize: 10.5, color: '#64748b', fontStyle: 'italic', display: 'inline' }}>"{jefeObs}"</Typography>
+                              </Box>
+                            )
+                          )}
+                          {ghObs ? (
+                            <Box>
+                              <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#0f766e', mb: 0.3 }}>Talento Humano:</Typography>
+                              <Box sx={{ fontSize: 10.5, color: '#334155', maxHeight: 80, overflowY: 'auto', bgcolor: '#f8fafc', p: 0.5, borderRadius: 1, border: '1px solid #e2e8f0' }}>
+                                {ghObs.split('\n').map((line, idx) => (
+                                  <Typography key={idx} sx={{ fontSize: 10, lineHeight: 1.3, borderBottom: idx < ghObs.split('\n').length - 1 ? '1px dashed #e2e8f0' : 'none', pb: 0.3, mb: 0.3 }}>
+                                    {line}
+                                  </Typography>
+                                ))}
+                              </Box>
+                            </Box>
+                          ) : (
+                            !isRechazada && !jefeObs && <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontStyle: 'italic' }}>Sin observaciones</Typography>
+                          )}
+                        </Stack>
+                      );
+                    })()}
+                  </TableCell>
+                  {showActionsColumn && (
+                    <TableCell>
+                      {row.canManageReposicion ? (
+                        <Button size="small" variant="outlined" onClick={() => handleUpdateClick(row)}>Gestionar</Button>
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">Solo lectura</Typography>
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    );
+  };
+
+  const ownSourceRows = misReposiciones;
   const dependenciaOptions = useMemo(() => {
     const options = new Map();
     [...ownSourceRows, ...equipoReposiciones].forEach((row) => {
@@ -592,6 +595,7 @@ export default function TiempoReponer() {
   });
   const ownRows = filterRows(ownSourceRows);
   const equipoRows = filterRows(equipoReposiciones);
+  const showDualTabs = (ownSourceRows.length > 0 && equipoReposiciones.length > 0) || isGlobalView;
   const hasActiveFilters = Boolean(searchTerm.trim() || dependenciaFilter);
 
   if (!loading && access !== undefined && !access?.canViewReposicionModule) {
@@ -611,7 +615,7 @@ export default function TiempoReponer() {
       <Paper sx={{ mb: 3, borderRadius: 2 }}>
         {isGlobalView && (
           <Alert severity="info" sx={{ m: 2, mb: 0 }}>
-            Vista institucional: se muestran todas las solicitudes con tiempo pendiente por reponer.
+            Vista institucional: se muestran sus reposiciones y todas las solicitudes institucionales con tiempo pendiente por reponer.
           </Alert>
         )}
         {!isGlobalView && access?.canViewReposicionModule && (
@@ -662,17 +666,17 @@ export default function TiempoReponer() {
             </Button>
           </Box>
         )}
-        {ownRows.length > 0 && equipoRows.length === 0 && (
+        {!showDualTabs && ownRows.length > 0 && equipoRows.length === 0 && (
           <Box sx={{ p: 3 }}>
             {renderTable(ownRows, false)}
           </Box>
         )}
-        {equipoRows.length > 0 && ownRows.length === 0 && (
+        {!showDualTabs && equipoRows.length > 0 && ownRows.length === 0 && (
           <Box sx={{ p: 3 }}>
             {renderTable(equipoRows, true)}
           </Box>
         )}
-        {ownRows.length > 0 && equipoRows.length > 0 && (
+        {showDualTabs && (
           <>
             <Tabs
               value={tabIndex}
@@ -681,8 +685,8 @@ export default function TiempoReponer() {
               textColor="primary"
               sx={{ borderBottom: 1, borderColor: 'divider' }}
             >
-              <Tab label="Mis reposiciones" />
-              <Tab label="Reposiciones de mi equipo" />
+              <Tab label={`Mis reposiciones (${ownRows.length})`} />
+              <Tab label={isGlobalView ? `Reposiciones institucionales (${equipoRows.length})` : `Reposiciones de mi equipo (${equipoRows.length})`} />
             </Tabs>
             <TabPanel value={tabIndex} index={0}>
               {renderTable(ownRows, false)}
@@ -692,7 +696,7 @@ export default function TiempoReponer() {
             </TabPanel>
           </>
         )}
-        {ownRows.length === 0 && equipoRows.length === 0 && (
+        {!showDualTabs && ownRows.length === 0 && equipoRows.length === 0 && (
           <Box sx={{ p: 3 }}>
              {loading ? (
                <Stack direction="row" justifyContent="center"><CircularProgress size={24} /></Stack>

@@ -2087,6 +2087,19 @@ const isAssignedBoss = (solicitud, user, academicAuthorityUserIds = []) => {
   return Boolean(bossEmail && bossEmail === normalizeEmail(user?.email));
 };
 
+const isOwnReposicionSolicitud = (solicitud = {}, user = {}) => {
+  const ownerId = Number(solicitud?.user_id || 0);
+  const currentUserId = Number(user?.id || 0);
+  if (ownerId > 0 && currentUserId > 0 && ownerId === currentUserId) return true;
+  const ownerEmail = normalizeEmail(
+    solicitud?.solicitante_snapshot?.email
+    || solicitud?.solicitante_snapshot?.correo
+    || solicitud?.datos_formulario?.personal?.correo
+  );
+  const currentUserEmail = normalizeEmail(user?.email);
+  return Boolean(ownerEmail && currentUserEmail && ownerEmail === currentUserEmail);
+};
+
 const ownPendingReposicionWhere = (user) => ({
   ...pendingReposicionWhere(),
   user_id: user.id
@@ -2105,20 +2118,28 @@ const resolveSeguimientoModuleVisibility = ({
   ownPending = 0,
   institutionalPending = 0,
   bossPending = 0
-} = {}) => ({
-  canViewAll: Boolean(
-    globalReposicionViewer
-    || canViewReporteSalidaByPermission
-    || canViewEstadisticasByPermission
-  ),
-  canViewReporteSalida: Boolean(globalReposicionViewer || canViewReporteSalidaByPermission),
-  canViewEstadisticas: Boolean(globalReposicionViewer || canViewEstadisticasByPermission),
-  canViewReposicionModule: Boolean(
-    ownPending > 0
-    || bossPending > 0
-    || ((globalReposicionViewer || canViewInstitutionalReposicionByPermission) && institutionalPending > 0)
-  )
-});
+} = {}) => {
+  const institutionalReposicionViewer = Boolean(
+    globalReposicionViewer || canViewInstitutionalReposicionByPermission
+  );
+  return {
+    canViewAll: Boolean(
+      globalReposicionViewer
+      || canViewReporteSalidaByPermission
+      || canViewEstadisticasByPermission
+    ),
+    canViewReporteSalida: Boolean(globalReposicionViewer || canViewReporteSalidaByPermission),
+    canViewEstadisticas: Boolean(globalReposicionViewer || canViewEstadisticasByPermission),
+    canViewReposicionModule: Boolean(
+      ownPending > 0
+      || bossPending > 0
+      || (institutionalReposicionViewer && institutionalPending > 0)
+    ),
+    canViewAllReposiciones: institutionalReposicionViewer,
+    canManageAllReposiciones: institutionalReposicionViewer,
+    canManageReposicionModule: Boolean(institutionalReposicionViewer || bossPending > 0)
+  };
+};
 
 const resolveSeguimientoAccess = async (user) => {
   const globalReposicionViewer = isGlobalReposicionViewer(user);
@@ -2180,14 +2201,14 @@ const resolveSeguimientoAccess = async (user) => {
   return {
     canView: canViewReporteSalida || canViewEstadisticas,
     canViewReposicionModule,
-    canManageReposicionModule: globalReposicionViewer || bossPending > 0,
+    canManageReposicionModule: institutionalReposicionViewer || bossPending > 0,
     canViewReporteSalida,
     canViewEstadisticas,
     canViewReporteSalidaByPermission,
     canViewEstadisticasByPermission,
     canViewAll,
     canViewAllReposiciones: institutionalReposicionViewer,
-    canManageAllReposiciones: globalReposicionViewer,
+    canManageAllReposiciones: institutionalReposicionViewer,
     permanentModuleAccess: institutionalReposicionViewer,
     academicAssignmentScope: hasInstitutionalReposicionScope,
     canManageAll,
@@ -6647,8 +6668,8 @@ const getSeguimientoPersonal = async (req, res) => {
         solicitudes: rows.map((row) => ({
           ...serializeSolicitud(row),
           canManageReposicion: Boolean(
-            access.canManageAll
-            || (access.canManageTeamReposicion && isAssignedBoss(row, req.user, academicAuthorityUserIds))
+            !isOwnReposicionSolicitud(row, req.user) && (access.canManageAll || access.canManageAllReposiciones
+            || (access.canManageTeamReposicion && isAssignedBoss(row, req.user, academicAuthorityUserIds)))
           )
         })),
         pagination: { total: count, page, limit: limit || count, totalPages: limit ? Math.ceil(count / limit) : 1 }
@@ -6677,12 +6698,15 @@ const getSeguimientoBadge = async (req, res) => {
 const actualizarReposicion = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
-    const tienePrivilegio = isGlobalReposicionViewer(req.user);
+    const tienePrivilegio = isGlobalReposicionViewer(req.user) || (await canViewInstitutionalReposicionModule(req.user));
     const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
     if (!solicitud) {
       return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
     }
 
+    if (isOwnReposicionSolicitud(solicitud, req.user)) {
+      return res.status(403).json({ success: false, message: 'Las solicitudes propias son de solo lectura; no puede gestionar su propia reposicion.' });
+    }
     const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
     if (!tienePrivilegio && !isAssignedBoss(solicitud, req.user, academicAuthorityUserIds)) {
       return res.status(403).json({ success: false, message: 'Solo puede gestionar la reposicion de colaboradores asignados a su equipo.' });
@@ -10548,7 +10572,7 @@ const getReposicionesPropias = async (req, res) => {
       where,
       order: [['created_at', 'DESC']]
     });
-    res.json({ success: true, data: solicitudes.map(serializeSolicitud) });
+    res.json({ success: true, data: solicitudes.map((row) => ({ ...serializeSolicitud(row), canManageReposicion: false })) });
   } catch (error) {
     console.error('Error in getReposicionesPropias:', error);
     res.status(500).json({ success: false, message: 'Error al consultar reposiciones propias' });
@@ -10579,8 +10603,11 @@ const getReposicionesEquipo = async (req, res) => {
       data: solicitudes.map((row) => ({
         ...serializeSolicitud(row),
         canManageReposicion: Boolean(
-          access.canManageAllReposiciones
-          || isAssignedBoss(row, req.user, academicAuthorityUserIds)
+          !isOwnReposicionSolicitud(row, req.user)
+          && (
+            access.canManageAllReposiciones
+            || isAssignedBoss(row, req.user, academicAuthorityUserIds)
+          )
         )
       }))
     });
@@ -10827,6 +10854,7 @@ module.exports = {
   isDependencyApprovalBlocked,
   bossScopeWhere,
   isAssignedBoss,
+  isOwnReposicionSolicitud,
   isAcademicAuthorityAssignment,
   isReposicionEligibleSalida,
   resolveHoraCatedraDuration,
