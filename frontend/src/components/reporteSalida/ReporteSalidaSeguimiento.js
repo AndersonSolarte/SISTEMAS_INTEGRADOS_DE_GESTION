@@ -802,8 +802,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const showInstitutionalTools = canViewAll;
   const ownPendingCount = Number(access?.counts?.ownPending || 0);
   const teamPendingCount = Number(access?.counts?.bossPending || 0);
-  const showScopeTabs = accessMode === 'jefe_y_colaborador'
-    || (canViewAll && (ownPendingCount > 0 || teamPendingCount > 0));
+  const showScopeTabs = canViewAll;
 
   const isOwnRow = (row) => String(row?.user_id || row?.solicitante?.id || row?.solicitante?.userId || '') === String(user?.id || '');
   const isTeamRow = (row) => {

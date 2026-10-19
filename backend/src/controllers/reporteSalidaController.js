@@ -39,9 +39,6 @@ const featureDisabled = (res) =>
   res.status(403).json({ success: false, message: 'El formulario de reporte de salida aun no esta habilitado.' });
 
 const isAdminUser = (user) => String(user?.role || '') === 'administrador';
-// Estos roles pueden entrar al seguimiento; el alcance global se concede
-// exclusivamente mediante la lista nominativa de correos autorizados.
-const SEGUIMIENTO_REPORTE_MODULE_ROLES = [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA];
 const REPOSICION_PENDIENTE_ESTADOS = ['pendiente', 'programada', 'incumplida'];
 
 const hashToken = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex');
@@ -1801,14 +1798,12 @@ const resolveUserReposicionLaboralProfile = async (user, cargo = '') => {
 
 const canViewReporteSalidaModule = async (user) => {
   if (!user) return false;
-  if (SEGUIMIENTO_REPORTE_MODULE_ROLES.includes(String(user.role || ''))) return true;
   if (userHasAnyRecursoHumanoPermission(user, REPORTE_SALIDA_VIEW_KEYS)) return true;
   return userHasModulePermissionInDb(user, REPORTE_SALIDA_VIEW_KEYS);
 };
 
 const canViewAusentismoModule = async (user) => {
   if (!user) return false;
-  if (String(user.role || '') === ROLES.ADMINISTRADOR) return true;
   if (userHasAnyRecursoHumanoPermission(user, AUSENTISMO_VIEW_KEYS)) return true;
   return userHasModulePermissionInDb(user, AUSENTISMO_VIEW_KEYS);
 };
@@ -2090,6 +2085,22 @@ const bossPendingReposicionWhere = (user, academicAuthorityUserIds = []) => ({
   ...bossScopeWhere(user, academicAuthorityUserIds)
 });
 
+const resolveSeguimientoModuleVisibility = ({
+  globalReposicionViewer = false,
+  canViewReporteSalidaByPermission = false,
+  canViewEstadisticasByPermission = false,
+  bossPending = 0
+} = {}) => ({
+  canViewAll: Boolean(
+    globalReposicionViewer
+    || canViewReporteSalidaByPermission
+    || canViewEstadisticasByPermission
+  ),
+  canViewReporteSalida: Boolean(globalReposicionViewer || canViewReporteSalidaByPermission),
+  canViewEstadisticas: Boolean(globalReposicionViewer || canViewEstadisticasByPermission),
+  canViewReposicionModule: Boolean(globalReposicionViewer || bossPending > 0)
+});
+
 const resolveSeguimientoAccess = async (user) => {
   const globalReposicionViewer = isGlobalReposicionViewer(user);
   const isAcademicInstitutional = isAcademicInstitutionalAccount(user);
@@ -2115,21 +2126,19 @@ const resolveSeguimientoAccess = async (user) => {
       ? ReporteSalidaSolicitud.count({ where: pendingReposicionWhere() })
       : Promise.resolve(0)
   ]);
-  const roleStr = String(user?.role || '').toLowerCase();
-  const isSuperAdminOrPlanning = [ROLES.ADMINISTRADOR, ROLES.GESTION_INFORMACION, ROLES.PLANEACION_ESTRATEGICA, ROLES.PLANEACION_EFECTIVIDAD].includes(roleStr);
-  const isPlaneacionReadOnly = roleStr === ROLES.PLANEACION_ESTRATEGICA;
-  // El alcance institucional es una autorizacion nominativa. Los roles y
-  // permisos generales solo habilitan las solicitudes propias o del equipo.
-  const canViewAll = globalReposicionViewer;
-  const canViewReporteSalida = hasInstitutionalReposicionScope
-    || globalReposicionViewer
-    || canManageAll
-    || isSuperAdminOrPlanning
-    || isPlaneacionReadOnly
-    || canViewReporteSalidaByPermission
-    || ownPending > 0
-    || bossPending > 0;
-  const canViewEstadisticas = globalReposicionViewer || canManageAll || isSuperAdminOrPlanning || canViewEstadisticasByPermission;
+  // El tablero institucional depende exclusivamente de las cuentas globales
+  // o de permisos explicitos. Ser jefe solo habilita "Tiempo por reponer".
+  const {
+    canViewAll,
+    canViewReporteSalida,
+    canViewEstadisticas,
+    canViewReposicionModule
+  } = resolveSeguimientoModuleVisibility({
+    globalReposicionViewer,
+    canViewReporteSalidaByPermission,
+    canViewEstadisticasByPermission,
+    bossPending
+  });
 
   let mode = 'sin_pendientes';
   if (globalReposicionViewer) mode = 'gestion_humana';
@@ -2141,14 +2150,13 @@ const resolveSeguimientoAccess = async (user) => {
   else if (isEvangelizationInstitutional) mode = 'jefe';
   else if (bossPending > 0) mode = ownPending > 0 ? 'jefe_y_colaborador' : 'jefe';
   else if (ownPending > 0) mode = 'colaborador';
-  else if (canManageAll || isSuperAdminOrPlanning) mode = 'sin_pendientes';
-  else if (isPlaneacionReadOnly) mode = 'planeacion_estrategica';
+  else if (canManageAll) mode = 'sin_pendientes';
   else if (canViewReporteSalidaByPermission || canViewEstadisticasByPermission) mode = 'consulta_institucional';
 
   return {
     canView: canViewReporteSalida || canViewEstadisticas,
-    canViewReposicionModule: globalReposicionViewer || bossPending > 0,
-    canManageReposicionModule: globalReposicionViewer || bossPending > 0,
+    canViewReposicionModule,
+    canManageReposicionModule: canViewReposicionModule,
     canViewReporteSalida,
     canViewEstadisticas,
     canViewReporteSalidaByPermission,
@@ -5221,7 +5229,7 @@ const isPendingReporteSalidaApproval = (estado = '') => (
 const canViewTemporarySolicitudDocuments = async (solicitud, user) => {
   if (!solicitud || !user || !isPendingReporteSalidaApproval(solicitud.estado)) return false;
   const access = await resolveSeguimientoAccess(user);
-  if (!access.canViewReporteSalida) return false;
+  if (!access.canViewReporteSalida && !access.academicAssignmentScope) return false;
   if (access.canViewAll) return true;
   if (access.academicAssignmentScope) {
     const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(user);
@@ -10800,6 +10808,7 @@ module.exports = {
   isSingleHomogeneousGroup,
   isGlobalReposicionViewer,
   buildReposicionModuleWhere,
+  resolveSeguimientoModuleVisibility,
   getStoredReposicionLaboralProfile,
   REPOSICION_LABORAL_PROFILES,
   REPOSICION_WORKDAY_MINUTES

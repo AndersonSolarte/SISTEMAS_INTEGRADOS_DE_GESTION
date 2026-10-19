@@ -74,12 +74,9 @@ function RecursoHumanoLandingPage({ onBack }) {
     return () => { active = false; };
   }, []);
 
-  const hasSeguimientoPermission = [
-    'recurso_humano_seguimiento',
-    'recurso_humano_reporte_salida',
-    'recurso_humano_indicadores_ausentismo'
-  ].some(hasAccess);
-  const showSeguimientoCard = hasSeguimientoPermission || Boolean(seguimientoAccess?.canView);
+  // El backend consolida permisos del token y de la base de datos. Ser jefe o
+  // tener rol administrador no habilita por si solo este tablero institucional.
+  const showSeguimientoCard = Boolean(seguimientoAccess?.canView);
   const seguimientoDescription = seguimientoAccess?.mode === 'colaborador'
     ? 'Consulta tus horas pendientes por reponer y el estado de validacion de Talento Humano.'
     : seguimientoAccess?.mode === 'planeacion_estrategica'

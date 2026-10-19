@@ -17,7 +17,8 @@ const {
   buildAdminTraceDetail,
   getInitialApprovalSummary,
   isGlobalReposicionViewer,
-  buildReposicionModuleWhere
+  buildReposicionModuleWhere,
+  resolveSeguimientoModuleVisibility
 } = require('../../controllers/reporteSalidaController');
 const {
   ensureReporteSalidaPdf,
@@ -76,6 +77,25 @@ test('la bandeja de reposicion solo consulta solicitudes aprobadas con tiempo pe
   assert.equal(includingCompleted.reposicion_aplica, true);
   assert.equal(includingCompleted.user_id, 25);
   assert.equal(Object.hasOwn(includingCompleted, 'reposicion_estado'), false);
+});
+
+test('un jefe sin permiso ve tiempo por reponer pero no el tablero institucional', () => {
+  const visibility = resolveSeguimientoModuleVisibility({ bossPending: 3 });
+
+  assert.equal(visibility.canViewReposicionModule, true);
+  assert.equal(visibility.canViewReporteSalida, false);
+  assert.equal(visibility.canViewEstadisticas, false);
+  assert.equal(visibility.canViewAll, false);
+});
+
+test('un usuario con permiso explicito puede ver el tablero institucional', () => {
+  const visibility = resolveSeguimientoModuleVisibility({
+    canViewReporteSalidaByPermission: true
+  });
+
+  assert.equal(visibility.canViewReporteSalida, true);
+  assert.equal(visibility.canViewAll, true);
+  assert.equal(visibility.canViewReposicionModule, false);
 });
 
 test('el detalle narrativo conserva todo el texto y los saltos de linea', () => {
