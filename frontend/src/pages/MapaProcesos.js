@@ -238,10 +238,10 @@ function MapaProcesos() {
   // Construye params para el backend (solo envía si hay selección)
   const buildParams = useCallback((macros, procs, subs, tipos, text, est) => {
     const p = {};
-    if (macros.length)  p.macro_proceso_id      = macros.join(',');
-    if (procs.length)   p.proceso_id            = procs.join(',');
-    if (subs.length)    p.subproceso_id         = subs.join(',');
-    if (tipos.length)   p.tipo_documentacion_id = tipos.join(',');
+    if (macros.length)  p.macro_proceso_id      = macros.join('||');
+    if (procs.length)   p.proceso_id            = procs.join('||');
+    if (subs.length)    p.subproceso_id         = subs.join('||');
+    if (tipos.length)   p.tipo_documentacion_id = tipos.join('||');
     if (text.trim())    p.titulo                = text.trim();
     if (est)            p.estado                = est;
     return p;

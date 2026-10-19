@@ -75,8 +75,14 @@ const getDocumentTypeIcon = (name = '') =>
   (DOCUMENT_TYPE_ICONS.find((item) => item.pattern.test(String(name))) || { Icon: DescriptionIcon }).Icon;
 
 const formatNumber = (value) => new Intl.NumberFormat('es-CO').format(Number(value || 0));
-const normalizeFilterArray = (value) => (Array.isArray(value) ? value : String(value || '').split(',')).map((item) => String(item || '').trim()).filter(Boolean);
-const serializeFilterArray = (value) => normalizeFilterArray(value).join(',');
+const normalizeFilterArray = (value) => (
+  Array.isArray(value)
+    ? value
+    : String(value || '').includes('||')
+      ? String(value || '').split('||')
+      : [String(value || '')]
+).map((item) => String(item || '').trim()).filter(Boolean);
+const serializeFilterArray = (value) => normalizeFilterArray(value).join('||');
 
 const emptyData = {
   periodosDisponibles: [],
@@ -349,10 +355,10 @@ function DocumentTypeList({ title, rows = [], total, activeFilters = {}, macroPr
       : [];
     const params = {
       tipo_documentacion_id: row.tipo_documento,
-      ...(macroNames.length > 0 && { macro_proceso_id: macroNames.join(',') }),
-      ...(activeFilters.proceso?.length > 0 && { proceso_id: activeFilters.proceso.join(',') }),
-      ...(activeFilters.subproceso?.length > 0 && { subproceso_id: activeFilters.subproceso.join(',') }),
-      ...(activeFilters.periodo?.length > 0 && { periodo: activeFilters.periodo.join(',') }),
+      ...(macroNames.length > 0 && { macro_proceso_id: macroNames.join('||') }),
+      ...(activeFilters.proceso?.length > 0 && { proceso_id: activeFilters.proceso.join('||') }),
+      ...(activeFilters.subproceso?.length > 0 && { subproceso_id: activeFilters.subproceso.join('||') }),
+      ...(activeFilters.periodo?.length > 0 && { periodo: activeFilters.periodo.join('||') }),
     };
     documentoService.getDocumentos(params, 1, 500)
       .then((res) => setDocsForTipo(res?.data?.documentos || []))

@@ -136,10 +136,17 @@ const normalizePeriodoFilter = (value = '') => {
 const normalizeStatFilterValue = (value = '') => String(value || '').trim().toLowerCase();
 
 const normalizeStatFilterValues = (value = '') => {
-  const rawValues = Array.isArray(value) ? value : String(value || '').split(',');
-  return rawValues
-    .map((item) => String(item || '').trim())
-    .filter(Boolean);
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  if (raw.includes('||')) {
+    return raw.split('||').map((item) => item.trim()).filter(Boolean);
+  }
+  const splitByComma = raw.split(',').map((item) => item.trim()).filter(Boolean);
+  if (splitByComma.length <= 1) return splitByComma;
+  return Array.from(new Set([raw, ...splitByComma]));
 };
 
 const normalizeStatLabel = (value = '', fallback = 'No clasificado') => {
@@ -364,7 +371,19 @@ const getDocumentos = async (req, res) => {
       }
     ];
 
-    const parseTextList = (val) => String(val || '').split(',').map((item) => item.trim()).filter(Boolean);
+    const parseTextList = (val) => {
+      if (Array.isArray(val)) {
+        return val.map((item) => String(item || '').trim()).filter(Boolean);
+      }
+      const raw = String(val || '').trim();
+      if (!raw) return [];
+      if (raw.includes('||')) {
+        return raw.split('||').map((item) => item.trim()).filter(Boolean);
+      }
+      const splitByComma = raw.split(',').map((item) => item.trim()).filter(Boolean);
+      if (splitByComma.length <= 1) return splitByComma;
+      return Array.from(new Set([raw, ...splitByComma]));
+    };
     const andConditions = [];
     const addTrimmedTextFilter = (column, values) => {
       if (!values.length) return;

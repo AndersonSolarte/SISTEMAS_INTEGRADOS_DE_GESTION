@@ -1,4 +1,4 @@
-﻿const { QueryTypes } = require('sequelize');
+const { QueryTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 const { ROLES } = require('../constants/roles');
 
@@ -10,10 +10,19 @@ const isInactiveScope = (query = {}, user = {}) =>
   && String(query.include_inactive || '').toLowerCase() === 'true'
   && canViewAllDocumentStates(user);
 
-const parseTextList = (value) => String(value || '')
-  .split(',')
-  .map((item) => item.trim())
-  .filter(Boolean);
+const parseTextList = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  if (raw.includes('||')) {
+    return raw.split('||').map((item) => item.trim()).filter(Boolean);
+  }
+  const splitByComma = raw.split(',').map((item) => item.trim()).filter(Boolean);
+  if (splitByComma.length <= 1) return splitByComma;
+  return Array.from(new Set([raw, ...splitByComma]));
+};
 
 const addTextCondition = (conditions, replacements, column, replacementKey, values) => {
   if (values.length === 1) {
@@ -26,6 +35,17 @@ const addTextCondition = (conditions, replacements, column, replacementKey, valu
 };
 
 const addStateCondition = (conditions, replacements, query, user) => {
+  const estadoScopeStr = String(query?.estado_scope || '').toLowerCase().trim();
+  if (estadoScopeStr === 'en_revision') {
+    replacements.targetState = 'en_revision';
+    conditions.push('d.estado = :targetState');
+    return;
+  }
+  if (estadoScopeStr === 'obsoleto') {
+    replacements.targetState = 'obsoleto';
+    conditions.push('d.estado = :targetState');
+    return;
+  }
   replacements.publicState = PUBLIC_DOCUMENT_STATE;
   conditions.push(
     isInactiveScope(query, user)
@@ -44,6 +64,7 @@ const normalizeDocumentScope = (value = '') => {
 const addDocumentScopeCondition = (conditions, query = {}) => {
   const scope = normalizeDocumentScope(query.document_scope);
   const sheetExpr = "UPPER(COALESCE(d.datos_originales->>'hoja', ''))";
+  conditions.push("COALESCE(d.datos_originales->>'eliminado_sheets', 'false') <> 'true'");
 
   if (scope === 'politicas') {
     conditions.push(`${sheetExpr} IN ('POLÍTICAS', 'POLITICAS')`);
@@ -53,7 +74,7 @@ const addDocumentScopeCondition = (conditions, query = {}) => {
     conditions.push(`${sheetExpr} = 'PLANTILLAS'`);
     return;
   }
-  conditions.push(`(${sheetExpr} = '' OR ${sheetExpr} = 'BD_SGD_UNICESMAG' OR ${sheetExpr} = 'DOCUMENTOS')`);
+  conditions.push(`(${sheetExpr} = '' OR ${sheetExpr} = 'BD_SGD_UNICESMAG' OR ${sheetExpr} = 'DOCUMENTOS' OR ${sheetExpr} = 'SIAC_FORMATOS_DIGITALES')`);
 };
 
 const addCommonFilters = (conditions, replacements, query, user, skipKey = '') => {

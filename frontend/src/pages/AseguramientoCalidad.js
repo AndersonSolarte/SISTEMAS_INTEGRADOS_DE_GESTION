@@ -683,10 +683,10 @@ const hasDocumentalManagementPermission = useMemo(() => {
 
   useEffect(() => {
     const params = {};
-    if (selMacros.length) params.macro_proceso_id = selMacros.join(',');
-    if (selProcesos.length) params.proceso_id = selProcesos.join(',');
-    if (selSubprocesos.length) params.subproceso_id = selSubprocesos.join(',');
-    if (selTipos.length) params.tipo_documentacion_id = selTipos.join(',');
+    if (selMacros.length) params.macro_proceso_id = selMacros.join('||');
+    if (selProcesos.length) params.proceso_id = selProcesos.join('||');
+    if (selSubprocesos.length) params.subproceso_id = selSubprocesos.join('||');
+    if (selTipos.length) params.tipo_documentacion_id = selTipos.join('||');
     if (filters.titulo) params.titulo = filters.titulo;
     if (filters.formatos_digitales) params.formatos_digitales = true;
     params.document_scope = activeDocumentScope;
@@ -940,10 +940,10 @@ const hasDocumentalManagementPermission = useMemo(() => {
   };
 
   // Sync multi-select arrays → filters (comma-separated IDs for backend)
-  useEffect(() => { setFilters(prev => ({ ...prev, macro_proceso_id: selMacros.join(',') })); }, [selMacros]);
-  useEffect(() => { setFilters(prev => ({ ...prev, proceso_id: selProcesos.join(',') })); }, [selProcesos]);
-  useEffect(() => { setFilters(prev => ({ ...prev, subproceso_id: selSubprocesos.join(',') })); }, [selSubprocesos]);
-  useEffect(() => { setFilters(prev => ({ ...prev, tipo_documentacion_id: selTipos.join(',') })); }, [selTipos]);
+  useEffect(() => { setFilters(prev => ({ ...prev, macro_proceso_id: selMacros.join('||') })); }, [selMacros]);
+  useEffect(() => { setFilters(prev => ({ ...prev, proceso_id: selProcesos.join('||') })); }, [selProcesos]);
+  useEffect(() => { setFilters(prev => ({ ...prev, subproceso_id: selSubprocesos.join('||') })); }, [selSubprocesos]);
+  useEffect(() => { setFilters(prev => ({ ...prev, tipo_documentacion_id: selTipos.join('||') })); }, [selTipos]);
   useEffect(() => { setFilters(prev => ({ ...prev, document_scope: activeDocumentScope })); }, [activeDocumentScope]);
 
   useEffect(() => {
