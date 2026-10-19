@@ -39,6 +39,20 @@ const getReporteSalidaRecipients = () => ({
   proyeccionSocial: String(process.env.REPORTE_SALIDA_PROYECCION_SOCIAL_EMAIL || 'proyeccionsocial@unicesmag.edu.co').trim().toLowerCase()
 });
 
+const getReposicionGlobalViewerEmails = () => {
+  const configured = String(
+    process.env.REPOSICION_GLOBAL_VIEWER_EMAILS
+      || 'adsolarte@unicesmag.edu.co,sgc@unicesmag.edu.co'
+  );
+
+  return [...new Set(
+    configured
+      .split(/[,;\n]/)
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean)
+  )];
+};
+
 const getReporteSalidaTemplatePath = () => {
   const configured = String(process.env.REPORTE_SALIDA_TEMPLATE_PATH || '').trim();
   return configured ? path.resolve(configured) : '';
@@ -77,6 +91,7 @@ module.exports = {
   REPORT_DOCUMENT_CODE,
   REPORT_DOCUMENT_TITLE,
   getReporteSalidaRecipients,
+  getReposicionGlobalViewerEmails,
   getReporteSalidaFeatureState,
   getReporteSalidaTemplatePath,
   isReporteSalidaDocumento,

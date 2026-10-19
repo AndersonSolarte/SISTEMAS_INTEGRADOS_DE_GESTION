@@ -7,6 +7,7 @@ const { DesplazamientoViaticosSolicitud, Documento, PlanAccion, ReporteSalidaAdj
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 const {
   getReporteSalidaRecipients,
+  getReposicionGlobalViewerEmails,
   getReporteSalidaFeatureState,
   isReporteSalidaDocumento,
   isReporteSalidaEnabled,
@@ -38,9 +39,9 @@ const featureDisabled = (res) =>
   res.status(403).json({ success: false, message: 'El formulario de reporte de salida aun no esta habilitado.' });
 
 const isAdminUser = (user) => String(user?.role || '') === 'administrador';
-// Estos roles pueden consultar institucionalmente todos los reportes. La
-// capacidad de modificarlos se resuelve por separado: Planeacion es lectura.
-const SEGUIMIENTO_REPORTE_VIEW_ALL_ROLES = [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA];
+// Estos roles pueden entrar al seguimiento; el alcance global se concede
+// exclusivamente mediante la lista nominativa de correos autorizados.
+const SEGUIMIENTO_REPORTE_MODULE_ROLES = [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA];
 const REPOSICION_PENDIENTE_ESTADOS = ['pendiente', 'programada', 'incumplida'];
 
 const hashToken = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex');
@@ -173,6 +174,9 @@ const normalizeEmail = (value) => {
   if (email === 'ugsp@unicesmag.edu.co') return 'usp@unicesmag.edu.co';
   return email;
 };
+const isGlobalReposicionViewer = (user = {}) => (
+  getReposicionGlobalViewerEmails().includes(normalizeEmail(user.email))
+);
 const sameExactEmail = (left, right) => {
   const a = normalizeEmail(left);
   const b = normalizeEmail(right);
@@ -1797,7 +1801,7 @@ const resolveUserReposicionLaboralProfile = async (user, cargo = '') => {
 
 const canViewReporteSalidaModule = async (user) => {
   if (!user) return false;
-  if (SEGUIMIENTO_REPORTE_VIEW_ALL_ROLES.includes(String(user.role || ''))) return true;
+  if (SEGUIMIENTO_REPORTE_MODULE_ROLES.includes(String(user.role || ''))) return true;
   if (userHasAnyRecursoHumanoPermission(user, REPORTE_SALIDA_VIEW_KEYS)) return true;
   return userHasModulePermissionInDb(user, REPORTE_SALIDA_VIEW_KEYS);
 };
@@ -2079,6 +2083,7 @@ const bossPendingReposicionWhere = (user, academicAuthorityUserIds = []) => ({
 });
 
 const resolveSeguimientoAccess = async (user) => {
+  const globalReposicionViewer = isGlobalReposicionViewer(user);
   const isAcademicInstitutional = isAcademicInstitutionalAccount(user);
   const isAcademicProgramInstitutional = isAcademicProgramInstitutionalAccount(user);
   const isFinancialInstitutional = isFinancialReposicionAccount(user);
@@ -2092,56 +2097,62 @@ const resolveSeguimientoAccess = async (user) => {
     || isRectoriaInstitutional
     || isEvangelizationInstitutional;
   const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(user);
-  const [canManageAll, canViewReporteSalidaByPermission, canViewEstadisticasByPermission, ownPending, bossPending] = await Promise.all([
+  const [canManageAll, canViewReporteSalidaByPermission, canViewEstadisticasByPermission, ownPending, bossPending, institutionalPending] = await Promise.all([
     canManageInstitutionalReposicion(user),
     canViewReporteSalidaModule(user),
     canViewAusentismoModule(user),
     ReporteSalidaSolicitud.count({ where: ownPendingReposicionWhere(user) }),
-    ReporteSalidaSolicitud.count({ where: bossPendingReposicionWhere(user, academicAuthorityUserIds) })
+    ReporteSalidaSolicitud.count({ where: bossPendingReposicionWhere(user, academicAuthorityUserIds) }),
+    globalReposicionViewer
+      ? ReporteSalidaSolicitud.count({ where: pendingReposicionWhere() })
+      : Promise.resolve(0)
   ]);
   const roleStr = String(user?.role || '').toLowerCase();
   const isSuperAdminOrPlanning = [ROLES.ADMINISTRADOR, ROLES.GESTION_INFORMACION, ROLES.PLANEACION_ESTRATEGICA, ROLES.PLANEACION_EFECTIVIDAD].includes(roleStr);
   const isPlaneacionReadOnly = roleStr === ROLES.PLANEACION_ESTRATEGICA;
-  const canViewAll = canManageAll
-    || isSuperAdminOrPlanning
-    || isPlaneacionReadOnly
-    || canViewReporteSalidaByPermission
-    || canViewEstadisticasByPermission;
+  // El alcance institucional es una autorizacion nominativa. Los roles y
+  // permisos generales solo habilitan las solicitudes propias o del equipo.
+  const canViewAll = globalReposicionViewer;
   const canViewReporteSalida = hasInstitutionalReposicionScope
+    || globalReposicionViewer
     || canManageAll
     || isSuperAdminOrPlanning
     || isPlaneacionReadOnly
     || canViewReporteSalidaByPermission
     || ownPending > 0
     || bossPending > 0;
-  const canViewEstadisticas = canManageAll || isSuperAdminOrPlanning || canViewEstadisticasByPermission;
+  const canViewEstadisticas = globalReposicionViewer || canManageAll || isSuperAdminOrPlanning || canViewEstadisticasByPermission;
 
   let mode = 'sin_pendientes';
-  if (isAcademicInstitutional) mode = 'vicerrectoria_academica';
+  if (globalReposicionViewer) mode = 'gestion_humana';
+  else if (isAcademicInstitutional) mode = 'vicerrectoria_academica';
   else if (isAcademicProgramInstitutional) mode = 'jefe';
   else if (isFinancialInstitutional) mode = 'jefe';
   else if (isInvestigationInstitutional) mode = 'jefe';
   else if (isRectoriaInstitutional) mode = 'jefe';
   else if (isEvangelizationInstitutional) mode = 'jefe';
-  else if (canManageAll || isSuperAdminOrPlanning) mode = 'gestion_humana';
-  else if (isPlaneacionReadOnly) mode = 'planeacion_estrategica';
-  else if (canViewReporteSalidaByPermission || canViewEstadisticasByPermission) mode = 'consulta_institucional';
   else if (bossPending > 0) mode = ownPending > 0 ? 'jefe_y_colaborador' : 'jefe';
   else if (ownPending > 0) mode = 'colaborador';
+  else if (canManageAll || isSuperAdminOrPlanning) mode = 'sin_pendientes';
+  else if (isPlaneacionReadOnly) mode = 'planeacion_estrategica';
+  else if (canViewReporteSalidaByPermission || canViewEstadisticasByPermission) mode = 'consulta_institucional';
 
   return {
     canView: canViewReporteSalida || canViewEstadisticas,
+    canViewReposicionModule: globalReposicionViewer,
+    canManageReposicionModule: globalReposicionViewer,
     canViewReporteSalida,
     canViewEstadisticas,
     canViewReporteSalidaByPermission,
     canViewEstadisticasByPermission,
     canViewAll,
+    permanentModuleAccess: globalReposicionViewer,
     academicAssignmentScope: hasInstitutionalReposicionScope,
     canManageAll,
     canValidateReposicion: canManageAll,
     canManageTeamReposicion: bossPending > 0,
     mode,
-    counts: { ownPending, bossPending }
+    counts: { ownPending, bossPending, institutionalPending }
   };
 };
 
@@ -6624,22 +6635,18 @@ const getSeguimientoBadge = async (req, res) => {
 const actualizarReposicion = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
-    const tienePrivilegio = await canManageInstitutionalReposicion(req.user);
+    const tienePrivilegio = isGlobalReposicionViewer(req.user);
+    if (!tienePrivilegio) {
+      return res.status(403).json({ success: false, message: 'No tienes permiso para gestionar reposiciones de tiempo.' });
+    }
     
     const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
     if (!solicitud) {
       return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
     }
 
-    const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
-    if (!tienePrivilegio && !isAssignedBoss(solicitud, req.user, academicAuthorityUserIds)) {
-      return res.status(403).json({ success: false, message: 'No tienes permiso para actualizar la reposición de esta solicitud.' });
-    }
     if (!solicitud.reposicion_aplica) {
       return res.status(400).json({ success: false, message: 'Esta solicitud no requiere reposicion de tiempo.' });
-    }
-    if (solicitud.estado !== 'finalizada') {
-      return res.status(400).json({ success: false, message: 'La reposicion solo puede validarse cuando el reporte esta finalizado por Gestion del Talento Humano.' });
     }
 
     let nextEstado = sanitizeText(req.body?.estado, 40);
@@ -10487,6 +10494,9 @@ const procesarRechazoGrupo = async (req, res) => {
 
 const getReposicionesPropias = async (req, res) => {
   try {
+    if (!isGlobalReposicionViewer(req.user)) {
+      return res.status(403).json({ success: false, message: 'No tienes permiso para consultar este módulo.' });
+    }
     const incluirCumplidas = req.query.incluir_cumplidas === 'true';
     const where = {
       user_id: req.user.id,
@@ -10508,13 +10518,11 @@ const getReposicionesPropias = async (req, res) => {
 
 const getReposicionesEquipo = async (req, res) => {
   try {
-    const tienePrivilegio = await canManageInstitutionalReposicion(req.user);
+    if (!isGlobalReposicionViewer(req.user)) {
+      return res.status(403).json({ success: false, message: 'No tienes permiso para consultar este módulo.' });
+    }
     const incluirCumplidas = req.query.incluir_cumplidas === 'true';
-    
-    const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
-    const whereClause = tienePrivilegio
-      ? { reposicion_aplica: true }
-      : { reposicion_aplica: true, ...bossScopeWhere(req.user, academicAuthorityUserIds) };
+    const whereClause = { reposicion_aplica: true };
 
     if (!incluirCumplidas) {
       whereClause.reposicion_estado = { [Op.in]: REPOSICION_PENDIENTE_ESTADOS };
@@ -10781,6 +10789,7 @@ module.exports = {
   getInitialApprovalSummary,
   getGroupInitialApprovalRecipients,
   isSingleHomogeneousGroup,
+  isGlobalReposicionViewer,
   getStoredReposicionLaboralProfile,
   REPOSICION_LABORAL_PROFILES,
   REPOSICION_WORKDAY_MINUTES

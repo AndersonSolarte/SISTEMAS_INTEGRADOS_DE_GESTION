@@ -15,7 +15,8 @@ const {
   sanitizeFreeText,
   formatFirmaDuracionDetalle,
   buildAdminTraceDetail,
-  getInitialApprovalSummary
+  getInitialApprovalSummary,
+  isGlobalReposicionViewer
 } = require('../../controllers/reporteSalidaController');
 const {
   ensureReporteSalidaPdf,
@@ -44,6 +45,21 @@ test('la reposicion aplica exclusivamente a diligencia personal', () => {
       tipo: 'ponencia',
       duracionTipo
     }), false);
+  }
+});
+
+test('solo las dos cuentas nominativas acceden al modulo de tiempo por reponer', () => {
+  const previous = process.env.REPOSICION_GLOBAL_VIEWER_EMAILS;
+  delete process.env.REPOSICION_GLOBAL_VIEWER_EMAILS;
+
+  try {
+    assert.equal(isGlobalReposicionViewer({ email: 'adsolarte@unicesmag.edu.co' }), true);
+    assert.equal(isGlobalReposicionViewer({ email: 'SGC@UNICESMAG.EDU.CO' }), true);
+    assert.equal(isGlobalReposicionViewer({ email: 'otro.usuario@unicesmag.edu.co' }), false);
+    assert.equal(isGlobalReposicionViewer({ email: '' }), false);
+  } finally {
+    if (previous === undefined) delete process.env.REPOSICION_GLOBAL_VIEWER_EMAILS;
+    else process.env.REPOSICION_GLOBAL_VIEWER_EMAILS = previous;
   }
 });
 

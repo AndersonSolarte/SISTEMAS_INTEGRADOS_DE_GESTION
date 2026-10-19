@@ -687,10 +687,15 @@ function DashboardLayout() {
     menuItems = [...menuItems, { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }];
   }
 
-  const mostrarReposicion = reposicionBadge?.canView;
-  const totalReposiciones = (reposicionBadge?.counts?.ownPending || 0) + (reposicionBadge?.counts?.bossPending || 0);
+  const mostrarReposicion = Boolean(reposicionBadge?.canViewReposicionModule);
+  const mostrarReposicionPermanente = Boolean(
+    reposicionBadge?.permanentModuleAccess || reposicionBadge?.canViewAll
+  );
+  const totalReposiciones = mostrarReposicionPermanente
+    ? Number(reposicionBadge?.counts?.institutionalPending || 0)
+    : (reposicionBadge?.counts?.ownPending || 0) + (reposicionBadge?.counts?.bossPending || 0);
 
-  if (mostrarReposicion && totalReposiciones > 0) {
+  if (mostrarReposicion && (mostrarReposicionPermanente || totalReposiciones > 0)) {
     const reposicionItem = { 
       key: 'tiempo_reponer', 
       path: '/dashboard/tiempo-reponer', 
@@ -1262,4 +1267,3 @@ function DashboardLayout() {
 }
 
 export default DashboardLayout;
-

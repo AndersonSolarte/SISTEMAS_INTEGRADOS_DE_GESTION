@@ -788,14 +788,14 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
   const accessMode = access?.mode || 'sin_pendientes';
   const copy = ACCESS_COPY[accessMode] || ACCESS_COPY.sin_pendientes;
-  // El alcance global lo determina exclusivamente el backend según el rol.
-  const isAdminOrPlanningRole = ['administrador', 'planeacion_estrategica', 'gestion_informacion', 'planeacion_efectividad', 'autoevaluacion', 'registros_calificados_acreditacion'].includes(String(user?.role || '').toLowerCase());
-  const canManageAll = Boolean(access?.canManageAll) || isAdminOrPlanningRole;
+  // El backend resuelve el alcance nominativo; un rol general no convierte
+  // por si solo la vista de equipo en una vista institucional.
+  const canManageAll = Boolean(access?.canManageAll);
   const canValidateReposicion = Boolean(access?.canValidateReposicion) || canManageAll;
   const canManageTeamReposicion = Boolean(access?.canManageTeamReposicion);
-  const canViewAll = Boolean(access?.canViewAll) || isAdminOrPlanningRole;
-  const canViewReporteSalida = Boolean(access?.canViewReporteSalida) || canManageAll || isAdminOrPlanningRole;
-  const canViewEstadisticas = Boolean(access?.canViewEstadisticas) || canManageAll || isAdminOrPlanningRole;
+  const canViewAll = Boolean(access?.canViewAll);
+  const canViewReporteSalida = Boolean(access?.canViewReporteSalida);
+  const canViewEstadisticas = Boolean(access?.canViewEstadisticas);
   const availableReportModules = useMemo(() => REPORT_MODULES.filter((module) => (
     module.key === 'reporte_salida' ? canViewReporteSalida : canViewEstadisticas
   )), [canViewEstadisticas, canViewReporteSalida]);

@@ -20,7 +20,8 @@ import {
   DialogActions,
   TextField,
   MenuItem,
-  Alert
+  Alert,
+  CircularProgress
 } from '@mui/material';
 import { useSnackbar } from 'notistack';
 import api from '../services/api';
@@ -288,6 +289,7 @@ export default function TiempoReponer() {
   const [tabIndex, setTabIndex] = useState(0);
   const [misReposiciones, setMisReposiciones] = useState([]);
   const [equipoReposiciones, setEquipoReposiciones] = useState([]);
+  const [access, setAccess] = useState(undefined);
   const [loading, setLoading] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
   
@@ -322,9 +324,32 @@ export default function TiempoReponer() {
     }
   };
 
+  const fetchAccess = async () => {
+    try {
+      const res = await api.get('/reporte-salida/seguimiento/badge');
+      const nextAccess = res.data?.data?.access || null;
+      setAccess(nextAccess);
+      return nextAccess;
+    } catch (_) {
+      setAccess(null);
+      return null;
+    }
+  };
+
   useEffect(() => {
-    setLoading(true);
-    Promise.all([fetchMisReposiciones(), fetchEquipoReposiciones()]).finally(() => setLoading(false));
+    const loadReposiciones = async () => {
+      setLoading(true);
+      const nextAccess = await fetchAccess();
+      if (nextAccess?.canViewReposicionModule) {
+        await Promise.all([fetchMisReposiciones(), fetchEquipoReposiciones()]);
+      } else {
+        setMisReposiciones([]);
+        setEquipoReposiciones([]);
+      }
+      setLoading(false);
+    };
+
+    loadReposiciones();
   }, []);
 
   useEffect(() => {
@@ -483,10 +508,10 @@ export default function TiempoReponer() {
                 </TableCell>
                 {isEquipo && (
                   <TableCell>
-                    {row.estado === 'finalizada' ? (
+                    {access?.canManageReposicionModule ? (
                       <Button size="small" variant="outlined" onClick={() => handleUpdateClick(row)}>Gestionar</Button>
                     ) : (
-                      <Typography variant="caption" color="text.secondary">En proceso</Typography>
+                      <Typography variant="caption" color="text.secondary">Sin permisos</Typography>
                     )}
                   </TableCell>
                 )}
@@ -498,6 +523,17 @@ export default function TiempoReponer() {
     </TableContainer>
   );
 
+  const isGlobalView = Boolean(access?.canViewAll || access?.permanentModuleAccess);
+  const ownRows = isGlobalView ? [] : misReposiciones;
+
+  if (!loading && access !== undefined && !access?.canViewReposicionModule) {
+    return (
+      <Alert severity="warning">
+        No tiene permiso para consultar ni gestionar el módulo Tiempo por Reponer.
+      </Alert>
+    );
+  }
+
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
       <Typography variant="h5" sx={{ mb: 3, fontWeight: 700, color: '#0f172a' }}>
@@ -505,17 +541,22 @@ export default function TiempoReponer() {
       </Typography>
 
       <Paper sx={{ mb: 3, borderRadius: 2 }}>
-        {misReposiciones.length > 0 && equipoReposiciones.length === 0 && (
+        {isGlobalView && (
+          <Alert severity="info" sx={{ m: 2, mb: 0 }}>
+            Vista institucional: se muestran todas las solicitudes con tiempo pendiente por reponer.
+          </Alert>
+        )}
+        {ownRows.length > 0 && equipoReposiciones.length === 0 && (
           <Box sx={{ p: 3 }}>
-            {renderTable(misReposiciones, false)}
+            {renderTable(ownRows, false)}
           </Box>
         )}
-        {equipoReposiciones.length > 0 && misReposiciones.length === 0 && (
+        {equipoReposiciones.length > 0 && ownRows.length === 0 && (
           <Box sx={{ p: 3 }}>
             {renderTable(equipoReposiciones, true)}
           </Box>
         )}
-        {misReposiciones.length > 0 && equipoReposiciones.length > 0 && (
+        {ownRows.length > 0 && equipoReposiciones.length > 0 && (
           <>
             <Tabs
               value={tabIndex}
@@ -528,16 +569,20 @@ export default function TiempoReponer() {
               <Tab label="Equipo / Gestión" />
             </Tabs>
             <TabPanel value={tabIndex} index={0}>
-              {renderTable(misReposiciones, false)}
+              {renderTable(ownRows, false)}
             </TabPanel>
             <TabPanel value={tabIndex} index={1}>
               {renderTable(equipoReposiciones, true)}
             </TabPanel>
           </>
         )}
-        {misReposiciones.length === 0 && equipoReposiciones.length === 0 && (
+        {ownRows.length === 0 && equipoReposiciones.length === 0 && (
           <Box sx={{ p: 3 }}>
-             <Typography variant="body2" color="text.secondary" align="center">No hay reposiciones registradas.</Typography>
+             {loading ? (
+               <Stack direction="row" justifyContent="center"><CircularProgress size={24} /></Stack>
+             ) : (
+               <Typography variant="body2" color="text.secondary" align="center">No hay reposiciones registradas.</Typography>
+             )}
           </Box>
         )}
       </Paper>
