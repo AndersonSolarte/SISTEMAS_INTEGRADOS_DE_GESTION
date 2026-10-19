@@ -16,7 +16,8 @@ const {
   formatFirmaDuracionDetalle,
   buildAdminTraceDetail,
   getInitialApprovalSummary,
-  isGlobalReposicionViewer
+  isGlobalReposicionViewer,
+  buildReposicionModuleWhere
 } = require('../../controllers/reporteSalidaController');
 const {
   ensureReporteSalidaPdf,
@@ -61,6 +62,20 @@ test('solo las dos cuentas nominativas acceden al modulo de tiempo por reponer',
     if (previous === undefined) delete process.env.REPOSICION_GLOBAL_VIEWER_EMAILS;
     else process.env.REPOSICION_GLOBAL_VIEWER_EMAILS = previous;
   }
+});
+
+test('la bandeja de reposicion solo consulta solicitudes aprobadas con tiempo pendiente', () => {
+  const where = buildReposicionModuleWhere();
+
+  assert.equal(where.estado, 'finalizada');
+  assert.equal(where.reposicion_aplica, true);
+  assert.deepEqual(where.reposicion_estado[Op.in], ['pendiente', 'programada', 'incumplida']);
+
+  const includingCompleted = buildReposicionModuleWhere({ incluirCumplidas: true, userId: 25 });
+  assert.equal(includingCompleted.estado, 'finalizada');
+  assert.equal(includingCompleted.reposicion_aplica, true);
+  assert.equal(includingCompleted.user_id, 25);
+  assert.equal(Object.hasOwn(includingCompleted, 'reposicion_estado'), false);
 });
 
 test('el detalle narrativo conserva todo el texto y los saltos de linea', () => {

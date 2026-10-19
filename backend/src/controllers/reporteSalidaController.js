@@ -1813,11 +1813,19 @@ const canViewAusentismoModule = async (user) => {
   return userHasModulePermissionInDb(user, AUSENTISMO_VIEW_KEYS);
 };
 
-const pendingReposicionWhere = () => ({
-  estado: 'finalizada',
-  reposicion_aplica: true,
-  reposicion_estado: { [Op.in]: REPOSICION_PENDIENTE_ESTADOS }
-});
+const buildReposicionModuleWhere = ({ incluirCumplidas = false, userId = null } = {}) => {
+  const where = {
+    estado: 'finalizada',
+    reposicion_aplica: true
+  };
+  if (!incluirCumplidas) {
+    where.reposicion_estado = { [Op.in]: REPOSICION_PENDIENTE_ESTADOS };
+  }
+  if (userId !== null && userId !== undefined) where.user_id = userId;
+  return where;
+};
+
+const pendingReposicionWhere = () => buildReposicionModuleWhere();
 
 const ACADEMIC_PERSONAL_EMAIL = 'sbolanos@unicesmag.edu.co';
 const ACADEMIC_PROGRAM_REPOSICION_SCOPES = Object.freeze([
@@ -6648,6 +6656,9 @@ const actualizarReposicion = async (req, res) => {
     if (!solicitud.reposicion_aplica) {
       return res.status(400).json({ success: false, message: 'Esta solicitud no requiere reposicion de tiempo.' });
     }
+    if (solicitud.estado !== 'finalizada') {
+      return res.status(400).json({ success: false, message: 'La reposicion solo puede gestionarse cuando la solicitud haya finalizado su aprobacion.' });
+    }
 
     let nextEstado = sanitizeText(req.body?.estado, 40);
     const laboralProfile = getStoredReposicionLaboralProfile(solicitud);
@@ -10498,13 +10509,7 @@ const getReposicionesPropias = async (req, res) => {
       return res.status(403).json({ success: false, message: 'No tienes permiso para consultar este módulo.' });
     }
     const incluirCumplidas = req.query.incluir_cumplidas === 'true';
-    const where = {
-      user_id: req.user.id,
-      reposicion_aplica: true
-    };
-    if (!incluirCumplidas) {
-      where.reposicion_estado = { [Op.in]: REPOSICION_PENDIENTE_ESTADOS };
-    }
+    const where = buildReposicionModuleWhere({ incluirCumplidas, userId: req.user.id });
     const solicitudes = await ReporteSalidaSolicitud.findAll({
       where,
       order: [['created_at', 'DESC']]
@@ -10522,11 +10527,7 @@ const getReposicionesEquipo = async (req, res) => {
       return res.status(403).json({ success: false, message: 'No tienes permiso para consultar este módulo.' });
     }
     const incluirCumplidas = req.query.incluir_cumplidas === 'true';
-    const whereClause = { reposicion_aplica: true };
-
-    if (!incluirCumplidas) {
-      whereClause.reposicion_estado = { [Op.in]: REPOSICION_PENDIENTE_ESTADOS };
-    }
+    const whereClause = buildReposicionModuleWhere({ incluirCumplidas });
 
     const solicitudes = await ReporteSalidaSolicitud.findAll({
       where: whereClause,
@@ -10790,6 +10791,7 @@ module.exports = {
   getGroupInitialApprovalRecipients,
   isSingleHomogeneousGroup,
   isGlobalReposicionViewer,
+  buildReposicionModuleWhere,
   getStoredReposicionLaboralProfile,
   REPOSICION_LABORAL_PROFILES,
   REPOSICION_WORKDAY_MINUTES
