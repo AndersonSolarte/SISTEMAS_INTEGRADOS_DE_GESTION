@@ -189,6 +189,21 @@ function CopyChartButton({ targetRef, title = 'grafico', iconOnly = false, sx = 
         backgroundColor: '#ffffff',
         useCORS: true,
         logging: false,
+        onclone: (clonedDoc) => {
+          const chipRoots = clonedDoc.querySelectorAll('.MuiChip-root, [class*="MuiChip-root"]');
+          chipRoots.forEach((node) => {
+            node.style.overflow = 'visible';
+            node.style.maxWidth = 'none';
+          });
+          const chipLabels = clonedDoc.querySelectorAll('.MuiChip-label, [class*="MuiChip-label"]');
+          chipLabels.forEach((node) => {
+            node.style.overflow = 'visible';
+            node.style.textOverflow = 'clip';
+            node.style.whiteSpace = 'nowrap';
+            node.style.maxWidth = 'none';
+            node.style.display = 'inline-block';
+          });
+        },
         ignoreElements: (node) => {
           return (
             node?.hasAttribute?.('data-copy-ignore') ||
@@ -476,6 +491,40 @@ const compactNumber = (value) => {
   return numberFormat.format(numeric);
 };
 
+function ChartBadge({ children, label, color = 'primary', bgcolor, textColor, variant = 'filled', sx = {} }) {
+  const isPrimary = color === 'primary';
+  const defaultBg = isPrimary ? '#2563eb' : (bgcolor || color || '#e2e8f0');
+  const finalBg = variant === 'outlined' ? 'transparent' : (bgcolor || defaultBg);
+  const defaultColor = variant === 'outlined' ? (isPrimary ? '#1e40af' : color || '#0f172a') : (textColor || '#ffffff');
+  const border = variant === 'outlined' ? `1px solid ${isPrimary ? '#3b82f6' : color || '#cbd5e1'}` : (sx.border || 'none');
+
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        px: 1.4,
+        py: 0.38,
+        borderRadius: 99,
+        bgcolor: finalBg,
+        color: defaultColor,
+        border,
+        fontSize: 11,
+        fontWeight: 900,
+        lineHeight: 1.25,
+        whiteSpace: 'nowrap',
+        overflow: 'visible',
+        boxSizing: 'border-box',
+        ...sx
+      }}
+    >
+      {children !== undefined ? children : label}
+    </Box>
+  );
+}
+
 function PeriodStackTick({ x, y, payload }) {
   const [year, semester] = String(payload?.value || '').split('-');
   const semesterLabel = semester === '1' ? 'I' : semester === '2' ? 'II' : semester || '—';
@@ -540,7 +589,7 @@ function PopulationStackedChart({ data, groupIndex, scope, scopeBadgeLabel }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15.5 }}>{configuration.title}</Typography>
           <Typography sx={{ color: '#475569', fontSize: 11.8, fontWeight: 500 }}>{configuration.subtitle}</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <ChartBadge>{scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')}</ChartBadge>
       </Stack>
 
       {!chartData.length ? (
@@ -600,7 +649,7 @@ function PopulationTrendChart({ data, groupIndex, scope, scopeBadgeLabel }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15.5 }}>Análisis histórico</Typography>
           <Typography sx={{ color: '#475569', fontSize: 11.8, fontWeight: 500 }}>{configuration.subtitle}</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <ChartBadge>{scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')}</ChartBadge>
       </Stack>
       <Box sx={{ px: 2.2, py: 0.8, bgcolor: '#082b66', color: '#fff', textAlign: 'center', fontSize: 12, fontWeight: 950, letterSpacing: 0.5 }}>LÍNEAS DE TENDENCIA</Box>
 
@@ -663,7 +712,7 @@ function PopulationIndicatorTrendBoard({ data, scope, scopeBadgeLabel }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Tablero de indicadores con tendencias</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Valores por período y variación acumulada del primero al último período visible.</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <ChartBadge>{scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')}</ChartBadge>
       </Stack>
       <Box sx={{ px: { xs: 1, md: 2 }, pb: 2, overflowX: 'auto' }}>
         <Box sx={{ minWidth: 850, border: '1px solid #d8e3f0', borderRadius: 2.5, overflow: 'hidden', boxShadow: '0 8px 24px rgba(15,43,86,.06)' }}>
@@ -731,7 +780,7 @@ function PopulationShadedTrendChart({ data, scope, scopeBadgeLabel }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Líneas de tendencia con áreas sombreadas</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Evolución comparada de inscritos, admitidos y primer curso por período.</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <ChartBadge>{scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')}</ChartBadge>
       </Stack>
       <Box sx={{ px: { xs: 0.5, md: 1.4 }, pb: 1.2, overflow: 'hidden' }}>
         <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: '100%', height: 'auto', display: 'block', maxHeight: 420 }}>
@@ -804,7 +853,7 @@ function PopulationBubbleMatrixChart({ data, scope, scopeBadgeLabel }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15.5 }}>Círculos proporcionales</Typography>
           <Typography sx={{ color: '#475569', fontSize: 11.8, fontWeight: 500 }}>El área de cada círculo representa la magnitud del indicador en cada período.</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <ChartBadge>{scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')}</ChartBadge>
       </Stack>
       <Box sx={{ px: { xs: 0.5, md: 1.4 }, pb: 1.2, overflow: 'hidden' }}>
         <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: '100%', height: 'auto', display: 'block', maxHeight: 390 }}>
@@ -863,7 +912,7 @@ function PopulationPeriodCards({ data, scope, scopeBadgeLabel }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Tarjetas por periodo académico</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Lectura individual del flujo de ingreso y su tasa de absorción.</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <ChartBadge>{scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')}</ChartBadge>
       </Stack>
       <Box sx={{ px: { xs: 1.2, md: 2 }, pb: 2, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(238px, 100%), 1fr))', gap: 1.45 }}>
         {rows.map((row) => {
@@ -940,7 +989,7 @@ function PopulationStudentJourneyChart({ data, scope, scopeBadgeLabel }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Camino del estudiante</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Trayectoria por período desde la inscripción hasta el ingreso a primer curso.</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <ChartBadge>{scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')}</ChartBadge>
       </Stack>
       <Box sx={{ px: { xs: 0.5, md: 1.4 }, pb: 1.1, overflow: 'hidden' }}>
         <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: '100%', height: 'auto', display: 'block', maxHeight: 390 }}>
@@ -1022,7 +1071,7 @@ function PopulationAnnualTimelineChart({ data, scope, scopeBadgeLabel }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Historia por período en tarjetas</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Secuencia cronológica del recorrido de ingreso por período académico.</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <ChartBadge>{scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')}</ChartBadge>
       </Stack>
       <Box sx={{ px: { xs: 0.5, md: 1.4 }, pb: 1.1, overflow: 'hidden' }}>
         <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: '100%', height: 'auto', display: 'block', maxHeight: 390 }}>
@@ -1117,8 +1166,8 @@ function PopulationConversionChart({ data, scope, scopeBadgeLabel }) {
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Inscritos representa la base del 100% para analizar el avance del proceso.</Typography>
         </Box>
         <Stack direction="row" spacing={0.8} alignItems="center">
-          <Chip label="Inscritos = 100%" size="small" sx={{ bgcolor: '#eaf1fb', color: '#123b7a', fontWeight: 950 }} />
-          <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+          <ChartBadge bgcolor="#eaf1fb" textColor="#123b7a" sx={{ fontWeight: 950 }}>Inscritos = 100%</ChartBadge>
+          <ChartBadge>{scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')}</ChartBadge>
         </Stack>
       </Stack>
       <Box sx={{ px: { xs: 0.5, md: 1.4 }, overflow: 'hidden' }}>
@@ -1163,7 +1212,7 @@ function PopulationConversionChart({ data, scope, scopeBadgeLabel }) {
           <Paper key={comment.title} elevation={0} sx={{ p: 1.25, border: `1px solid ${comment.color}35`, borderLeft: `4px solid ${comment.color}`, borderRadius: 2, bgcolor: `${comment.color}08` }}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
               <Typography sx={{ color: comment.color, fontSize: 10, fontWeight: 950 }}>{comment.title}</Typography>
-              <Chip label={comment.value} size="small" sx={{ height: 22, bgcolor: '#fff', color: comment.color, fontSize: 10, fontWeight: 950 }} />
+              <ChartBadge bgcolor="#ffffff" textColor={comment.color} sx={{ height: 22, px: 1, fontSize: 10, fontWeight: 950, border: `1px solid ${comment.color}40` }}>{comment.value}</ChartBadge>
             </Stack>
             <Typography sx={{ mt: 0.65, color: '#000000', fontSize: 11, fontWeight: 700, lineHeight: 1.35 }}>{comment.text}</Typography>
           </Paper>
@@ -1208,7 +1257,7 @@ function PopulationStackedAreaChart({ data, scope, scopeBadgeLabel }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Área apilada por periodo</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Composición semestral del flujo de ingreso en una sola superficie comparativa.</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <ChartBadge>{scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')}</ChartBadge>
       </Stack>
       <Box sx={{ px: { xs: 0.4, md: 1.2 }, pb: 1.2, overflow: 'hidden' }}>
         <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: '100%', height: 'auto', display: 'block', maxHeight: 470 }}>
@@ -1271,7 +1320,7 @@ function PopulationFunnelChart({ data, scope, scopeBadgeLabel }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15.5 }}>Trayectoria de acceso por período</Typography>
           <Typography sx={{ color: '#475569', fontSize: 11.8, fontWeight: 500 }}>Comparación visual de inscritos, admitidos y estudiantes que ingresan a primer curso.</Typography>
         </Box>
-        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <ChartBadge>{scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')}</ChartBadge>
       </Stack>
       <Box sx={{ px: 2.2, py: 0.72, bgcolor: '#082b66', color: '#fff', textAlign: 'center', fontSize: 11.5, fontWeight: 950, letterSpacing: 0.7 }}>EMBUDO COMPARATIVO</Box>
 
@@ -1343,7 +1392,7 @@ function PopulationSingleMetricAlternative({ data, groupIndex, scope, type }) {
   const header = (title, subtitle) => (
     <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: { xs: 1.5, md: 2.2 }, py: 1.45 }}>
       <Box><Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>{title}</Typography><Typography sx={{ color: '#64748b', fontSize: 11.5 }}>{subtitle}</Typography></Box>
-      <Chip label={scopeLabel} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+      <ChartBadge>{scopeLabel}</ChartBadge>
     </Stack>
   );
 
@@ -1361,7 +1410,7 @@ function PopulationSingleMetricAlternative({ data, groupIndex, scope, type }) {
             return (
               <Paper key={row.periodo} elevation={0} sx={{ p: 1.5, border: '1px solid #d3deeb', borderTop: `5px solid ${color}`, borderRadius: 2.2, bgcolor: '#fff', boxShadow: '0 6px 18px rgba(15,43,86,.065)' }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Chip label={`${year}-${semester === '1' ? 'I' : semester === '2' ? 'II' : semester}`} size="small" sx={{ bgcolor: soft, color, fontWeight: 950 }} />
+                  <ChartBadge bgcolor={soft} textColor={color} sx={{ fontWeight: 950 }}>{`${year}-${semester === '1' ? 'I' : semester === '2' ? 'II' : semester}`}</ChartBadge>
                   <Typography sx={{ color: change === null ? '#64748b' : positive ? '#15803d' : '#dc2626', fontSize: 10, fontWeight: 950 }}>{change === null ? 'Periodo base' : `${positive ? '▲' : '▼'} ${Math.abs(change).toLocaleString('es-CO', { maximumFractionDigits: 1 })}%`}</Typography>
                 </Stack>
                 <Typography sx={{ mt: 1.4, color, fontSize: 24, fontWeight: 950, letterSpacing: -0.7 }}>{numberFormat.format(value)}</Typography>
@@ -1587,7 +1636,7 @@ function ProgramSummaryTable({ title, rows, color }) {
       <Box sx={{ px: 2, py: 1.2, bgcolor: color, color: '#fff' }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Typography sx={{ fontWeight: 900, fontSize: 13 }}>{title}</Typography>
-          <Chip size="small" label={`${numberFormat.format(total)} registros`} sx={{ bgcolor: 'rgba(255,255,255,.18)', color: '#fff', fontWeight: 800 }} />
+          <ChartBadge bgcolor="rgba(255,255,255,.22)" textColor="#fff" sx={{ fontWeight: 800 }}>{`${numberFormat.format(total)} registros`}</ChartBadge>
         </Stack>
       </Box>
       <TableContainer sx={{ maxHeight: 480 }}>
@@ -2236,7 +2285,7 @@ function MacroRegionSubMap({ rows, features, bbox, isRegional }) {
                   <TableCell align="right" sx={{ fontWeight: 800, fontSize: 11.5 }}>{reg.muniCount}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 950, fontSize: 11.5, color: '#1e3a8a' }}>{reg.total}</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 900, fontSize: 11 }}>
-                    <Chip label={index + 1} size="small" sx={{ height: 18, minWidth: 18, fontSize: 9.5, fontWeight: 900, bgcolor: `${reg.fill}20`, color: reg.color }} />
+                    <ChartBadge bgcolor={`${reg.fill}20`} textColor={reg.color} sx={{ height: 18, minWidth: 18, px: 0.8, fontSize: 9.5, fontWeight: 900 }}>{index + 1}</ChartBadge>
                   </TableCell>
                 </TableRow>
               ))}
@@ -2579,7 +2628,7 @@ function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationa
               </Tabs>
             )}
 
-            <Chip size="small" label={`${numberFormat.format(rows.reduce((acc, row) => acc + row.total, 0))} programas`} sx={{ bgcolor: `${color}14`, color, fontWeight: 900 }} />
+            <ChartBadge bgcolor={`${color}14`} textColor={color} sx={{ fontWeight: 900, px: 1.4, py: 0.4 }}>{`${numberFormat.format(rows.reduce((acc, row) => acc + row.total, 0))} programas`}</ChartBadge>
             <CopyChartButton targetRef={mapContainerRef} title={title} />
           </Stack>
         </Stack>
@@ -2779,7 +2828,7 @@ function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationa
                         <Box sx={{ px: 1.4, py: 0.8, bgcolor: `${color}10`, borderBottom: '1px solid #edf2f7' }}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center">
                             <Typography sx={{ fontSize: 12, fontWeight: 950, color: '#0f172a' }}>{dept.name}</Typography>
-                            <Chip size="small" label={`${dept.total} prog`} sx={{ height: 20, bgcolor: color, color: '#fff', fontWeight: 900, fontSize: 10 }} />
+                            <ChartBadge bgcolor={color} textColor="#fff" sx={{ height: 20, px: 1, fontSize: 10, fontWeight: 900 }}>{`${dept.total} prog`}</ChartBadge>
                           </Stack>
                         </Box>
                         <Stack spacing={0.4} sx={{ p: 1, bgcolor: '#fff' }}>
@@ -2946,8 +2995,13 @@ function PanelGroup({ title, icon: Icon, color, items }) {
 function SequenceGroup({ title, icon: Icon, color, items }) {
   return (
     <Box sx={{ position: 'relative', minWidth: 0, pt: { xs: 13, lg: 15 } }}>
-      <Box sx={{ position: 'absolute', zIndex: 3, top: 0, left: '50%', transform: 'translateX(-50%)', width: { xs: 72, lg: 86 }, height: { xs: 82, lg: 98 }, display: 'grid', placeItems: 'center', bgcolor: color, color: '#fff', clipPath: 'polygon(25% 5%,75% 5%,100% 50%,75% 95%,25% 95%,0 50%)', filter: 'drop-shadow(0 7px 8px rgba(15,23,42,.18))' }}>
-        <Icon sx={{ fontSize: { xs: 31, lg: 39 } }} />
+      <Box sx={{ position: 'absolute', zIndex: 3, top: 0, left: '50%', transform: 'translateX(-50%)', width: { xs: 72, lg: 86 }, height: { xs: 82, lg: 98 }, filter: 'drop-shadow(0 7px 8px rgba(15,23,42,.18))' }}>
+        <Box component="svg" viewBox="0 0 86 98" sx={{ width: '100%', height: '100%', display: 'block' }}>
+          <polygon points="21.5,5 64.5,5 86,49 64.5,93 21.5,93 0,49" fill={color} />
+        </Box>
+        <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#fff' }}>
+          <Icon sx={{ fontSize: { xs: 31, lg: 39 } }} />
+        </Box>
       </Box>
       <Box sx={{ position: 'absolute', zIndex: 2, top: { xs: 72, lg: 88 }, left: '50%', width: 2, height: { xs: 28, lg: 33 }, bgcolor: color, transform: 'translateX(-50%)' }} />
       <Box sx={{ position: 'absolute', zIndex: 4, top: { xs: 94, lg: 112 }, left: '50%', width: 17, height: 17, borderRadius: '50%', bgcolor: color, border: '3px solid #fff', boxShadow: `0 0 0 1px ${color}`, transform: 'translateX(-50%)' }} />
@@ -3067,7 +3121,9 @@ function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChan
           <Box sx={{ mb: 1.5, textAlign: 'center' }}>
             <Typography sx={{ color: '#082b66', fontSize: { xs: 15, lg: 18 }, fontWeight: 950 }}>{analysisTitle}</Typography>
             <Typography sx={{ color: '#475569', fontSize: 11.5, fontWeight: 500 }}>Indicadores de la oferta académica calculados según los filtros aplicados</Typography>
-            <Chip label={`${numberFormat.format(summary.total)} programas analizados`} sx={{ mt: 1, bgcolor: '#082b66', color: '#fff', fontWeight: 900 }} />
+            <ChartBadge bgcolor="#082b66" textColor="#ffffff" sx={{ mt: 1, px: 2.2, py: 0.6, fontSize: 12 }}>
+              {`${numberFormat.format(summary.total)} programas analizados`}
+            </ChartBadge>
           </Box>
           <Box sx={{ position: 'relative' }}>
             <Box sx={{ display: { xs: 'none', lg: 'block' }, position: 'absolute', zIndex: 0, top: 116, left: '8%', right: '8%', height: 2, bgcolor: '#aeb9c8' }} />
@@ -3082,9 +3138,14 @@ function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChan
             <Box sx={{ position: 'absolute', left: { xs: 6, md: 12, lg: 18 }, zIndex: 2, width: { xs: 72, md: 88, lg: 104 }, height: { xs: 72, md: 88, lg: 104 }, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: '#082b66', color: '#fff', boxShadow: '0 8px 20px rgba(8,43,102,.24)' }}>
               <SchoolRoundedIcon sx={{ fontSize: { xs: 38, md: 48, lg: 57 } }} />
             </Box>
-            <Box sx={{ ml: { xs: 6, md: 8, lg: 10 }, width: 'calc(100% - 35px)', height: { xs: 58, lg: 72 }, pl: { xs: 6, md: 8, lg: 10 }, pr: { xs: 2, md: 7 }, display: 'flex', alignItems: 'center', gap: { xs: 1.4, lg: 2.2 }, bgcolor: '#082b66', color: '#fff', clipPath: 'polygon(0 0, 95% 0, 100% 50%, 95% 100%, 0 100%)', boxShadow: '0 7px 18px rgba(8,43,102,.18)' }}>
-              <Typography sx={{ fontSize: { xs: 11.5, md: 15, lg: 18 }, fontWeight: 950 }}>TOTAL PROGRAMAS</Typography>
-              <Box sx={{ minWidth: { xs: 66, md: 100, lg: 125 }, ml: { xs: 'auto', md: 2 }, mr: { md: 'auto' }, px: 1.4, py: { xs: 0.55, lg: 0.8 }, bgcolor: '#fff', color: '#082b66', border: '1px solid #afbdd0', textAlign: 'center', fontSize: { xs: 19, md: 25, lg: 30 }, lineHeight: 1, fontWeight: 950 }}>{numberFormat.format(summary.total)}</Box>
+            <Box sx={{ position: 'relative', ml: { xs: 6, md: 8, lg: 10 }, width: 'calc(100% - 35px)', height: { xs: 58, lg: 72 }, pl: { xs: 6, md: 8, lg: 10 }, pr: { xs: 2, md: 7 }, display: 'flex', alignItems: 'center' }}>
+              <Box component="svg" viewBox="0 0 1000 100" preserveAspectRatio="none" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0, filter: 'drop-shadow(0 7px 18px rgba(8,43,102,.18))' }}>
+                <polygon points="0,0 950,0 1000,50 950,100 0,100" fill="#082b66" />
+              </Box>
+              <Box sx={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', width: '100%', gap: { xs: 1.4, lg: 2.2 }, color: '#fff' }}>
+                <Typography sx={{ fontSize: { xs: 11.5, md: 15, lg: 18 }, fontWeight: 950 }}>TOTAL PROGRAMAS</Typography>
+                <Box sx={{ minWidth: { xs: 66, md: 100, lg: 125 }, ml: { xs: 'auto', md: 2 }, mr: { md: 'auto' }, px: 1.4, py: { xs: 0.55, lg: 0.8 }, bgcolor: '#fff', color: '#082b66', border: '1px solid #afbdd0', textAlign: 'center', fontSize: { xs: 19, md: 25, lg: 30 }, lineHeight: 1, fontWeight: 950 }}>{numberFormat.format(summary.total)}</Box>
+              </Box>
             </Box>
           </Box>
 
