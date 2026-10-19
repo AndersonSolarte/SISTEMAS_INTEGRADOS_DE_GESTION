@@ -1815,6 +1815,11 @@ const buildReposicionModuleWhere = ({ incluirCumplidas = false, userId = null } 
   };
   if (!incluirCumplidas) {
     where.reposicion_estado = { [Op.in]: REPOSICION_PENDIENTE_ESTADOS };
+    where[Op.and] = [
+      sequelize.literal(
+        'COALESCE("reposicion_minutos", "tiempo_solicitado_minutos", 0) > COALESCE("reposicion_minutos_pagados", 0)'
+      )
+    ];
   }
   if (userId !== null && userId !== undefined) where.user_id = userId;
   return where;
@@ -2089,6 +2094,8 @@ const resolveSeguimientoModuleVisibility = ({
   globalReposicionViewer = false,
   canViewReporteSalidaByPermission = false,
   canViewEstadisticasByPermission = false,
+  ownPending = 0,
+  institutionalPending = 0,
   bossPending = 0
 } = {}) => ({
   canViewAll: Boolean(
@@ -2098,7 +2105,11 @@ const resolveSeguimientoModuleVisibility = ({
   ),
   canViewReporteSalida: Boolean(globalReposicionViewer || canViewReporteSalidaByPermission),
   canViewEstadisticas: Boolean(globalReposicionViewer || canViewEstadisticasByPermission),
-  canViewReposicionModule: Boolean(globalReposicionViewer || bossPending > 0)
+  canViewReposicionModule: Boolean(
+    ownPending > 0
+    || bossPending > 0
+    || (globalReposicionViewer && institutionalPending > 0)
+  )
 });
 
 const resolveSeguimientoAccess = async (user) => {
@@ -2137,6 +2148,8 @@ const resolveSeguimientoAccess = async (user) => {
     globalReposicionViewer,
     canViewReporteSalidaByPermission,
     canViewEstadisticasByPermission,
+    ownPending,
+    institutionalPending,
     bossPending
   });
 
@@ -2162,6 +2175,7 @@ const resolveSeguimientoAccess = async (user) => {
     canViewReporteSalidaByPermission,
     canViewEstadisticasByPermission,
     canViewAll,
+    canViewAllReposiciones: globalReposicionViewer,
     permanentModuleAccess: globalReposicionViewer,
     academicAssignmentScope: hasInstitutionalReposicionScope,
     canManageAll,
@@ -6730,8 +6744,10 @@ const actualizarReposicion = async (req, res) => {
     });
     
     const actorName = req.user.nombre || 'Gestion del Talento Humano';
+    const actorEmail = normalizeEmail(req.user.email);
+    const actorLabel = actorEmail ? `${actorName} <${actorEmail}>` : actorName;
     const msgComentario = observacionNueva ? ` - "${observacionNueva}"` : '';
-    const entradaLog = `[${formattedTime}] ${actorName}: Abono ${abono.label} (${minutosAbonados} minutos)${msgComentario}`;
+    const entradaLog = `[${formattedTime}] ${actorLabel}: Abono ${abono.label} (${minutosAbonados} minutos)${msgComentario}`;
     
     observacionAcumulada = observacionAcumulada 
       ? `${observacionAcumulada}\n${entradaLog}`
@@ -10514,9 +10530,6 @@ const procesarRechazoGrupo = async (req, res) => {
 
 const getReposicionesPropias = async (req, res) => {
   try {
-    if (!isGlobalReposicionViewer(req.user)) {
-      return res.status(403).json({ success: false, message: 'No tienes permiso para consultar este módulo.' });
-    }
     const incluirCumplidas = req.query.incluir_cumplidas === 'true';
     const where = buildReposicionModuleWhere({ incluirCumplidas, userId: req.user.id });
     const solicitudes = await ReporteSalidaSolicitud.findAll({
@@ -10538,7 +10551,7 @@ const getReposicionesEquipo = async (req, res) => {
     }
     const incluirCumplidas = req.query.incluir_cumplidas === 'true';
     const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
-    const whereClause = access.canViewAll
+    const whereClause = access.canViewAllReposiciones
       ? buildReposicionModuleWhere({ incluirCumplidas })
       : {
         ...buildReposicionModuleWhere({ incluirCumplidas }),

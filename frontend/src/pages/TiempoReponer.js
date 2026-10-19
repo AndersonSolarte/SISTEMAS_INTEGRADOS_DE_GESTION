@@ -375,24 +375,21 @@ export default function TiempoReponer() {
   };
 
   useEffect(() => {
-    const loadReposiciones = async () => {
-      setLoading(true);
+    const loadReposiciones = async (showLoading = false) => {
+      if (showLoading) setLoading(true);
       const nextAccess = await fetchAccess();
       if (nextAccess?.canViewReposicionModule) {
-        if (nextAccess?.canViewAll || nextAccess?.permanentModuleAccess) {
-          await Promise.all([fetchMisReposiciones(), fetchEquipoReposiciones()]);
-        } else {
-          setMisReposiciones([]);
-          await fetchEquipoReposiciones();
-        }
+        await Promise.all([fetchMisReposiciones(), fetchEquipoReposiciones()]);
       } else {
         setMisReposiciones([]);
         setEquipoReposiciones([]);
       }
-      setLoading(false);
+      if (showLoading) setLoading(false);
     };
 
-    loadReposiciones();
+    loadReposiciones(true);
+    const timer = window.setInterval(() => loadReposiciones(false), 30000);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -447,8 +444,14 @@ export default function TiempoReponer() {
       if (res.data.success) {
         enqueueSnackbar('Reposición actualizada', { variant: 'success' });
         setOpenDialog(false);
-        fetchEquipoReposiciones();
-        fetchMisReposiciones();
+        const nextAccess = await fetchAccess();
+        if (nextAccess?.canViewReposicionModule) {
+          await Promise.all([fetchEquipoReposiciones(), fetchMisReposiciones()]);
+        } else {
+          setEquipoReposiciones([]);
+          setMisReposiciones([]);
+        }
+        window.dispatchEvent(new CustomEvent('reposicion:updated'));
       }
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error al actualizar', { variant: 'error' });
@@ -566,7 +569,7 @@ export default function TiempoReponer() {
     </TableContainer>
   );
 
-  const isGlobalView = Boolean(access?.canViewAll || access?.permanentModuleAccess);
+  const isGlobalView = Boolean(access?.canViewAllReposiciones);
   const ownSourceRows = useMemo(
     () => (isGlobalView ? [] : misReposiciones),
     [isGlobalView, misReposiciones]
@@ -593,8 +596,8 @@ export default function TiempoReponer() {
 
   if (!loading && access !== undefined && !access?.canViewReposicionModule) {
     return (
-      <Alert severity="warning">
-        No tiene permiso para consultar ni gestionar el módulo Tiempo por Reponer.
+      <Alert severity="info">
+        No tiene reposiciones pendientes propias ni de su equipo de trabajo.
       </Alert>
     );
   }
@@ -613,7 +616,7 @@ export default function TiempoReponer() {
         )}
         {!isGlobalView && access?.canViewReposicionModule && (
           <Alert severity="info" sx={{ m: 2, mb: 0 }}>
-            Vista de equipo: se muestran únicamente las solicitudes aprobadas de sus colaboradores con tiempo pendiente por reponer.
+            Se muestran sus reposiciones y las de sus colaboradores con tiempo pendiente por reponer.
           </Alert>
         )}
         {access?.canViewReposicionModule && (
@@ -678,8 +681,8 @@ export default function TiempoReponer() {
               textColor="primary"
               sx={{ borderBottom: 1, borderColor: 'divider' }}
             >
-              <Tab label="Mis Reposiciones" />
-              <Tab label="Equipo / Gestión" />
+              <Tab label="Mis reposiciones" />
+              <Tab label="Reposiciones de mi equipo" />
             </Tabs>
             <TabPanel value={tabIndex} index={0}>
               {renderTable(ownRows, false)}

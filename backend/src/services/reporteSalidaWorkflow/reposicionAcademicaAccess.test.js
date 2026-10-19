@@ -71,12 +71,14 @@ test('la bandeja de reposicion solo consulta solicitudes aprobadas con tiempo pe
   assert.equal(where.estado, 'finalizada');
   assert.equal(where.reposicion_aplica, true);
   assert.deepEqual(where.reposicion_estado[Op.in], ['pendiente', 'programada', 'incumplida']);
+  assert.equal(where[Op.and].length, 1);
 
   const includingCompleted = buildReposicionModuleWhere({ incluirCumplidas: true, userId: 25 });
   assert.equal(includingCompleted.estado, 'finalizada');
   assert.equal(includingCompleted.reposicion_aplica, true);
   assert.equal(includingCompleted.user_id, 25);
   assert.equal(Object.hasOwn(includingCompleted, 'reposicion_estado'), false);
+  assert.equal(Object.hasOwn(includingCompleted, Op.and), false);
 });
 
 test('un jefe sin permiso ve tiempo por reponer pero no el tablero institucional', () => {
@@ -96,6 +98,24 @@ test('un usuario con permiso explicito puede ver el tablero institucional', () =
   assert.equal(visibility.canViewReporteSalida, true);
   assert.equal(visibility.canViewAll, true);
   assert.equal(visibility.canViewReposicionModule, false);
+});
+
+test('un colaborador ve el modulo mientras tenga reposicion propia pendiente', () => {
+  const visibility = resolveSeguimientoModuleVisibility({ ownPending: 2 });
+
+  assert.equal(visibility.canViewReposicionModule, true);
+  assert.equal(visibility.canViewAll, false);
+});
+
+test('la cuenta global solo ve el modulo cuando existen reposiciones institucionales pendientes', () => {
+  assert.equal(resolveSeguimientoModuleVisibility({
+    globalReposicionViewer: true,
+    institutionalPending: 0
+  }).canViewReposicionModule, false);
+  assert.equal(resolveSeguimientoModuleVisibility({
+    globalReposicionViewer: true,
+    institutionalPending: 4
+  }).canViewReposicionModule, true);
 });
 
 test('el detalle narrativo conserva todo el texto y los saltos de linea', () => {

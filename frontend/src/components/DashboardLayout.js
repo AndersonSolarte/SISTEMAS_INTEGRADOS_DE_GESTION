@@ -161,10 +161,22 @@ function DashboardLayout() {
   }, [refrescarBadgePlanAccion, refrescarEjecucionAutoevaluacion, refrescarBadgeReposicion, refrescarLegalizaciones, refrescarBadgeJuridica, location.pathname]);
 
   useEffect(() => {
+    const handleReposicionUpdated = () => refrescarBadgeReposicion();
+    window.addEventListener('reposicion:updated', handleReposicionUpdated);
+    return () => window.removeEventListener('reposicion:updated', handleReposicionUpdated);
+  }, [refrescarBadgeReposicion]);
+
+  useEffect(() => {
     if (!user) return undefined;
     const timer = window.setInterval(refrescarEjecucionAutoevaluacion, 30000);
     return () => window.clearInterval(timer);
   }, [user, refrescarEjecucionAutoevaluacion]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    const timer = window.setInterval(refrescarBadgeReposicion, 30000);
+    return () => window.clearInterval(timer);
+  }, [user, refrescarBadgeReposicion]);
 
   const normalizeMenuByBlocks = (items) => {
     if (!Array.isArray(items)) return [];
@@ -688,14 +700,13 @@ function DashboardLayout() {
   }
 
   const mostrarReposicion = Boolean(reposicionBadge?.canViewReposicionModule);
-  const mostrarReposicionPermanente = Boolean(
-    reposicionBadge?.permanentModuleAccess || reposicionBadge?.canViewAll
-  );
-  const totalReposiciones = mostrarReposicionPermanente
+  const vistaGlobalReposicion = Boolean(reposicionBadge?.canViewAllReposiciones);
+  const totalReposiciones = vistaGlobalReposicion
     ? Number(reposicionBadge?.counts?.institutionalPending || 0)
-    : Number(reposicionBadge?.counts?.bossPending || 0);
+    : Number(reposicionBadge?.counts?.ownPending || 0)
+      + Number(reposicionBadge?.counts?.bossPending || 0);
 
-  if (mostrarReposicion && (mostrarReposicionPermanente || totalReposiciones > 0)) {
+  if (mostrarReposicion && totalReposiciones > 0) {
     const reposicionItem = { 
       key: 'tiempo_reponer', 
       path: '/dashboard/tiempo-reponer', 
