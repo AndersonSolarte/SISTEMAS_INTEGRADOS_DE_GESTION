@@ -1669,6 +1669,7 @@ const sendControlledCopyRejectionEmail = async ({ solicitudes, actorName, actorR
 const SEGUIMIENTO_REPORTE_MANAGE_KEYS = ['seguimiento_reportes_rrhh', 'recurso_humano_seguimiento'];
 const REPORTE_SALIDA_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_MANAGE_KEYS, 'recurso_humano_reporte_salida'];
 const AUSENTISMO_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_MANAGE_KEYS, 'recurso_humano_indicadores_ausentismo'];
+const REPOSICION_INSTITUTIONAL_VIEW_KEYS = ['recurso_humano_tiempo_reponer'];
 
 const userHasAnyRecursoHumanoPermission = (user = {}, keys = []) => {
   const permissionLists = [
@@ -1823,6 +1824,12 @@ const buildReposicionModuleWhere = ({ incluirCumplidas = false, userId = null } 
   }
   if (userId !== null && userId !== undefined) where.user_id = userId;
   return where;
+};
+
+const canViewInstitutionalReposicionModule = async (user) => {
+  if (!user) return false;
+  if (userHasAnyRecursoHumanoPermission(user, REPOSICION_INSTITUTIONAL_VIEW_KEYS)) return true;
+  return userHasModulePermissionInDb(user, REPOSICION_INSTITUTIONAL_VIEW_KEYS);
 };
 
 const pendingReposicionWhere = () => buildReposicionModuleWhere();
@@ -2092,6 +2099,7 @@ const bossPendingReposicionWhere = (user, academicAuthorityUserIds = []) => ({
 
 const resolveSeguimientoModuleVisibility = ({
   globalReposicionViewer = false,
+  canViewInstitutionalReposicionByPermission = false,
   canViewReporteSalidaByPermission = false,
   canViewEstadisticasByPermission = false,
   ownPending = 0,
@@ -2108,12 +2116,14 @@ const resolveSeguimientoModuleVisibility = ({
   canViewReposicionModule: Boolean(
     ownPending > 0
     || bossPending > 0
-    || (globalReposicionViewer && institutionalPending > 0)
+    || ((globalReposicionViewer || canViewInstitutionalReposicionByPermission) && institutionalPending > 0)
   )
 });
 
 const resolveSeguimientoAccess = async (user) => {
   const globalReposicionViewer = isGlobalReposicionViewer(user);
+  const canViewInstitutionalReposicionByPermission = await canViewInstitutionalReposicionModule(user);
+  const institutionalReposicionViewer = globalReposicionViewer || canViewInstitutionalReposicionByPermission;
   const isAcademicInstitutional = isAcademicInstitutionalAccount(user);
   const isAcademicProgramInstitutional = isAcademicProgramInstitutionalAccount(user);
   const isFinancialInstitutional = isFinancialReposicionAccount(user);
@@ -2133,7 +2143,7 @@ const resolveSeguimientoAccess = async (user) => {
     canViewAusentismoModule(user),
     ReporteSalidaSolicitud.count({ where: ownPendingReposicionWhere(user) }),
     ReporteSalidaSolicitud.count({ where: bossPendingReposicionWhere(user, academicAuthorityUserIds) }),
-    globalReposicionViewer
+    institutionalReposicionViewer
       ? ReporteSalidaSolicitud.count({ where: pendingReposicionWhere() })
       : Promise.resolve(0)
   ]);
@@ -2146,6 +2156,7 @@ const resolveSeguimientoAccess = async (user) => {
     canViewReposicionModule
   } = resolveSeguimientoModuleVisibility({
     globalReposicionViewer,
+    canViewInstitutionalReposicionByPermission,
     canViewReporteSalidaByPermission,
     canViewEstadisticasByPermission,
     ownPending,
@@ -2169,14 +2180,15 @@ const resolveSeguimientoAccess = async (user) => {
   return {
     canView: canViewReporteSalida || canViewEstadisticas,
     canViewReposicionModule,
-    canManageReposicionModule: canViewReposicionModule,
+    canManageReposicionModule: globalReposicionViewer || bossPending > 0,
     canViewReporteSalida,
     canViewEstadisticas,
     canViewReporteSalidaByPermission,
     canViewEstadisticasByPermission,
     canViewAll,
-    canViewAllReposiciones: globalReposicionViewer,
-    permanentModuleAccess: globalReposicionViewer,
+    canViewAllReposiciones: institutionalReposicionViewer,
+    canManageAllReposiciones: globalReposicionViewer,
+    permanentModuleAccess: institutionalReposicionViewer,
     academicAssignmentScope: hasInstitutionalReposicionScope,
     canManageAll,
     canValidateReposicion: canManageAll,
@@ -10562,7 +10574,16 @@ const getReposicionesEquipo = async (req, res) => {
       where: whereClause,
       order: [['created_at', 'DESC']]
     });
-    res.json({ success: true, data: solicitudes.map(serializeSolicitud) });
+    res.json({
+      success: true,
+      data: solicitudes.map((row) => ({
+        ...serializeSolicitud(row),
+        canManageReposicion: Boolean(
+          access.canManageAllReposiciones
+          || isAssignedBoss(row, req.user, academicAuthorityUserIds)
+        )
+      }))
+    });
   } catch (error) {
     console.error('Error in getReposicionesEquipo:', error);
     res.status(500).json({ success: false, message: 'Error al consultar reposiciones del equipo' });

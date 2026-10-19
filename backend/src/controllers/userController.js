@@ -187,7 +187,8 @@ const RECURSO_HUMANO_DASHBOARD_PERMISSION_KEYS = [
   'recurso_humano_administrativos',
   'recurso_humano_seguimiento',
   'recurso_humano_reporte_salida',
-  'recurso_humano_indicadores_ausentismo'
+  'recurso_humano_indicadores_ausentismo',
+  'recurso_humano_tiempo_reponer'
 ];
 
 const ALL_MODULE_PERMISSION_KEYS = [

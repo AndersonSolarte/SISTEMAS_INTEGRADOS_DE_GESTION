@@ -350,6 +350,7 @@ function GestionUsuarios() {
         { key: 'recurso_humano_profesores', label: 'Profesores' },
         { key: 'recurso_humano_administrativos', label: 'Administrativos y Directivos' },
         { key: 'recurso_humano_seguimiento', label: 'Seguimiento completo a reportes (RRHH)' },
+        { key: 'recurso_humano_tiempo_reponer', label: 'Tiempo por reponer (vista institucional)' },
         { key: 'recurso_humano_reporte_salida', label: 'Reporte de salida' },
         { key: 'recurso_humano_indicadores_ausentismo', label: 'Indicadores de ausentismo' }
       ]
@@ -3251,7 +3252,7 @@ function GestionUsuarios() {
                               <FormGroup>
                                 <Grid container spacing={0.5}>
                                   {mainOptions.map((item) => (
-                                    <Grid item xs={12} sm={6} md={4} key={`rh-${item.key}`}>
+                                    <Grid item xs={12} sm={6} md={3} key={`rh-${item.key}`}>
                                       <FormControlLabel
                                         control={(
                                           <Checkbox

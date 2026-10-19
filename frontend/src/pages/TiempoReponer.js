@@ -554,10 +554,10 @@ export default function TiempoReponer() {
                 </TableCell>
                 {isEquipo && (
                   <TableCell>
-                    {access?.canManageReposicionModule ? (
+                    {row.canManageReposicion ? (
                       <Button size="small" variant="outlined" onClick={() => handleUpdateClick(row)}>Gestionar</Button>
                     ) : (
-                      <Typography variant="caption" color="text.secondary">Sin permisos</Typography>
+                      <Typography variant="caption" color="text.secondary">Solo consulta</Typography>
                     )}
                   </TableCell>
                 )}

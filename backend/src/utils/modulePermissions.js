@@ -159,7 +159,8 @@ const RECURSO_HUMANO_DASHBOARD_KEYS = new Set([
   'recurso_humano_administrativos',
   'recurso_humano_seguimiento',
   'recurso_humano_reporte_salida',
-  'recurso_humano_indicadores_ausentismo'
+  'recurso_humano_indicadores_ausentismo',
+  'recurso_humano_tiempo_reponer'
 ]);
 
 const getDefaultPermissionsByRole = (role) => {
@@ -180,7 +181,10 @@ const getDefaultPermissionsByRole = (role) => {
       allowedGestionProcesosDashboards: Array.from(GESTION_PROCESOS_DASHBOARD_KEYS),
       allowedPoblacionalDashboards: Array.from(POBLACIONAL_DASHBOARD_KEYS),
       allowedSaberProDashboards: Array.from(SABER_PRO_DASHBOARD_KEYS),
-      allowedRecursoHumanoDashboards: Array.from(RECURSO_HUMANO_DASHBOARD_KEYS),
+      // La consulta institucional de reposiciones se concede de forma
+      // nominativa; no se hereda automáticamente por ser administrador.
+      allowedRecursoHumanoDashboards: Array.from(RECURSO_HUMANO_DASHBOARD_KEYS)
+        .filter((key) => key !== 'recurso_humano_tiempo_reponer'),
       allowedInfraestructuraFisicaDashboards: Array.from(INFRAESTRUCTURA_FISICA_DASHBOARD_KEYS),
       allowedPlanAccionDashboards: Array.from(PLAN_ACCION_DASHBOARD_KEYS),
       allowedInternacionalizacionDashboards: Array.from(INTERNACIONALIZACION_DASHBOARD_KEYS)

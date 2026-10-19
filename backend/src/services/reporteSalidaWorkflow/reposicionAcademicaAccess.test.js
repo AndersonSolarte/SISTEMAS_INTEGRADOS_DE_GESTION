@@ -28,6 +28,11 @@ const {
   getReporteSalidaAnnexLabel,
   buildOficioPdfDefinition
 } = require('../reporteSalidaPdfService');
+const {
+  RECURSO_HUMANO_DASHBOARD_KEYS,
+  getDefaultPermissionsByRole
+} = require('../../utils/modulePermissions');
+const { ROLES } = require('../../constants/roles');
 
 test('la reposicion aplica exclusivamente a diligencia personal', () => {
   const duraciones = ['menos_media_jornada', '1_2_dias', '3_mas_dias'];
@@ -117,6 +122,26 @@ test('la cuenta global solo ve el modulo cuando existen reposiciones institucion
     globalReposicionViewer: true,
     institutionalPending: 4
   }).canViewReposicionModule, true);
+});
+
+test('el permiso institucional habilita el modulo solo mientras existan reposiciones pendientes', () => {
+  assert.equal(resolveSeguimientoModuleVisibility({
+    canViewInstitutionalReposicionByPermission: true,
+    institutionalPending: 0
+  }).canViewReposicionModule, false);
+  assert.equal(resolveSeguimientoModuleVisibility({
+    canViewInstitutionalReposicionByPermission: true,
+    institutionalPending: 3
+  }).canViewReposicionModule, true);
+});
+
+test('tiempo por reponer es un permiso valido pero no se hereda automaticamente por ser administrador', () => {
+  assert.equal(RECURSO_HUMANO_DASHBOARD_KEYS.has('recurso_humano_tiempo_reponer'), true);
+  assert.equal(
+    getDefaultPermissionsByRole(ROLES.ADMINISTRADOR).allowedRecursoHumanoDashboards
+      .includes('recurso_humano_tiempo_reponer'),
+    false
+  );
 });
 
 test('el detalle narrativo conserva todo el texto y los saltos de linea', () => {
