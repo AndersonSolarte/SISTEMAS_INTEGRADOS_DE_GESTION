@@ -834,10 +834,12 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const [documentsDialogOpen, setDocumentsDialogOpen] = useState(false);
   const [documentsTarget, setDocumentsTarget] = useState(null);
   const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [supportLoading, setSupportLoading] = useState(false);
   const [documentsError, setDocumentsError] = useState('');
   const [documentsPreview, setDocumentsPreview] = useState({ documento: null, soporte: null });
   const [activePreview, setActivePreview] = useState('documento');
   const documentsRequestRef = useRef(0);
+  const documentsPreviewRef = useRef({ documento: null, soporte: null });
   
   // Estados para modal de reposición parcial GH
   const [repDialogOpen, setRepDialogOpen] = useState(false);
@@ -860,18 +862,21 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     setDocumentsDialogOpen(false);
     setDocumentsTarget(null);
     setDocumentsError('');
+    setDocumentsLoading(false);
+    setSupportLoading(false);
     setDocumentsPreview((current) => {
       revokeDocumentPreviews(current);
       return { documento: null, soporte: null };
     });
   }, [revokeDocumentPreviews]);
 
-  const openDocumentsDialog = useCallback(async (row) => {
+  const openDocumentsDialog = useCallback((row) => {
     const requestId = documentsRequestRef.current + 1;
     documentsRequestRef.current = requestId;
     setDocumentsDialogOpen(true);
     setDocumentsTarget(row);
     setDocumentsLoading(true);
+    setSupportLoading(true);
     setDocumentsError('');
     setActivePreview('documento');
     setDocumentsPreview((current) => {
@@ -879,39 +884,63 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       return { documento: null, soporte: null };
     });
 
-    const [documentResult, supportResult] = await Promise.allSettled([
-      api.get(`/reporte-salida/solicitudes/${row.id}/documento-temporal`, { responseType: 'blob' }),
-      api.get(`/reporte-salida/solicitudes/${row.id}/soporte-temporal`, { responseType: 'blob' })
-    ]);
-
-    if (documentsRequestRef.current !== requestId) return;
-
-    if (documentResult.status !== 'fulfilled') {
-      setDocumentsLoading(false);
-      setDocumentsError('No fue posible consultar el formato u oficio de esta solicitud. Verifique que continúe pendiente de aprobación.');
-      return;
-    }
-
-    const nextPreview = {
-      documento: {
-        url: URL.createObjectURL(documentResult.value.data),
-        contentType: documentResult.value.headers?.['content-type'] || 'application/pdf'
-      },
-      soporte: supportResult.status === 'fulfilled'
-        ? {
-          url: URL.createObjectURL(supportResult.value.data),
-          contentType: supportResult.value.headers?.['content-type'] || 'application/octet-stream'
+    api.get(`/reporte-salida/solicitudes/${row.id}/documento-temporal`, {
+      responseType: 'blob',
+      timeout: 45000
+    }).then((response) => {
+      if (documentsRequestRef.current !== requestId) return;
+      const contentType = response.headers?.['content-type'] || response.data?.type || 'application/pdf';
+      const blob = response.data instanceof Blob && response.data.type
+        ? response.data
+        : new Blob([response.data], { type: contentType });
+      setDocumentsPreview((current) => ({
+        ...current,
+        documento: {
+          url: URL.createObjectURL(blob),
+          contentType
         }
-        : null
-    };
-    setDocumentsPreview(nextPreview);
-    setDocumentsLoading(false);
+      }));
+    }).catch((error) => {
+      if (documentsRequestRef.current !== requestId) return;
+      const status = Number(error?.response?.status || 0);
+      setDocumentsError(status === 403
+        ? 'El documento temporal ya no está disponible o no tiene permiso para consultarlo.'
+        : 'No fue posible cargar el formato u oficio. Intente nuevamente.');
+    }).finally(() => {
+      if (documentsRequestRef.current === requestId) setDocumentsLoading(false);
+    });
+
+    api.get(`/reporte-salida/solicitudes/${row.id}/soporte-temporal`, {
+      responseType: 'blob',
+      timeout: 45000
+    }).then((response) => {
+      if (documentsRequestRef.current !== requestId) return;
+      const contentType = response.headers?.['content-type'] || response.data?.type || 'application/octet-stream';
+      const blob = response.data instanceof Blob && response.data.type
+        ? response.data
+        : new Blob([response.data], { type: contentType });
+      setDocumentsPreview((current) => ({
+        ...current,
+        soporte: {
+          url: URL.createObjectURL(blob),
+          contentType
+        }
+      }));
+    }).catch(() => {
+      // El soporte es opcional; el PDF debe seguir disponible aunque no exista adjunto.
+    }).finally(() => {
+      if (documentsRequestRef.current === requestId) setSupportLoading(false);
+    });
   }, [revokeDocumentPreviews]);
+
+  useEffect(() => {
+    documentsPreviewRef.current = documentsPreview;
+  }, [documentsPreview]);
 
   useEffect(() => () => {
     documentsRequestRef.current += 1;
-    revokeDocumentPreviews(documentsPreview);
-  }, [documentsPreview, revokeDocumentPreviews]);
+    revokeDocumentPreviews(documentsPreviewRef.current);
+  }, [revokeDocumentPreviews]);
 
   const fetchSolicitudes = useCallback(async () => {
     setLoading(true);
@@ -2161,50 +2190,57 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                               );
                             })()}
                           </TableCell>
-                          <TableCell sx={{ py: 0.8, px: 0.8 }}>
+                          <TableCell sx={{ py: 0.8, px: 0.8, minWidth: canManageAll ? 116 : undefined }}>
                             {canManageAll ? (
-                              <Stack spacing={0.6}>
+                              <Box
+                                sx={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(3, 32px)',
+                                  gridAutoRows: '32px',
+                                  gap: 0.5,
+                                  alignItems: 'center',
+                                  justifyContent: 'start'
+                                }}
+                              >
                                 {hasTemporaryDocuments(row) && (
                                   <Tooltip title="Consultar formato/oficio y soporte adjunto" arrow>
-                                    <IconButton size="small" color="primary" onClick={() => openDocumentsDialog(row)} sx={{ width: 'fit-content' }}>
+                                    <IconButton size="small" color="primary" onClick={() => openDocumentsDialog(row)} sx={{ width: 32, height: 32 }}>
                                       <VisibilityOutlinedIcon fontSize="small" />
                                     </IconButton>
                                   </Tooltip>
                                 )}
                                 {Boolean(row.estado && (row.estado.startsWith('pendiente') || row.estado.includes('pendiente'))) && (
-                                  <Stack direction="row" spacing={0.5}>
+                                  <>
                                     <Tooltip title={VIATICOS_SPECIALIZED_STATES.has(row.estado) ? 'Abrir formulario para aprobar o gestionar esta etapa de viáticos' : `Aprobar ${getPendingStageLabel(row.estado)}`} arrow>
-                                      <IconButton size="small" color="success" onClick={() => handleGhActionOpen(row, 'approve')}>
+                                      <IconButton size="small" color="success" onClick={() => handleGhActionOpen(row, 'approve')} sx={{ width: 32, height: 32 }}>
                                         <CheckCircleIcon fontSize="small" />
                                       </IconButton>
                                     </Tooltip>
                                     <Tooltip title={VIATICOS_SPECIALIZED_STATES.has(row.estado) ? 'Abrir formulario para aprobar o rechazar esta etapa de viáticos' : `Rechazar ${getPendingStageLabel(row.estado)}`} arrow>
-                                      <IconButton size="small" color="error" onClick={() => handleGhActionOpen(row, 'reject')}>
+                                      <IconButton size="small" color="error" onClick={() => handleGhActionOpen(row, 'reject')} sx={{ width: 32, height: 32 }}>
                                         <CancelOutlinedIcon fontSize="small" />
                                       </IconButton>
                                     </Tooltip>
-                                  </Stack>
+                                  </>
                                 )}
-                                <Stack direction="row" spacing={0.5}>
-                                  {isDiligenciaPersonalRow(row) && (
-                                    <Tooltip title="Gestionar Reposición" arrow>
-                                      <IconButton size="small" color="primary" onClick={() => handleRepOpen(row)}>
-                                        <ManageHistoryIcon fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                  )}
-                                  <Tooltip title="Editar" arrow>
-                                    <IconButton size="small" onClick={() => handleEditOpen(row)}>
-                                      <EditIcon fontSize="small" />
+                                {isDiligenciaPersonalRow(row) && (
+                                  <Tooltip title="Gestionar Reposición" arrow>
+                                    <IconButton size="small" color="primary" onClick={() => handleRepOpen(row)} sx={{ width: 32, height: 32 }}>
+                                      <ManageHistoryIcon fontSize="small" />
                                     </IconButton>
                                   </Tooltip>
-                                  <Tooltip title="Eliminar" arrow>
-                                    <IconButton size="small" color="error" onClick={() => handleDeleteOpen(row.id)}>
-                                      <DeleteIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                </Stack>
-                              </Stack>
+                                )}
+                                <Tooltip title="Editar" arrow>
+                                  <IconButton size="small" onClick={() => handleEditOpen(row)} sx={{ width: 32, height: 32 }}>
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Eliminar" arrow>
+                                  <IconButton size="small" color="error" onClick={() => handleDeleteOpen(row.id)} sx={{ width: 32, height: 32 }}>
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
                             ) : (
                               <Stack spacing={0.6}>
                                 {hasTemporaryDocuments(row) && (
@@ -2294,19 +2330,19 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                       variant={activePreview === 'documento' ? 'contained' : 'outlined'}
                       startIcon={<DescriptionOutlinedIcon />}
                       onClick={() => setActivePreview('documento')}
-                      disabled={!documentsPreview.documento}
+                      disabled={!documentsPreview.documento && !documentsLoading}
                     >
-                      Formato / Oficio
+                      {documentsLoading && !documentsPreview.documento ? 'Cargando formato...' : 'Formato / Oficio'}
                     </Button>
                     <Button
                       variant={activePreview === 'soporte' ? 'contained' : 'outlined'}
                       startIcon={<DownloadIcon />}
                       onClick={() => setActivePreview('soporte')}
-                      disabled={!documentsPreview.soporte}
+                      disabled={!documentsPreview.soporte && !supportLoading}
                     >
-                      Soporte adjunto
+                      {supportLoading ? 'Cargando soporte...' : 'Soporte adjunto'}
                     </Button>
-                    {!documentsLoading && !documentsPreview.soporte && !documentsError && (
+                    {!documentsLoading && !supportLoading && !documentsPreview.soporte && !documentsError && (
                       <Typography sx={{ fontSize: 12, color: '#64748b' }}>Esta solicitud no tiene soporte adjunto.</Typography>
                     )}
                     {documentsPreview[activePreview]?.url && (
@@ -2323,23 +2359,47 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                     )}
                   </Stack>
                 </Box>
-                {documentsLoading ? (
+                {(activePreview === 'documento' && documentsLoading && !documentsPreview.documento)
+                  || (activePreview === 'soporte' && supportLoading && !documentsPreview.soporte) ? (
                   <Stack alignItems="center" justifyContent="center" spacing={1.5} sx={{ flex: 1, minHeight: 360 }}>
                     <CircularProgress />
                     <Typography color="text.secondary">Cargando documentos...</Typography>
                   </Stack>
-                ) : documentsError ? (
-                  <Alert severity="warning" sx={{ m: 2 }}>{documentsError}</Alert>
-                ) : documentsPreview[activePreview]?.url ? (
-                  <Box
-                    component="iframe"
-                    title={`${activePreview} ${documentsTarget?.consecutivo || ''}`}
-                    src={documentsPreview[activePreview].url}
-                    sx={{ width: '100%', flex: 1, minHeight: 460, border: 0, bgcolor: '#e5e7eb' }}
-                  />
-                ) : (
-                  <Alert severity="info" sx={{ m: 2 }}>Seleccione un documento disponible para consultarlo.</Alert>
-                )}
+                  ) : activePreview === 'documento' && documentsError && !documentsPreview.documento ? (
+                    <Alert severity="warning" sx={{ m: 2 }}>{documentsError}</Alert>
+                  ) : documentsPreview[activePreview]?.url ? (
+                    String(documentsPreview[activePreview]?.contentType || '').startsWith('image/') ? (
+                      <Box
+                        sx={{
+                          width: '100%',
+                          flex: 1,
+                          minHeight: 460,
+                          bgcolor: '#e5e7eb',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'auto',
+                          p: 2
+                        }}
+                      >
+                        <Box
+                          component="img"
+                          alt={`${activePreview} ${documentsTarget?.consecutivo || ''}`}
+                          src={documentsPreview[activePreview].url}
+                          sx={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 1, boxShadow: 1, bgcolor: '#fff' }}
+                        />
+                      </Box>
+                    ) : (
+                      <Box
+                        component="iframe"
+                        title={`${activePreview} ${documentsTarget?.consecutivo || ''}`}
+                        src={documentsPreview[activePreview].url}
+                        sx={{ width: '100%', flex: 1, minHeight: 460, border: 0, bgcolor: '#e5e7eb' }}
+                      />
+                    )
+                  ) : (
+                    <Alert severity="info" sx={{ m: 2 }}>Seleccione un documento disponible para consultarlo.</Alert>
+                  )}
               </DialogContent>
               <DialogActions sx={{ borderTop: '1px solid #e2e8f0', px: 2 }}>
                 <Button onClick={closeDocumentsDialog} variant="contained">Cerrar</Button>
