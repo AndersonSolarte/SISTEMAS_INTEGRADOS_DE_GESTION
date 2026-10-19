@@ -424,6 +424,7 @@ test('rechaza minutos adicionales mayores que cincuenta y nueve', () => {
 
 test('el PDF conserva la parametrizacion completa de una salida con reposicion', () => {
   const solicitud = {
+    solicitante_snapshot: { cargo: 'Docente tiempo completo' },
     tiempo_solicitado_minutos: 500,
     reposicion_aplica: true,
     reposicion_minutos: 500,
@@ -446,7 +447,7 @@ test('el PDF conserva la parametrizacion completa de una salida con reposicion',
   assert.equal(info.pending, 350);
   assert.equal(info.daily, 480);
   assert.equal(info.attachmentName, 'soporte-permiso.pdf');
-  assert.equal(info.durationLabel, 'Entre 1 y 2 días');
+  assert.equal(info.durationLabel, '2 días');
   const section = buildReposicionPdfSection(solicitud);
   assert.equal(section.length, 1);
   assert.equal(section[0].unbreakable, true);
@@ -478,6 +479,34 @@ test('el formato administrativo de hasta media jornada omite los cuatro campos s
   assert.doesNotMatch(sectionText, /Nivel de contratación/i);
   assert.doesNotMatch(sectionText, /Tiempo solicitado/);
   assert.doesNotMatch(sectionText, /15h 30m/);
+});
+
+test('el oficio administrativo normal omite los cuatro campos solicitados', () => {
+  const solicitud = {
+    consecutivo: 'RS-ADMIN-OFICIO',
+    solicitante_snapshot: { cargo: 'Administrativo' },
+    tiempo_solicitado_minutos: 1920,
+    reposicion_aplica: true,
+    reposicion_minutos: 480,
+    reposicion_minutos_pagados: 120,
+    reposicion_nivel_contratacion: 'NIVEL DE PRUEBA',
+    datos_formulario: {
+      adjunto_path: 'soporte-oficio-administrativo.pdf',
+      salida: { duracionTipo: '3_mas_dias' }
+    }
+  };
+
+  const sectionText = JSON.stringify(buildReposicionPdfSection(solicitud));
+
+  assert.match(sectionText, /Saldo pendiente/i);
+  assert.match(sectionText, /Referencia del permiso/i);
+  assert.match(sectionText, /6h 00m/);
+  assert.doesNotMatch(sectionText, /Tiempo por reponer/i);
+  assert.doesNotMatch(sectionText, /Tiempo abonado/i);
+  assert.doesNotMatch(sectionText, /Soporte adjunto/i);
+  assert.doesNotMatch(sectionText, /Nivel de contratación/i);
+  assert.doesNotMatch(sectionText, /soporte-oficio-administrativo\.pdf/i);
+  assert.doesNotMatch(sectionText, /NIVEL DE PRUEBA/i);
 });
 
 test('el formato docente muestra hasta un dia y usa el nombre original del adjunto como anexo', () => {
