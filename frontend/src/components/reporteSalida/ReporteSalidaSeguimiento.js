@@ -800,8 +800,6 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     module.key === 'reporte_salida' ? canViewReporteSalida : canViewEstadisticas
   )), [canViewEstadisticas, canViewReporteSalida]);
   const showInstitutionalTools = canViewAll;
-  const ownPendingCount = Number(access?.counts?.ownPending || 0);
-  const teamPendingCount = Number(access?.counts?.bossPending || 0);
   const showScopeTabs = canViewAll;
 
   const isOwnRow = (row) => String(row?.user_id || row?.solicitante?.id || row?.solicitante?.userId || '') === String(user?.id || '');
@@ -997,6 +995,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     } else if (viewTab === 'equipo') {
       const currentUserEmail = String(user?.email || '').trim().toLowerCase();
       result = rows.filter((row) => {
+        if (!hasPendingReposicion(row)) return false;
         const bossId = String(row?.jefe_inmediato_user_id || row?.jefe?.id || row?.jefe?.userId || '');
         const matchesId = Boolean(bossId && currentUserId && bossId === currentUserId);
         const bossEmail = String(row?.jefe?.email || '').trim().toLowerCase();
@@ -1094,7 +1093,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
   useEffect(() => {
     setPage(0);
-  }, [cardFilter, tipoFiltro, estado, searchTerm, timeRange]);
+  }, [cardFilter, tipoFiltro, estado, searchTerm, timeRange, viewTab]);
 
   const groupedRows = useMemo(() => {
     const groups = {};
@@ -1884,14 +1883,19 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
           <>
             {showScopeTabs && (
               <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-                <Tabs value={viewTab} onChange={(_, newValue) => setViewTab(newValue)} textColor="primary" indicatorColor="primary">
-                  <Tab label={canViewAll ? 'Vista institucional' : 'Todas'} value="todas" sx={{ fontWeight: 800, textTransform: 'none' }} />
-                  {ownPendingCount > 0 && (
-                    <Tab label="Mi tiempo por reponer" value="mis_reposiciones" sx={{ fontWeight: 800, textTransform: 'none' }} />
-                  )}
-                  {teamPendingCount > 0 && (
-                    <Tab label="Reposiciones de mi equipo" value="equipo" sx={{ fontWeight: 800, textTransform: 'none' }} />
-                  )}
+                <Tabs
+                  value={viewTab}
+                  onChange={(_, newValue) => {
+                    setViewTab(newValue);
+                    setCardFilter('todas');
+                  }}
+                  textColor="primary"
+                  indicatorColor="primary"
+                  variant="fullWidth"
+                  sx={{ width: '100%' }}
+                >
+                  <Tab label="Vista institucional" value="todas" sx={{ maxWidth: 'none', fontWeight: 800, textTransform: 'none' }} />
+                  <Tab label="Reposiciones de mi equipo" value="equipo" sx={{ maxWidth: 'none', fontWeight: 800, textTransform: 'none' }} />
                 </Tabs>
               </Box>
             )}
