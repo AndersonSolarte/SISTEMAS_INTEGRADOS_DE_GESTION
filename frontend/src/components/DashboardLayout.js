@@ -79,7 +79,7 @@ function DashboardLayout() {
       ...(Array.isArray(user?.modules) ? user.modules : [])
     ].map((item) => typeof item === 'string' ? item : item?.module_key || item?.moduleKey || item?.key || '').filter(Boolean);
 
-    if (!isSuperAdmin && !perms.some((k) => k === 'oficina_juridica' || k.startsWith('oficina_juridica.'))) {
+    if (!perms.some((k) => k === 'oficina_juridica' || k.startsWith('oficina_juridica.'))) {
       setJuridicaBadge(0);
       return;
     }
@@ -574,11 +574,10 @@ function DashboardLayout() {
     ...(Array.isArray(user?.modules) ? user.modules : [])
   ].map((item) => typeof item === 'string' ? item : item?.module_key || item?.moduleKey || item?.key || '').filter(Boolean);
 
-  const isSuperAdmin = String(user?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
   const hasExplicitJuridicaPerm = userPermList.some((k) => k === 'oficina_juridica' || k.startsWith('oficina_juridica.'));
 
-  // Otros administradores NO ven gestión jurídica a menos que tengan el permiso explícito otorgado
-  const canAccessJuridica = isSuperAdmin || hasExplicitJuridicaPerm;
+  // Solo se muestra el módulo en el menú si el usuario tiene asignado el permiso de Oficina Jurídica
+  const canAccessJuridica = hasExplicitJuridicaPerm;
 
   if (canAccessJuridica) {
     const juridicaMenuItem = {

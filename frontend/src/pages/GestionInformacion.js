@@ -596,11 +596,8 @@ const normalizeModulePermissionList = (raw) => {
 
 const canViewOficinaJuridica = (user) => {
   if (!user) return false;
-  const email = String(user?.email || '').trim().toLowerCase();
-  // 1. SuperAdmin institucional exclusivo
-  if (email === 'sgc@unicesmag.edu.co') return true;
 
-  // 2. Permisos explícitos asignados en Gestión de Usuarios (allowedModules, modulePermissions, etc.)
+  // Permisos explícitos asignados en Gestión de Usuarios (allowedModules, modulePermissions, etc.)
   const permissions = [
     ...(Array.isArray(user?.allowedModules) ? user.allowedModules : []),
     ...(Array.isArray(user?.modulePermissions) ? user.modulePermissions : []),
@@ -611,23 +608,9 @@ const canViewOficinaJuridica = (user) => {
     .flatMap((entry) => normalizeModulePermissionList(entry))
     .map((k) => String(k).trim());
 
-  const hasExplicitPerm = permissions.some((k) =>
+  return permissions.some((k) =>
     k === 'oficina_juridica' || k.startsWith('oficina_juridica.')
   );
-  if (hasExplicitPerm) return true;
-
-  if (String(user?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co') return true;
-
-  // Los administradores generales sin asignación explícita no ven jurídica por defecto
-  if (user?.role === ROLES.ADMINISTRADOR) return false;
-
-  // 3. Fallback: Si pertenece a la dependencia Oficina Jurídica y tiene el permiso asignado
-  const dep = String(user?.dependencia || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const cargo = String(user?.cargo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const isJuridica = dep.includes('jurid') || cargo.includes('jurid');
-  if (isJuridica && permissions.includes('oficina_juridica')) return true;
-
-  return false;
 };
 
 const getVisibleBaseKeysForUser = (user) => {
