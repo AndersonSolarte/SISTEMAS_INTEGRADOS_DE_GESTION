@@ -322,9 +322,10 @@ const matchesGeneralSearch = (row, query) => {
 };
 
 export default function TiempoReponer() {
-  const [tabIndex, setTabIndex] = useState(0);
+  const [activeTab, setActiveTab] = useState('own');
   const [misReposiciones, setMisReposiciones] = useState([]);
   const [equipoReposiciones, setEquipoReposiciones] = useState([]);
+  const [reposicionesInstitucionales, setReposicionesInstitucionales] = useState([]);
   const [access, setAccess] = useState(undefined);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -350,12 +351,13 @@ export default function TiempoReponer() {
     }
   };
 
-  const fetchEquipoReposiciones = async () => {
+  const fetchEquipoReposiciones = async (scope = 'team') => {
     try {
-      const res = await api.get('/reporte-salida/reposiciones/equipo');
+      const res = await api.get('/reporte-salida/reposiciones/equipo', { params: { scope } });
       if (res.data.success) {
         const pending = res.data.data.filter(r => r.reposicion_estado !== 'cumplida');
-        setEquipoReposiciones(pending);
+        if (scope === 'institutional') setReposicionesInstitucionales(pending);
+        else setEquipoReposiciones(pending);
       }
     } catch (error) {
       console.error(error);
@@ -379,10 +381,23 @@ export default function TiempoReponer() {
       if (showLoading) setLoading(true);
       const nextAccess = await fetchAccess();
       if (nextAccess?.canViewReposicionModule) {
-        await Promise.all([fetchMisReposiciones(), fetchEquipoReposiciones()]);
+        const requests = [];
+        if (!nextAccess.institutionalReposicionOnly) {
+          requests.push(fetchMisReposiciones(), fetchEquipoReposiciones('team'));
+        } else {
+          setMisReposiciones([]);
+          setEquipoReposiciones([]);
+        }
+        if (nextAccess.canViewAllReposiciones) {
+          requests.push(fetchEquipoReposiciones('institutional'));
+        } else {
+          setReposicionesInstitucionales([]);
+        }
+        await Promise.all(requests);
       } else {
         setMisReposiciones([]);
         setEquipoReposiciones([]);
+        setReposicionesInstitucionales([]);
       }
       if (showLoading) setLoading(false);
     };
@@ -446,10 +461,18 @@ export default function TiempoReponer() {
         setOpenDialog(false);
         const nextAccess = await fetchAccess();
         if (nextAccess?.canViewReposicionModule) {
-          await Promise.all([fetchEquipoReposiciones(), fetchMisReposiciones()]);
+          const requests = [];
+          if (!nextAccess.institutionalReposicionOnly) {
+            requests.push(fetchMisReposiciones(), fetchEquipoReposiciones('team'));
+          }
+          if (nextAccess.canViewAllReposiciones) {
+            requests.push(fetchEquipoReposiciones('institutional'));
+          }
+          await Promise.all(requests);
         } else {
           setEquipoReposiciones([]);
           setMisReposiciones([]);
+          setReposicionesInstitucionales([]);
         }
         window.dispatchEvent(new CustomEvent('reposicion:updated'));
       }
@@ -579,7 +602,7 @@ export default function TiempoReponer() {
   const ownSourceRows = misReposiciones;
   const dependenciaOptions = useMemo(() => {
     const options = new Map();
-    [...ownSourceRows, ...equipoReposiciones].forEach((row) => {
+    [...ownSourceRows, ...equipoReposiciones, ...reposicionesInstitucionales].forEach((row) => {
       const label = String(getReposicionDependencia(row)).trim();
       const key = normalizeFilterText(label);
       if (key && !options.has(key)) options.set(key, label);
@@ -587,7 +610,7 @@ export default function TiempoReponer() {
     return [...options.entries()]
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
-  }, [ownSourceRows, equipoReposiciones]);
+  }, [ownSourceRows, equipoReposiciones, reposicionesInstitucionales]);
   const filterRows = (rows) => rows.filter((row) => {
     const matchesDependencia = !dependenciaFilter
       || normalizeFilterText(getReposicionDependencia(row)) === dependenciaFilter;
@@ -595,8 +618,22 @@ export default function TiempoReponer() {
   });
   const ownRows = filterRows(ownSourceRows);
   const equipoRows = filterRows(equipoReposiciones);
-  const showDualTabs = (ownSourceRows.length > 0 && equipoReposiciones.length > 0) || isGlobalView;
+  const institutionalRows = filterRows(reposicionesInstitucionales);
+  const visibleViews = [
+    ownSourceRows.length > 0 && { key: 'own', label: 'Mis reposiciones', count: ownSourceRows.length, rows: ownRows, isEquipo: false },
+    equipoReposiciones.length > 0 && { key: 'team', label: 'Reposiciones de mi equipo', count: equipoReposiciones.length, rows: equipoRows, isEquipo: true },
+    isGlobalView && reposicionesInstitucionales.length > 0 && {
+      key: 'institutional',
+      label: 'Reposiciones institucionales',
+      count: reposicionesInstitucionales.length,
+      rows: institutionalRows,
+      isEquipo: true
+    }
+  ].filter(Boolean);
   const hasActiveFilters = Boolean(searchTerm.trim() || dependenciaFilter);
+  const selectedTab = visibleViews.some((view) => view.key === activeTab)
+    ? activeTab
+    : (visibleViews[0]?.key || false);
 
   if (!loading && access !== undefined && !access?.canViewReposicionModule) {
     return (
@@ -607,15 +644,20 @@ export default function TiempoReponer() {
   }
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
+    <Box sx={{ width: '100%', maxWidth: 'none' }}>
       <Typography variant="h5" sx={{ mb: 3, fontWeight: 700, color: '#0f172a' }}>
         Tiempo por Reponer
       </Typography>
 
       <Paper sx={{ mb: 3, borderRadius: 2 }}>
-        {isGlobalView && (
+        {isGlobalView && access?.institutionalReposicionOnly && (
           <Alert severity="info" sx={{ m: 2, mb: 0 }}>
-            Vista institucional: se muestran sus reposiciones y todas las solicitudes institucionales con tiempo pendiente por reponer.
+            Vista institucional: se muestran todas las solicitudes institucionales con tiempo pendiente por reponer.
+          </Alert>
+        )}
+        {isGlobalView && !access?.institutionalReposicionOnly && (
+          <Alert severity="info" sx={{ m: 2, mb: 0 }}>
+            Se muestran sus reposiciones, las de su equipo y la vista institucional, según existan solicitudes pendientes.
           </Alert>
         )}
         {!isGlobalView && access?.canViewReposicionModule && (
@@ -666,37 +708,41 @@ export default function TiempoReponer() {
             </Button>
           </Box>
         )}
-        {!showDualTabs && ownRows.length > 0 && equipoRows.length === 0 && (
-          <Box sx={{ p: 3 }}>
-            {renderTable(ownRows, false)}
-          </Box>
-        )}
-        {!showDualTabs && equipoRows.length > 0 && ownRows.length === 0 && (
-          <Box sx={{ p: 3 }}>
-            {renderTable(equipoRows, true)}
-          </Box>
-        )}
-        {showDualTabs && (
+        {visibleViews.length > 0 && (
           <>
             <Tabs
-              value={tabIndex}
-              onChange={(e, val) => setTabIndex(val)}
+              value={selectedTab}
+              onChange={(e, val) => setActiveTab(val)}
               indicatorColor="primary"
               textColor="primary"
-              sx={{ borderBottom: 1, borderColor: 'divider' }}
+              variant="scrollable"
+              scrollButtons="auto"
+              allowScrollButtonsMobile
+              sx={{
+                borderBottom: 1,
+                borderColor: 'divider',
+                '& .MuiTabs-flexContainer': { width: '100%' },
+                '& .MuiTab-root': {
+                  flex: { xs: '0 0 auto', md: '1 1 0' },
+                  minWidth: { xs: 210, md: 0 },
+                  maxWidth: 'none',
+                  fontWeight: 700,
+                  textTransform: 'none'
+                }
+              }}
             >
-              <Tab label={`Mis reposiciones (${ownRows.length})`} />
-              <Tab label={isGlobalView ? `Reposiciones institucionales (${equipoRows.length})` : `Reposiciones de mi equipo (${equipoRows.length})`} />
+              {visibleViews.map((view) => (
+                <Tab key={view.key} value={view.key} label={`${view.label} (${view.count})`} />
+              ))}
             </Tabs>
-            <TabPanel value={tabIndex} index={0}>
-              {renderTable(ownRows, false)}
-            </TabPanel>
-            <TabPanel value={tabIndex} index={1}>
-              {renderTable(equipoRows, true)}
-            </TabPanel>
+            {visibleViews.map((view) => (
+              <TabPanel key={view.key} value={selectedTab} index={view.key}>
+                {renderTable(view.rows, view.isEquipo)}
+              </TabPanel>
+            ))}
           </>
         )}
-        {!showDualTabs && ownRows.length === 0 && equipoRows.length === 0 && (
+        {visibleViews.length === 0 && (
           <Box sx={{ p: 3 }}>
              {loading ? (
                <Stack direction="row" justifyContent="center"><CircularProgress size={24} /></Stack>

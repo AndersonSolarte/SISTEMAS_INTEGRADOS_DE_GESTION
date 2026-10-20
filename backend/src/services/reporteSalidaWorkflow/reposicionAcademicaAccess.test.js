@@ -115,14 +115,19 @@ test('un colaborador ve el modulo mientras tenga reposicion propia pendiente', (
 });
 
 test('la cuenta global solo ve el modulo cuando existen reposiciones institucionales pendientes', () => {
-  assert.equal(resolveSeguimientoModuleVisibility({
+  const withoutPending = resolveSeguimientoModuleVisibility({
     globalReposicionViewer: true,
     institutionalPending: 0
-  }).canViewReposicionModule, false);
-  assert.equal(resolveSeguimientoModuleVisibility({
+  });
+  assert.equal(withoutPending.canViewReposicionModule, false);
+  assert.equal(withoutPending.institutionalReposicionOnly, true);
+
+  const withPending = resolveSeguimientoModuleVisibility({
     globalReposicionViewer: true,
     institutionalPending: 4
-  }).canViewReposicionModule, true);
+  });
+  assert.equal(withPending.canViewReposicionModule, true);
+  assert.equal(withPending.institutionalReposicionOnly, true);
 });
 
 test('el permiso institucional habilita el modulo solo mientras existan reposiciones pendientes y permite gestionarlas', () => {
@@ -143,6 +148,7 @@ test('el permiso institucional habilita el modulo solo mientras existan reposici
   assert.equal(withPending.canViewAllReposiciones, true);
   assert.equal(withPending.canManageAllReposiciones, true);
   assert.equal(withPending.canManageReposicionModule, true);
+  assert.equal(withPending.institutionalReposicionOnly, false);
 });
 
 test('las solicitudes propias se identifican como solo lectura y las de los demas se pueden gestionar', () => {

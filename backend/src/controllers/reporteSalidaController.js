@@ -2137,7 +2137,8 @@ const resolveSeguimientoModuleVisibility = ({
     ),
     canViewAllReposiciones: institutionalReposicionViewer,
     canManageAllReposiciones: institutionalReposicionViewer,
-    canManageReposicionModule: Boolean(institutionalReposicionViewer || bossPending > 0)
+    canManageReposicionModule: Boolean(institutionalReposicionViewer || bossPending > 0),
+    institutionalReposicionOnly: Boolean(globalReposicionViewer)
   };
 };
 
@@ -2209,6 +2210,7 @@ const resolveSeguimientoAccess = async (user) => {
     canViewAll,
     canViewAllReposiciones: institutionalReposicionViewer,
     canManageAllReposiciones: institutionalReposicionViewer,
+    institutionalReposicionOnly: globalReposicionViewer,
     permanentModuleAccess: institutionalReposicionViewer,
     academicAssignmentScope: hasInstitutionalReposicionScope,
     canManageAll,
@@ -10586,8 +10588,16 @@ const getReposicionesEquipo = async (req, res) => {
       return res.status(403).json({ success: false, message: 'No tienes permiso para consultar este módulo.' });
     }
     const incluirCumplidas = req.query.incluir_cumplidas === 'true';
+    const requestedScope = String(req.query.scope || '').trim().toLowerCase();
     const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
-    const whereClause = access.canViewAllReposiciones
+    const institutionalScope = requestedScope === 'institutional'
+      || (!requestedScope && access.canViewAllReposiciones);
+
+    if (institutionalScope && !access.canViewAllReposiciones) {
+      return res.status(403).json({ success: false, message: 'No tienes permiso para consultar la vista institucional.' });
+    }
+
+    const whereClause = institutionalScope
       ? buildReposicionModuleWhere({ incluirCumplidas })
       : {
         ...buildReposicionModuleWhere({ incluirCumplidas }),
@@ -10600,6 +10610,7 @@ const getReposicionesEquipo = async (req, res) => {
     });
     res.json({
       success: true,
+      scope: institutionalScope ? 'institutional' : 'team',
       data: solicitudes.map((row) => ({
         ...serializeSolicitud(row),
         canManageReposicion: Boolean(
