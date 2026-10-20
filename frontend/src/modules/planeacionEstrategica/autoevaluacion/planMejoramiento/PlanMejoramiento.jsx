@@ -25,6 +25,7 @@ import {
   TrendingUpRounded as ProgressIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
+import * as XLSX from 'xlsx';
 import planMejoramientoService from '../../../../services/planMejoramientoService';
 import gestionInformacionService from '../../../../services/gestionInformacionService';
 
@@ -1039,6 +1040,28 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       .some((value) => String(value || '').toLocaleLowerCase('es').includes(query));
   });
 
+  const exportImprovementTable = () => {
+    if (!filteredImprovementOpportunities.length) {
+      enqueueSnackbar('No hay registros visibles para exportar', { variant: 'warning' });
+      return;
+    }
+    const rows = filteredImprovementOpportunities.map((item) => ({
+      Factor: item.factor || '',
+      'Característica': item.caracteristica || '',
+      Aspecto: item.aspecto || '',
+      'Calificación': Number(item.calificacion),
+      Tipo: actionTypeForScore(item.calificacion)
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet['!cols'] = [{ wch: 38 }, { wch: 48 }, { wch: 110 }, { wch: 15 }, { wch: 20 }];
+    worksheet['!autofilter'] = { ref: worksheet['!ref'] };
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Lista de mejoramiento');
+    const program = String(editor.programa || 'programa').replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_-]+/g, '_').slice(0, 55);
+    XLSX.writeFile(workbook, `Lista_mejoramiento_${program}.xlsx`, { compression: true });
+    enqueueSnackbar(`${rows.length} registros exportados a Excel`, { variant: 'success' });
+  };
+
   if (!editor) {
     return (
       <Box>
@@ -1319,13 +1342,24 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     Fortalecimiento · ≥ 4 ({pendingOpportunities().filter((item) => Number(item.calificacion) >= 4).length})
                   </Button>
                 </Paper>
-                <TextField
-                  size="small"
-                  value={improvementSearch}
-                  onChange={(event) => setImprovementSearch(event.target.value)}
-                  label="Buscar factor, característica o aspecto"
-                  sx={{ width: { xs: '100%', md: 390 } }}
-                />
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', lg: 'auto' } }}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<DownloadIcon />}
+                    onClick={exportImprovementTable}
+                    disabled={!filteredImprovementOpportunities.length}
+                    sx={{ minWidth: 170, textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}
+                  >
+                    Exportar tabla
+                  </Button>
+                  <TextField
+                    size="small"
+                    value={improvementSearch}
+                    onChange={(event) => setImprovementSearch(event.target.value)}
+                    label="Buscar factor, característica o aspecto"
+                    sx={{ width: { xs: '100%', md: 390 } }}
+                  />
+                </Stack>
               </Stack>
               {loadingOpportunities ? (
                 <Box sx={{ py: 8, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>
