@@ -620,12 +620,12 @@ export default function TiempoReponer() {
   const equipoRows = filterRows(equipoReposiciones);
   const institutionalRows = filterRows(reposicionesInstitucionales);
   const visibleViews = [
-    ownSourceRows.length > 0 && { key: 'own', label: 'Mis reposiciones', count: ownSourceRows.length, rows: ownRows, isEquipo: false },
-    equipoReposiciones.length > 0 && { key: 'team', label: 'Reposiciones de mi equipo', count: equipoReposiciones.length, rows: equipoRows, isEquipo: true },
+    ownSourceRows.length > 0 && { key: 'own', label: 'Mis reposiciones', count: ownRows.length, rows: ownRows, isEquipo: false },
+    equipoReposiciones.length > 0 && { key: 'team', label: 'Reposiciones de mi equipo', count: equipoRows.length, rows: equipoRows, isEquipo: true },
     isGlobalView && reposicionesInstitucionales.length > 0 && {
       key: 'institutional',
       label: 'Reposiciones institucionales',
-      count: reposicionesInstitucionales.length,
+      count: institutionalRows.length,
       rows: institutionalRows,
       isEquipo: true
     }
