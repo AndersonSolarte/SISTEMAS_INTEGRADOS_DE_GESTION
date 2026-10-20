@@ -2141,8 +2141,20 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       onChange={(_, value) => value && setMeetingLayoutMode(value)}
                       aria-label="Modo de visualización del acta"
                       sx={{
-                        alignSelf: { xs: 'stretch', md: 'center' }, bgcolor: 'rgba(255,255,255,.13)', borderRadius: 2,
-                        '& .MuiToggleButton-root': { flex: { xs: 1, md: 'initial' }, color: '#ffffff', borderColor: 'rgba(255,255,255,.35)', px: 1.7, py: 0.75, textTransform: 'none', fontWeight: 800 },
+                        alignSelf: { xs: 'stretch', md: 'center' },
+                        bgcolor: 'rgba(255,255,255,.13)',
+                        borderRadius: 2,
+                        width: { xs: '100%', sm: 'auto' },
+                        '& .MuiToggleButton-root': {
+                          flex: { xs: 1, md: 'initial' },
+                          color: '#ffffff',
+                          borderColor: 'rgba(255,255,255,.35)',
+                          px: { xs: 1, sm: 1.7 },
+                          py: 0.75,
+                          textTransform: 'none',
+                          fontWeight: 800,
+                          fontSize: { xs: 12, sm: 13 }
+                        },
                         '& .MuiToggleButton-root.Mui-selected': { color: '#17458c', bgcolor: '#ffffff', '&:hover': { bgcolor: '#ffffff' } }
                       }}
                     >
@@ -2390,7 +2402,14 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                       </Typography>
                                     </Box>
 
-                                    <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" justifyContent={{ xs: 'space-between', md: 'flex-end' }}>
+                                    <Stack
+                                      direction={{ xs: 'column', sm: 'row' }}
+                                      alignItems={{ xs: 'stretch', sm: 'center' }}
+                                      spacing={1.25}
+                                      flexWrap="wrap"
+                                      justifyContent={{ xs: 'stretch', md: 'flex-end' }}
+                                      sx={{ width: { xs: '100%', md: 'auto' } }}
+                                    >
                                       <TextField
                                         select
                                         size="small"
@@ -2398,26 +2417,28 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                         value={participant.meeting_role || 'principal'}
                                         disabled={participant.status === 'signed'}
                                         onChange={(event) => updateMeetingParticipantRole(index, event.target.value)}
-                                        sx={{ minWidth: 160 }}
+                                        sx={{ minWidth: { xs: '100%', sm: 160 } }}
                                       >
                                         <MenuItem value="principal">Responsable principal</MenuItem>
                                         <MenuItem value="co_responsible">Corresponsable</MenuItem>
                                       </TextField>
-                                      <Chip
-                                        size="small"
-                                        label={participant.status === 'signed' ? 'Firmado' : 'Firma pendiente'}
-                                        color={participant.status === 'signed' ? 'success' : 'default'}
-                                      />
-                                      <IconButton
-                                        aria-label={`Retirar a ${participant.name}`}
-                                        color="error"
-                                        size="small"
-                                        disabled={participant.status === 'signed'}
-                                        onClick={() => removeMeetingParticipant(index)}
-                                        sx={{ bgcolor: '#fef2f2', '&:hover': { bgcolor: '#fee2e2' } }}
-                                      >
-                                        <DeleteOutline fontSize="small" />
-                                      </IconButton>
+                                      <Stack direction="row" alignItems="center" spacing={1} justifyContent={{ xs: 'space-between', sm: 'flex-end' }}>
+                                        <Chip
+                                          size="small"
+                                          label={participant.status === 'signed' ? 'Firmado' : 'Firma pendiente'}
+                                          color={participant.status === 'signed' ? 'success' : 'default'}
+                                        />
+                                        <IconButton
+                                          aria-label={`Retirar a ${participant.name}`}
+                                          color="error"
+                                          size="small"
+                                          disabled={participant.status === 'signed'}
+                                          onClick={() => removeMeetingParticipant(index)}
+                                          sx={{ bgcolor: '#fef2f2', '&:hover': { bgcolor: '#fee2e2' } }}
+                                        >
+                                          <DeleteOutline fontSize="small" />
+                                        </IconButton>
+                                      </Stack>
                                     </Stack>
                                   </Paper>
                                 );
@@ -2864,7 +2885,14 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   {participant.role_title || 'Sin cargo'} · {participant.organization || 'UNICESMAG'}
                                 </Typography>
                               </Box>
-                              <Stack direction="row" alignItems="center" spacing={1.25} flexWrap="wrap" justifyContent={{ xs: 'space-between', md: 'flex-end' }}>
+                              <Stack
+                                direction={{ xs: 'column', sm: 'row' }}
+                                alignItems={{ xs: 'stretch', sm: 'center' }}
+                                spacing={1.25}
+                                flexWrap="wrap"
+                                justifyContent={{ xs: 'stretch', md: 'flex-end' }}
+                                sx={{ width: { xs: '100%', md: 'auto' } }}
+                              >
                                 <TextField
                                   select
                                   size="small"
@@ -2872,30 +2900,32 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   value={participant.meeting_role || 'participant'}
                                   disabled={participant.status === 'signed'}
                                   onChange={(event) => updateMeetingParticipantRole(index, event.target.value)}
-                                  sx={{ minWidth: 160 }}
+                                  sx={{ minWidth: { xs: '100%', sm: 160 } }}
                                 >
                                   <MenuItem value="principal">Responsable principal</MenuItem>
                                   <MenuItem value="co_responsible">Co-responsable</MenuItem>
                                   <MenuItem value="collaborator">Colaborador</MenuItem>
                                   <MenuItem value="participant">Participante</MenuItem>
                                 </TextField>
-                                <Chip
-                                  size="small"
-                                  label={participant.status === 'signed' ? 'Firmado' : 'Firma pendiente'}
-                                  color={participant.status === 'signed' ? 'success' : 'default'}
-                                  variant={participant.status === 'signed' ? 'filled' : 'outlined'}
-                                  sx={{ fontWeight: 800, fontSize: 11 }}
-                                />
-                                <IconButton
-                                  aria-label={`Retirar a ${participant.name}`}
-                                  color="error"
-                                  size="small"
-                                  disabled={participant.status === 'signed'}
-                                  onClick={() => removeMeetingParticipant(index)}
-                                  sx={{ bgcolor: '#fef2f2', '&:hover': { bgcolor: '#fee2e2' } }}
-                                >
-                                  <DeleteOutline fontSize="small" />
-                                </IconButton>
+                                <Stack direction="row" alignItems="center" spacing={1} justifyContent={{ xs: 'space-between', sm: 'flex-end' }}>
+                                  <Chip
+                                    size="small"
+                                    label={participant.status === 'signed' ? 'Firmado' : 'Firma pendiente'}
+                                    color={participant.status === 'signed' ? 'success' : 'default'}
+                                    variant={participant.status === 'signed' ? 'filled' : 'outlined'}
+                                    sx={{ fontWeight: 800, fontSize: 11 }}
+                                  />
+                                  <IconButton
+                                    aria-label={`Retirar a ${participant.name}`}
+                                    color="error"
+                                    size="small"
+                                    disabled={participant.status === 'signed'}
+                                    onClick={() => removeMeetingParticipant(index)}
+                                    sx={{ bgcolor: '#fef2f2', '&:hover': { bgcolor: '#fee2e2' } }}
+                                  >
+                                    <DeleteOutline fontSize="small" />
+                                  </IconButton>
+                                </Stack>
                               </Stack>
                             </Paper>
                           );
@@ -3317,7 +3347,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </MenuItem>
                     </Menu>
 
-                    <Box sx={{ border: '1px solid #000000', fontFamily: 'Arial, sans-serif', fontSize: 11.5, color: '#000000', bgcolor: '#ffffff', overflow: 'hidden' }}>
+                    <Box sx={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch', pb: 0.5 }}>
+                      <Box sx={{ minWidth: { xs: 580, sm: '100%' }, border: '1px solid #000000', fontFamily: 'Arial, sans-serif', fontSize: 11.5, color: '#000000', bgcolor: '#ffffff', overflow: 'hidden' }}>
                       <Box sx={{ display: 'grid', gridTemplateColumns: '22% 56% 22%', borderBottom: '1px solid #000000', minHeight: 80 }}>
                         <Box sx={{ borderRight: '1px solid #000000', p: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <Box component="img" src={logoFormatos} alt="Universidad CESMAG" sx={{ width: '94%', maxHeight: 64, objectFit: 'contain' }} />
@@ -3432,6 +3463,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                         )}
                       </Box>
                     </Box>
+                  </Box>
                     {latestMinute?.status === 'signing' && !published && (
                       <Paper elevation={0} sx={{ mt: 2, p: 2, borderRadius: 2.5, border: '1px solid #bfdbfe', bgcolor: '#eff6ff' }}>
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" justifyContent="space-between">
@@ -3485,8 +3517,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   bgcolor: '#ffffff',
                   border: '1px solid #dbe5f0',
                   display: 'flex',
+                  flexDirection: { xs: 'column-reverse', sm: 'row' },
+                  gap: { xs: 1.5, sm: 0 },
                   justifyContent: 'space-between',
-                  alignItems: 'center',
+                  alignItems: { xs: 'stretch', sm: 'center' },
                   boxShadow: '0 -4px 16px rgba(15,23,42,0.04)'
                 }}
               >
@@ -3497,7 +3531,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                 >
                   Cerrar
                 </Button>
-                <Stack direction="row" spacing={1} alignItems="center">
+                <Stack direction="row" spacing={1} alignItems="center" justifyContent={{ xs: 'space-between', sm: 'flex-end' }}>
                   {['pending', 'error'].includes(saveStatus) && (
                     <Button
                       variant="outlined"
