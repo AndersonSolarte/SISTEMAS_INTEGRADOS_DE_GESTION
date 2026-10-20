@@ -772,6 +772,9 @@ const addRetentionMetadata = (minute) => {
   return minute;
 };
 
+/* Conservación histórica: desde octubre de 2026 las actas vencidas se ocultan de
+ * la vista operativa, pero no se destruyen. Se conserva este bloque comentado
+ * únicamente como referencia de la política anterior.
 const purgeExpiredMinutes = async () => {
   const expired = await DigitalMeetingMinute.findAll({
     where: { created_at: { [Op.lte]: new Date(Date.now() - MINUTE_RETENTION_MS) } },
@@ -807,6 +810,7 @@ const retentionCleanupTimer = setInterval(
   60 * 60 * 1000
 );
 retentionCleanupTimer.unref?.();
+*/
 
 const listMinutes = wrap(async (req, res) => {
   const userId = Number(req.user.id);
@@ -872,7 +876,8 @@ const listMyMinutes = wrap(async (req, res) => {
   });
 });
 
-const getStatistics = wrap(async (_req, res) => {
+/* Implementación anterior limitada a los 30 días operativos.
+const getStatisticsLegacy = wrap(async (_req, res) => {
   const rows = await DigitalMeetingMinute.findAll({
     where: { created_at: activeRetentionWhere() },
     include: [
@@ -955,6 +960,138 @@ const getStatistics = wrap(async (_req, res) => {
   });
 });
 
+*/
+const getStatistics = wrap(async (req, res) => {
+  const rows = await DigitalMeetingMinute.findAll({
+    include: [
+      participantInclude,
+      { model: User, as: 'creator', attributes: ['id', 'nombre'] }
+    ],
+    order: [['created_at', 'DESC']]
+  });
+
+  const availableYears = [...new Set(rows
+    .map((row) => Number(localDateKey(row.created_at).slice(0, 4)))
+    .filter(Boolean))].sort((a, b) => b - a);
+  const requestedYear = Number.parseInt(req.query.year, 10);
+  const selectedYear = Number.isInteger(requestedYear) && requestedYear >= 2000 && requestedYear <= 2200
+    ? requestedYear
+    : null;
+  const filteredRows = selectedYear
+    ? rows.filter((row) => Number(localDateKey(row.created_at).slice(0, 4)) === selectedYear)
+    : rows;
+  const operationalLimit = Date.now() - MINUTE_RETENTION_MS;
+  const retainedRows = filteredRows.filter((row) => !row.deleted_at);
+  const operationalRows = retainedRows.filter((row) => new Date(row.created_at).getTime() > operationalLimit);
+  const archivedRows = filteredRows.filter((row) => row.deleted_at || new Date(row.created_at).getTime() <= operationalLimit);
+  const byStatus = { draft: 0, signing: 0, signed: 0, distributed: 0 };
+  retainedRows.forEach((row) => {
+    if (Object.prototype.hasOwnProperty.call(byStatus, row.status)) byStatus[row.status] += 1;
+  });
+
+  const participants = retainedRows.flatMap((row) => row.participants || []);
+  const signedParticipants = participants.filter((participant) => participant.status === 'signed').length;
+  const trendMap = new Map();
+  if (selectedYear) {
+    for (let month = 1; month <= 12; month += 1) {
+      const key = `${selectedYear}-${String(month).padStart(2, '0')}`;
+      const label = new Intl.DateTimeFormat('es-CO', { month: 'short' }).format(new Date(selectedYear, month - 1, 1));
+      trendMap.set(key, { key, label, total: 0 });
+    }
+  } else {
+    [...availableYears].reverse().forEach((year) => {
+      trendMap.set(String(year), { key: String(year), label: String(year), total: 0 });
+    });
+  }
+  filteredRows.forEach((row) => {
+    const dateKey = localDateKey(row.created_at);
+    const key = selectedYear ? dateKey.slice(0, 7) : dateKey.slice(0, 4);
+    if (trendMap.has(key)) trendMap.get(key).total += 1;
+  });
+
+  const dependencyMap = new Map();
+  retainedRows.forEach((row) => {
+    const dependency = clean(row.content?.dependencia, 220) || 'Sin dependencia';
+    dependencyMap.set(dependency, (dependencyMap.get(dependency) || 0) + 1);
+  });
+  const byDependency = Array.from(dependencyMap.entries())
+    .map(([name, total]) => ({ name, total }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 8);
+
+  const toArchiveRow = (row) => {
+    const year = localDateKey(row.created_at).slice(0, 4);
+    const isExpired = new Date(row.created_at).getTime() <= operationalLimit;
+    return {
+      id: row.id,
+      code: row.code,
+      title: clean(row.content?.titulo, 120) || 'Acta sin título',
+      meeting_date: clean(row.content?.fecha, 50),
+      created_at: row.created_at,
+      status: row.status,
+      lifecycle: row.deleted_at ? 'deleted' : (isExpired ? 'archived' : 'operational'),
+      creator: formatPersonName(row.creator?.nombre || ''),
+      dependency: clean(row.content?.dependencia, 220) || 'Sin dependencia',
+      participants: (row.participants || []).length,
+      signed_participants: (row.participants || []).filter((participant) => participant.status === 'signed').length,
+      archive_location: `Base de datos SIAC / Actas / ${year} / ${row.code}`
+    };
+  };
+
+  res.json({
+    success: true,
+    data: {
+      retention_days: MINUTE_RETENTION_DAYS,
+      available_years: availableYears,
+      selected_year: selectedYear,
+      summary: {
+        total: filteredRows.length,
+        active: operationalRows.length,
+        archived: archivedRows.length,
+        deleted: filteredRows.length - retainedRows.length,
+        draft: byStatus.draft,
+        signing: byStatus.signing,
+        signed: byStatus.signed,
+        distributed: byStatus.distributed,
+        completed: byStatus.signed + byStatus.distributed,
+        participants: participants.length,
+        signed_participants: signedParticipants,
+        pending_participants: participants.length - signedParticipants,
+        signature_progress: participants.length ? Math.round((signedParticipants / participants.length) * 100) : 0
+      },
+      by_status: [
+        { status: 'draft', label: 'Borrador', total: byStatus.draft },
+        { status: 'signing', label: 'En firmas', total: byStatus.signing },
+        { status: 'signed', label: 'Firmadas', total: byStatus.signed },
+        { status: 'distributed', label: 'Enviadas', total: byStatus.distributed },
+        { status: 'deleted', label: 'Retiradas', total: filteredRows.length - retainedRows.length }
+      ],
+      trend: Array.from(trendMap.values()),
+      by_dependency: byDependency,
+      archive: filteredRows.map(toArchiveRow),
+      recent: filteredRows.slice(0, 12).map(toArchiveRow)
+    }
+  });
+});
+
+const downloadArchivedPdf = wrap(async (req, res) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, {
+    include: [
+      { model: DigitalMeetingParticipant, as: 'participants' },
+      { model: DigitalMeetingSignature, as: 'signatures' },
+      { model: Documento, as: 'documento', required: false }
+    ]
+  });
+  if (!minute) throw Object.assign(new Error('El acta no existe en el archivo histórico.'), { statusCode: 404 });
+  const buffer = await buildSignedMinutePdfBuffer(minute, { hideSignatures: false });
+  const safeCode = clean(minute.code, 80).replace(/[^a-z0-9_-]/gi, '-');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${safeCode}.pdf"`);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.send(buffer);
+});
+
 const getMinute = wrap(async (req, res) => {
   const row = await DigitalMeetingMinute.findByPk(req.params.id, { include: includeRelations });
   if (!row || row.deleted_at) {
@@ -991,7 +1128,7 @@ const deleteMinute = wrap(async (req, res) => {
 
   res.json({
     success: true,
-    message: `Acta ${minute.code} eliminada del sistema.`,
+    message: `Acta ${minute.code} retirada de la vista operativa y conservada en el archivo histórico.`,
     data: { id: minute.id }
   });
 });
@@ -2221,6 +2358,7 @@ module.exports = {
   calendarSuggestions,
   calendarOAuthCallback,
   deleteMinute,
+  downloadArchivedPdf,
   downloadPdf,
   downloadWord,
   getConfig,

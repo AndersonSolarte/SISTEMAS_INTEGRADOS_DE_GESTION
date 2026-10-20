@@ -390,7 +390,7 @@ function PlaneacionEstrategica() {
                       Estadísticas de formatos
                     </Typography>
                     <Typography variant="body2" sx={{ color: '#64748b', mb: 2.5 }}>
-                      Consolidado general de actas por estado, firmas, dependencia y fecha de creación.
+                      Selecciona un formato institucional para consultar sus indicadores y estados.
                     </Typography>
                     <Button
                       fullWidth

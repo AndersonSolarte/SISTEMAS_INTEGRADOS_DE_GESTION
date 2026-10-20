@@ -1354,7 +1354,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setLoading(true);
     try {
       const response = await meetingMinuteService.deleteMinute(minuteToDelete.id);
-      enqueueSnackbar(response.message || 'Acta eliminada del sistema.', { variant: 'success' });
+      enqueueSnackbar(response.message || 'Acta retirada de la vista operativa y conservada en el archivo histórico.', { variant: 'success' });
       if (form.id === minuteToDelete.id) {
         hasUnsavedChangesRef.current = false;
         localChangeVersionRef.current = 0;
@@ -1502,7 +1502,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 Mis actas
               </Button>
               {expiringMinutes.length > 0 && (
-                <Tooltip title="Hay actas próximas a ser eliminadas automáticamente del sistema">
+                <Tooltip title="Hay actas próximas a salir de la vista operativa y pasar al archivo histórico">
                   <Button
                     variant="contained"
                     color="warning"
@@ -2639,7 +2639,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
           <Box>
             <Typography variant="h6" fontWeight={950}>Mis actas</Typography>
-            <Typography variant="body2" color="text.secondary">Solo actas creadas por ti o en las que eres responsable/corresponsable. Se eliminan automáticamente a los {retentionDays} días.</Typography>
+            <Typography variant="body2" color="text.secondary">Solo actas creadas por ti o en las que eres responsable/corresponsable. A los {retentionDays} días salen de esta vista y permanecen en el archivo histórico.</Typography>
           </Box>
           <IconButton onClick={() => setMyMinutesOpen(false)} disabled={loadingMyMinutes}><Close /></IconButton>
         </Stack>
@@ -2647,7 +2647,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       <DialogContent>
         {expiringMinutes.length > 0 && (
           <Alert severity="warning" icon={<NotificationsActive />} sx={{ mb: 2, fontWeight: 700 }}>
-            Tienes {expiringMinutes.length} {expiringMinutes.length === 1 ? 'acta próxima a ser eliminada' : 'actas próximas a ser eliminadas'} al completar {retentionDays} días desde su creación.
+            Tienes {expiringMinutes.length} {expiringMinutes.length === 1 ? 'acta próxima a archivarse' : 'actas próximas a archivarse'} al completar {retentionDays} días desde su creación.
           </Alert>
         )}
         <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2.5, maxHeight: '62vh' }}>
@@ -2658,7 +2658,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 <TableCell sx={{ fontWeight: 900 }}>Fecha</TableCell>
                 <TableCell sx={{ fontWeight: 900 }}>Estado</TableCell>
                 <TableCell sx={{ fontWeight: 900 }}>Firmas</TableCell>
-                <TableCell sx={{ fontWeight: 900 }}>Eliminación automática</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>Archivo automático</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 900 }}>Acción</TableCell>
               </TableRow>
             </TableHead>
@@ -2680,9 +2680,9 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     <TableCell sx={{ minWidth: 150 }}>
                       <Box>
                         <Typography fontWeight={900} fontSize={13} color={Number(days) <= 7 ? 'error.main' : 'warning.dark'}>
-                          {Number(days) === 0 ? 'Se elimina hoy' : `${days} ${Number(days) === 1 ? 'día restante' : 'días restantes'}`}
+                          {Number(days) === 0 ? 'Se archiva hoy' : `${days} ${Number(days) === 1 ? 'día restante' : 'días restantes'}`}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">Se elimina: {formatDate(minute.retention?.expires_at)}</Typography>
+                        <Typography variant="caption" color="text.secondary">Se archiva: {formatDate(minute.retention?.expires_at)}</Typography>
                       </Box>
                     </TableCell>
                     <TableCell align="right">
@@ -2779,10 +2779,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       </DialogTitle>
       <DialogContent>
         <Typography variant="body2" sx={{ mb: 1.5, lineHeight: 1.6 }}>
-          ¿Está seguro de eliminar el acta <strong>{minuteToDelete?.code}</strong> del sistema?
+          ¿Está seguro de retirar el acta <strong>{minuteToDelete?.code}</strong> de la vista operativa?
         </Typography>
         <Alert severity="warning" sx={{ fontSize: 12.5 }}>
-          El acta pasará a eliminadas y podrá restaurarse hasta su fecha de vencimiento. Todas las actas se eliminan definitivamente al completar {retentionDays} días desde su creación. Si ya fue enviada, los participantes conservarán su copia en PDF en sus correos.
+          El acta pasará a retiradas y podrá restaurarse hasta su fecha de archivo. Al completar {retentionDays} días dejará de mostrarse a los usuarios, pero permanecerá en el control histórico y estadístico. Si ya fue enviada, los participantes conservarán su copia en PDF en sus correos.
         </Alert>
       </DialogContent>
       <DialogActions sx={{ p: 2 }}>
@@ -2797,7 +2797,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
           startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <DeleteOutline />}
           sx={{ textTransform: 'none', fontWeight: 900 }}
         >
-          {loading ? 'Eliminando…' : 'Mover a eliminadas'}
+          {loading ? 'Retirando…' : 'Retirar acta'}
         </Button>
       </DialogActions>
     </Dialog>

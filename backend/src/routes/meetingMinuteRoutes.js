@@ -22,6 +22,10 @@ router.get('/statistics', auth, hasAnyRoleOrModulePermission({
   roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_INFORMACION, ROLES.GESTION_PROCESOS],
   moduleKeys: ['gestion_procesos', 'estadisticas_formatos', 'estadistica_documental']
 }), controller.getStatistics);
+router.get('/statistics/:id/pdf', auth, hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_INFORMACION, ROLES.GESTION_PROCESOS],
+  moduleKeys: ['gestion_procesos', 'estadisticas_formatos', 'estadistica_documental']
+}), controller.downloadArchivedPdf);
 router.get('/mine', auth, controller.listMyMinutes);
 router.get('/', auth, controller.listMinutes);
 router.post('/restore-all', auth, controller.restoreAllMinutes);

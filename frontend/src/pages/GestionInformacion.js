@@ -8522,7 +8522,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                     Estadísticas de formatos
                   </Typography>
                   <Typography sx={{ mt: 0.7, color: '#475569', fontSize: 14, lineHeight: 1.3 }}>
-                    Dashboard general de actas: borradores, firmas, aprobaciones, envíos y eliminación automática.
+                    Selecciona un formato institucional para consultar sus indicadores y estados.
                   </Typography>
                   <Chip size="small" label="Disponible" sx={{ mt: 1, fontWeight: 700, bgcolor: '#dcfce7', color: '#15803d' }} />
                 </Box>
