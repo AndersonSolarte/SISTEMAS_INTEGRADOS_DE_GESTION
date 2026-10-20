@@ -30,6 +30,8 @@ router.post('/:id/flujo', controller.workflowAction);
 router.post('/:id/actividades/:uid/asignar', controller.assignActivity);
 router.post('/:id/actividades/:uid/flujo', controller.activityWorkflowAction);
 router.post('/:id/actividades/:uid/correcciones/:correctionId', controller.activityCorrectionAction);
+router.post('/:id/repositorio-drive/sincronizar', controller.syncDriveRepository);
+router.post('/:id/actividades/:uid/evidencias', evidenceUpload.single('file'), controller.uploadActivityEvidence);
 router.post('/:id/evidencias', evidenceUpload.single('file'), controller.uploadEvidence);
 router.get('/:id/export', controller.exportExcel);
 router.get('/:id', controller.get);

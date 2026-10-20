@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const { Op } = require('sequelize');
 const { Autoevaluacion, AutoevaluacionPrograma, Documento, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission } = require('../models');
+const planMejoramientoDriveService = require('../services/planMejoramientoDriveService');
 
 const PLAN_MANAGER_ROLES = new Set(['administrador', 'autoevaluacion']);
 const VALID_STATES = new Set(['borrador', 'en_ejecucion', 'cerrado']);
@@ -787,6 +788,64 @@ const uploadEvidence = async (req, res) => {
   }
 };
 
+const canManageActivityEvidence = async (req, planId, activityUid) => {
+  if (!req.planExecutionOnly || !req.planCollaboratorOnly) return true;
+  return Boolean(await PlanMejoramientoActividadAsignacion.count({
+    where: {
+      plan_id: planId,
+      actividad_uid: text(activityUid),
+      user_id: req.user?.id,
+      activo: true,
+      estado_flujo: { [Op.in]: ACTIONABLE_ACTIVITY_STATES }
+    }
+  }));
+};
+
+const syncDriveRepository = async (req, res) => {
+  try {
+    const plan = await PlanMejoramiento.findByPk(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: 'Plan de mejoramiento no encontrado' });
+    if (!(await canAccessPlan(req, plan.id))) return res.status(403).json({ success: false, message: 'Este plan no está asignado a tu usuario' });
+    const synchronized = await planMejoramientoDriveService.ensurePlanRepository(plan);
+    await plan.update({ contenido: synchronized.content, actualizado_por: req.user?.id });
+    return res.json({
+      success: true,
+      message: 'Repositorio de evidencias sincronizado con Google Drive',
+      data: { repository: synchronized.repository, activities: synchronized.activities }
+    });
+  } catch (error) {
+    console.error('[plan-mejoramiento-drive] Error sincronizando repositorio:', error.message);
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message || 'No fue posible sincronizar el repositorio de evidencias' });
+  }
+};
+
+const uploadActivityEvidence = async (req, res) => {
+  try {
+    const plan = await PlanMejoramiento.findByPk(req.params.id);
+    const activityUid = text(req.params.uid);
+    if (!plan) return res.status(404).json({ success: false, message: 'Plan de mejoramiento no encontrado' });
+    if (!(await canAccessPlan(req, plan.id))) return res.status(403).json({ success: false, message: 'Este plan no está asignado a tu usuario' });
+    if (!(await canManageActivityEvidence(req, plan.id, activityUid))) {
+      return res.status(403).json({ success: false, message: 'Esta actividad no está asignada a tu usuario' });
+    }
+    if (!req.file?.buffer) return res.status(400).json({ success: false, message: 'Seleccione un archivo de evidencia' });
+
+    const uploaded = await planMejoramientoDriveService.uploadActivityEvidence(plan, activityUid, req.file);
+    await plan.update({ contenido: uploaded.content, actualizado_por: req.user?.id });
+    return res.status(201).json({
+      success: true,
+      data: {
+        ...uploaded.evidence,
+        cargadoPor: req.user?.nombre || req.user?.email || `Usuario ${req.user?.id}`,
+        cargadoPorId: req.user?.id
+      }
+    });
+  } catch (error) {
+    console.error('[plan-mejoramiento-drive] Error cargando evidencia:', error.message);
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message || 'No fue posible cargar la evidencia en Google Drive' });
+  }
+};
+
 const create = async (req, res) => {
   try {
     if (req.planExecutionOnly) return res.status(403).json({ success: false, message: 'El ejecutor no puede crear planes de mejoramiento' });
@@ -1405,4 +1464,4 @@ const exportExcel = async (req, res) => {
   }
 };
 
-module.exports = { ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, exportExcel, buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, planStateForAssignment };
+module.exports = { ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, syncDriveRepository, uploadActivityEvidence, exportExcel, buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, planStateForAssignment };

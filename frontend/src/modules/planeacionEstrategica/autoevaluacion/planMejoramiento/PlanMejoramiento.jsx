@@ -12,6 +12,8 @@ import {
   EditRounded as EditIcon,
   ExpandMoreRounded as ExpandMoreIcon,
   FactCheckRounded as CheckIcon,
+  FolderOpenRounded as FolderOpenIcon,
+  CloudSyncRounded as CloudSyncIcon,
   CalendarMonthRounded as CalendarIcon,
   FlagRounded as ObjectiveIcon,
   MonetizationOnRounded as BudgetIcon,
@@ -46,7 +48,8 @@ const emptyActivity = () => ({
   procesoResponsable: '', responsableId: null, responsableNombre: '', responsableDocumento: '', responsableEmail: '',
   responsableDependencia: '', responsableVicerrectoria: '', cargoResponsable: '', alcance: 'PROGRAMA', ejeEstrategico: '', objetivoEstrategico: '',
   proyectoPdi: '', politicasInstitucionales: [], lineasAccionPolitica: [],
-  metaAlcanzada: '', fechaSeguimiento: '', evidencia: '', observaciones: '', verificacionSeguimiento: 'pendiente', seguimientos: []
+  metaAlcanzada: '', fechaSeguimiento: '', evidencia: '', evidenceFolderId: '', evidenceFolderUrl: '', evidenceDriveStatus: '',
+  observaciones: '', verificacionSeguimiento: 'pendiente', seguimientos: []
 });
 const emptyObjective = (number) => ({
   codigo: `OPM_${String(number).padStart(2, '0')}`, factor: '', caracteristica: '', aspecto: '', calificacion: '',
@@ -90,6 +93,11 @@ const buildPlanPayload = (plan) => ({
   }
 });
 const planSnapshot = (plan) => JSON.stringify(buildPlanPayload(plan));
+const driveRepositorySignature = (plan) => JSON.stringify((plan?.objetivos || []).map((objective) => ({
+  codigo: objective.codigo || '',
+  objetivo: objective.objetivo || '',
+  actividades: (objective.actividades || []).map((activity) => ({ uid: activity.uid || '', nombre: activity.nombre || '' }))
+})));
 
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const withCurrent = (options = [], current = '') => current && !options.includes(current) ? [current, ...options] : options;
@@ -266,6 +274,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [importingTariffs, setImportingTariffs] = useState(false);
   const [evidenceFiles, setEvidenceFiles] = useState({});
   const [recordingFollowUp, setRecordingFollowUp] = useState('');
+  const [driveSyncStatus, setDriveSyncStatus] = useState('idle');
+  const [driveSyncMessage, setDriveSyncMessage] = useState('');
   const [workflowObservation, setWorkflowObservation] = useState('');
   const [activityWorkflowObservations, setActivityWorkflowObservations] = useState({});
   const [correctionResponses, setCorrectionResponses] = useState({});
@@ -288,6 +298,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const saveInFlightRef = useRef(false);
   const queuedSaveRef = useRef(false);
   const tariffInputRef = useRef(null);
+  const driveSyncedPlanRef = useRef(null);
+  const driveSyncInFlightRef = useRef(false);
 
   const loadPlans = useCallback(async (synchronize = false) => {
     setLoading(true);
@@ -379,6 +391,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       lastSavedSnapshotRef.current = planSnapshot(nextEditor);
       setSaveStatus('saved');
       setEditor(nextEditor);
+      driveSyncedPlanRef.current = null;
+      setDriveSyncStatus(nextEditor.objetivos.flatMap((item) => item.actividades || []).every((item) => item.evidenceFolderUrl) ? 'synced' : 'idle');
+      setDriveSyncMessage('');
       setExpandedObjective(null);
       setExpandedTraceability(false);
       setExpandedFollowUpObjective(0);
@@ -627,8 +642,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     if (!activity?.fechaSeguimiento) return enqueueSnackbar('Ingrese la fecha del seguimiento', { variant: 'warning' });
     const activityKey = activity.uid || `${objectiveIndex}_${activityIndex}`;
     const evidenceFile = evidenceFiles[activityKey];
-    if (!evidenceFile && !String(activity.evidencia || '').trim()) {
-      return enqueueSnackbar('Adjunte una evidencia o registre un enlace de soporte', { variant: 'warning' });
+    if (!evidenceFile && !String(activity.evidenceFolderUrl || '').trim()) {
+      return enqueueSnackbar('Adjunte una evidencia o sincronice primero la carpeta de Google Drive', { variant: 'warning' });
     }
 
     const key = activityKey;
@@ -640,8 +655,14 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         planId = saved?.id;
       }
       if (!planId) throw new Error('Espere a que termine el autoguardado del plan e inténtelo nuevamente');
+      await waitForSaveIdle();
+      if (planSnapshot(editorRef.current) !== lastSavedSnapshotRef.current) {
+        await persistPlan(editorRef.current);
+        await waitForSaveIdle();
+      }
+      planId = editorRef.current?.id || planId;
 
-      const uploadedEvidence = evidenceFile ? await planMejoramientoService.uploadEvidence(planId, evidenceFile) : null;
+      const uploadedEvidence = evidenceFile ? await planMejoramientoService.uploadActivityEvidence(planId, activityKey, evidenceFile) : null;
       let localUser = {};
       try { localUser = JSON.parse(localStorage.getItem('user') || '{}'); } catch (_) { localUser = {}; }
       const progress = percent(activity);
@@ -657,7 +678,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         estadoCumplimiento: progress >= 100 ? 'Cumplido' : progress > 0 ? 'En avance' : 'Sin iniciar',
         verificacion: activity.verificacionSeguimiento || 'pendiente',
         observaciones: activity.observaciones || '',
-        evidenciaUrl: uploadedEvidence?.url || String(activity.evidencia || '').trim(),
+        evidenciaUrl: uploadedEvidence?.url || String(activity.evidenceFolderUrl || '').trim(),
+        evidenciaCarpetaUrl: uploadedEvidence?.carpetaUrl || String(activity.evidenceFolderUrl || '').trim(),
         evidenciaArchivo: uploadedEvidence || null,
         registradoAt: new Date().toISOString(),
         registradoPor: uploadedEvidence?.cargadoPor || localUser.nombre || localUser.email || 'Usuario del sistema',
@@ -672,7 +694,10 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           ...item,
           actividades: item.actividades.map((current, ai) => ai !== activityIndex ? current : {
             ...current,
-            evidencia: record.evidenciaUrl,
+            evidencia: record.evidenciaCarpetaUrl,
+            evidenceFolderId: uploadedEvidence?.carpetaId || current.evidenceFolderId || '',
+            evidenceFolderUrl: record.evidenciaCarpetaUrl,
+            evidenceDriveStatus: 'synced',
             seguimientos: [...(current.seguimientos || []), record]
           })
         })
@@ -685,6 +710,69 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       setRecordingFollowUp('');
     }
   };
+
+  const syncEvidenceRepository = useCallback(async ({ notify = false, force = false } = {}) => {
+    let plan = editorRef.current;
+    if (!plan?.id || (driveSyncInFlightRef.current && !force)) return;
+    driveSyncInFlightRef.current = true;
+    setDriveSyncStatus('syncing');
+    setDriveSyncMessage('');
+    try {
+      await waitForSaveIdle();
+      if (planSnapshot(editorRef.current) !== lastSavedSnapshotRef.current) {
+        await persistPlan(editorRef.current);
+        await waitForSaveIdle();
+      }
+      plan = editorRef.current;
+      const result = await planMejoramientoService.syncDriveRepository(plan.id);
+      const folders = new Map((result?.activities || []).map((item) => [String(item.uid), item]));
+      setEditor((previous) => ({
+        ...previous,
+        objetivos: (previous.objetivos || []).map((objective) => ({
+          ...objective,
+          actividades: (objective.actividades || []).map((activity) => {
+            const folder = folders.get(String(activity.uid));
+            return folder ? {
+              ...activity,
+              evidenceFolderId: folder.folderId,
+              evidenceFolderUrl: folder.folderUrl,
+              evidenceDriveStatus: 'synced'
+            } : activity;
+          })
+        }))
+      }));
+      driveSyncedPlanRef.current = `${plan.id}:${driveRepositorySignature(plan)}`;
+      setDriveSyncStatus('synced');
+      setDriveSyncMessage('Las carpetas de evidencias están sincronizadas con Google Drive.');
+      if (notify) enqueueSnackbar('Repositorio de evidencias sincronizado con Google Drive', { variant: 'success' });
+    } catch (error) {
+      driveSyncedPlanRef.current = `${plan.id}:${driveRepositorySignature(plan)}`;
+      setDriveSyncStatus('error');
+      setDriveSyncMessage(error.response?.data?.message || 'No fue posible sincronizar el Drive de Planes de Mejoramiento');
+      if (notify) enqueueSnackbar(error.response?.data?.message || 'No fue posible sincronizar Google Drive', { variant: 'error' });
+    } finally {
+      driveSyncInFlightRef.current = false;
+    }
+  }, [enqueueSnackbar, persistPlan, waitForSaveIdle]);
+
+  const currentDriveRepositoryKey = editor?.id ? `${editor.id}:${driveRepositorySignature(editor)}` : '';
+  const currentDriveActivities = (editor?.objetivos || []).flatMap((objective) => objective.actividades || []);
+  const currentDriveActivitiesReady = currentDriveActivities.length > 0 && currentDriveActivities.every((activity) => activity.evidenceFolderUrl);
+
+  useEffect(() => {
+    if (tab !== 4 || !editor?.id) return undefined;
+    if (driveSyncedPlanRef.current === currentDriveRepositoryKey) return undefined;
+    if (driveSyncedPlanRef.current === null && currentDriveActivitiesReady) {
+      driveSyncedPlanRef.current = currentDriveRepositoryKey;
+      setDriveSyncStatus('synced');
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      driveSyncedPlanRef.current = currentDriveRepositoryKey;
+      syncEvidenceRepository();
+    }, 1600);
+    return () => window.clearTimeout(timer);
+  }, [editor?.id, currentDriveActivitiesReady, currentDriveRepositoryKey, tab, syncEvidenceRepository]);
 
   const assignExecutionResponsible = async (user) => {
     if (!user || !editor?.id) return;
@@ -1533,6 +1621,17 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           {tab === 4 && (
             <Stack spacing={2.2}>
               <Alert severity="info">Las actividades formuladas se cargan automáticamente. Registre cada corte de seguimiento, adjunte su evidencia y verifique el cumplimiento; los registros anteriores permanecen en la trazabilidad.</Alert>
+              <Alert
+                severity={driveSyncStatus === 'error' ? 'warning' : driveSyncStatus === 'synced' ? 'success' : 'info'}
+                icon={driveSyncStatus === 'syncing' ? <CircularProgress size={20} /> : <CloudSyncIcon />}
+                action={driveSyncStatus === 'error' ? (
+                  <Button color="inherit" size="small" onClick={() => syncEvidenceRepository({ notify: true, force: true })} sx={{ fontWeight: 900 }}>Reintentar</Button>
+                ) : null}
+              >
+                {driveSyncStatus === 'syncing'
+                  ? 'Creando y verificando las carpetas de evidencias en Google Drive…'
+                  : driveSyncMessage || 'El enlace de cada actividad se genera automáticamente en el Drive exclusivo de Planes de Mejoramiento.'}
+              </Alert>
               {editor.objetivos.map((objective, objectiveIndex) => (
                 <Paper key={objective.codigo || objectiveIndex} elevation={0} sx={{ p: 2.3, borderRadius: 3.5, border: '1px solid #bfdbfe', bgcolor: '#f8fbff' }}>
                   <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1.5} onClick={() => setExpandedFollowUpObjective((current) => current === objectiveIndex ? null : objectiveIndex)} sx={{ mb: expandedFollowUpObjective === objectiveIndex ? 1.5 : 0, cursor: 'pointer' }}>
@@ -1631,7 +1730,26 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     <TextField disabled={executionMode || executionLocked} select label="Verificación de Autoevaluación" value={activity.verificacionSeguimiento || 'pendiente'} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'verificacionSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}>
                       <MenuItem value="pendiente">Pendiente de verificación</MenuItem><MenuItem value="verificado">Cumplimiento verificado</MenuItem><MenuItem value="requiere_ajustes">Requiere ajustes</MenuItem>
                     </TextField>
-                    <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Enlace de evidencia (opcional si adjunta archivo)" value={activity.evidencia} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'evidencia', e.target.value)} sx={{ gridColumn: { md: 'span 5' } }} />
+                    <TextField
+                      label="Carpeta automática de evidencias en Google Drive"
+                      value={activity.evidenceFolderUrl || ''}
+                      placeholder={driveSyncStatus === 'syncing' ? 'Creando carpeta…' : 'Pendiente de sincronización'}
+                      InputProps={{ readOnly: true }}
+                      InputLabelProps={{ shrink: true }}
+                      sx={{ gridColumn: { md: 'span 4' } }}
+                    />
+                    <Button
+                      component="a"
+                      href={activity.evidenceFolderUrl || undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      disabled={!activity.evidenceFolderUrl}
+                      variant="outlined"
+                      startIcon={<FolderOpenIcon />}
+                      sx={{ gridColumn: { md: 'span 1' }, minHeight: 56, textTransform: 'none', fontWeight: 900 }}
+                    >
+                      Abrir
+                    </Button>
                     <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Observaciones y retroalimentación" value={activity.observaciones} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'observaciones', e.target.value)} multiline minRows={2} sx={{ gridColumn: { md: 'span 12' } }} />
                   </Box>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mt: 1.5 }}>
