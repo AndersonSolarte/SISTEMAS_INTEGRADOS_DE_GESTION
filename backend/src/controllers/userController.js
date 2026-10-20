@@ -139,6 +139,7 @@ const INFRAESTRUCTURA_FISICA_DASHBOARD_PERMISSION_KEYS = [
 ];
 const GESTION_PROCESOS_DASHBOARD_PERMISSION_KEYS = [
   'estadistica_documental',
+  'estadisticas_formatos',
   'aseguramiento_calidad',
   'buscar_documentos',
   'favoritos',

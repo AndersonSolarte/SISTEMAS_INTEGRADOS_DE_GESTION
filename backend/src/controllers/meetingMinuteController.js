@@ -30,6 +30,8 @@ const {
 
 const PRIVATE_ROOT = path.resolve(process.env.SIAC_MEETING_MINUTE_DIR || path.join(__dirname, '../../uploads/.private/digital-meeting-minutes'));
 const SIGNATURE_ROOT = path.join(PRIVATE_ROOT, 'signatures');
+const MINUTE_RETENTION_DAYS = Math.max(1, Number.parseInt(process.env.MEETING_MINUTE_RETENTION_DAYS || process.env.MEETING_MINUTE_TRASH_RETENTION_DAYS, 10) || 30);
+const MINUTE_RETENTION_MS = MINUTE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const ensureDir = (dir) => fs.mkdirSync(dir, { recursive: true });
 const hash = (value) => crypto.createHash('sha256').update(Buffer.isBuffer(value) ? value : String(value || '')).digest('hex');
 const contentHash = (value) => hash(JSON.stringify(value));
@@ -177,6 +179,11 @@ const placeResponsibleFirst = (participants = [], responsible = {}) => {
 const formatDate = (value) => {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : clean(value, 50);
+};
+const localDateKey = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 const publicFrontend = (req) => clean(req.body?.public_base_url || process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || `${req.protocol}://${req.get('host')}`, 500).replace(/\/$/, '');
 
@@ -752,30 +759,67 @@ const listMeetingLocations = wrap(async (_req, res) => {
   res.json({ success: true, data: locations });
 });
 
-// Restauración automática al inicio para recuperar actas afectadas
-DigitalMeetingMinute.update(
-  { deleted_at: null },
-  { where: { deleted_at: { [Op.ne]: null } } }
-).then(([count]) => {
-  if (count > 0) console.log(`[meeting-minute] Se restauraron automáticamente ${count} acta(s) eliminada(s).`);
-}).catch((err) => console.warn('[meeting-minute] auto-restore on boot error:', err.message));
+const minuteExpirationDate = (createdAt) => new Date(new Date(createdAt).getTime() + MINUTE_RETENTION_MS);
+const minuteDaysRemaining = (createdAt, now = Date.now()) => Math.max(0, Math.ceil((minuteExpirationDate(createdAt).getTime() - now) / 86400000));
+const activeRetentionWhere = () => ({ [Op.gt]: new Date(Date.now() - MINUTE_RETENTION_MS) });
+
+const addRetentionMetadata = (minute) => {
+  minute.setDataValue('retention', {
+    retention_days: MINUTE_RETENTION_DAYS,
+    expires_at: minuteExpirationDate(minute.created_at),
+    days_remaining: minuteDaysRemaining(minute.created_at)
+  });
+  return minute;
+};
+
+const purgeExpiredMinutes = async () => {
+  const expired = await DigitalMeetingMinute.findAll({
+    where: { created_at: { [Op.lte]: new Date(Date.now() - MINUTE_RETENTION_MS) } },
+    include: [{ model: DigitalMeetingSignature, as: 'signatures', attributes: ['signature_storage_key'] }],
+    attributes: ['id', 'code', 'created_at']
+  });
+  if (!expired.length) return 0;
+
+  const ids = expired.map((minute) => minute.id);
+  const signatureFiles = expired.flatMap((minute) => (
+    (minute.signatures || []).map((signature) => signature.signature_storage_key).filter(Boolean)
+  ));
+  await sequelize.transaction(async (transaction) => {
+    await DigitalMeetingSignature.destroy({ where: { minute_id: { [Op.in]: ids } }, transaction });
+    await DigitalMeetingSchedule.destroy({ where: { minute_id: { [Op.in]: ids } }, transaction });
+    await DigitalMeetingParticipant.destroy({ where: { minute_id: { [Op.in]: ids } }, transaction });
+    await DigitalMeetingMinute.destroy({ where: { id: { [Op.in]: ids } }, transaction });
+  });
+  signatureFiles.forEach((file) => {
+    try {
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    } catch (error) {
+      console.warn('[meeting-minute] No fue posible retirar una firma vencida:', error.message);
+    }
+  });
+  console.log(`[meeting-minute] Se eliminaron definitivamente ${expired.length} acta(s) con más de ${MINUTE_RETENTION_DAYS} días.`);
+  return expired.length;
+};
+
+purgeExpiredMinutes().catch((error) => console.warn('[meeting-minute] initial retention cleanup error:', error.message));
+const retentionCleanupTimer = setInterval(
+  () => purgeExpiredMinutes().catch((error) => console.warn('[meeting-minute] scheduled retention cleanup error:', error.message)),
+  60 * 60 * 1000
+);
+retentionCleanupTimer.unref?.();
 
 const listMinutes = wrap(async (req, res) => {
-  const where = { deleted_at: null };
-  if (!isAdmin(req.user)) {
-    const userId = Number(req.user.id);
-    const userDoc = String(req.user.username || req.user.documento || req.user.cedula || '').trim();
-    const userEmail = clean(req.user.email, 254).toLowerCase();
-
-    const orConditions = [{ created_by: userId }];
-    if (userDoc) {
-      orConditions.push(sequelize.literal(`content::text ILIKE '%${userDoc.replace(/'/g, "''")}%'`));
-    }
-    if (userEmail) {
-      orConditions.push(sequelize.literal(`content::text ILIKE '%${userEmail.replace(/'/g, "''")}%'`));
-    }
-    where[Op.or] = orConditions;
-  }
+  const userId = Number(req.user.id);
+  const userDoc = String(req.user.username || req.user.documento || req.user.cedula || '').trim();
+  const userEmail = clean(req.user.email, 254).toLowerCase();
+  const orConditions = [{ created_by: userId }];
+  if (userDoc) orConditions.push(sequelize.literal(`content::text ILIKE '%${userDoc.replace(/'/g, "''")}%'`));
+  if (userEmail) orConditions.push(sequelize.literal(`content::text ILIKE '%${userEmail.replace(/'/g, "''")}%'`));
+  const where = {
+    deleted_at: null,
+    created_at: activeRetentionWhere(),
+    [Op.or]: orConditions
+  };
 
   const rows = await DigitalMeetingMinute.findAll({
     where,
@@ -788,18 +832,127 @@ const listMinutes = wrap(async (req, res) => {
     limit: 200
   });
 
-  if (isAdmin(req.user)) {
-    return res.json({ success: true, data: rows });
-  }
+  const ownedRows = rows.filter((row) => (
+    Number(row.created_by) === userId || isMinuteResponsible(req.user, row)
+  ));
+  res.json({ success: true, data: ownedRows.map(addRetentionMetadata) });
+});
 
-  const authorizedRows = [];
-  for (const row of rows) {
-    if (await canAccessMinuteFullSignatures(req.user, row)) {
-      authorizedRows.push(row);
+const listMyMinutes = wrap(async (req, res) => {
+  const userId = Number(req.user.id);
+  const userDoc = String(req.user.username || req.user.documento || req.user.cedula || '').trim();
+  const userEmail = clean(req.user.email, 254).toLowerCase();
+  const orConditions = [{ created_by: userId }];
+  if (userDoc) orConditions.push(sequelize.literal(`content::text ILIKE '%${userDoc.replace(/'/g, "''")}%'`));
+  if (userEmail) orConditions.push(sequelize.literal(`content::text ILIKE '%${userEmail.replace(/'/g, "''")}%'`));
+
+  const rows = await DigitalMeetingMinute.findAll({
+    where: {
+      [Op.and]: [
+        { [Op.or]: orConditions },
+        { created_at: activeRetentionWhere() }
+      ]
+    },
+    include: [
+      participantInclude,
+      { model: Documento, as: 'documento', required: false },
+      { model: User, as: 'creator', attributes: ['id', 'nombre', 'username', 'email'] }
+    ],
+    order: [['deleted_at', 'DESC'], ['updated_at', 'DESC']],
+    limit: 300
+  });
+
+  const ownedRows = rows.filter((row) => (
+    Number(row.created_by) === userId || isMinuteResponsible(req.user, row)
+  ));
+  res.json({
+    success: true,
+    data: ownedRows.map(addRetentionMetadata),
+    meta: { retention_days: MINUTE_RETENTION_DAYS }
+  });
+});
+
+const getStatistics = wrap(async (_req, res) => {
+  const rows = await DigitalMeetingMinute.findAll({
+    where: { created_at: activeRetentionWhere() },
+    include: [
+      participantInclude,
+      { model: User, as: 'creator', attributes: ['id', 'nombre'] }
+    ],
+    order: [['created_at', 'DESC']]
+  });
+
+  const activeRows = rows.filter((row) => !row.deleted_at);
+  const byStatus = { draft: 0, signing: 0, signed: 0, distributed: 0 };
+  activeRows.forEach((row) => {
+    if (Object.prototype.hasOwnProperty.call(byStatus, row.status)) byStatus[row.status] += 1;
+  });
+
+  const participants = activeRows.flatMap((row) => row.participants || []);
+  const signedParticipants = participants.filter((participant) => participant.status === 'signed').length;
+  const trendMap = new Map();
+  for (let offset = MINUTE_RETENTION_DAYS - 1; offset >= 0; offset -= 1) {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - offset);
+    const key = localDateKey(date);
+    trendMap.set(key, { date: key, total: 0 });
+  }
+  rows.forEach((row) => {
+    const key = localDateKey(row.created_at);
+    if (trendMap.has(key)) trendMap.get(key).total += 1;
+  });
+
+  const dependencyMap = new Map();
+  activeRows.forEach((row) => {
+    const dependency = clean(row.content?.dependencia, 220) || 'Sin dependencia';
+    dependencyMap.set(dependency, (dependencyMap.get(dependency) || 0) + 1);
+  });
+  const byDependency = Array.from(dependencyMap.entries())
+    .map(([name, total]) => ({ name, total }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 8);
+
+  res.json({
+    success: true,
+    data: {
+      retention_days: MINUTE_RETENTION_DAYS,
+      summary: {
+        total: rows.length,
+        active: activeRows.length,
+        deleted: rows.length - activeRows.length,
+        draft: byStatus.draft,
+        signing: byStatus.signing,
+        signed: byStatus.signed,
+        distributed: byStatus.distributed,
+        completed: byStatus.signed + byStatus.distributed,
+        participants: participants.length,
+        signed_participants: signedParticipants,
+        pending_participants: participants.length - signedParticipants,
+        signature_progress: participants.length ? Math.round((signedParticipants / participants.length) * 100) : 0
+      },
+      by_status: [
+        { status: 'draft', label: 'Borrador', total: byStatus.draft },
+        { status: 'signing', label: 'En firmas', total: byStatus.signing },
+        { status: 'signed', label: 'Firmadas', total: byStatus.signed },
+        { status: 'distributed', label: 'Enviadas', total: byStatus.distributed },
+        { status: 'deleted', label: 'Eliminadas', total: rows.length - activeRows.length }
+      ],
+      trend: Array.from(trendMap.values()),
+      by_dependency: byDependency,
+      recent: rows.slice(0, 12).map((row) => ({
+        id: row.id,
+        code: row.code,
+        title: clean(row.content?.titulo, 120) || 'Acta sin título',
+        meeting_date: clean(row.content?.fecha, 50),
+        created_at: row.created_at,
+        status: row.deleted_at ? 'deleted' : row.status,
+        creator: formatPersonName(row.creator?.nombre || ''),
+        participants: (row.participants || []).length,
+        signed_participants: (row.participants || []).filter((participant) => participant.status === 'signed').length
+      }))
     }
-  }
-
-  res.json({ success: true, data: authorizedRows });
+  });
 });
 
 const getMinute = wrap(async (req, res) => {
@@ -826,12 +979,8 @@ const deleteMinute = wrap(async (req, res) => {
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada o ya fue eliminada.'), { statusCode: 404 });
 
   const userId = Number(req.user.id);
-  const userDoc = String(req.user.username || req.user.documento || req.user.cedula || '').trim().toLowerCase();
   const isCreator = minute.created_by && Number(minute.created_by) === userId;
-  const respData = Array.isArray(minute.content?.responsables_data) ? minute.content.responsables_data : [];
-  const primary = respData.find((r) => r.is_primary) || respData[0];
-  const isPrimaryResp = (primary?.document && String(primary.document).trim().toLowerCase() === userDoc)
-    || (minute.content?.responsable_document && String(minute.content.responsable_document).trim().toLowerCase() === userDoc);
+  const isPrimaryResp = isMinutePrimaryResponsible(req.user, minute);
   const isUserAdmin = isAdmin(req.user);
 
   if (!isCreator && !isPrimaryResp && !isUserAdmin) {
@@ -850,6 +999,13 @@ const deleteMinute = wrap(async (req, res) => {
 const restoreMinute = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id);
   if (!minute) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+  if (!minute.deleted_at) throw Object.assign(new Error('El acta no se encuentra eliminada.'), { statusCode: 409 });
+  if (new Date(minute.created_at) <= new Date(Date.now() - MINUTE_RETENTION_MS)) {
+    throw Object.assign(new Error(`El plazo de conservación de ${MINUTE_RETENTION_DAYS} días ya finalizó.`), { statusCode: 410 });
+  }
+  if (!canManageMinuteCalendar(req.user, minute)) {
+    throw Object.assign(new Error('No tiene permiso para restaurar esta acta.'), { statusCode: 403 });
+  }
   await minute.update({ deleted_at: null, updated_by: req.user.id });
   res.json({
     success: true,
@@ -859,9 +1015,10 @@ const restoreMinute = wrap(async (req, res) => {
 });
 
 const restoreAllMinutes = wrap(async (req, res) => {
+  if (!isAdmin(req.user)) throw Object.assign(new Error('Solo el administrador puede restaurar todas las actas.'), { statusCode: 403 });
   const [restored] = await DigitalMeetingMinute.update(
     { deleted_at: null },
-    { where: { deleted_at: { [Op.ne]: null } } }
+    { where: { deleted_at: { [Op.ne]: null }, created_at: activeRetentionWhere() } }
   );
   res.json({
     success: true,
@@ -2072,7 +2229,9 @@ module.exports = {
   googleSigningAccess,
   getMinute,
   getSigningAccess,
+  getStatistics,
   listMeetingLocations,
+  listMyMinutes,
   listMinutes,
   lookupEnrolledStudent,
   lookupParticipant,

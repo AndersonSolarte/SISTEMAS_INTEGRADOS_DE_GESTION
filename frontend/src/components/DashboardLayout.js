@@ -363,6 +363,7 @@ function DashboardLayout() {
       openKey: 'gestion_procesos',
       items: [
         { key: 'estadistica_documental', path: '/dashboard/gestion-informacion?tab=estadistica&module=gestion_procesos&panel=estadistica_documental', label: 'Estadística Documental', icon: <InsightsIcon /> },
+        { key: 'estadisticas_formatos', path: '/dashboard/gestion-informacion?tab=estadistica&module=gestion_procesos&panel=estadisticas_formatos', label: 'Estadísticas de formatos', icon: <InsightsIcon /> },
         { key: 'aseguramiento_calidad', path: '/dashboard/aseguramiento-calidad', label: 'Administración del Sistema Documental', icon: <CheckIcon /> },
         { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
         { key: 'gestion_usuarios', path: '/dashboard/gestion-usuarios', label: 'Gestión de Usuarios', icon: <PeopleIcon /> }
@@ -540,13 +541,13 @@ function DashboardLayout() {
 
     const actualProcesosDashboards = explicitProcesosDashboards.filter((k) => !k.startsWith('gestion_usuarios'));
     if (user?.role === ROLES.GESTION_PROCESOS || (user?.role === ROLES.CONSULTA && actualProcesosDashboards.length > 0)) {
-      const procesosKeys = ['estadistica_documental', 'aseguramiento_calidad', 'buscar_documentos'];
+      const procesosKeys = ['estadistica_documental', 'estadisticas_formatos', 'aseguramiento_calidad', 'buscar_documentos'];
       const visibleChildren = gestionProcesosMenuItems
         .filter((item) => item.section)
         .flatMap((section) => section.items)
         .filter((child) => (
-          child.key === 'estadistica_documental'
-            ? actualProcesosDashboards.includes('estadistica_documental') || user?.role === ROLES.GESTION_PROCESOS
+          ['estadistica_documental', 'estadisticas_formatos'].includes(child.key)
+            ? actualProcesosDashboards.includes(child.key) || user?.role === ROLES.GESTION_PROCESOS
             : child.key !== 'gestion_usuarios' && effectiveMenuPermissions.includes(child.key)
         ));
 

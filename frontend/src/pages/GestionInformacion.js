@@ -146,6 +146,7 @@ import ContextoExternoGestionPanel from '../components/contextoExterno/ContextoE
 import { ROLES } from '../constants/roles';
 import { ACADEMIC_PROGRAMS, ACADEMIC_PROGRAM_LEVELS, getAcademicProgramPermissionKey } from '../constants/academicPrograms';
 import { EstadisticaDocumentalPanel } from './EstadisticaDocumentalImpact';
+import MeetingMinuteStatisticsDashboard from '../components/meetingMinute/MeetingMinuteStatisticsDashboard';
 import ActivityDashboard from './ActivityDashboard';
 import SecurityApplicationDashboard from './SecurityApplicationDashboard';
 import PlaneacionEfectividad from './PlaneacionEfectividad';
@@ -2677,13 +2678,13 @@ function GestionInformacion() {
     [visiblePoblacionalDashboardKeys]
   );
   const visibleGestionProcesosDashboards = useMemo(() => {
-    if (user?.role === ROLES.ADMINISTRADOR) return ['estadistica_documental'];
-    if (user?.role === ROLES.PLANEACION_ESTRATEGICA) return ['estadistica_documental'];
+    if (user?.role === ROLES.ADMINISTRADOR) return ['estadistica_documental', 'estadisticas_formatos'];
+    if (user?.role === ROLES.PLANEACION_ESTRATEGICA) return ['estadistica_documental', 'estadisticas_formatos'];
     const explicit = normalizeModulePermissionList(user?.allowedGestionProcesosDashboards);
-    const legacy = normalizeModulePermissionList(user?.allowedModules).filter((x) => x === 'estadistica_documental');
+    const legacy = normalizeModulePermissionList(user?.allowedModules).filter((x) => ['estadistica_documental', 'estadisticas_formatos'].includes(x));
     const merged = Array.from(new Set([...explicit, ...legacy]));
     if (merged.length > 0) return merged;
-    if (user?.role === ROLES.GESTION_PROCESOS) return ['estadistica_documental'];
+    if (user?.role === ROLES.GESTION_PROCESOS) return ['estadistica_documental', 'estadisticas_formatos'];
     return [];
   }, [user]);
   const visibleSaberProDashboards = useMemo(() => {
@@ -3057,7 +3058,7 @@ function GestionInformacion() {
       setMenuView('estadistica');
       if (module === 'gestion_procesos') {
         setSelectedCard('gestion_procesos');
-        setGestionProcesosPanel(panel === 'hub' ? 'hub' : 'estadistica_documental');
+        setGestionProcesosPanel(['estadistica_documental', 'estadisticas_formatos'].includes(panel) ? panel : 'hub');
       } else {
         setSelectedCard(null);
       }
@@ -8423,11 +8424,13 @@ const renderCategoryBars = (items = [], options = {}) => {
   );
 
   const renderGestionProcesosModule = () => {
-    if (!visibleGestionProcesosDashboards.includes('estadistica_documental')) {
-      return <Alert severity="info">Este usuario no tiene habilitado el submódulo Estadística Documental.</Alert>;
+    const canViewDocumentStatistics = visibleGestionProcesosDashboards.includes('estadistica_documental');
+    const canViewFormatStatistics = visibleGestionProcesosDashboards.includes('estadisticas_formatos');
+    if (!canViewDocumentStatistics && !canViewFormatStatistics) {
+      return <Alert severity="info">Este usuario no tiene habilitados tableros estadísticos de Gestión por Procesos.</Alert>;
     }
 
-    if (user?.role === ROLES.GESTION_PROCESOS || isDirectDocumentalView) {
+    if (isDirectDocumentalView && canViewDocumentStatistics) {
       return (
         <Stack spacing={2}>
           <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
@@ -8456,7 +8459,7 @@ const renderCategoryBars = (items = [], options = {}) => {
 
         <Paper elevation={0} sx={{ p: { xs: 1.2, md: 1.8 }, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#f8fbff' }}>
           <Box sx={{ display: 'grid', gap: 1.6, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>
-            <Paper
+            {canViewDocumentStatistics && <Paper
               elevation={0}
               sx={{
                 p: { xs: 1.5, md: 1.8 },
@@ -8496,7 +8499,42 @@ const renderCategoryBars = (items = [], options = {}) => {
               >
                 Abrir dashboard
               </Button>
-            </Paper>
+            </Paper>}
+            {canViewFormatStatistics && (
+              <Paper
+                elevation={0}
+                sx={{
+                  p: { xs: 1.5, md: 1.8 },
+                  borderRadius: 3,
+                  border: '1px solid #bbf7d0',
+                  background: 'linear-gradient(165deg, #ffffff 0%, #f0fdf4 100%)',
+                  minHeight: 210,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <Box>
+                  <Box sx={{ width: 48, height: 48, borderRadius: 2, bgcolor: '#16a34a16', color: '#15803d', display: 'grid', placeItems: 'center', mb: 0.9, border: '1px solid #16a34a22' }}>
+                    <AssessmentIcon />
+                  </Box>
+                  <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 19 }}>
+                    Estadísticas de formatos
+                  </Typography>
+                  <Typography sx={{ mt: 0.7, color: '#475569', fontSize: 14, lineHeight: 1.3 }}>
+                    Dashboard general de actas: borradores, firmas, aprobaciones, envíos y eliminación automática.
+                  </Typography>
+                  <Chip size="small" label="Disponible" sx={{ mt: 1, fontWeight: 700, bgcolor: '#dcfce7', color: '#15803d' }} />
+                </Box>
+                <Button
+                  sx={{ mt: 1.2, minHeight: 40, borderRadius: 999, textTransform: 'none', fontWeight: 800, background: 'linear-gradient(135deg,#22c55e,#15803d)', boxShadow: '0 8px 18px rgba(21,128,61,.22)' }}
+                  variant="contained"
+                  onClick={() => setGestionProcesosPanel('estadisticas_formatos')}
+                >
+                  Abrir dashboard
+                </Button>
+              </Paper>
+            )}
           </Box>
         </Paper>
       </Stack>
@@ -8512,7 +8550,9 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Button>
           </Stack>
         </Paper>
-        <EstadisticaDocumentalPanel embedded />
+        {gestionProcesosPanel === 'estadisticas_formatos'
+          ? <MeetingMinuteStatisticsDashboard />
+          : <EstadisticaDocumentalPanel embedded />}
       </Stack>
     );
   };

@@ -68,6 +68,7 @@ const GESTION_INFO_MODULE_KEYS = new Set([
 
 const GESTION_PROCESOS_DASHBOARD_KEYS = new Set([
   'estadistica_documental',
+  'estadisticas_formatos',
   'gestion_usuarios_consulta',
   'gestion_usuarios_crear_individual',
   'gestion_usuarios_crear_masivo'
@@ -200,7 +201,7 @@ const getDefaultPermissionsByRole = (role) => {
         'gestion_usuarios'
       ],
       allowedModules: ['estadistica_institucional', 'gestion_procesos'],
-      allowedGestionProcesosDashboards: ['estadistica_documental'],
+      allowedGestionProcesosDashboards: ['estadistica_documental', 'estadisticas_formatos'],
       allowedPoblacionalDashboards: [],
       allowedSaberProDashboards: [],
       allowedRecursoHumanoDashboards: [],
@@ -468,6 +469,9 @@ const getUserModulePermissions = async (userId, role) => {
 
     if (!allowedGestionProcesosDashboards.includes('estadistica_documental')) {
       allowedGestionProcesosDashboards.push('estadistica_documental');
+    }
+    if (!allowedGestionProcesosDashboards.includes('estadisticas_formatos')) {
+      allowedGestionProcesosDashboards.push('estadisticas_formatos');
     }
   }
 

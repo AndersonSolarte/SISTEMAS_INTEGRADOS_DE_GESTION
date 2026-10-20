@@ -6,6 +6,7 @@ import {
   Timeline as TimelineIcon,
   FactCheck as FactCheckIcon,
   Search as SearchIcon,
+  Assessment as AssessmentIcon,
   Verified as VerifiedIcon,
   Hub as HubIcon
 } from '@mui/icons-material';
@@ -372,6 +373,30 @@ function PlaneacionEstrategica() {
                         window.location.assign('/dashboard/gestion-informacion?tab=estadistica&module=gestion_procesos&panel=estadistica_documental&source=planeacion_gpinfo');
                       }}
                       sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', boxShadow: '0 8px 20px rgba(37,99,235,.25)', mt: 'auto' }}
+                    >
+                      Ingresar
+                    </Button>
+                  </CardContent>
+                </Card>
+              <Card sx={{ borderRadius: 3, border: '1px solid #bbf7d0', background: 'linear-gradient(165deg, #ffffff 0%, #f0fdf4 100%)', boxShadow: '0 8px 20px rgba(15,23,42,0.06)', display: 'flex', height: '100%', minHeight: { xs: 270, md: 310 }, width: '100%' }}>
+                  <CardContent sx={{ p: 3, width: '100%', display: 'flex', flexDirection: 'column' }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="start" sx={{ mb: 2 }}>
+                      <Box sx={{ width: 52, height: 52, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0' }}>
+                        <AssessmentIcon sx={{ fontSize: 30 }} />
+                      </Box>
+                      <Chip label="Disponible" size="small" sx={{ bgcolor: '#dcfce7', color: '#15803d', fontWeight: 700 }} />
+                    </Stack>
+                    <Typography variant="h6" sx={{ fontWeight: 700, color: '#1e293b', mb: 1 }}>
+                      Estadísticas de formatos
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#64748b', mb: 2.5 }}>
+                      Consolidado general de actas por estado, firmas, dependencia y fecha de creación.
+                    </Typography>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      onClick={() => window.location.assign('/dashboard/gestion-informacion?tab=estadistica&module=gestion_procesos&panel=estadisticas_formatos&source=planeacion_gpinfo')}
+                      sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, background: 'linear-gradient(135deg, #22c55e 0%, #15803d 100%)', boxShadow: '0 8px 20px rgba(21,128,61,.24)', mt: 'auto' }}
                     >
                       Ingresar
                     </Button>

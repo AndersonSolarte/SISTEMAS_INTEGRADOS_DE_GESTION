@@ -257,6 +257,7 @@ function GestionUsuarios() {
   ];
   const GESTION_PROCESOS_DASHBOARD_OPTIONS = [
     { key: 'estadistica_documental', label: 'Estadística Documental' },
+    { key: 'estadisticas_formatos', label: 'Estadísticas de formatos' },
     { key: 'aseguramiento_calidad', label: 'Administración del Sistema Documental' },
     { key: 'buscar_documentos', label: 'Consulta de documentos' },
     { key: 'favoritos', label: 'Documentos favoritos' }

@@ -11,6 +11,8 @@ const meetingMinuteService = {
   lookupEnrolledStudent: (document) => api.get(`${root}/students/lookup`, { params: { document } }).then(unwrap),
   listLocations: () => api.get(`${root}/locations`).then(unwrap),
   list: () => api.get(root).then(unwrap),
+  listMine: () => api.get(`${root}/mine`).then(unwrap),
+  getStatistics: () => api.get(`${root}/statistics`).then(unwrap),
   get: (id) => api.get(`${root}/${id}`).then(unwrap),
   save: (payload) => api.post(root, payload).then(unwrap),
   publish: (id, payload = {}) => api.post(`${root}/${id}/publish`, payload).then(unwrap),

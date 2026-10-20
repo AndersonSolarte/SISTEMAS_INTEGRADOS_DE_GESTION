@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, IconButton, Menu, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
+  Alert, Autocomplete, Badge, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  DialogTitle, IconButton, Menu, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
 import {
   Add, ArrowBack, ArrowForward, CalendarMonth, Close, ContentCopy, DeleteOutline, Download, EditNote, Email, PersonSearch,
-  HelpOutline, QrCode2, Refresh, Save, Send, ViewSidebar, Visibility
+  FolderOpen, HelpOutline, NotificationsActive, QrCode2, Refresh, Restore, Save, Send, ViewSidebar, Visibility
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import meetingMinuteService from '../../services/meetingMinuteService';
@@ -28,6 +29,15 @@ const formatDate = (value) => {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value || '';
 };
+const MINUTE_STATUS = {
+  draft: { label: 'Borrador', color: 'default' },
+  signing: { label: 'En firmas', color: 'warning' },
+  signed: { label: 'Firmada', color: 'success' },
+  distributed: { label: 'Enviada', color: 'info' }
+};
+const minuteStatus = (minute) => minute?.deleted_at
+  ? { label: 'Eliminada', color: 'error' }
+  : (MINUTE_STATUS[minute?.status] || { label: minute?.status || 'Sin estado', color: 'default' });
 const formatSentenceCase = (value) => {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
@@ -269,6 +279,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [form, setForm] = useState(() => emptyForm(user));
   const [responsablesList, setResponsablesList] = useState([]);
   const [minutes, setMinutes] = useState([]);
+  const [myMinutes, setMyMinutes] = useState([]);
+  const [retentionDays, setRetentionDays] = useState(30);
+  const [myMinutesOpen, setMyMinutesOpen] = useState(false);
+  const [loadingMyMinutes, setLoadingMyMinutes] = useState(false);
   const [signatures, setSignatures] = useState([]);
   const [responsibleDocument, setResponsibleDocument] = useState('');
   const [responsibleCandidate, setResponsibleCandidate] = useState(null);
@@ -303,9 +317,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const guideSnackbarKeyRef = useRef(null);
   const guideAnimationRef = useRef(null);
   const removedParticipantKeysRef = useRef(new Set());
+  const expiryAlertShownRef = useRef(false);
   const locked = form.status !== 'draft';
   const allSigned = Boolean(form.participants.length) && form.participants.every((participant) => participant.status === 'signed');
   const pendingCount = useMemo(() => (form.participants || []).filter((p) => p.status !== 'signed').length, [form.participants]);
+  const expiringMinutes = useMemo(() => myMinutes.filter((minute) => {
+    const days = Number(minute.retention?.days_remaining);
+    return Number.isFinite(days) && days >= 0 && days <= 7;
+  }), [myMinutes]);
 
   const userDoc = String(user?.username || user?.documento || user?.cedula || user?.document || '').trim().toLowerCase();
   const userEmail = String(user?.email || '').trim().toLowerCase();
@@ -376,7 +395,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     try {
       const response = await meetingMinuteService.restoreAll();
       enqueueSnackbar(response.message || 'Actas restauradas.', { variant: 'success' });
-      await loadMinutes();
+      await Promise.all([loadMinutes(), loadMyMinutes()]);
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'No fue posible restaurar las actas.', { variant: 'error' });
     } finally {
@@ -397,6 +416,34 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
 
   const loadMinutes = async () => {
     try { const response = await meetingMinuteService.list(); setMinutes(response.data || []); } catch (_) { setMinutes([]); }
+  };
+  const loadMyMinutes = async ({ busy = false } = {}) => {
+    if (busy) setLoadingMyMinutes(true);
+    try {
+      const response = await meetingMinuteService.listMine();
+      setMyMinutes(response.data || []);
+      setRetentionDays(Number(response.meta?.retention_days) || 30);
+    } catch (_) {
+      setMyMinutes([]);
+    } finally {
+      if (busy) setLoadingMyMinutes(false);
+    }
+  };
+  const openMyMinutes = async () => {
+    setMyMinutesOpen(true);
+    await loadMyMinutes({ busy: true });
+  };
+  const restoreMyMinute = async (minute) => {
+    setLoadingMyMinutes(true);
+    try {
+      const response = await meetingMinuteService.restoreMinute(minute.id);
+      enqueueSnackbar(response.message || 'Acta restaurada correctamente.', { variant: 'success' });
+      await Promise.all([loadMinutes(), loadMyMinutes()]);
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible restaurar el acta.', { variant: 'error' });
+    } finally {
+      setLoadingMyMinutes(false);
+    }
   };
   const loadMeetingPlaces = async () => {
     setLoadingMeetingPlaces(true);
@@ -499,9 +546,21 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
     setParticipantSearchOptions([]);
     setParticipantSearchOpen(false);
+    setMyMinutesOpen(false);
+    expiryAlertShownRef.current = false;
     loadMinutes();
+    loadMyMinutes();
     loadMeetingPlaces();
   }, [open, user, closeSnackbar]);
+
+  useEffect(() => {
+    if (!open || expiryAlertShownRef.current || expiringMinutes.length === 0) return;
+    expiryAlertShownRef.current = true;
+    enqueueSnackbar(
+      `Tienes ${expiringMinutes.length} ${expiringMinutes.length === 1 ? 'acta por vencer' : 'actas por vencer'}. Revísalas en Mis actas.`,
+      { variant: 'warning', autoHideDuration: 9000 }
+    );
+  }, [open, expiringMinutes.length, enqueueSnackbar]);
 
   const markUnsavedChanges = ({ participants = false } = {}) => {
     hasUnsavedChangesRef.current = true;
@@ -1312,7 +1371,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         setExternalStudentResult(null);
       }
       setMinuteToDelete(null);
-      await loadMinutes();
+      await Promise.all([loadMinutes(), loadMyMinutes()]);
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar el acta.', { variant: 'error' });
     } finally {
@@ -1428,10 +1487,43 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     <Dialog open={open} onClose={handleClose} fullScreen PaperProps={{ sx: { bgcolor: '#f4f7fb', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' } }}>
       <DialogTitle sx={{ px: { xs: 2, md: 4 }, py: 1.5, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff', flexShrink: 0 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-          <Box>
-            <Typography variant="h5" fontWeight={950}>Registro de Asistencia y Reunión</Typography>
-            <Typography sx={{ opacity: .9, fontSize: 13 }}>{document?.codigo || 'COM-ID-FR-002'}</Typography>
-          </Box>
+          <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ md: 'center' }} gap={{ xs: 1, md: 2.5 }} sx={{ minWidth: 0 }}>
+            <Box>
+              <Typography variant="h5" fontWeight={950}>Registro de Asistencia y Reunión</Typography>
+              <Typography sx={{ opacity: .9, fontSize: 13 }}>{document?.codigo || 'COM-ID-FR-002'}</Typography>
+            </Box>
+            <Stack direction="row" alignItems="center" gap={1}>
+              <Button
+                variant="outlined"
+                startIcon={<FolderOpen />}
+                onClick={openMyMinutes}
+                sx={{ color: '#fff', borderColor: 'rgba(255,255,255,.72)', textTransform: 'none', fontWeight: 900, '&:hover': { borderColor: '#fff', bgcolor: 'rgba(255,255,255,.12)' } }}
+              >
+                Mis actas
+              </Button>
+              {expiringMinutes.length > 0 && (
+                <Tooltip title="Hay actas próximas a ser eliminadas automáticamente del sistema">
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    startIcon={<Badge badgeContent={expiringMinutes.length} color="error"><NotificationsActive /></Badge>}
+                    onClick={openMyMinutes}
+                    sx={{
+                      color: '#7c2d12', bgcolor: '#fef3c7', textTransform: 'none', fontWeight: 950,
+                      '@keyframes minuteExpiryPulse': {
+                        '0%, 100%': { boxShadow: '0 0 0 0 rgba(251,191,36,.25)', transform: 'scale(1)' },
+                        '50%': { boxShadow: '0 0 0 7px rgba(251,191,36,.35)', transform: 'scale(1.025)' }
+                      },
+                      animation: 'minuteExpiryPulse 1.25s ease-in-out infinite',
+                      '&:hover': { bgcolor: '#fde68a' }
+                    }}
+                  >
+                    {expiringMinutes.length === 1 ? '1 acta por vencer' : `${expiringMinutes.length} actas por vencer`}
+                  </Button>
+                </Tooltip>
+              )}
+            </Stack>
+          </Stack>
           <Stack direction="row" alignItems="center" gap={1.5}>
             <ToggleButtonGroup
               value={layoutMode}
@@ -2542,6 +2634,101 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         </Stack>
       </DialogActions>
     </Dialog>
+    <Dialog open={myMinutesOpen} onClose={() => !loadingMyMinutes && setMyMinutesOpen(false)} maxWidth="lg" fullWidth>
+      <DialogTitle sx={{ pb: 1 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
+          <Box>
+            <Typography variant="h6" fontWeight={950}>Mis actas</Typography>
+            <Typography variant="body2" color="text.secondary">Solo actas creadas por ti o en las que eres responsable/corresponsable. Se eliminan automáticamente a los {retentionDays} días.</Typography>
+          </Box>
+          <IconButton onClick={() => setMyMinutesOpen(false)} disabled={loadingMyMinutes}><Close /></IconButton>
+        </Stack>
+      </DialogTitle>
+      <DialogContent>
+        {expiringMinutes.length > 0 && (
+          <Alert severity="warning" icon={<NotificationsActive />} sx={{ mb: 2, fontWeight: 700 }}>
+            Tienes {expiringMinutes.length} {expiringMinutes.length === 1 ? 'acta próxima a ser eliminada' : 'actas próximas a ser eliminadas'} al completar {retentionDays} días desde su creación.
+          </Alert>
+        )}
+        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2.5, maxHeight: '62vh' }}>
+          <Table stickyHeader size="small" aria-label="Listado de mis actas">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 900 }}>Acta</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>Fecha</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>Estado</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>Firmas</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>Eliminación automática</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 900 }}>Acción</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {myMinutes.map((minute) => {
+                const status = minuteStatus(minute);
+                const signed = (minute.participants || []).filter((participant) => participant.status === 'signed').length;
+                const total = (minute.participants || []).length;
+                const days = minute.retention?.days_remaining;
+                return (
+                  <TableRow key={minute.id} hover sx={{ opacity: minute.deleted_at ? .82 : 1 }}>
+                    <TableCell sx={{ minWidth: 240 }}>
+                      <Typography fontWeight={850} fontSize={13.5}>{minute.content?.titulo || 'Acta sin título'}</Typography>
+                      <Typography variant="caption" color="text.secondary">{minute.code}</Typography>
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(minute.content?.fecha) || 'Sin fecha'}</TableCell>
+                    <TableCell><Chip size="small" label={status.label} color={status.color} sx={{ fontWeight: 800 }} /></TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{total ? `${signed} de ${total}` : 'Sin participantes'}</TableCell>
+                    <TableCell sx={{ minWidth: 150 }}>
+                      <Box>
+                        <Typography fontWeight={900} fontSize={13} color={Number(days) <= 7 ? 'error.main' : 'warning.dark'}>
+                          {Number(days) === 0 ? 'Se elimina hoy' : `${days} ${Number(days) === 1 ? 'día restante' : 'días restantes'}`}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">Se elimina: {formatDate(minute.retention?.expires_at)}</Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right">
+                      {minute.deleted_at ? (
+                        <Button size="small" variant="outlined" startIcon={<Restore />} disabled={loadingMyMinutes} onClick={() => restoreMyMinute(minute)} sx={{ textTransform: 'none', fontWeight: 800 }}>
+                          Restaurar
+                        </Button>
+                      ) : (
+                        <Stack direction="row" justifyContent="flex-end" gap={1}>
+                          <Button size="small" variant="contained" startIcon={<FolderOpen />} onClick={() => { setMyMinutesOpen(false); openMinute(minute.id); }} sx={{ textTransform: 'none', fontWeight: 800 }}>
+                            Abrir
+                          </Button>
+                          {canDeleteMinute(minute) && (
+                            <Tooltip title="Eliminar acta">
+                              <Button
+                                size="small"
+                                color="error"
+                                variant="outlined"
+                                startIcon={<DeleteOutline />}
+                                onClick={() => setMinuteToDelete(minute)}
+                                sx={{ textTransform: 'none', fontWeight: 850 }}
+                              >
+                                Eliminar
+                              </Button>
+                            </Tooltip>
+                          )}
+                        </Stack>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!loadingMyMinutes && myMinutes.length === 0 && (
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5, color: 'text.secondary' }}>Todavía no tienes actas registradas.</TableCell></TableRow>
+              )}
+              {loadingMyMinutes && (
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}><CircularProgress size={28} /></TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={() => setMyMinutesOpen(false)} disabled={loadingMyMinutes}>Cerrar</Button>
+      </DialogActions>
+    </Dialog>
     <Dialog open={Boolean(qr)} onClose={() => setQr(null)} maxWidth="xs" fullWidth>
       <DialogTitle fontWeight={900}>Acceso presencial para firmar</DialogTitle>
       <DialogContent>
@@ -2595,7 +2782,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
           ¿Está seguro de eliminar el acta <strong>{minuteToDelete?.code}</strong> del sistema?
         </Typography>
         <Alert severity="warning" sx={{ fontSize: 12.5 }}>
-          Esta acción retirará el acta del sistema. Solo el creador o responsable principal pueden realizar esta acción. Si el acta ya fue enviada, los participantes conservarán su copia en PDF en sus correos.
+          El acta pasará a eliminadas y podrá restaurarse hasta su fecha de vencimiento. Todas las actas se eliminan definitivamente al completar {retentionDays} días desde su creación. Si ya fue enviada, los participantes conservarán su copia en PDF en sus correos.
         </Alert>
       </DialogContent>
       <DialogActions sx={{ p: 2 }}>
@@ -2610,7 +2797,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
           startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <DeleteOutline />}
           sx={{ textTransform: 'none', fontWeight: 900 }}
         >
-          {loading ? 'Eliminando…' : 'Eliminar definitivamente'}
+          {loading ? 'Eliminando…' : 'Mover a eliminadas'}
         </Button>
       </DialogActions>
     </Dialog>

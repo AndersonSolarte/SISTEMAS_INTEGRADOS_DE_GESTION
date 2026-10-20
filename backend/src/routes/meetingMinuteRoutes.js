@@ -1,7 +1,8 @@
 const express = require('express');
 const controller = require('../controllers/meetingMinuteController');
-const { auth } = require('../middlewares/auth');
+const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { publicLimiter } = require('../middlewares/security');
+const { ROLES } = require('../constants/roles');
 
 const router = express.Router();
 
@@ -17,6 +18,11 @@ router.get('/participants/search', auth, controller.searchParticipants);
 router.get('/students/lookup', auth, controller.lookupEnrolledStudent);
 router.get('/locations', auth, controller.listMeetingLocations);
 router.get('/calendar/upcoming', auth, controller.listUpcomingCalendarSchedules);
+router.get('/statistics', auth, hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_INFORMACION, ROLES.GESTION_PROCESOS],
+  moduleKeys: ['gestion_procesos', 'estadisticas_formatos', 'estadistica_documental']
+}), controller.getStatistics);
+router.get('/mine', auth, controller.listMyMinutes);
 router.get('/', auth, controller.listMinutes);
 router.post('/restore-all', auth, controller.restoreAllMinutes);
 router.post('/', auth, controller.saveDraft);
