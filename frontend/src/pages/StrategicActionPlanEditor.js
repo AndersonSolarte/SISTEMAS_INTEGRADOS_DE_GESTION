@@ -117,7 +117,7 @@ const WorkflowStepLabel = ({ number, title, count }) => (
 );
 
 export default function StrategicActionPlanEditor({ open, planId, platformPlan, workflow, onClose, onChanged, onPlanReplaced }) {
-  const { enqueueSnackbar } = useSnackbar();
+  const { enqueueSnackbar, closeSnackbar } = useSnackbar();
   const { user } = useAuth();
   const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(user?.role);
 
@@ -184,10 +184,20 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [editingActa, setEditingActa] = useState(false);
   const [meetingLayoutMode, setMeetingLayoutMode] = useState('split');
   const [pdfMenuAnchor, setPdfMenuAnchor] = useState(null);
+  const [meetingFieldErrors, setMeetingFieldErrors] = useState({});
+  const guideAnimationRef = useRef(null);
+  const guideSnackbarKeyRef = useRef(null);
   const [actaData, setActaData] = useState({
     responsables: '', dependencia: '', lugar: '', fecha: '', horario: '', objetivo: '', desarrollo: '', conclusiones: '', participantes: []
   });
   const [calendarSchedulerOpen, setCalendarSchedulerOpen] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      guideAnimationRef.current?.cancel?.();
+      guideAnimationRef.current = null;
+    };
+  }, []);
   const load = useCallback(async (showLoading = true) => {
     if (!planId) return;
     if (showLoading) setLoading(true);
@@ -1129,7 +1139,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     enqueueSnackbar('Participante agregado al acta.', { variant: 'success' });
   };
 
-  const handleWhatIsNext = () => {
+  const handleWhatIsNext = async () => {
+    if (guideSnackbarKeyRef.current) closeSnackbar(guideSnackbarKeyRef.current);
+    guideSnackbarKeyRef.current = null;
+
     const latestMin = latestMinute || [...(activeMeeting?.minuteVersions || [])].sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
     const isFinalized = Boolean(activeMeeting?.status === 'formalized' || latestMin?.status === 'finalized');
     const isSigning = Boolean(latestMin?.status === 'signing');
@@ -1140,67 +1153,189 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
     // 1. Si el acta del plan de acción ya fue formalizada:
     if (isFinalized) {
-      enqueueSnackbar('¡Acta formalizada con éxito! Siguiente paso del Plan de Acción: pase a la pestaña "Actividades y metas" para estructurar o revisar las metas institucionales, o a "Exportación institucional" para verificar el archivo oficial DIR-PE-FR-003.', {
-        variant: 'success',
-        autoHideDuration: 9000
-      });
+      if (meetingLayoutMode === 'form') setMeetingLayoutMode('split');
+      window.setTimeout(() => {
+        const target = window.document.getElementById('meeting-download-button');
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          guideAnimationRef.current?.cancel?.();
+          guideAnimationRef.current = target.animate?.([
+            { boxShadow: '0 0 0 0 rgba(37,99,235,0)', transform: 'scale(1)' },
+            { boxShadow: '0 0 0 10px rgba(37,99,235,0.45)', transform: 'scale(1.035)' },
+            { boxShadow: '0 0 0 0 rgba(37,99,235,0)', transform: 'scale(1)' }
+          ], { duration: 1800, iterations: 6, easing: 'ease-in-out' });
+          target.focus?.();
+        }
+        guideSnackbarKeyRef.current = enqueueSnackbar('¡Acta formalizada con éxito! Puede descargar el PDF oficial con firmas. Siguiente paso: continúe con las pestañas "Actividades y metas" o "Exportación institucional".', {
+          variant: 'success',
+          autoHideDuration: 9000
+        });
+      }, 150);
       return;
     }
 
     // 2. Si todos los participantes ya firmaron:
     if (allSigned) {
-      enqueueSnackbar('Siguiente paso: Todos los participantes han firmado. En la parte superior de la vista previa, haga clic en "Enviar acta firmada" para formalizar y sincronizar con Google Drive.', {
-        variant: 'success',
-        autoHideDuration: 8000
-      });
+      if (meetingLayoutMode === 'form') setMeetingLayoutMode('split');
+      window.setTimeout(() => {
+        const target = window.document.getElementById('meeting-send-final-button');
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          guideAnimationRef.current?.cancel?.();
+          guideAnimationRef.current = target.animate?.([
+            { boxShadow: '0 0 0 0 rgba(22,163,74,0)', transform: 'scale(1)' },
+            { boxShadow: '0 0 0 12px rgba(22,163,74,0.48)', transform: 'scale(1.04)' },
+            { boxShadow: '0 0 0 0 rgba(22,163,74,0)', transform: 'scale(1)' }
+          ], { duration: 1800, iterations: 6, easing: 'ease-in-out' });
+          target.focus?.();
+        }
+        guideSnackbarKeyRef.current = enqueueSnackbar('Siguiente paso: Todos los participantes han firmado. En la parte superior de la vista previa, haga clic en "Enviar acta firmada" para formalizar y sincronizar con Google Drive.', {
+          variant: 'success',
+          autoHideDuration: 9000
+        });
+      }, 150);
       return;
     }
 
-    // 3. Si el acta está en proceso de firmas:
+    // 3. Si el acta está en proceso de firmas (pendiente de firmas):
     if (isSigning) {
-      enqueueSnackbar(`Siguiente paso: Firmas en proceso (${pendingCount} participante${pendingCount === 1 ? '' : 's'} pendiente${pendingCount === 1 ? '' : 's'}). Puede hacer clic en "Actualizar firmas" o usar "Reenviar solo a pendientes".`, {
-        variant: 'info',
-        autoHideDuration: 8000
-      });
+      if (meetingLayoutMode === 'form') setMeetingLayoutMode('split');
+      window.setTimeout(() => {
+        const target = window.document.getElementById('meeting-refresh-signatures-button') || window.document.getElementById('meeting-resend-pending-button');
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          guideAnimationRef.current?.cancel?.();
+          guideAnimationRef.current = target.animate?.([
+            { boxShadow: '0 0 0 0 rgba(245,158,11,0)', transform: 'scale(1)' },
+            { boxShadow: '0 0 0 10px rgba(245,158,11,0.45)', transform: 'scale(1.035)' },
+            { boxShadow: '0 0 0 0 rgba(245,158,11,0)', transform: 'scale(1)' }
+          ], { duration: 1800, iterations: 6, easing: 'ease-in-out' });
+          target.focus?.();
+        }
+        guideSnackbarKeyRef.current = enqueueSnackbar(`Siguiente paso: Firmas en proceso (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'}). Puede hacer clic en "Actualizar firmas" o usar "Reenviar solo a pendientes".`, {
+          variant: 'info',
+          autoHideDuration: 8500
+        });
+      }, 150);
       return;
     }
 
-    // 4. Si el acta está en borrador / preparación:
-    const hasTitle = Boolean(meeting.title?.trim());
-    const hasObjective = Boolean(richTextPlain(meeting.objective));
+    // 4. Si el acta está en borrador:
+    // Autocompletar datos deducibles faltantes
+    let updates = {};
+    let autocompletedAny = false;
+
+    if (!meeting.title?.trim()) {
+      updates.title = `Concertación del Plan de Acción ${detail?.term?.year || new Date().getFullYear()}`.trim();
+      autocompletedAny = true;
+    }
+    if (!meeting.starts_at) {
+      updates.starts_at = toDatetimeLocal(new Date(), 8);
+      autocompletedAny = true;
+    }
+    if (!meeting.ends_at) {
+      updates.ends_at = toDatetimeLocal(new Date(), 10);
+      autocompletedAny = true;
+    }
+    if (!meeting.location?.trim()) {
+      updates.location = locations[0]?.name || 'Presencial / Sala de Juntas UNICESMAG';
+      autocompletedAny = true;
+    }
+    if (!meeting.modality) {
+      updates.modality = 'Presencial';
+      autocompletedAny = true;
+    }
+    if (!richTextPlain(meeting.development)) {
+      updates.development = 'Se consolidó el Plan de Acción revisando los objetivos estratégicos, proyectos, metas e indicadores institucionales de la vigencia.';
+      autocompletedAny = true;
+    }
+    if (!richTextPlain(meeting.conclusions)) {
+      updates.conclusions = 'Se aprueban las metas concertadas del Plan de Acción y se habilita el acta institucional para firmas electrónicas.';
+      autocompletedAny = true;
+    }
+
+    const currentMerged = { ...meeting, ...updates };
+    if (autocompletedAny) {
+      setMeeting(currentMerged);
+    }
+
     const hasPrincipal = meetingParticipants.some((p) => p.meeting_role === 'principal');
-    const hasAnyParticipant = meetingParticipants.length >= 1;
-    const isSaved = Boolean(activeMeeting?.id);
+    const hasEnoughParticipants = meetingParticipants.length >= 2;
 
-    if (!hasTitle || !hasObjective) {
-      enqueueSnackbar('Siguiente paso: Complete el título corto y el objetivo de la reunión de concertación del Plan de Acción.', {
-        variant: 'warning',
-        autoHideDuration: 6000
-      });
+    const errors = {
+      responsables: !hasPrincipal,
+      title: !currentMerged.title?.trim(),
+      starts_at: !currentMerged.starts_at,
+      objective: !richTextPlain(currentMerged.objective),
+      participants: !hasEnoughParticipants
+    };
+
+    setMeetingFieldErrors(errors);
+
+    const missingOrder = [
+      { key: 'responsables', target: 'strategic-responsible-search-field', label: 'Responsable Principal de la reunión' },
+      { key: 'title', target: 'strategic-meeting-title-field', label: 'Título corto del acta' },
+      { key: 'starts_at', target: 'strategic-meeting-starts-field', label: 'Fecha y hora de inicio' },
+      { key: 'objective', target: 'strategic-plan-minute-objective', label: 'Objetivo de la reunión' },
+      { key: 'participants', target: 'strategic-meeting-participants-section', label: 'Participantes convocados (mínimo 2 personas)' }
+    ];
+
+    const firstMissing = missingOrder.find(({ key }) => errors[key]);
+
+    if (firstMissing) {
+      if (meetingLayoutMode === 'preview') setMeetingLayoutMode('split');
+      window.setTimeout(() => {
+        const target = window.document.getElementById(firstMissing.target);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          guideAnimationRef.current?.cancel?.();
+          guideAnimationRef.current = target.animate?.([
+            { boxShadow: '0 0 0 0 rgba(220,38,38,0)', transform: 'scale(1)' },
+            { boxShadow: '0 0 0 10px rgba(220,38,38,0.4)', transform: 'scale(1.025)' },
+            { boxShadow: '0 0 0 0 rgba(220,38,38,0)', transform: 'scale(1)' }
+          ], { duration: 1800, iterations: 5, easing: 'ease-in-out' });
+
+          const focusable = target.matches?.('input,textarea,[contenteditable="true"]')
+            ? target
+            : target.querySelector?.('input,textarea,[contenteditable="true"],button');
+          focusable?.focus?.();
+        }
+        guideSnackbarKeyRef.current = enqueueSnackbar(
+          autocompletedAny
+            ? `Se autocompletaron datos sugeridos. Por favor complete en rojo: ${firstMissing.label}.`
+            : `Siguiente paso: Por favor complete el campo señalado en rojo: ${firstMissing.label}.`,
+          { variant: 'warning', autoHideDuration: 8500 }
+        );
+      }, 180);
       return;
     }
 
-    if (!hasPrincipal || !hasAnyParticipant) {
-      enqueueSnackbar('Siguiente paso: Busque y asigne el Responsable Principal de la reunión al inicio de la sección 1.', {
-        variant: 'warning',
-        autoHideDuration: 6000
-      });
-      return;
+    // 5. Todos los campos obligatorios están completos:
+    setMeetingFieldErrors({});
+
+    // Si aún no se ha guardado en el servidor, guardarlo automáticamente
+    if (!activeMeeting?.id) {
+      await saveMeeting(true);
     }
 
-    if (!isSaved) {
-      enqueueSnackbar('Siguiente paso: Guarde los cambios de la reunión haciendo clic en "Guardar reunión".', {
-        variant: 'info',
-        autoHideDuration: 6000
-      });
-      return;
-    }
-
-    // 5. Borrador listo para habilitar firmas
-    enqueueSnackbar('Siguiente paso: La reunión está lista. En la parte superior de la vista previa, use "Habilitar y enviar invitaciones" para iniciar la firma electrónica.', {
-      variant: 'success',
-      autoHideDuration: 7000
-    });
+    if (meetingLayoutMode === 'form') setMeetingLayoutMode('split');
+    window.setTimeout(() => {
+      const target = window.document.getElementById('meeting-publish-button');
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        guideAnimationRef.current?.cancel?.();
+        guideAnimationRef.current = target.animate?.([
+          { boxShadow: '0 0 0 0 rgba(37,99,235,0)', transform: 'scale(1)' },
+          { boxShadow: '0 0 0 12px rgba(37,99,235,0.48)', transform: 'scale(1.04)' },
+          { boxShadow: '0 0 0 0 rgba(37,99,235,0)', transform: 'scale(1)' }
+        ], { duration: 1800, iterations: 6, easing: 'ease-in-out' });
+        target.focus?.();
+      }
+      guideSnackbarKeyRef.current = enqueueSnackbar(
+        'Siguiente paso: El acta está completa. En la parte superior de la vista previa, haga clic en "Habilitar y enviar invitaciones" para iniciar la firma electrónica.',
+        { variant: 'success', autoHideDuration: 9000 }
+      );
+    }, 180);
   };
   const updateMeetingParticipantRole = (index, meetingRole) => {
     const participant = meetingParticipants[index];
@@ -2095,11 +2230,15 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           renderInput={(params) => (
                             <TextField
                               {...params}
+                              id="strategic-responsible-search-field"
+                              error={Boolean(meetingFieldErrors.responsables)}
                               label={!meetingParticipants.some((p) => p.meeting_role === 'principal')
                                 ? 'Nombre o cédula del Responsable Principal *'
                                 : 'Nombre o cédula del responsable'}
                               placeholder="Escriba al menos 2 caracteres"
-                              helperText="Busque por nombre, apellido o cédula y seleccione una persona de la lista."
+                              helperText={meetingFieldErrors.responsables
+                                ? 'Es obligatorio asignar un Responsable Principal para el acta.'
+                                : 'Busque por nombre, apellido o cédula y seleccione una persona de la lista.'}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                   e.preventDefault();
@@ -2190,8 +2329,16 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       )}
 
                       {/* RESPONSABLES DE LA REUNIÓN (SOLO ESTE VA AL INICIO) */}
-                      <Box sx={{ gridColumn: '1 / -1', mb: 1 }}>
-                        <Typography variant="subtitle2" fontWeight={900} color="#1e293b" mb={0.75} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box id="strategic-responsible-section" sx={{
+                        gridColumn: '1 / -1',
+                        mb: 1,
+                        p: meetingFieldErrors.responsables ? 1.5 : 0,
+                        borderRadius: 3,
+                        border: meetingFieldErrors.responsables ? '2px solid #dc2626' : 'none',
+                        bgcolor: meetingFieldErrors.responsables ? '#fef2f2' : 'transparent',
+                        boxShadow: meetingFieldErrors.responsables ? '0 0 0 4px rgba(220,38,38,0.15)' : 'none'
+                      }}>
+                        <Typography variant="subtitle2" fontWeight={900} color={meetingFieldErrors.responsables ? '#dc2626' : '#1e293b'} mb={0.75} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           Responsables de la reunión ({meetingParticipants.filter((p) => ['principal', 'co_responsible'].includes(p.meeting_role)).length}):
                         </Typography>
                         {!meetingParticipants.some((p) => ['principal', 'co_responsible'].includes(p.meeting_role)) ? (
@@ -2277,15 +2424,78 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                         )}
                       </Box>
 
-                      <TextField fullWidth required label="Título corto del acta" value={meeting.title || ''} onChange={(e) => setMeeting({ ...meeting, title: e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
-                      <TextField fullWidth disabled label="Dependencia que cita" value={PLANNING_DEPARTMENT_NAME} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5, bgcolor: '#f8fafc' } }} />
-                      <TextField fullWidth type="datetime-local" InputLabelProps={{ shrink: true }} label="Inicio" value={meeting.starts_at} onChange={(e) => setMeeting({ ...meeting, starts_at: e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
-                      <TextField fullWidth type="datetime-local" InputLabelProps={{ shrink: true }} label="Fin" value={meeting.ends_at} onChange={(e) => setMeeting({ ...meeting, ends_at: e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
+                      <TextField
+                        id="strategic-meeting-title-field"
+                        fullWidth
+                        required
+                        label="Título corto del acta *"
+                        error={Boolean(meetingFieldErrors.title)}
+                        helperText={meetingFieldErrors.title ? 'El título corto del acta es obligatorio.' : undefined}
+                        value={meeting.title || ''}
+                        onChange={(e) => {
+                          setMeeting({ ...meeting, title: e.target.value });
+                          if (meetingFieldErrors.title) setMeetingFieldErrors((prev) => ({ ...prev, title: false }));
+                        }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }}
+                      />
+                      <TextField
+                        id="strategic-meeting-dependency-field"
+                        fullWidth
+                        disabled
+                        label="Dependencia que cita"
+                        value={PLANNING_DEPARTMENT_NAME}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5, bgcolor: '#f8fafc' } }}
+                      />
+                      <TextField
+                        id="strategic-meeting-starts-field"
+                        fullWidth
+                        required
+                        type="datetime-local"
+                        InputLabelProps={{ shrink: true }}
+                        label="Inicio *"
+                        error={Boolean(meetingFieldErrors.starts_at)}
+                        helperText={meetingFieldErrors.starts_at ? 'La fecha y hora de inicio son obligatorias.' : undefined}
+                        value={meeting.starts_at}
+                        onChange={(e) => {
+                          setMeeting({ ...meeting, starts_at: e.target.value });
+                          if (meetingFieldErrors.starts_at) setMeetingFieldErrors((prev) => ({ ...prev, starts_at: false }));
+                        }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }}
+                      />
+                      <TextField
+                        id="strategic-meeting-ends-field"
+                        fullWidth
+                        type="datetime-local"
+                        InputLabelProps={{ shrink: true }}
+                        label="Fin"
+                        value={meeting.ends_at}
+                        onChange={(e) => setMeeting({ ...meeting, ends_at: e.target.value })}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }}
+                      />
                       <Box>
-                        <TextField fullWidth label="Lugar" value={meeting.location} onChange={(e) => setMeeting({ ...meeting, location: e.target.value })} inputProps={{ list: 'strategic-meeting-locations' }} helperText="Seleccione una opción o escriba otro lugar." sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
+                        <TextField
+                          id="strategic-meeting-location-field"
+                          fullWidth
+                          label="Lugar"
+                          value={meeting.location}
+                          onChange={(e) => setMeeting({ ...meeting, location: e.target.value })}
+                          inputProps={{ list: 'strategic-meeting-locations' }}
+                          helperText="Seleccione una opción o escriba otro lugar."
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }}
+                        />
                         <datalist id="strategic-meeting-locations">{locations.map((entry) => <option key={entry.id} value={entry.name} />)}</datalist>
                       </Box>
-                      <TextField fullWidth select label="Modalidad" value={meeting.modality} onChange={(e) => setMeeting({ ...meeting, modality: e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }}>{['Presencial','Virtual','Híbrida'].map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}</TextField>
+                      <TextField
+                        id="strategic-meeting-modality-field"
+                        fullWidth
+                        select
+                        label="Modalidad"
+                        value={meeting.modality}
+                        onChange={(e) => setMeeting({ ...meeting, modality: e.target.value })}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }}
+                      >
+                        {['Presencial','Virtual','Híbrida'].map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}
+                      </TextField>
 
                       <Box sx={{ gridColumn: '1 / -1', my: 0.5 }}>
                         <Paper elevation={0} sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f0f7ff', border: '1px solid #bae0ff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5 }}>
@@ -2381,7 +2591,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       ].map((field) => (
                         <Box key={field.key} sx={{ gridColumn: '1 / -1' }}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-                            <Typography fontWeight={800} color="#1e293b" sx={{ fontSize: 13.5 }}>
+                            <Typography fontWeight={800} color={meetingFieldErrors[field.key] ? 'error.main' : '#1e293b'} sx={{ fontSize: 13.5 }}>
                               {field.label}{field.required ? ' *' : ''}
                             </Typography>
                             <Button
@@ -2399,25 +2609,46 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             id={`strategic-plan-minute-${field.key}`}
                             label=""
                             value={meeting[field.key]}
-                            onChange={(value) => setMeeting((previous) => ({ ...previous, [field.key]: value }))}
+                            onChange={(value) => {
+                              setMeeting((previous) => ({ ...previous, [field.key]: value }));
+                              if (meetingFieldErrors[field.key]) setMeetingFieldErrors((prev) => ({ ...prev, [field.key]: false }));
+                            }}
                             minHeight={field.rows >= 5 ? 190 : 135}
-                            error={field.required && !richTextPlain(meeting[field.key])}
+                            error={Boolean(meetingFieldErrors[field.key]) || (field.required && !richTextPlain(meeting[field.key]))}
                           />
-                          {field.helperText && <Typography variant="caption" color="#64748b" sx={{ display: 'block', mt: 0.75, ml: 1 }}>{field.helperText}</Typography>}
+                          {meetingFieldErrors[field.key] && (
+                            <Typography variant="caption" color="error.main" sx={{ display: 'block', mt: 0.5, ml: 1, fontWeight: 700 }}>
+                              {field.label} es obligatorio.
+                            </Typography>
+                          )}
+                          {field.helperText && !meetingFieldErrors[field.key] && (
+                            <Typography variant="caption" color="#64748b" sx={{ display: 'block', mt: 0.75, ml: 1 }}>{field.helperText}</Typography>
+                          )}
                         </Box>
                       ))}
                     </Box>
                   </Paper>
 
-                  <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#d8e5f2' }}>
+                  <Paper
+                    id="strategic-meeting-participants-section"
+                    variant="outlined"
+                    sx={{
+                      p: 2.25,
+                      borderRadius: 3.5,
+                      bgcolor: meetingFieldErrors.participants ? '#fef2f2' : '#ffffff',
+                      borderColor: meetingFieldErrors.participants ? '#dc2626' : '#d8e5f2',
+                      borderWidth: meetingFieldErrors.participants ? '2px' : '1px',
+                      boxShadow: meetingFieldErrors.participants ? '0 0 0 4px rgba(220,38,38,0.15)' : 'none'
+                    }}
+                  >
                     <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.25} flexWrap="wrap" gap={1}>
-                      <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 16 }}>
+                      <Typography fontWeight={900} color={meetingFieldErrors.participants ? '#dc2626' : '#0f172a'} sx={{ fontSize: 16 }}>
                         2. Participantes y firmas
                       </Typography>
                       {meetingParticipants.length >= 2 ? (
                         <Chip size="small" color="default" label={`${meetingParticipants.length} personas en la reunión`} sx={{ fontWeight: 850 }} />
                       ) : (
-                        <Chip size="small" color="warning" label="Al menos 2 participantes requeridos" sx={{ fontWeight: 850 }} />
+                        <Chip size="small" color="error" label="Al menos 2 participantes requeridos" sx={{ fontWeight: 850 }} />
                       )}
                     </Stack>
 
@@ -2910,6 +3141,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                 row2Items.push(
                                   <Tooltip key="reenviar-pendientes" title={`Enviar nuevamente el correo solo a ${pendingCount} participante${pendingCount === 1 ? '' : 's'} pendiente${pendingCount === 1 ? '' : 's'}`}>
                                     <Button
+                                      id="meeting-resend-pending-button"
                                       fullWidth
                                       variant="outlined"
                                       startIcon={<Email fontSize="small" />}
