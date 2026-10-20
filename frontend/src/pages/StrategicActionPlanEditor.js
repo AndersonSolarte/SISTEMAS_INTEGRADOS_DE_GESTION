@@ -433,53 +433,59 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         status: p.status || 'invited'
       }));
 
-      // Cargar automáticamente el Responsable del Plan de Acción y el usuario de Planeación y Efectividad
-      const planResp = detail.planResponsibleUser || detail.currentResponsibility?.responsibleUser || detail.owner;
+      // Cargar automáticamente Planeación y Efectividad como Responsable Principal
+      // y el Responsable del Plan de Acción como Co-responsable
       const peUser = detail.planningEfectividadUser;
+      const planResp = detail.planResponsibleUser || detail.currentResponsibility?.responsibleUser || detail.owner;
       const baseList = [...storedParticipants];
 
-      if (planResp) {
-        const hasResp = baseList.some((p) =>
-          (p.user_id && planResp.id && String(p.user_id) === String(planResp.id)) ||
-          (p.email && planResp.email && String(p.email).toLowerCase() === String(planResp.email).toLowerCase())
-        );
-        if (!hasResp) {
-          baseList.unshift({
-            user_id: planResp.id || null,
-            document: planResp.document || planResp.username || '',
-            name: planResp.nombre || planResp.name || '',
-            email: planResp.email || '',
-            organization: planResp.dependencia || detail.organizationalUnit?.name || 'UNICESMAG',
-            role_title: planResp.cargo || 'Responsable del Plan de Acción',
-            meeting_role: 'principal',
-            signature_required: true,
-            status: 'invited'
-          });
-        }
-      }
-
-      if (peUser && (!planResp || String(peUser.id) !== String(planResp.id))) {
+      if (peUser) {
         const peIndex = baseList.findIndex((p) =>
           (p.user_id && peUser.id && String(p.user_id) === String(peUser.id)) ||
           (p.email && peUser.email && String(p.email).toLowerCase() === String(peUser.email).toLowerCase())
         );
         if (peIndex === -1) {
-          baseList.push({
+          baseList.unshift({
             user_id: peUser.id || null,
             document: peUser.username || peUser.document || '',
             name: peUser.nombre || peUser.name || '',
             email: peUser.email || '',
             organization: peUser.dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
             role_title: peUser.cargo || 'Planeación y Efectividad',
+            meeting_role: 'principal',
+            signature_required: true,
+            status: 'invited'
+          });
+        } else {
+          baseList[peIndex] = {
+            ...baseList[peIndex],
+            meeting_role: 'principal',
+            role_title: baseList[peIndex].role_title || peUser.cargo || 'Planeación y Efectividad'
+          };
+        }
+      }
+
+      if (planResp && (!peUser || String(planResp.id) !== String(peUser.id))) {
+        const respIndex = baseList.findIndex((p) =>
+          (p.user_id && planResp.id && String(p.user_id) === String(planResp.id)) ||
+          (p.email && planResp.email && String(p.email).toLowerCase() === String(planResp.email).toLowerCase())
+        );
+        if (respIndex === -1) {
+          baseList.push({
+            user_id: planResp.id || null,
+            document: planResp.document || planResp.username || '',
+            name: planResp.nombre || planResp.name || '',
+            email: planResp.email || '',
+            organization: planResp.dependencia || detail.organizationalUnit?.name || 'UNICESMAG',
+            role_title: planResp.cargo || 'Responsable del Plan de Acción',
             meeting_role: 'co_responsible',
             signature_required: true,
             status: 'invited'
           });
-        } else if (baseList[peIndex].meeting_role === 'participant') {
-          baseList[peIndex] = {
-            ...baseList[peIndex],
-            meeting_role: 'co_responsible',
-            role_title: baseList[peIndex].role_title || peUser.cargo || 'Planeación y Efectividad'
+        } else if (peUser && baseList[respIndex].meeting_role === 'principal') {
+          baseList[respIndex] = {
+            ...baseList[respIndex],
+            meeting_role: 'co_responsible'
           };
         }
       }
@@ -1277,22 +1283,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     });
 
     const initialParticipants = [];
-    const planResp = detail?.planResponsibleUser || detail?.currentResponsibility?.responsibleUser || detail?.owner;
     const peUser = detail?.planningEfectividadUser;
-    if (planResp) {
-      initialParticipants.push({
-        user_id: planResp.id || null,
-        document: planResp.document || planResp.username || '',
-        name: planResp.nombre || planResp.name || '',
-        email: planResp.email || '',
-        organization: planResp.dependencia || detail?.organizationalUnit?.name || 'UNICESMAG',
-        role_title: planResp.cargo || 'Responsable del Plan de Acción',
-        meeting_role: 'principal',
-        signature_required: true,
-        status: 'invited'
-      });
-    }
-    if (peUser && (!planResp || String(peUser.id) !== String(planResp.id))) {
+    const planResp = detail?.planResponsibleUser || detail?.currentResponsibility?.responsibleUser || detail?.owner;
+
+    if (peUser) {
       initialParticipants.push({
         user_id: peUser.id || null,
         document: peUser.username || peUser.document || '',
@@ -1300,6 +1294,20 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         email: peUser.email || '',
         organization: peUser.dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
         role_title: peUser.cargo || 'Planeación y Efectividad',
+        meeting_role: 'principal',
+        signature_required: true,
+        status: 'invited'
+      });
+    }
+
+    if (planResp && (!peUser || String(planResp.id) !== String(peUser.id))) {
+      initialParticipants.push({
+        user_id: planResp.id || null,
+        document: planResp.document || planResp.username || '',
+        name: planResp.nombre || planResp.name || '',
+        email: planResp.email || '',
+        organization: planResp.dependencia || detail?.organizationalUnit?.name || 'UNICESMAG',
+        role_title: planResp.cargo || 'Responsable del Plan de Acción',
         meeting_role: 'co_responsible',
         signature_required: true,
         status: 'invited'
@@ -2551,10 +2559,25 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                 <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
                                   <Typography variant="body2" fontWeight={850} color="#0f172a">{participant.name}</Typography>
                                   {isPrimary && (
-                                    <Chip size="small" label="Responsable Principal" color="success" sx={{ height: 20, fontSize: 11, fontWeight: 800 }} />
+                                    <Chip
+                                      size="small"
+                                      label={participant.role_title?.toLowerCase().includes('planeaci') || participant.organization?.toLowerCase().includes('planeaci')
+                                        ? 'Responsable Principal · Planeación y Efectividad'
+                                        : 'Responsable Principal'}
+                                      color="success"
+                                      sx={{ height: 20, fontSize: 11, fontWeight: 800 }}
+                                    />
                                   )}
                                   {isCoResp && (
-                                    <Chip size="small" label="Co-responsable · Planeación y Efectividad" color="primary" variant="outlined" sx={{ height: 20, fontSize: 11, fontWeight: 750 }} />
+                                    <Chip
+                                      size="small"
+                                      label={participant.role_title?.toLowerCase().includes('planeaci') || participant.organization?.toLowerCase().includes('planeaci')
+                                        ? 'Co-responsable · Planeación y Efectividad'
+                                        : 'Co-responsable · Plan de Acción'}
+                                      color="primary"
+                                      variant="outlined"
+                                      sx={{ height: 20, fontSize: 11, fontWeight: 750 }}
+                                    />
                                   )}
                                   {!participant.user_id && !isPrimary && !isCoResp && (
                                     <Chip size="small" label="Externo" variant="outlined" color="primary" sx={{ height: 20, fontSize: 11 }} />

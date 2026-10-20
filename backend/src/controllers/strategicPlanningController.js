@@ -1540,19 +1540,7 @@ const createMeeting = wrap(async (req, res) => {
           estado: 'activo'
         }
       });
-      if (respUser) {
-        requestedParticipants.push({
-          user_id: respUser.id,
-          name: respUser.nombre,
-          email: respUser.email,
-          document: respUser.username,
-          organization: respUser.dependencia || 'UNICESMAG',
-          role_title: respUser.cargo || 'Responsable del Plan de Acción',
-          meeting_role: 'principal',
-          signature_required: true
-        });
-      }
-      if (peUser && (!respUser || String(peUser.id) !== String(respUser.id))) {
+      if (peUser) {
         requestedParticipants.push({
           user_id: peUser.id,
           name: peUser.nombre,
@@ -1560,7 +1548,19 @@ const createMeeting = wrap(async (req, res) => {
           document: peUser.username,
           organization: peUser.dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
           role_title: peUser.cargo || 'Planeación y Efectividad',
-          meeting_role: 'participant',
+          meeting_role: 'principal',
+          signature_required: true
+        });
+      }
+      if (respUser && (!peUser || String(peUser.id) !== String(respUser.id))) {
+        requestedParticipants.push({
+          user_id: respUser.id,
+          name: respUser.nombre,
+          email: respUser.email,
+          document: respUser.username,
+          organization: respUser.dependencia || 'UNICESMAG',
+          role_title: respUser.cargo || 'Responsable del Plan de Acción',
+          meeting_role: 'co_responsible',
           signature_required: true
         });
       }
