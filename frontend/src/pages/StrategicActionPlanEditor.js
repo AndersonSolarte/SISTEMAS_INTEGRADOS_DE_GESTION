@@ -10,7 +10,7 @@ import {
   Close, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Event,
   AccessTime, CalendarMonth, Folder, History, LockOutlined, MoreTime, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, OpenInNew,
   PersonSearch, PictureAsPdf as PdfIcon, PlayArrow, PriorityHigh, QrCode2, Refresh, Save, Search, Send,
-  Sync, TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility
+  HelpOutline, Sync, TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../context/AuthContext';
@@ -66,9 +66,6 @@ const MEETING_ROLE_OPTIONS = [
   { value: 'collaborator', label: 'Colaborador' },
   { value: 'participant', label: 'Participante' }
 ];
-const MEETING_RESPONSIBILITY_ROLE_OPTIONS = MEETING_ROLE_OPTIONS.filter((option) => ['principal', 'co_responsible'].includes(option.value));
-const MEETING_ATTENDEE_ROLE_OPTIONS = MEETING_ROLE_OPTIONS.filter((option) => ['collaborator', 'participant'].includes(option.value));
-const meetingRoleLabel = (value) => MEETING_ROLE_OPTIONS.find((option) => option.value === value)?.label || 'Participante';
 const richTextPlain = (value = '') => sanitizeRichHtml(String(value || ''))
   .replace(/<br\s*\/?\s*>/gi, '\n')
   .replace(/<\/p>|<\/div>|<\/li>|<\/tr>/gi, '\n')
@@ -144,18 +141,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [meeting, setMeeting] = useState(emptyMeeting);
   const [selectedMeetingId, setSelectedMeetingId] = useState('');
   const [meetingParticipants, setMeetingParticipants] = useState([]);
-  const [participantDocument, setParticipantDocument] = useState('');
-  const [participantCandidate, setParticipantCandidate] = useState(null);
-  const [participantOptions, setParticipantOptions] = useState([]);
-  const [participantMeetingRole, setParticipantMeetingRole] = useState('principal');
-  const [participantSearching, setParticipantSearching] = useState(false);
-  const [attendeeDocument, setAttendeeDocument] = useState('');
-  const [attendeeCandidate, setAttendeeCandidate] = useState(null);
   const [attendeeOptions, setAttendeeOptions] = useState([]);
-  const [attendeeMeetingRole, setAttendeeMeetingRole] = useState('participant');
   const [attendeeSearching, setAttendeeSearching] = useState(false);
-  const [externalAttendeeMode, setExternalAttendeeMode] = useState(false);
-  const [externalAttendee, setExternalAttendee] = useState({ document: '', name: '', email: '', organization: '', role_title: '' });
+  const [unifiedDraft, setUnifiedDraft] = useState({
+    document: '', name: '', email: '', organization: '', role_title: '', meeting_role: 'participant', user_id: null
+  });
   const [improvingMeetingField, setImprovingMeetingField] = useState('');
   const [generatingMinuteSummary, setGeneratingMinuteSummary] = useState(false);
   const [activitySearch, setActivitySearch] = useState('');
@@ -892,105 +882,151 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
   };
 
-  const lookupParticipant = async () => {
-    const document = participantDocument.trim();
-    if (!document) return enqueueSnackbar('Digite la cédula que desea consultar.', { variant: 'warning' });
-    const pedId = detail?.term?.strategicPlan?.id || platformPlan?.id;
-    if (!pedId) return enqueueSnackbar('No fue posible identificar el PED.', { variant: 'error' });
-    setParticipantSearching(true);
-    try {
-      const response = await strategicPlanningService.lookupMeetingParticipant(pedId, document);
-      setParticipantCandidate(response.data);
-    } catch (error) {
-      setParticipantCandidate(null);
-      enqueueSnackbar(error.response?.data?.message || 'No se encontró la cédula en SIAC.', { variant: 'error' });
-    } finally { setParticipantSearching(false); }
-  };
-  const addMeetingParticipant = () => {
-    if (!participantCandidate) return;
-    if (!participantCandidate.email) return enqueueSnackbar('El usuario no tiene correo y no puede recibir el código de firma.', { variant: 'warning' });
-    if (meetingParticipants.some((p) => String(p.user_id) === String(participantCandidate.id))) return enqueueSnackbar('Esta persona ya está en la agenda.', { variant: 'info' });
-    const hasPrincipal = meetingParticipants.some((participant) => participant.meeting_role === 'principal');
-    const selectedRole = hasPrincipal ? participantMeetingRole : 'principal';
-    const normalizedCurrent = selectedRole === 'principal'
-      ? meetingParticipants.map((participant) => ({ ...participant, meeting_role: participant.meeting_role === 'principal' ? 'co_responsible' : participant.meeting_role }))
-      : meetingParticipants;
-    const next = [...normalizedCurrent, {
-      user_id: participantCandidate.id, document: participantCandidate.document, name: participantCandidate.name,
-      email: participantCandidate.email, organization: participantCandidate.dependency || participantCandidate.viceRectorate || 'UNICESMAG',
-      role_title: participantCandidate.position || '', meeting_role: selectedRole, signature_required: true, status: 'invited'
-    }];
-    setMeetingParticipants(next);
-    setActaData((previous) => ({
-      ...previous,
-      responsables: next.filter((p) => ['principal', 'co_responsible'].includes(p.meeting_role)).map((p) => p.name).join(', ') || previous.responsables,
-      participantes: next.map((p) => ({ nombre: p.name, cargo: p.role_title, rol_reunion: p.meeting_role, status: p.status }))
-    }));
-    setParticipantMeetingRole('co_responsible');
-    setParticipantCandidate(null); setParticipantDocument('');
-  };
-  const lookupAttendee = async () => {
-    const document = attendeeDocument.trim();
-    if (!document) return enqueueSnackbar('Digite la cédula que desea consultar.', { variant: 'warning' });
+  const lookupUnifiedParticipant = async (docOverride) => {
+    const document = String(docOverride || unifiedDraft.document || '').trim();
+    if (!document) return enqueueSnackbar('Digite el nombre o la cédula que desea consultar.', { variant: 'warning' });
     const pedId = detail?.term?.strategicPlan?.id || platformPlan?.id;
     if (!pedId) return enqueueSnackbar('No fue posible identificar el PED.', { variant: 'error' });
     setAttendeeSearching(true);
     try {
       const response = await strategicPlanningService.lookupMeetingParticipant(pedId, document);
-      setAttendeeCandidate(response.data);
-      setExternalAttendeeMode(false);
-    } catch (error) {
-      setAttendeeCandidate(null);
-      setExternalAttendee((previous) => ({ ...previous, document }));
-      setExternalAttendeeMode(true);
-      enqueueSnackbar('La persona no aparece en SIAC. Puede registrarla como participante externo para esta acta.', { variant: 'info' });
-    } finally { setAttendeeSearching(false); }
-  };
-  const addMeetingAttendee = () => {
-    if (!attendeeCandidate) return;
-    if (!attendeeCandidate.email) return enqueueSnackbar('El usuario no tiene correo y no puede recibir el código de firma.', { variant: 'warning' });
-    if (meetingParticipants.some((participant) => String(participant.user_id) === String(attendeeCandidate.id))) return enqueueSnackbar('Esta persona ya está en la agenda.', { variant: 'info' });
-    const next = [...meetingParticipants, {
-      user_id: attendeeCandidate.id, document: attendeeCandidate.document, name: attendeeCandidate.name,
-      email: attendeeCandidate.email, organization: attendeeCandidate.dependency || attendeeCandidate.viceRectorate || 'UNICESMAG',
-      role_title: attendeeCandidate.position || '', meeting_role: attendeeMeetingRole, signature_required: true, status: 'invited'
-    }];
-    setMeetingParticipants(next);
-    setActaData((previous) => ({
-      ...previous,
-      responsables: next.filter((participant) => ['principal', 'co_responsible'].includes(participant.meeting_role)).map((participant) => participant.name).join(', ') || previous.responsables,
-      participantes: next.map((participant) => ({ nombre: participant.name, cargo: participant.role_title, rol_reunion: participant.meeting_role, status: participant.status }))
-    }));
-    setAttendeeMeetingRole('participant');
-    setAttendeeCandidate(null);
-    setAttendeeDocument('');
-  };
-  const addExternalMeetingAttendee = () => {
-    const document = externalAttendee.document.trim();
-    const name = externalAttendee.name.trim();
-    const email = externalAttendee.email.trim().toLowerCase();
-    const organization = externalAttendee.organization.trim();
-    const roleTitle = externalAttendee.role_title.trim();
-    if (!document || !name || !email || !organization || !roleTitle) {
-      return enqueueSnackbar('Complete identificación, nombre, correo, entidad y cargo del participante externo.', { variant: 'warning' });
+      const data = response?.data;
+      if (data) {
+        setUnifiedDraft((old) => ({
+          ...old,
+          document: data.document || document,
+          name: data.name || '',
+          email: data.email || '',
+          organization: data.dependency || data.viceRectorate || data.organization || 'UNICESMAG',
+          role_title: data.position || data.role_title || '',
+          user_id: data.id || null
+        }));
+        enqueueSnackbar('Usuario institucional encontrado en SIAC.', { variant: 'success' });
+        return;
+      }
+    } catch (_) {
+      // Fallback: Si no coincide exactamente por cédula, buscar por coincidencia de nombre/texto
+      try {
+        const searchRes = await strategicPlanningService.searchMeetingParticipants(pedId, document);
+        const results = searchRes?.data || [];
+        if (results.length === 1) {
+          const item = results[0];
+          setUnifiedDraft((old) => ({
+            ...old,
+            document: item.document || document,
+            name: item.name || '',
+            email: item.email || '',
+            organization: item.dependency || item.viceRectorate || item.organization || 'UNICESMAG',
+            role_title: item.position || item.role_title || '',
+            user_id: item.id || null
+          }));
+          enqueueSnackbar('Usuario institucional encontrado en SIAC.', { variant: 'success' });
+          return;
+        } else if (results.length > 1) {
+          setAttendeeOptions(results);
+          enqueueSnackbar(`Se encontraron ${results.length} coincidencias. Seleccione una opción de la lista.`, { variant: 'info' });
+          return;
+        }
+      } catch (__) {
+        // Ignorar error de búsqueda amplia
+      }
+      setUnifiedDraft((old) => ({ ...old, document, user_id: null }));
+      enqueueSnackbar('No se encontró en usuarios internos de SIAC. Puede completar los datos para agregarlo como participante externo.', { variant: 'info' });
+    } finally {
+      setAttendeeSearching(false);
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return enqueueSnackbar('Digite un correo válido para enviar la invitación de firma.', { variant: 'warning' });
-    if (meetingParticipants.some((participant) => participant.document === document || String(participant.email || '').toLowerCase() === email)) {
+  };
+
+  const addUnifiedParticipant = () => {
+    const document = String(unifiedDraft.document || '').trim();
+    const name = String(unifiedDraft.name || '').trim();
+    const email = String(unifiedDraft.email || '').trim().toLowerCase();
+    const organization = String(unifiedDraft.organization || '').trim() || 'UNICESMAG';
+    const roleTitle = String(unifiedDraft.role_title || '').trim() || 'Participante';
+    const hasPrincipal = meetingParticipants.some((p) => p.meeting_role === 'principal');
+    const role = unifiedDraft.meeting_role || (!hasPrincipal ? 'principal' : 'participant');
+
+    if (!name || !email) {
+      return enqueueSnackbar('Complete al menos el nombre y correo para agregar al participante.', { variant: 'warning' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return enqueueSnackbar('Digite un correo válido para enviar la invitación de firma.', { variant: 'warning' });
+    }
+    if (meetingParticipants.some((p) => (email && String(p.email || '').toLowerCase() === email) || (document && p.document && String(p.document) === document))) {
       return enqueueSnackbar('Esta persona ya está agregada al acta.', { variant: 'info' });
     }
-    const next = [...meetingParticipants, {
-      user_id: null, participant_type: 'external', document, name, email, organization,
-      role_title: roleTitle, meeting_role: attendeeMeetingRole || 'participant', signature_required: true, status: 'invited'
+
+    const normalizedCurrent = role === 'principal'
+      ? meetingParticipants.map((p) => ({ ...p, meeting_role: p.meeting_role === 'principal' ? 'co_responsible' : p.meeting_role }))
+      : meetingParticipants;
+
+    const next = [...normalizedCurrent, {
+      id: undefined,
+      user_id: unifiedDraft.user_id || null,
+      participant_type: unifiedDraft.user_id ? 'internal' : 'external',
+      document,
+      name,
+      email,
+      organization,
+      role_title: roleTitle,
+      meeting_role: role,
+      signature_required: true,
+      status: 'invited'
     }];
     setMeetingParticipants(next);
     setActaData((previous) => ({
       ...previous,
-      participantes: next.map((participant) => ({ nombre: participant.name, cargo: participant.role_title, entidad: participant.organization, rol_reunion: participant.meeting_role, status: participant.status }))
+      responsables: next.filter((p) => ['principal', 'co_responsible'].includes(p.meeting_role)).map((p) => p.name).join(', ') || previous.responsables,
+      participantes: next.map((p) => ({ nombre: p.name, cargo: p.role_title, entidad: p.organization, rol_reunion: p.meeting_role, status: p.status }))
     }));
-    setExternalAttendeeMode(false);
-    setExternalAttendee({ document: '', name: '', email: '', organization: '', role_title: '' });
-    setAttendeeDocument('');
-    enqueueSnackbar('Participante externo agregado. Recibirá la política de tratamiento de datos antes de firmar.', { variant: 'success' });
+    setUnifiedDraft({ document: '', name: '', email: '', organization: '', role_title: '', meeting_role: 'participant', user_id: null });
+    setAttendeeOptions([]);
+    enqueueSnackbar('Participante agregado al acta.', { variant: 'success' });
+  };
+
+  const handleWhatIsNext = () => {
+    const hasPrincipal = meetingParticipants.some((p) => p.meeting_role === 'principal');
+    const hasMinParticipants = meetingParticipants.length >= 2;
+    const hasTitle = Boolean(meeting.title?.trim());
+    const hasObjective = Boolean(richTextPlain(meeting.objective));
+    const isSaved = Boolean(activeMeeting?.id);
+    const latestMin = [...(activeMeeting?.minuteVersions || [])].sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
+    const isSigning = latestMin?.status === 'signing';
+    const allSigned = meetingParticipants.length > 0 && meetingParticipants.filter((p) => p.signature_required).every((p) => p.status === 'signed');
+    const isFinalized = activeMeeting?.status === 'formalized' || latestMin?.status === 'finalized';
+
+    if (!hasTitle || !hasObjective) {
+      enqueueSnackbar('Siguiente paso: Complete el título y el objetivo de la reunión del Plan de Acción.', { variant: 'info' });
+      return;
+    }
+    if (!hasPrincipal) {
+      enqueueSnackbar('Siguiente paso: Asigne un Responsable principal en la lista de responsables.', { variant: 'warning' });
+      return;
+    }
+    if (!hasMinParticipants) {
+      enqueueSnackbar('Siguiente paso: Agregue al menos 2 participantes para habilitar las firmas.', { variant: 'warning' });
+      return;
+    }
+    if (!isSaved) {
+      enqueueSnackbar('Siguiente paso: Guarde los cambios de la reunión haciendo clic en "Guardar reunión".', { variant: 'info' });
+      return;
+    }
+    if (!isSigning && !isFinalized) {
+      enqueueSnackbar('Siguiente paso: Haga clic en "Enviar para firmas" o genere el QR para que los participantes firmen.', { variant: 'success' });
+      return;
+    }
+    if (isSigning && !allSigned) {
+      const pendingCount = meetingParticipants.filter((p) => p.signature_required && p.status !== 'signed').length;
+      enqueueSnackbar(`Siguiente paso: Esperar las firmas pendientes (${pendingCount} participantes por firmar). Puede usar "Actualizar firmas" o reenviar invitaciones.`, { variant: 'info' });
+      return;
+    }
+    if (allSigned && !isFinalized) {
+      enqueueSnackbar('Siguiente paso: Todos han firmado. Haga clic en "Enviar y formalizar acta" para sincronizarla en Google Drive.', { variant: 'success' });
+      return;
+    }
+    if (isFinalized) {
+      enqueueSnackbar('Acta formalizada con éxito. Puede continuar con las siguientes etapas del Plan de Acción.', { variant: 'success' });
+    }
   };
   const updateMeetingParticipantRole = (index, meetingRole) => {
     const participant = meetingParticipants[index];
@@ -1072,14 +1108,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       development: '', conclusions: ''
     });
     setMeetingParticipants([]);
-    setParticipantMeetingRole('principal');
-    setParticipantCandidate(null);
-    setParticipantDocument('');
-    setAttendeeMeetingRole('participant');
-    setAttendeeCandidate(null);
-    setAttendeeDocument('');
-    setExternalAttendeeMode(false);
-    setExternalAttendee({ document: '', name: '', email: '', organization: '', role_title: '' });
+    setUnifiedDraft({ document: '', name: '', email: '', organization: '', role_title: '', meeting_role: 'participant', user_id: null });
+    setAttendeeOptions([]);
     setPublished(null);
     enqueueSnackbar('Nueva acta preparada. Complete la información y guárdela.', { variant: 'info' });
   };
@@ -1725,11 +1755,23 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Stack>
                 </Paper>
 
-                <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: meetingLayoutMode === 'split' ? 'row' : 'column' }, gap: 2.5, alignItems: 'stretch', width: '100%' }}>
+                <Box sx={{
+                  display: 'flex',
+                  flexDirection: { xs: 'column', lg: meetingLayoutMode === 'split' ? 'row' : 'column' },
+                  gap: 2.5,
+                  alignItems: 'stretch',
+                  width: '100%',
+                  height: { lg: 'calc(100vh - 270px)' },
+                  maxHeight: { lg: 'calc(100vh - 270px)' }
+                }}>
                 <Box sx={{
                   width: meetingLayoutMode === 'form' ? '100%' : meetingLayoutMode === 'split' ? { xs: '100%', lg: '47%' } : '100%',
                   display: meetingLayoutMode === 'preview' ? 'none' : 'flex',
-                  flexDirection: 'column', gap: 2.5
+                  flexDirection: 'column',
+                  gap: 2.5,
+                  height: { lg: '100%' },
+                  overflowY: { lg: 'auto' },
+                  pr: { lg: 1 }
                 }}>
                   <Paper variant="outlined" sx={{ order: 1, p: 2.25, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#cbd9e9' }}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} justifyContent="space-between" gap={1.5} mb={1.5}>
@@ -1866,180 +1908,285 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           {field.helperText && <Typography variant="caption" color="#64748b" sx={{ display: 'block', mt: 0.75, ml: 1 }}>{field.helperText}</Typography>}
                         </Box>
                       ))}
-                      <Box sx={{ gridColumn: '1 / -1', gridRow: 1 }}>
-                        <Box sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f5f9ff', border: '1px solid #cfe0f4' }}>
-                          <Typography fontWeight={900} color="#17345f" mb={1.25}>Responsables de la reunión ({meetingParticipants.filter((entry) => ['principal', 'co_responsible'].includes(entry.meeting_role)).length})</Typography>
-                          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                            <Autocomplete
-                              fullWidth
-                              freeSolo
-                              options={participantOptions}
-                              loading={participantSearching}
-                              filterOptions={(options) => options}
-                              getOptionLabel={(option) => typeof option === 'string' ? option : `${option.name || ''} · ${option.document || option.email || ''}`}
-                              inputValue={participantDocument}
-                              onInputChange={(_, value, reason) => {
-                                if (reason === 'reset') return;
-                                setParticipantDocument(value);
-                                setParticipantCandidate(null);
-                                searchMeetingPeople(value, setParticipantOptions, setParticipantSearching);
-                              }}
-                              onChange={(_, option) => {
-                                if (!option || typeof option === 'string') return;
-                                setParticipantCandidate(option);
-                                setParticipantDocument(option.document || option.email || option.name || '');
-                                setParticipantOptions([]);
-                              }}
-                              renderInput={(params) => <TextField {...params} size="small" label="Nombre, correo o cédula del responsable" />}
-                            />
-                            <Button variant="outlined" startIcon={participantSearching ? <CircularProgress size={16} /> : <PersonSearch />} disabled={participantSearching || !participantDocument.trim()} onClick={lookupParticipant} sx={{ minWidth: 132, borderRadius: 2, textTransform: 'none', fontWeight: 850 }}>Consultar</Button>
-                          </Stack>
-                          {participantCandidate && (
-                            <Paper elevation={0} sx={{ mt: 1.5, p: 1.5, border: '1px solid #a9c9ee', borderRadius: 2, bgcolor: '#ffffff' }}>
-                              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={1.5}>
-                                <Box><Typography fontWeight={900}>{participantCandidate.name}</Typography><Typography variant="body2" color="#64748b">{participantCandidate.position || 'Cargo no registrado'} · {participantCandidate.dependency || 'Dependencia no registrada'}</Typography><Typography variant="caption" color="#5680b2">{participantCandidate.email}</Typography></Box>
-                                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                                  <TextField select size="small" label="Rol en el acta" value={meetingParticipants.some((participant) => participant.meeting_role === 'principal') ? participantMeetingRole : 'principal'} disabled={!meetingParticipants.some((participant) => participant.meeting_role === 'principal')} onChange={(event) => setParticipantMeetingRole(event.target.value)} sx={{ minWidth: 190 }}>
-                                    {MEETING_RESPONSIBILITY_ROLE_OPTIONS.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
-                                  </TextField>
-                                  <Button variant="contained" startIcon={<Add />} onClick={addMeetingParticipant} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 850 }}>Agregar</Button>
-                                </Stack>
-                              </Stack>
-                            </Paper>
-                          )}
-                          <Stack spacing={1} mt={meetingParticipants.some((entry) => ['principal', 'co_responsible'].includes(entry.meeting_role)) ? 1.5 : 0}>
-                            {meetingParticipants.map((participant, index) => ({ participant, index })).filter(({ participant }) => ['principal', 'co_responsible'].includes(participant.meeting_role)).map(({ participant, index }) => (
-                              <Paper key={participant.id || participant.user_id || index} variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, bgcolor: '#ffffff', borderColor: '#dbe7f4', display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { xs: 'stretch', md: 'center' }, justifyContent: 'space-between', gap: 1.25 }}>
-                                <Box sx={{ flex: 1, minWidth: 0 }}>
-                                  <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
-                                    <Typography variant="body2" fontWeight={850} color="#0f172a">{participant.name}</Typography>
-                                    <Chip size="small" label={meetingRoleLabel(participant.meeting_role)} color="primary" variant="outlined" sx={{ height: 20, fontSize: 11, fontWeight: 700 }} />
-                                  </Stack>
-                                  <Typography variant="caption" color="#64748b" sx={{ display: 'block', mt: 0.25 }}>CC {participant.document || 'registrada'} · {participant.email}</Typography>
-                                  <Typography variant="caption" color="#475569" sx={{ display: 'block', fontWeight: 600 }}>{participant.role_title || 'Sin cargo'} · {participant.organization || 'UNICESMAG'}</Typography>
-                                </Box>
-                                <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" justifyContent={{ xs: 'space-between', md: 'flex-end' }}>
-                                  <TextField select size="small" label="Rol" value={participant.meeting_role || (index === 0 ? 'principal' : 'participant')} disabled={participant.status === 'signed'} onChange={(event) => updateMeetingParticipantRole(index, event.target.value)} sx={{ minWidth: 150 }}>
-                                    {MEETING_RESPONSIBILITY_ROLE_OPTIONS.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
-                                  </TextField>
-                                  <Chip size="small" label={participant.status === 'signed' ? 'Firmado' : 'Firma pendiente'} color={participant.status === 'signed' ? 'success' : 'default'} />
-                                  <IconButton aria-label={`Retirar a ${participant.name}`} color="error" size="small" disabled={participant.status === 'signed'} onClick={() => removeMeetingParticipant(index)} sx={{ bgcolor: '#fef2f2', '&:hover': { bgcolor: '#fee2e2' } }}>
-                                    <DeleteOutline fontSize="small" />
-                                  </IconButton>
-                                </Stack>
-                              </Paper>
-                            ))}
-                          </Stack>
-                        </Box>
-                      </Box>
                     </Box>
-                    <Paper elevation={0} sx={{ mt: 2, p: 2, borderRadius: 2.5, bgcolor: '#ffffff', border: '1px solid #dbe7f4' }}>
-                      <Typography fontWeight={900} color="#17345f" mb={1.25}>2. Participantes y firmas ({meetingParticipants.filter((entry) => ['collaborator', 'participant'].includes(entry.meeting_role)).length})</Typography>
-                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  </Paper>
+
+                  <Paper variant="outlined" sx={{ order: 3, p: 2.25, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#d8e5f2' }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.25} flexWrap="wrap" gap={1}>
+                      <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 16 }}>
+                        2. Participantes y firmas
+                      </Typography>
+                      {meetingParticipants.length >= 2 ? (
+                        <Chip size="small" color="default" label={`${meetingParticipants.length} personas en la reunión`} sx={{ fontWeight: 850 }} />
+                      ) : (
+                        <Chip size="small" color="warning" label="Al menos 2 participantes requeridos" sx={{ fontWeight: 850 }} />
+                      )}
+                    </Stack>
+
+                    <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2.5, bgcolor: '#f8fbff', borderColor: '#dbe7f4' }}>
+                      <Stack direction="row" alignItems="center" gap={1} mb={1}>
+                        <PersonSearch color="primary" />
+                        <Box>
+                          <Typography fontWeight={850}>Buscar participante</Typography>
+                        </Box>
+                      </Stack>
+
+                      <Stack direction={{ xs: 'column', sm: 'row' }} alignItems="stretch" gap={1} mb={1.25}>
                         <Autocomplete
-                          fullWidth
                           freeSolo
+                          fullWidth
+                          size="small"
                           options={attendeeOptions}
                           loading={attendeeSearching}
                           filterOptions={(options) => options}
-                          getOptionLabel={(option) => typeof option === 'string' ? option : `${option.name || ''} · ${option.document || option.email || ''}`}
-                          inputValue={attendeeDocument}
+                          getOptionLabel={(option) => typeof option === 'string'
+                            ? option
+                            : `${option.name || ''} · CC ${option.document || ''}`}
+                          inputValue={unifiedDraft.document}
                           onInputChange={(_, value, reason) => {
-                            if (reason === 'reset') return;
-                            setAttendeeDocument(value);
-                            setAttendeeCandidate(null);
-                            searchMeetingPeople(value, setAttendeeOptions, setAttendeeSearching);
+                            if (!['input', 'clear'].includes(reason)) return;
+                            setUnifiedDraft((old) => ({ ...old, document: value }));
+                            if (reason === 'clear') {
+                              setAttendeeOptions([]);
+                            } else {
+                              searchMeetingPeople(value, setAttendeeOptions, setAttendeeSearching);
+                            }
                           }}
                           onChange={(_, option) => {
-                            if (!option || typeof option === 'string') return;
-                            setAttendeeCandidate(option);
-                            setAttendeeDocument(option.document || option.email || option.name || '');
-                            setExternalAttendeeMode(false);
-                            setAttendeeOptions([]);
+                            if (option && typeof option !== 'string') {
+                              setUnifiedDraft((old) => ({
+                                ...old,
+                                document: option.document || old.document,
+                                name: option.name || '',
+                                email: option.email || '',
+                                organization: option.dependency || option.viceRectorate || option.organization || 'UNICESMAG',
+                                role_title: option.position || option.role_title || '',
+                                user_id: option.id || null
+                              }));
+                              setAttendeeOptions([]);
+                            }
                           }}
-                          renderInput={(params) => <TextField {...params} size="small" label="Nombre, correo o cédula del participante" />}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label="Nombre o cédula/identificación"
+                              placeholder="Nombre interno o cédula"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  lookupUnifiedParticipant();
+                                }
+                              }}
+                              InputProps={{
+                                ...params.InputProps,
+                                endAdornment: (
+                                  <>
+                                    {attendeeSearching ? <CircularProgress color="inherit" size={16} /> : null}
+                                    {params.InputProps.endAdornment}
+                                  </>
+                                )
+                              }}
+                            />
+                          )}
                         />
-                        <Button variant="outlined" startIcon={attendeeSearching ? <CircularProgress size={16} /> : <PersonSearch />} disabled={attendeeSearching || !attendeeDocument.trim()} onClick={lookupAttendee} sx={{ minWidth: 132, borderRadius: 2, textTransform: 'none', fontWeight: 850 }}>Consultar</Button>
-                      </Stack>
-                      {!externalAttendeeMode && (
                         <Button
-                          size="small"
-                          startIcon={<Add />}
-                          onClick={() => {
-                            setExternalAttendee((previous) => ({ ...previous, document: attendeeDocument.trim() }));
-                            setExternalAttendeeMode(true);
-                            setAttendeeCandidate(null);
+                          variant="outlined"
+                          startIcon={attendeeSearching ? <CircularProgress size={16} /> : <PersonSearch />}
+                          disabled={attendeeSearching || !String(unifiedDraft.document || '').trim()}
+                          onClick={() => lookupUnifiedParticipant()}
+                          sx={{
+                            minWidth: { xs: '100%', sm: 140 },
+                            height: 40,
+                            flexShrink: 0,
+                            whiteSpace: 'nowrap',
+                            textTransform: 'none',
+                            fontWeight: 800
                           }}
-                          sx={{ mt: 1, textTransform: 'none', fontWeight: 850 }}
                         >
-                          Agregar participante externo
+                          Buscar
                         </Button>
-                      )}
-                      {externalAttendeeMode && (
-                        <Paper elevation={0} sx={{ mt: 1.5, p: 1.75, border: '1px solid #a9c9ee', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
-                          <Typography fontWeight={900} color="#17345f">Participante externo para esta acta</Typography>
-                          <Alert severity="info" sx={{ my: 1.25 }}>
-                            Recibirá por correo la invitación, la política de tratamiento de datos de UNICESMAG y deberá aceptarla antes de firmar.
-                          </Alert>
-                          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1.25 }}>
-                            <TextField size="small" label="Cédula o identificación" value={externalAttendee.document} onChange={(event) => setExternalAttendee((previous) => ({ ...previous, document: event.target.value }))} />
-                            <TextField size="small" label="Nombre completo" value={externalAttendee.name} onChange={(event) => setExternalAttendee((previous) => ({ ...previous, name: event.target.value }))} />
-                            <TextField size="small" type="email" label="Correo empresarial o personal" value={externalAttendee.email} onChange={(event) => setExternalAttendee((previous) => ({ ...previous, email: event.target.value }))} />
-                            <TextField size="small" label="Cargo" value={externalAttendee.role_title} onChange={(event) => setExternalAttendee((previous) => ({ ...previous, role_title: event.target.value }))} />
-                            <TextField size="small" label="Empresa o entidad" value={externalAttendee.organization} onChange={(event) => setExternalAttendee((previous) => ({ ...previous, organization: event.target.value }))} sx={{ gridColumn: { sm: '1 / -1' } }} />
-                          </Box>
-                          <Stack direction="row" justifyContent="flex-end" spacing={1} mt={1.5}>
-                            <Button onClick={() => setExternalAttendeeMode(false)} sx={{ textTransform: 'none' }}>Cancelar</Button>
-                            <Button variant="contained" startIcon={<Add />} onClick={addExternalMeetingAttendee} sx={{ textTransform: 'none', fontWeight: 850 }}>Agregar al acta</Button>
-                          </Stack>
-                        </Paper>
-                      )}
-                      {attendeeCandidate && (
-                        <Paper elevation={0} sx={{ mt: 1.5, p: 1.5, border: '1px solid #a9c9ee', borderRadius: 2, bgcolor: '#f8fbff' }}>
-                          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={1.5}>
-                            <Box><Typography fontWeight={900}>{attendeeCandidate.name}</Typography><Typography variant="body2" color="#64748b">{attendeeCandidate.position || 'Cargo no registrado'} · {attendeeCandidate.dependency || 'Dependencia no registrada'}</Typography><Typography variant="caption" color="#5680b2">{attendeeCandidate.email}</Typography></Box>
-                            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                              <TextField select size="small" label="Rol en el acta" value={attendeeMeetingRole} onChange={(event) => setAttendeeMeetingRole(event.target.value)} sx={{ minWidth: 180 }}>
-                                {MEETING_ATTENDEE_ROLE_OPTIONS.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
-                              </TextField>
-                              <Button variant="contained" startIcon={<Add />} onClick={addMeetingAttendee} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 850 }}>Agregar participante</Button>
-                            </Stack>
-                          </Stack>
-                        </Paper>
-                      )}
-                      <Stack spacing={1} mt={meetingParticipants.some((entry) => ['collaborator', 'participant'].includes(entry.meeting_role)) ? 1.5 : 0}>
-                        {meetingParticipants.map((participant, index) => ({ participant, index })).filter(({ participant }) => ['collaborator', 'participant'].includes(participant.meeting_role)).map(({ participant, index }) => (
-                          <Paper key={participant.id || participant.user_id || index} variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, bgcolor: '#f8fbff', borderColor: '#dbe7f4', display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { xs: 'stretch', md: 'center' }, justifyContent: 'space-between', gap: 1.25 }}>
+                      </Stack>
+
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1 }}>
+                        <TextField
+                          size="small"
+                          label="Nombre completo"
+                          value={unifiedDraft.name}
+                          onChange={(e) => setUnifiedDraft((old) => ({ ...old, name: e.target.value }))}
+                        />
+                        <TextField
+                          size="small"
+                          type="email"
+                          label="Correo empresarial o personal"
+                          value={unifiedDraft.email}
+                          onChange={(e) => setUnifiedDraft((old) => ({ ...old, email: e.target.value }))}
+                        />
+                        <TextField
+                          size="small"
+                          label="Cargo"
+                          value={unifiedDraft.role_title}
+                          onChange={(e) => setUnifiedDraft((old) => ({ ...old, role_title: e.target.value }))}
+                        />
+                        <TextField
+                          size="small"
+                          label="Empresa, entidad o programa (opcional)"
+                          value={unifiedDraft.organization}
+                          onChange={(e) => setUnifiedDraft((old) => ({ ...old, organization: e.target.value }))}
+                        />
+                      </Box>
+
+                      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems="center" gap={1} mt={1.5}>
+                        <TextField
+                          select
+                          size="small"
+                          label="Rol en el acta"
+                          value={unifiedDraft.meeting_role || (!meetingParticipants.some((p) => p.meeting_role === 'principal') ? 'principal' : 'participant')}
+                          onChange={(e) => setUnifiedDraft((old) => ({ ...old, meeting_role: e.target.value }))}
+                          sx={{ minWidth: 200, width: { xs: '100%', sm: 'auto' } }}
+                        >
+                          {MEETING_ROLE_OPTIONS.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                          ))}
+                        </TextField>
+                        <Stack direction="row" gap={1} sx={{ width: { xs: '100%', sm: 'auto' }, justifyContent: 'flex-end' }}>
+                          <Button
+                            onClick={() => {
+                              setUnifiedDraft({ document: '', name: '', email: '', organization: '', role_title: '', meeting_role: 'participant', user_id: null });
+                              setAttendeeOptions([]);
+                            }}
+                            sx={{ textTransform: 'none', color: '#64748b' }}
+                          >
+                            Limpiar
+                          </Button>
+                          <Button
+                            variant="contained"
+                            startIcon={<Add />}
+                            onClick={addUnifiedParticipant}
+                            sx={{ textTransform: 'none', fontWeight: 850, borderRadius: 2 }}
+                          >
+                            + Agregar al acta
+                          </Button>
+                        </Stack>
+                      </Stack>
+                    </Paper>
+
+                    <Stack spacing={1} mt={meetingParticipants.length > 0 ? 2 : 0}>
+                      {meetingParticipants.map((participant, index) => {
+                        const isPrimary = participant.meeting_role === 'principal';
+                        const isCoResp = participant.meeting_role === 'co_responsible';
+
+                        return (
+                          <Paper
+                            key={participant.id || participant.user_id || `${participant.document || participant.email}-${index}`}
+                            variant="outlined"
+                            sx={{
+                              p: 1.5,
+                              borderRadius: 2.5,
+                              bgcolor: isPrimary ? '#f0fdf4' : isCoResp ? '#f8fafc' : '#ffffff',
+                              borderColor: '#dbe7f4',
+                              display: 'flex',
+                              flexDirection: { xs: 'column', md: 'row' },
+                              alignItems: { xs: 'stretch', md: 'center' },
+                              justifyContent: 'space-between',
+                              gap: 1.25
+                            }}
+                          >
                             <Box sx={{ flex: 1, minWidth: 0 }}>
                               <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
                                 <Typography variant="body2" fontWeight={850} color="#0f172a">{participant.name}</Typography>
-                                <Chip size="small" label={meetingRoleLabel(participant.meeting_role)} color="default" variant="outlined" sx={{ height: 20, fontSize: 11, fontWeight: 700 }} />
+                                {isPrimary && <Chip size="small" label="Responsable principal" color="success" sx={{ height: 20, fontSize: 11, fontWeight: 800 }} />}
+                                {isCoResp && <Chip size="small" label="Corresponsable" color="primary" variant="outlined" sx={{ height: 20, fontSize: 11, fontWeight: 750 }} />}
+                                {!participant.user_id && !isPrimary && !isCoResp && (
+                                  <Chip size="small" label="Externo" variant="outlined" color="primary" sx={{ height: 20, fontSize: 11 }} />
+                                )}
+                                {participant.meeting_role === 'collaborator' && (
+                                  <Chip size="small" label="Colaborador" variant="outlined" sx={{ height: 20, fontSize: 11 }} />
+                                )}
+                                {participant.meeting_role === 'participant' && (
+                                  <Chip size="small" label="Participante" variant="outlined" color="default" sx={{ height: 20, fontSize: 11 }} />
+                                )}
                               </Stack>
-                              <Typography variant="caption" color="#64748b" sx={{ display: 'block', mt: 0.25 }}>CC {participant.document || 'registrada'} · {participant.email}</Typography>
-                              <Typography variant="caption" color="#475569" sx={{ display: 'block', fontWeight: 600 }}>{participant.role_title || 'Sin cargo'} · {participant.organization || 'UNICESMAG'}</Typography>
+                              <Typography variant="caption" color="#64748b" sx={{ display: 'block', mt: 0.25 }}>
+                                CC {participant.document || 'registrada'} · {participant.email}
+                              </Typography>
+                              <Typography variant="caption" color="#475569" sx={{ display: 'block', fontWeight: 600 }}>
+                                {participant.role_title || 'Sin cargo'} · {participant.organization || 'UNICESMAG'}
+                              </Typography>
                             </Box>
                             <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" justifyContent={{ xs: 'space-between', md: 'flex-end' }}>
-                              <TextField select size="small" label="Rol" value={participant.meeting_role || 'participant'} disabled={participant.status === 'signed'} onChange={(event) => updateMeetingParticipantRole(index, event.target.value)} sx={{ minWidth: 150 }}>
-                                {MEETING_ATTENDEE_ROLE_OPTIONS.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
+                              <TextField
+                                select
+                                size="small"
+                                label="Rol"
+                                value={participant.meeting_role || 'participant'}
+                                disabled={participant.status === 'signed'}
+                                onChange={(event) => updateMeetingParticipantRole(index, event.target.value)}
+                                sx={{ minWidth: 160 }}
+                              >
+                                {MEETING_ROLE_OPTIONS.map((option) => (
+                                  <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                                ))}
                               </TextField>
-                              <Chip size="small" label={participant.status === 'signed' ? 'Firmado' : 'Firma pendiente'} color={participant.status === 'signed' ? 'success' : 'default'} />
-                              <IconButton aria-label={`Retirar a ${participant.name}`} color="error" size="small" disabled={participant.status === 'signed'} onClick={() => removeMeetingParticipant(index)} sx={{ bgcolor: '#fef2f2', '&:hover': { bgcolor: '#fee2e2' } }}>
+                              <Chip
+                                size="small"
+                                label={participant.status === 'signed' ? 'Firmado' : 'Firma pendiente'}
+                                color={participant.status === 'signed' ? 'success' : 'default'}
+                              />
+                              <IconButton
+                                aria-label={`Retirar a ${participant.name}`}
+                                color="error"
+                                size="small"
+                                disabled={participant.status === 'signed'}
+                                onClick={() => removeMeetingParticipant(index)}
+                                sx={{ bgcolor: '#fef2f2', '&:hover': { bgcolor: '#fee2e2' } }}
+                              >
                                 <DeleteOutline fontSize="small" />
                               </IconButton>
                             </Stack>
                           </Paper>
-                        ))}
-                      </Stack>
-                    </Paper>
-                    <Button sx={{ mt: 2.5, borderRadius: 2.5, px: 3, fontWeight: 900 }} variant="contained" startIcon={<Event />} onClick={saveMeeting}>
-                      Guardar reunión
-                    </Button>
+                        );
+                      })}
+                    </Stack>
                   </Paper>
+
+                  {/* CARD: PROGRAMAR SIGUIENTE SESIÓN */}
+                  <Paper variant="outlined" sx={{ order: 4, p: 2, borderRadius: 3, borderColor: '#93c5fd', bgcolor: '#f8fbff' }}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" gap={1.5}>
+                      <Stack direction="row" alignItems="center" gap={1.25}>
+                        <Box sx={{ width: 46, height: 46, borderRadius: 2.5, display: 'grid', placeItems: 'center', bgcolor: '#dbeafe', color: '#1d4ed8', flexShrink: 0 }}>
+                          <CalendarMonth />
+                        </Box>
+                        <Box>
+                          <Typography fontWeight={900} color="#17345f">Programar siguiente sesión</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {!meetingParticipants.some((p) => p.meeting_role === 'principal')
+                              ? 'Opcional · Asigne al Responsable Principal para habilitar Calendar.'
+                              : 'Opcional · Sincronice fecha, hora y participantes con Google Calendar.'}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                      <Button
+                        variant="contained"
+                        startIcon={<CalendarMonth />}
+                        onClick={() => setCalendarSchedulerOpen(true)}
+                        sx={{ borderRadius: 2.5, px: 2.5, textTransform: 'none', fontWeight: 900 }}
+                      >
+                        Abrir Calendar
+                      </Button>
+                    </Stack>
+                  </Paper>
+
+                  <Button sx={{ order: 5, borderRadius: 2.5, px: 3, fontWeight: 900, alignSelf: 'flex-start' }} variant="contained" startIcon={<Event />} onClick={saveMeeting}>
+                    Guardar reunión
+                  </Button>
                 </Box>
 
                 <Box sx={{
                   width: meetingLayoutMode === 'preview' ? '100%' : meetingLayoutMode === 'split' ? { xs: '100%', lg: '53%' } : '100%',
-                  display: meetingLayoutMode === 'form' ? 'none' : 'block'
+                  display: meetingLayoutMode === 'form' ? 'none' : 'block',
+                  height: { lg: '100%' },
+                  overflowY: { lg: 'auto' },
+                  pr: { lg: 1 }
                 }}>
                   <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5} flexWrap="wrap" gap={1}>
@@ -2399,6 +2546,50 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Paper>
                 </Box>
               </Box>
+
+              {/* BARRA INFERIOR DE NAVEGACIÓN Y ACCIONES DEL ACTA */}
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 1.5,
+                  px: { xs: 2, md: 3 },
+                  borderRadius: 2.5,
+                  bgcolor: '#ffffff',
+                  border: '1px solid #dbe5f0',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  boxShadow: '0 -4px 16px rgba(15,23,42,0.04)'
+                }}
+              >
+                <Button
+                  onClick={onClose}
+                  variant="text"
+                  sx={{ textTransform: 'none', fontWeight: 800, color: '#64748b' }}
+                >
+                  Cerrar
+                </Button>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Button
+                    variant="outlined"
+                    color="success"
+                    startIcon={<HelpOutline />}
+                    onClick={handleWhatIsNext}
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 850,
+                      borderRadius: 2,
+                      animation: 'guidePulse 3s ease-in-out infinite',
+                      '@keyframes guidePulse': {
+                        '0%, 100%': { boxShadow: '0 0 0 0 rgba(22,163,74,0)' },
+                        '50%': { boxShadow: '0 0 0 8px rgba(22,163,74,0.2)' }
+                      }
+                    }}
+                  >
+                    ¿Qué sigue?
+                  </Button>
+                </Stack>
+              </Paper>
               </Stack>
             )}
 

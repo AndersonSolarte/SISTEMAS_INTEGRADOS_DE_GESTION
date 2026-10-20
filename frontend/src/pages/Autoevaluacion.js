@@ -507,6 +507,7 @@ function Autoevaluacion() {
   const [savingEdits, setSavingEdits] = useState(false);
   const [sendingToPlan, setSendingToPlan] = useState('');
   const [linkedManualAspectIds, setLinkedManualAspectIds] = useState(new Set());
+  const [associatedObjectiveAspectIds, setAssociatedObjectiveAspectIds] = useState(new Set());
   const [characteristicTransfer, setCharacteristicTransfer] = useState({ open: false, item: null, selectedIds: [] });
   const [deletingParticipantId, setDeletingParticipantId] = useState(null);
   const [aspectDrafts, setAspectDrafts] = useState({});
@@ -629,11 +630,18 @@ function Autoevaluacion() {
   useEffect(() => {
     if (!programa) {
       setLinkedManualAspectIds(new Set());
+      setAssociatedObjectiveAspectIds(new Set());
       return;
     }
     planMejoramientoService.linkedAutoevaluacion(programa)
-      .then((response) => setLinkedManualAspectIds(new Set((response?.aspectIds || []).map(Number))))
-      .catch(() => setLinkedManualAspectIds(new Set()));
+      .then((response) => {
+        setLinkedManualAspectIds(new Set((response?.aspectIds || []).map(Number)));
+        setAssociatedObjectiveAspectIds(new Set((response?.associatedAspectIds || []).map(Number)));
+      })
+      .catch(() => {
+        setLinkedManualAspectIds(new Set());
+        setAssociatedObjectiveAspectIds(new Set());
+      });
   }, [programa]);
 
   useEffect(() => {
@@ -3066,14 +3074,14 @@ function Autoevaluacion() {
                               <Button
                                 size="small"
                                 variant="outlined"
-                                startIcon={sendingToPlan === `aspect-${item.id}` ? <CircularProgress size={15} /> : <SendToPlanIcon />}
-                                disabled={Boolean(sendingToPlan) || !(Number(item.calificacion) >= 4)}
-                                onClick={() => linkedManualAspectIds.has(Number(item.id))
+                                startIcon={associatedObjectiveAspectIds.has(Number(item.id)) ? <CheckCircleIcon /> : sendingToPlan === `aspect-${item.id}` ? <CircularProgress size={15} /> : <SendToPlanIcon />}
+                                disabled={Boolean(sendingToPlan) || !(Number(item.calificacion) >= 4) || associatedObjectiveAspectIds.has(Number(item.id))}
+                                onClick={() => associatedObjectiveAspectIds.has(Number(item.id)) ? undefined : linkedManualAspectIds.has(Number(item.id))
                                   ? unlinkItemsFromImprovementPlan([item], `aspect-${item.id}`)
                                   : sendItemsToImprovementPlan([item], `aspect-${item.id}`, 'Aspecto')}
-                                sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap', color: linkedManualAspectIds.has(Number(item.id)) ? '#dc2626' : '#b45309', borderColor: linkedManualAspectIds.has(Number(item.id)) ? '#fecaca' : '#fdba74', '&:hover': { bgcolor: linkedManualAspectIds.has(Number(item.id)) ? '#fef2f2' : '#fff7ed' } }}
+                                sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap', color: associatedObjectiveAspectIds.has(Number(item.id)) ? '#047857' : linkedManualAspectIds.has(Number(item.id)) ? '#dc2626' : '#b45309', borderColor: associatedObjectiveAspectIds.has(Number(item.id)) ? '#a7f3d0' : linkedManualAspectIds.has(Number(item.id)) ? '#fecaca' : '#fdba74', '&.Mui-disabled': { color: associatedObjectiveAspectIds.has(Number(item.id)) ? '#047857' : undefined, borderColor: associatedObjectiveAspectIds.has(Number(item.id)) ? '#a7f3d0' : undefined, bgcolor: associatedObjectiveAspectIds.has(Number(item.id)) ? '#ecfdf5' : undefined }, '&:hover': { bgcolor: linkedManualAspectIds.has(Number(item.id)) ? '#fef2f2' : '#fff7ed' } }}
                               >
-                                {Number(item.calificacion) < 4 ? 'Envío automático' : linkedManualAspectIds.has(Number(item.id)) ? 'Desvincular' : 'Enviar aspecto'}
+                                {Number(item.calificacion) < 4 ? 'Disponible automáticamente' : associatedObjectiveAspectIds.has(Number(item.id)) ? 'Asociado a objetivo' : linkedManualAspectIds.has(Number(item.id)) ? 'Desvincular' : 'Enviar aspecto'}
                               </Button>
                             </TableCell>
                           </TableRow>
@@ -3551,17 +3559,17 @@ function Autoevaluacion() {
                         <TableCell padding="checkbox" sx={{ bgcolor: '#f8fafc' }}>
                           <Checkbox
                             size="small"
-                            checked={Boolean(characteristicTransfer.item?.aspectos?.some((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id))))
+                            checked={Boolean(characteristicTransfer.item?.aspectos?.some((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id)) && !associatedObjectiveAspectIds.has(Number(aspect.id))))
                               && characteristicTransfer.item.aspectos
-                                .filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id)))
+                                .filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id)) && !associatedObjectiveAspectIds.has(Number(aspect.id)))
                                 .every((aspect) => characteristicTransfer.selectedIds.includes(Number(aspect.id)))}
                             indeterminate={characteristicTransfer.selectedIds.length > 0
-                              && characteristicTransfer.selectedIds.length < (characteristicTransfer.item?.aspectos || []).filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id))).length}
+                              && characteristicTransfer.selectedIds.length < (characteristicTransfer.item?.aspectos || []).filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id)) && !associatedObjectiveAspectIds.has(Number(aspect.id))).length}
                             onChange={(event) => setCharacteristicTransfer((current) => ({
                               ...current,
                               selectedIds: event.target.checked
                                 ? (current.item?.aspectos || [])
-                                  .filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id)))
+                                  .filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id)) && !associatedObjectiveAspectIds.has(Number(aspect.id)))
                                   .map((aspect) => Number(aspect.id))
                                   .filter(Number.isInteger)
                                 : []
@@ -3580,13 +3588,14 @@ function Autoevaluacion() {
                         const automatic = Number.isFinite(score) && score < 4;
                         const manual = Number.isFinite(score) && score >= 4;
                         const linked = manual && linkedManualAspectIds.has(Number(aspect.id));
+                        const associated = manual && associatedObjectiveAspectIds.has(Number(aspect.id));
                         return (
                           <TableRow key={aspect.id || `${aspect.aspecto}-${index}`} hover>
                             <TableCell padding="checkbox">
                               <Checkbox
                                 size="small"
                                 checked={characteristicTransfer.selectedIds.includes(Number(aspect.id))}
-                                disabled={!manual || linked}
+                                disabled={!manual || linked || associated}
                                 onChange={(event) => setCharacteristicTransfer((current) => ({
                                   ...current,
                                   selectedIds: event.target.checked
@@ -3602,10 +3611,10 @@ function Autoevaluacion() {
                               <Stack spacing={0.6} alignItems="center">
                                 <Chip
                                   size="small"
-                                  label={automatic ? 'Automático (< 4)' : linked ? 'Vinculado manualmente' : manual ? 'Manual (≥ 4)' : 'Sin calificar'}
-                                  sx={{ fontWeight: 850, bgcolor: automatic ? '#fff7ed' : linked ? '#ecfdf5' : manual ? '#eff6ff' : '#f1f5f9', color: automatic ? '#b45309' : linked ? '#047857' : manual ? '#1d4ed8' : '#64748b' }}
+                                  label={automatic ? 'Disponible (< 4)' : associated ? 'Asociado a objetivo' : linked ? 'Vinculado manualmente' : manual ? 'Disponible (≥ 4)' : 'Sin calificar'}
+                                  sx={{ fontWeight: 850, bgcolor: automatic ? '#fff7ed' : associated || linked ? '#ecfdf5' : manual ? '#eff6ff' : '#f1f5f9', color: automatic ? '#b45309' : associated || linked ? '#047857' : manual ? '#1d4ed8' : '#64748b' }}
                                 />
-                                {linked && (
+                                {linked && !associated && (
                                   <Button
                                     size="small"
                                     color="error"
@@ -3625,7 +3634,7 @@ function Autoevaluacion() {
                   </Table>
                 </TableContainer>
                 <Typography variant="body2" sx={{ mt: 1.5, color: '#64748b', fontWeight: 700 }}>
-                  Seleccionados: {characteristicTransfer.selectedIds.length} de {(characteristicTransfer.item?.aspectos || []).filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id))).length} aspectos disponibles para envío manual.
+                  Seleccionados: {characteristicTransfer.selectedIds.length} de {(characteristicTransfer.item?.aspectos || []).filter((aspect) => Number(aspect.calificacion) >= 4 && !linkedManualAspectIds.has(Number(aspect.id)) && !associatedObjectiveAspectIds.has(Number(aspect.id))).length} aspectos disponibles.
                 </Typography>
               </DialogContent>
               <DialogActions sx={{ px: 2.5, py: 1.7 }}>

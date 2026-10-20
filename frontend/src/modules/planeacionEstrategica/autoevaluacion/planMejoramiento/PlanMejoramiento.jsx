@@ -271,6 +271,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [correctionResponses, setCorrectionResponses] = useState({});
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [improvementSearch, setImprovementSearch] = useState('');
+  const [improvementScoreFilter, setImprovementScoreFilter] = useState('all');
   const [associationOpportunity, setAssociationOpportunity] = useState(null);
   const [associationObjectiveIndex, setAssociationObjectiveIndex] = useState('new');
   const [evidenceOpportunity, setEvidenceOpportunity] = useState(null);
@@ -940,6 +941,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   };
 
   const filteredImprovementOpportunities = pendingOpportunities().filter((item) => {
+    const score = Number(item.calificacion);
+    if (improvementScoreFilter === 'improvement' && !(score < 4)) return false;
+    if (improvementScoreFilter === 'strengthening' && !(score >= 4)) return false;
     const query = improvementSearch.trim().toLocaleLowerCase('es');
     if (!query) return true;
     return [item.factor, item.caracteristica, item.aspecto, item.indicador]
@@ -1206,12 +1210,26 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           )}
 
           {tab === 1 && (
-            <Stack spacing={2}>
-              <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} spacing={1.5}>
-                <Box>
-                  <Typography variant="h6" sx={{ color: '#0f172a', fontWeight: 950 }}>Lista de mejoramiento</Typography>
-                  <Typography variant="body2" sx={{ color: '#64748b' }}>Asocie cada aspecto pendiente con un objetivo. Los asociados desaparecen automáticamente de esta lista.</Typography>
-                </Box>
+            <Stack spacing={1.5}>
+              <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ lg: 'center' }} spacing={1.2}>
+                <Paper elevation={0} sx={{ display: 'flex', gap: 0.7, p: 0.55, borderRadius: 2.5, bgcolor: '#f1f5f9', border: '1px solid #e2e8f0', width: { xs: '100%', lg: 'auto' } }}>
+                  <Button
+                    fullWidth
+                    size="small"
+                    onClick={() => setImprovementScoreFilter((current) => current === 'improvement' ? 'all' : 'improvement')}
+                    sx={{ px: 2, borderRadius: 2, textTransform: 'none', whiteSpace: 'nowrap', fontWeight: 900, color: improvementScoreFilter === 'improvement' ? '#9a3412' : '#475569', bgcolor: improvementScoreFilter === 'improvement' ? '#fff7ed' : 'transparent', boxShadow: improvementScoreFilter === 'improvement' ? '0 2px 8px rgba(154,52,18,.10)' : 'none', '&:hover': { bgcolor: '#fff7ed' } }}
+                  >
+                    Mejoramiento · &lt; 4 ({pendingOpportunities().filter((item) => Number(item.calificacion) < 4).length})
+                  </Button>
+                  <Button
+                    fullWidth
+                    size="small"
+                    onClick={() => setImprovementScoreFilter((current) => current === 'strengthening' ? 'all' : 'strengthening')}
+                    sx={{ px: 2, borderRadius: 2, textTransform: 'none', whiteSpace: 'nowrap', fontWeight: 900, color: improvementScoreFilter === 'strengthening' ? '#047857' : '#475569', bgcolor: improvementScoreFilter === 'strengthening' ? '#ecfdf5' : 'transparent', boxShadow: improvementScoreFilter === 'strengthening' ? '0 2px 8px rgba(4,120,87,.10)' : 'none', '&:hover': { bgcolor: '#ecfdf5' } }}
+                  >
+                    Fortalecimiento · ≥ 4 ({pendingOpportunities().filter((item) => Number(item.calificacion) >= 4).length})
+                  </Button>
+                </Paper>
                 <TextField
                   size="small"
                   value={improvementSearch}
@@ -1220,15 +1238,10 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   sx={{ width: { xs: '100%', md: 390 } }}
                 />
               </Stack>
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Chip label={`${filteredImprovementOpportunities.length} pendientes`} sx={{ fontWeight: 900, bgcolor: '#eff6ff', color: '#1d4ed8' }} />
-                <Chip label={`${filteredImprovementOpportunities.filter((item) => Number(item.calificacion) < 4).length} mejoramiento`} sx={{ fontWeight: 850, bgcolor: '#fff7ed', color: '#b45309' }} />
-                <Chip label={`${filteredImprovementOpportunities.filter((item) => Number(item.calificacion) >= 4).length} fortalecimiento`} sx={{ fontWeight: 850, bgcolor: '#ecfdf5', color: '#047857' }} />
-              </Stack>
               {loadingOpportunities ? (
                 <Box sx={{ py: 8, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>
               ) : filteredImprovementOpportunities.length === 0 ? (
-                <Alert severity="success">No hay aspectos pendientes de asociación para este programa.</Alert>
+                <Alert severity={pendingOpportunities().length ? 'info' : 'success'}>{pendingOpportunities().length ? 'No hay resultados para el filtro seleccionado.' : 'No hay aspectos pendientes de asociación para este programa.'}</Alert>
               ) : (
                 <TableContainer component={Paper} elevation={0} sx={{ maxHeight: 560, border: '1px solid #dbe3ee', borderRadius: 3, overflow: 'auto' }}>
                   <Table stickyHeader size="small">

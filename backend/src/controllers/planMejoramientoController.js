@@ -614,7 +614,7 @@ const syncAutoevaluacion = async (req, res) => {
 const linkedAutoevaluacion = async (req, res) => {
   try {
     const programa = text(req.query.programa);
-    if (!programa) return res.json({ success: true, data: { aspectIds: [] } });
+    if (!programa) return res.json({ success: true, data: { aspectIds: [], associatedAspectIds: [] } });
     const plan = await PlanMejoramiento.findOne({
       where: { programa: { [Op.iLike]: programa }, estado: { [Op.ne]: 'cerrado' } },
       order: [['updatedAt', 'DESC'], ['id', 'DESC']]
@@ -624,7 +624,12 @@ const linkedAutoevaluacion = async (req, res) => {
       .filter((item) => number(item.calificacion) >= 4 && item.modoTraslado === 'manual')
       .map((item) => Number(item.id))
       .filter(Number.isInteger);
-    return res.json({ success: true, data: { aspectIds } });
+    const associatedAspectIds = Array.from(new Set(array(plan?.contenido?.objetivos)
+      .flatMap(opportunitiesFromObjective)
+      .filter((item) => number(item.calificacion) >= 4)
+      .map((item) => Number(item.id))
+      .filter(Number.isInteger)));
+    return res.json({ success: true, data: { aspectIds, associatedAspectIds } });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'No fue posible consultar los aspectos vinculados' });
   }
