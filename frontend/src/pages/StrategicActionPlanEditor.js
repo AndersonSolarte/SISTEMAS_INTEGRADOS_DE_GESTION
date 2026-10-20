@@ -60,12 +60,6 @@ const toDatetimeLocal = (val, defaultHour = 8) => {
 };
 const emptyMeeting = { title: '', starts_at: '', ends_at: '', location: '', modality: 'Presencial', objective: '', development: '', conclusions: '', participants_text: '' };
 const PLANNING_DEPARTMENT_NAME = 'Dirección de Planeación y Aseguramiento de la Calidad';
-const MEETING_ROLE_OPTIONS = [
-  { value: 'principal', label: 'Responsable principal' },
-  { value: 'co_responsible', label: 'Corresponsable' },
-  { value: 'collaborator', label: 'Colaborador' },
-  { value: 'participant', label: 'Participante' }
-];
 const richTextPlain = (value = '') => sanitizeRichHtml(String(value || ''))
   .replace(/<br\s*\/?\s*>/gi, '\n')
   .replace(/<\/p>|<\/div>|<\/li>|<\/tr>/gi, '\n')
@@ -141,6 +135,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [meeting, setMeeting] = useState(emptyMeeting);
   const [selectedMeetingId, setSelectedMeetingId] = useState('');
   const [meetingParticipants, setMeetingParticipants] = useState([]);
+  const [responsibleDocument, setResponsibleDocument] = useState('');
+  const [responsibleOptions, setResponsibleOptions] = useState([]);
+  const [responsibleCandidate, setResponsibleCandidate] = useState(null);
+  const [searchingResponsible, setSearchingResponsible] = useState(false);
   const [attendeeOptions, setAttendeeOptions] = useState([]);
   const [attendeeSearching, setAttendeeSearching] = useState(false);
   const [unifiedDraft, setUnifiedDraft] = useState({
@@ -882,6 +880,81 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
   };
 
+  const lookupResponsible = async () => {
+    const doc = responsibleDocument.trim();
+    if (!doc) return enqueueSnackbar('Digite el nombre o la cédula que desea consultar.', { variant: 'warning' });
+    const pedId = detail?.term?.strategicPlan?.id || platformPlan?.id;
+    if (!pedId) return enqueueSnackbar('No fue posible identificar el PED.', { variant: 'error' });
+    setSearchingResponsible(true);
+    try {
+      const response = await strategicPlanningService.lookupMeetingParticipant(pedId, doc);
+      if (response?.data) {
+        setResponsibleCandidate(response.data);
+        return;
+      }
+    } catch (_) {
+      try {
+        const searchRes = await strategicPlanningService.searchMeetingParticipants(pedId, doc);
+        const results = searchRes?.data || [];
+        if (results.length === 1) {
+          setResponsibleCandidate(results[0]);
+          return;
+        } else if (results.length > 1) {
+          setResponsibleOptions(results);
+          enqueueSnackbar(`Se encontraron ${results.length} coincidencias. Seleccione una persona de la lista.`, { variant: 'info' });
+          return;
+        }
+      } catch (__) {}
+      enqueueSnackbar('No se encontró el usuario en SIAC.', { variant: 'error' });
+    } finally {
+      setSearchingResponsible(false);
+    }
+  };
+
+  const assignResponsibleCandidate = (isPrimary = true) => {
+    if (!responsibleCandidate) return;
+    if (!responsibleCandidate.email) {
+      return enqueueSnackbar('El usuario no tiene correo institucional registrado.', { variant: 'warning' });
+    }
+    const role = isPrimary ? 'principal' : 'co_responsible';
+    const nextList = meetingParticipants.filter((p) => {
+      const pDoc = String(p.document || '').toLowerCase();
+      const pEmail = String(p.email || '').toLowerCase();
+      const candDoc = String(responsibleCandidate.document || '').toLowerCase();
+      const candEmail = String(responsibleCandidate.email || '').toLowerCase();
+      return !(pDoc && pDoc === candDoc) && !(pEmail && pEmail === candEmail);
+    });
+
+    const normalizedCurrent = isPrimary
+      ? nextList.map((p) => ({ ...p, meeting_role: p.meeting_role === 'principal' ? 'co_responsible' : p.meeting_role }))
+      : nextList;
+
+    const next = [{
+      id: undefined,
+      user_id: responsibleCandidate.id || null,
+      participant_type: 'internal',
+      document: responsibleCandidate.document || '',
+      name: responsibleCandidate.name || '',
+      email: responsibleCandidate.email || '',
+      organization: responsibleCandidate.dependency || responsibleCandidate.viceRectorate || responsibleCandidate.organization || 'UNICESMAG',
+      role_title: responsibleCandidate.position || responsibleCandidate.role_title || '',
+      meeting_role: role,
+      signature_required: true,
+      status: 'invited'
+    }, ...normalizedCurrent];
+
+    setMeetingParticipants(next);
+    setActaData((previous) => ({
+      ...previous,
+      responsables: next.filter((p) => ['principal', 'co_responsible'].includes(p.meeting_role)).map((p) => p.name).join(', ') || previous.responsables,
+      participantes: next.map((p) => ({ nombre: p.name, cargo: p.role_title, entidad: p.organization, rol_reunion: p.meeting_role, status: p.status }))
+    }));
+    setResponsibleCandidate(null);
+    setResponsibleDocument('');
+    setResponsibleOptions([]);
+    enqueueSnackbar(isPrimary ? 'Responsable Principal asignado con éxito.' : 'Co-responsable agregado con éxito.', { variant: 'success' });
+  };
+
   const lookupUnifiedParticipant = async (docOverride) => {
     const document = String(docOverride || unifiedDraft.document || '').trim();
     if (!document) return enqueueSnackbar('Digite el nombre o la cédula que desea consultar.', { variant: 'warning' });
@@ -943,8 +1016,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     const email = String(unifiedDraft.email || '').trim().toLowerCase();
     const organization = String(unifiedDraft.organization || '').trim() || 'UNICESMAG';
     const roleTitle = String(unifiedDraft.role_title || '').trim() || 'Participante';
-    const hasPrincipal = meetingParticipants.some((p) => p.meeting_role === 'principal');
-    const role = unifiedDraft.meeting_role || (!hasPrincipal ? 'principal' : 'participant');
+    const role = unifiedDraft.meeting_role || 'participant';
 
     if (!name || !email) {
       return enqueueSnackbar('Complete al menos el nombre y correo para agregar al participante.', { variant: 'warning' });
@@ -1108,6 +1180,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       development: '', conclusions: ''
     });
     setMeetingParticipants([]);
+    setResponsibleCandidate(null);
+    setResponsibleDocument('');
+    setResponsibleOptions([]);
     setUnifiedDraft({ document: '', name: '', email: '', organization: '', role_title: '', meeting_role: 'participant', user_id: null });
     setAttendeeOptions([]);
     setPublished(null);
@@ -1794,22 +1869,226 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     </TextField>
                   </Paper>
 
-                  <Paper variant="outlined" sx={{ order: 3, p: 2, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#d8e5f2' }}>
-                    <Stack direction="row" spacing={1.5} alignItems="center" mb={1.25}>
-                      <AutoAwesome sx={{ color: '#0284c7', fontSize: 18 }} />
-                      <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 15 }}>Acta Asistida por IA</Typography>
-                    </Stack>
-                    <Button fullWidth component="label" variant="outlined" startIcon={<CloudUpload />} sx={{ height: 38, borderRadius: 2.5, textTransform: 'none', fontWeight: 800, borderColor: '#cbd5e1', color: '#1e293b' }}>
-                      Adjuntar audio temporal de la sesión
-                      <input hidden type="file" accept="audio/*" onChange={() => enqueueSnackbar('Audio adjuntado temporalmente para transcripción.', { variant: 'info' })} />
-                    </Button>
-                  </Paper>
-
-                  <Paper variant="outlined" sx={{ order: 2, p: 2.5, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#cbd9e9' }}>
+                  <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#cbd9e9' }}>
                     <Box mb={2}>
                       <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 16 }}>1. Información de la reunión</Typography>
                     </Box>
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', sm: 'repeat(2,minmax(0,1fr))' }, gap: 2 }}>
+                      {/* BÚSQUEDA DEL RESPONSABLE PRINCIPAL AL INICIO */}
+                      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ gridColumn: '1 / -1' }}>
+                        <Autocomplete
+                          freeSolo
+                          fullWidth
+                          size="small"
+                          options={responsibleOptions}
+                          loading={searchingResponsible}
+                          filterOptions={(options) => options}
+                          getOptionLabel={(option) => typeof option === 'string'
+                            ? option
+                            : `${option.name || ''} · CC ${option.document || ''}`}
+                          inputValue={responsibleDocument}
+                          onInputChange={(_, value, reason) => {
+                            if (!['input', 'clear'].includes(reason)) return;
+                            setResponsibleDocument(value);
+                            setResponsibleCandidate(null);
+                            if (reason === 'clear') {
+                              setResponsibleOptions([]);
+                            } else if (value.trim().length >= 2) {
+                              searchMeetingPeople(value, setResponsibleOptions, setSearchingResponsible);
+                            }
+                          }}
+                          onChange={(_, option) => {
+                            if (option && typeof option !== 'string') {
+                              setResponsibleCandidate(option);
+                              setResponsibleDocument(`${option.name || ''} · CC ${option.document || ''}`);
+                              setResponsibleOptions([]);
+                            }
+                          }}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label={!meetingParticipants.some((p) => p.meeting_role === 'principal')
+                                ? 'Nombre o cédula del Responsable Principal *'
+                                : 'Nombre o cédula del responsable'}
+                              placeholder="Escriba al menos 2 caracteres"
+                              helperText="Busque por nombre, apellido o cédula y seleccione una persona de la lista."
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  lookupResponsible();
+                                }
+                              }}
+                              InputProps={{
+                                ...params.InputProps,
+                                endAdornment: (
+                                  <>
+                                    {searchingResponsible ? <CircularProgress color="inherit" size={16} /> : null}
+                                    {params.InputProps.endAdornment}
+                                  </>
+                                )
+                              }}
+                            />
+                          )}
+                        />
+                        <Button
+                          variant="outlined"
+                          startIcon={searchingResponsible ? <CircularProgress size={16} /> : <PersonSearch />}
+                          disabled={searchingResponsible || responsibleDocument.trim().length < 2 || Boolean(responsibleCandidate)}
+                          onClick={lookupResponsible}
+                          sx={{ minWidth: 140, height: 40, textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' }}
+                        >
+                          Buscar persona
+                        </Button>
+                      </Stack>
+
+                      {responsibleCandidate && (
+                        <Paper
+                          variant="outlined"
+                          sx={{
+                            gridColumn: '1 / -1',
+                            p: 1.5,
+                            borderRadius: 2.5,
+                            bgcolor: '#f8fbff',
+                            border: '1.5px solid #93c5fd',
+                            boxShadow: '0 2px 8px rgba(37, 99, 235, 0.08)'
+                          }}
+                        >
+                          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={1.5}>
+                            <Box>
+                              <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                                <Typography fontWeight={900} fontSize={15}>{responsibleCandidate.name}</Typography>
+                                <Chip size="small" label={`CC: ${responsibleCandidate.document}`} variant="outlined" sx={{ fontWeight: 700 }} />
+                              </Stack>
+                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                                {[responsibleCandidate.position || responsibleCandidate.role_title, responsibleCandidate.dependency || responsibleCandidate.organization].filter(Boolean).join(' · ')}
+                              </Typography>
+                              {responsibleCandidate.email && (
+                                <Typography variant="caption" color="text.secondary">{responsibleCandidate.email}</Typography>
+                              )}
+                            </Box>
+                            <Stack direction="row" gap={1} flexWrap="wrap">
+                              {!meetingParticipants.some((p) => p.meeting_role === 'principal') ? (
+                                <Button
+                                  variant="contained"
+                                  color="primary"
+                                  onClick={() => assignResponsibleCandidate(true)}
+                                  sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
+                                >
+                                  Asignar como Responsable Principal
+                                </Button>
+                              ) : (
+                                <>
+                                  <Button
+                                    variant="contained"
+                                    color="primary"
+                                    onClick={() => assignResponsibleCandidate(false)}
+                                    sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
+                                  >
+                                    + Agregar Co-responsable
+                                  </Button>
+                                  <Button
+                                    variant="outlined"
+                                    color="primary"
+                                    onClick={() => assignResponsibleCandidate(true)}
+                                    sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
+                                  >
+                                    Cambiar Principal
+                                  </Button>
+                                </>
+                              )}
+                            </Stack>
+                          </Stack>
+                        </Paper>
+                      )}
+
+                      {/* RESPONSABLES DE LA REUNIÓN (SOLO ESTE VA AL INICIO) */}
+                      <Box sx={{ gridColumn: '1 / -1', mb: 1 }}>
+                        <Typography variant="subtitle2" fontWeight={900} color="#1e293b" mb={0.75} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          Responsables de la reunión ({meetingParticipants.filter((p) => ['principal', 'co_responsible'].includes(p.meeting_role)).length}):
+                        </Typography>
+                        {!meetingParticipants.some((p) => ['principal', 'co_responsible'].includes(p.meeting_role)) ? (
+                          <Alert severity="info" sx={{ borderRadius: 2 }}>
+                            Busque por nombre o cédula para asignar al <strong>Responsable Principal</strong> de la reunión.
+                          </Alert>
+                        ) : (
+                          <Stack gap={1}>
+                            {meetingParticipants
+                              .map((participant, index) => ({ participant, index }))
+                              .filter(({ participant }) => ['principal', 'co_responsible'].includes(participant.meeting_role))
+                              .map(({ participant, index }) => {
+                                const isPrimary = participant.meeting_role === 'principal';
+                                return (
+                                  <Paper
+                                    key={participant.id || participant.user_id || `${participant.document || participant.email}-${index}`}
+                                    variant="outlined"
+                                    sx={{
+                                      p: 1.5,
+                                      borderRadius: 2.5,
+                                      bgcolor: isPrimary ? '#f0fdf4' : '#ffffff',
+                                      borderColor: isPrimary ? '#86efac' : '#cbd5e1',
+                                      display: 'flex',
+                                      flexDirection: { xs: 'column', md: 'row' },
+                                      alignItems: { xs: 'stretch', md: 'center' },
+                                      justifyContent: 'space-between',
+                                      gap: 1.25
+                                    }}
+                                  >
+                                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                                      <Typography variant="body2" fontWeight={900} color="#0f172a" sx={{ fontSize: 14 }}>
+                                        {participant.name}
+                                      </Typography>
+                                      <Box sx={{ mt: 0.5, mb: 0.5 }}>
+                                        <Chip
+                                          size="small"
+                                          label={isPrimary ? 'Responsable principal' : 'Co-responsable'}
+                                          color={isPrimary ? 'success' : 'primary'}
+                                          sx={{ fontWeight: 850, height: 22, fontSize: 11 }}
+                                        />
+                                      </Box>
+                                      <Typography variant="caption" color="#64748b" sx={{ display: 'block', mt: 0.25 }}>
+                                        CC {participant.document || 'registrada'} · {participant.email}
+                                      </Typography>
+                                      <Typography variant="caption" color="#475569" sx={{ display: 'block', fontWeight: 600 }}>
+                                        {participant.role_title || 'Sin cargo'} · {participant.organization || 'UNICESMAG'}
+                                      </Typography>
+                                    </Box>
+
+                                    <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" justifyContent={{ xs: 'space-between', md: 'flex-end' }}>
+                                      <TextField
+                                        select
+                                        size="small"
+                                        label="Rol"
+                                        value={participant.meeting_role || 'principal'}
+                                        disabled={participant.status === 'signed'}
+                                        onChange={(event) => updateMeetingParticipantRole(index, event.target.value)}
+                                        sx={{ minWidth: 160 }}
+                                      >
+                                        <MenuItem value="principal">Responsable principal</MenuItem>
+                                        <MenuItem value="co_responsible">Corresponsable</MenuItem>
+                                      </TextField>
+                                      <Chip
+                                        size="small"
+                                        label={participant.status === 'signed' ? 'Firmado' : 'Firma pendiente'}
+                                        color={participant.status === 'signed' ? 'success' : 'default'}
+                                      />
+                                      <IconButton
+                                        aria-label={`Retirar a ${participant.name}`}
+                                        color="error"
+                                        size="small"
+                                        disabled={participant.status === 'signed'}
+                                        onClick={() => removeMeetingParticipant(index)}
+                                        sx={{ bgcolor: '#fef2f2', '&:hover': { bgcolor: '#fee2e2' } }}
+                                      >
+                                        <DeleteOutline fontSize="small" />
+                                      </IconButton>
+                                    </Stack>
+                                  </Paper>
+                                );
+                              })}
+                          </Stack>
+                        )}
+                      </Box>
+
                       <TextField fullWidth required label="Título corto del acta" value={meeting.title || ''} onChange={(e) => setMeeting({ ...meeting, title: e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
                       <TextField fullWidth disabled label="Dependencia que cita" value={PLANNING_DEPARTMENT_NAME} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5, bgcolor: '#f8fafc' } }} />
                       <TextField fullWidth type="datetime-local" InputLabelProps={{ shrink: true }} label="Inicio" value={meeting.starts_at} onChange={(e) => setMeeting({ ...meeting, starts_at: e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
@@ -1911,7 +2190,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     </Box>
                   </Paper>
 
-                  <Paper variant="outlined" sx={{ order: 3, p: 2.25, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#d8e5f2' }}>
+                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#d8e5f2' }}>
+                    <Stack direction="row" spacing={1.5} alignItems="center" mb={1.25}>
+                      <AutoAwesome sx={{ color: '#0284c7', fontSize: 18 }} />
+                      <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 15 }}>Acta Asistida por IA</Typography>
+                    </Stack>
+                    <Button fullWidth component="label" variant="outlined" startIcon={<CloudUpload />} sx={{ height: 38, borderRadius: 2.5, textTransform: 'none', fontWeight: 800, borderColor: '#cbd5e1', color: '#1e293b' }}>
+                      Adjuntar audio temporal de la sesión
+                      <input hidden type="file" accept="audio/*" onChange={() => enqueueSnackbar('Audio adjuntado temporalmente para transcripción.', { variant: 'info' })} />
+                    </Button>
+                  </Paper>
+
+                  <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#d8e5f2' }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.25} flexWrap="wrap" gap={1}>
                       <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 16 }}>
                         2. Participantes y firmas
@@ -2040,13 +2330,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           select
                           size="small"
                           label="Rol en el acta"
-                          value={unifiedDraft.meeting_role || (!meetingParticipants.some((p) => p.meeting_role === 'principal') ? 'principal' : 'participant')}
+                          value={unifiedDraft.meeting_role || 'participant'}
                           onChange={(e) => setUnifiedDraft((old) => ({ ...old, meeting_role: e.target.value }))}
-                          sx={{ minWidth: 200, width: { xs: '100%', sm: 'auto' } }}
+                          sx={{ minWidth: 180, width: { xs: '100%', sm: 'auto' } }}
                         >
-                          {MEETING_ROLE_OPTIONS.map((option) => (
-                            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                          ))}
+                          <MenuItem value="participant">Participante</MenuItem>
+                          <MenuItem value="collaborator">Colaborador</MenuItem>
                         </TextField>
                         <Stack direction="row" gap={1} sx={{ width: { xs: '100%', sm: 'auto' }, justifyContent: 'flex-end' }}>
                           <Button
@@ -2070,19 +2359,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </Stack>
                     </Paper>
 
-                    <Stack spacing={1} mt={meetingParticipants.length > 0 ? 2 : 0}>
-                      {meetingParticipants.map((participant, index) => {
-                        const isPrimary = participant.meeting_role === 'principal';
-                        const isCoResp = participant.meeting_role === 'co_responsible';
-
-                        return (
+                    <Stack spacing={1} mt={meetingParticipants.some((p) => !['principal', 'co_responsible'].includes(p.meeting_role)) ? 2 : 0}>
+                      {meetingParticipants
+                        .map((participant, index) => ({ participant, index }))
+                        .filter(({ participant }) => !['principal', 'co_responsible'].includes(participant.meeting_role))
+                        .map(({ participant, index }) => (
                           <Paper
                             key={participant.id || participant.user_id || `${participant.document || participant.email}-${index}`}
                             variant="outlined"
                             sx={{
                               p: 1.5,
                               borderRadius: 2.5,
-                              bgcolor: isPrimary ? '#f0fdf4' : isCoResp ? '#f8fafc' : '#ffffff',
+                              bgcolor: '#ffffff',
                               borderColor: '#dbe7f4',
                               display: 'flex',
                               flexDirection: { xs: 'column', md: 'row' },
@@ -2094,15 +2382,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             <Box sx={{ flex: 1, minWidth: 0 }}>
                               <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
                                 <Typography variant="body2" fontWeight={850} color="#0f172a">{participant.name}</Typography>
-                                {isPrimary && <Chip size="small" label="Responsable principal" color="success" sx={{ height: 20, fontSize: 11, fontWeight: 800 }} />}
-                                {isCoResp && <Chip size="small" label="Corresponsable" color="primary" variant="outlined" sx={{ height: 20, fontSize: 11, fontWeight: 750 }} />}
-                                {!participant.user_id && !isPrimary && !isCoResp && (
+                                {!participant.user_id && (
                                   <Chip size="small" label="Externo" variant="outlined" color="primary" sx={{ height: 20, fontSize: 11 }} />
                                 )}
-                                {participant.meeting_role === 'collaborator' && (
+                                {participant.meeting_role === 'collaborator' ? (
                                   <Chip size="small" label="Colaborador" variant="outlined" sx={{ height: 20, fontSize: 11 }} />
-                                )}
-                                {participant.meeting_role === 'participant' && (
+                                ) : (
                                   <Chip size="small" label="Participante" variant="outlined" color="default" sx={{ height: 20, fontSize: 11 }} />
                                 )}
                               </Stack>
@@ -2123,9 +2408,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                 onChange={(event) => updateMeetingParticipantRole(index, event.target.value)}
                                 sx={{ minWidth: 160 }}
                               >
-                                {MEETING_ROLE_OPTIONS.map((option) => (
-                                  <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                                ))}
+                                <MenuItem value="participant">Participante</MenuItem>
+                                <MenuItem value="collaborator">Colaborador</MenuItem>
                               </TextField>
                               <Chip
                                 size="small"
@@ -2144,13 +2428,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               </IconButton>
                             </Stack>
                           </Paper>
-                        );
-                      })}
+                        ))}
                     </Stack>
                   </Paper>
 
                   {/* CARD: PROGRAMAR SIGUIENTE SESIÓN */}
-                  <Paper variant="outlined" sx={{ order: 4, p: 2, borderRadius: 3, borderColor: '#93c5fd', bgcolor: '#f8fbff' }}>
+                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, borderColor: '#93c5fd', bgcolor: '#f8fbff' }}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" gap={1.5}>
                       <Stack direction="row" alignItems="center" gap={1.25}>
                         <Box sx={{ width: 46, height: 46, borderRadius: 2.5, display: 'grid', placeItems: 'center', bgcolor: '#dbeafe', color: '#1d4ed8', flexShrink: 0 }}>
@@ -2176,7 +2459,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     </Stack>
                   </Paper>
 
-                  <Button sx={{ order: 5, borderRadius: 2.5, px: 3, fontWeight: 900, alignSelf: 'flex-start' }} variant="contained" startIcon={<Event />} onClick={saveMeeting}>
+                  <Button sx={{ borderRadius: 2.5, px: 3, fontWeight: 900, alignSelf: 'flex-start' }} variant="contained" startIcon={<Event />} onClick={saveMeeting}>
                     Guardar reunión
                   </Button>
                 </Box>
