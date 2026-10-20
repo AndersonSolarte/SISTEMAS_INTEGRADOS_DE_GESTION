@@ -480,13 +480,13 @@ const generateStrategicMinutePdf = async ({
   });
 };
 
-const ensureMinuteFinalPdfBuffer = async (minute) => {
+const ensureMinuteFinalPdfBuffer = async (minute, forceRegenerate = false) => {
   if (!minute) return null;
   const privateRoot = process.env.PRIVATE_UPLOADS_ROOT || path.join(__dirname, '..', '..', 'uploads_private');
   const reportsDir = path.join(privateRoot, '_minutes');
   if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
 
-  if (minute.final_pdf_storage_key && fs.existsSync(minute.final_pdf_storage_key)) {
+  if (!forceRegenerate && minute.final_pdf_storage_key && fs.existsSync(minute.final_pdf_storage_key)) {
     return fs.readFileSync(minute.final_pdf_storage_key);
   }
 

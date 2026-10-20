@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import {
   Add, ArrowBack, AssignmentTurnedIn, AttachFile, AutoAwesome, CheckCircle, CheckCircleOutline,
-  Close, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Event,
+  Close, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Email, Event,
   AccessTime, CalendarMonth, Folder, History, LockOutlined, MoreTime, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, OpenInNew,
   PersonSearch, PictureAsPdf as PdfIcon, PlayArrow, PriorityHigh, QrCode2, Refresh, Save, Search, Send,
   HelpOutline, Sync, TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility
@@ -1214,7 +1214,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         ? await strategicPlanningService.updateMeeting(activeMeetingId, payload)
         : await strategicPlanningService.createMeeting(planId, payload);
       if (!activeMeetingId && savedMeeting?.data?.id) setSelectedMeetingId(String(savedMeeting.data.id));
-      await load(); enqueueSnackbar(activeMeetingId ? 'Reunión y roles actualizados.' : 'Reunión y participantes registrados.', { variant: 'success' });
+      await load();
+      enqueueSnackbar(activeMeetingId ? 'Reunión y roles actualizados.' : 'Reunión y participantes registrados.', { variant: 'success' });
+      if (latestMinute?.id && (activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized' || latestMinute?.drive_file_id)) {
+        handleFinalizeMinute(true);
+      }
       return true;
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'No fue posible programar la reunión.', { variant: 'error' });
@@ -2492,165 +2496,302 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           Vista previa del acta
                         </Typography>
                       </Stack>
-                      <Stack direction="row" alignItems="center" gap={0.75} sx={{ color: activeMeeting ? '#15803d' : '#1d4ed8', fontSize: 11, fontWeight: 750, bgcolor: activeMeeting ? '#f0fdf4' : '#eff6ff', px: 1.25, py: 0.35, borderRadius: 1.5, border: `1px solid ${activeMeeting ? '#bbf7d0' : '#bfdbfe'}` }}>
-                        <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: saving ? '#f59e0b' : (activeMeeting ? '#22c55e' : '#3b82f6') }} />
-                        <span>{saving ? 'Guardando cambios…' : (activeMeeting ? 'Guardado en la base de datos' : 'Guarde la reunión para conservar los cambios')}</span>
+                      <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                        {latestMinute?.drive_file_id ? (
+                          <Chip
+                            size="small"
+                            icon={<CheckCircle sx={{ color: '#16a34a !important', fontSize: 16 }} />}
+                            label="Sincronizada con Google Drive"
+                            clickable={Boolean(latestMinute?.content?.drive_file_url || latestMinute?.content?.drive_folder_url)}
+                            component={latestMinute?.content?.drive_file_url ? 'a' : 'div'}
+                            href={latestMinute?.content?.drive_file_url || latestMinute?.content?.drive_folder_url || undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{
+                              fontWeight: 750,
+                              fontSize: 11,
+                              bgcolor: '#f0fdf4',
+                              color: '#166534',
+                              border: '1px solid #bbf7d0',
+                              height: 24,
+                              '& .MuiChip-icon': { ml: 0.5 }
+                            }}
+                          />
+                        ) : syncingMinute ? (
+                          <Chip
+                            size="small"
+                            icon={<CircularProgress size={12} color="inherit" />}
+                            label="Sincronizando con Drive..."
+                            sx={{
+                              fontWeight: 750,
+                              fontSize: 11,
+                              bgcolor: '#eff6ff',
+                              color: '#1d4ed8',
+                              border: '1px solid #bfdbfe',
+                              height: 24
+                            }}
+                          />
+                        ) : null}
+
+                        <Stack direction="row" alignItems="center" gap={0.75} sx={{ color: activeMeeting ? '#15803d' : '#1d4ed8', fontSize: 11, fontWeight: 750, bgcolor: activeMeeting ? '#f0fdf4' : '#eff6ff', px: 1.25, py: 0.35, borderRadius: 1.5, border: `1px solid ${activeMeeting ? '#bbf7d0' : '#bfdbfe'}` }}>
+                          <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: saving ? '#f59e0b' : (activeMeeting ? '#22c55e' : '#3b82f6') }} />
+                          <span>{saving ? 'Guardando cambios…' : (activeMeeting ? 'Guardado en la base de datos' : 'Guarde la reunión para conservar los cambios')}</span>
+                        </Stack>
                       </Stack>
                     </Stack>
 
-                    <Stack spacing={1} sx={{
-                      width: '100%', mb: 2,
-                      '& .MuiButton-root': {
-                        width: '100%',
-                        minHeight: 38,
-                        py: 0.6,
-                        px: 1.5,
-                        textTransform: 'none',
-                        fontWeight: 800,
-                        fontSize: { xs: 11.5, sm: 12.5 },
-                        borderRadius: 2,
-                        boxShadow: 'none',
-                        '& .MuiButton-startIcon': { mr: 0.75, ml: 0 }
-                      }
-                    }}>
-                      {/* Fila 1: Edición, Descarga y Actualización */}
-                      <Box
-                        sx={{
-                          display: 'grid',
-                          gridTemplateColumns: {
-                            xs: '1fr',
-                            sm: activeMeeting ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))'
-                          },
-                          gap: 1,
-                          width: '100%'
-                        }}
-                      >
-                        {!editingActa ? (
-                          <Button
-                            fullWidth
-                            variant="outlined"
-                            startIcon={<Edit fontSize="small" />}
-                            onClick={() => setEditingActa(true)}
-                          >
-                            Editar acta
-                          </Button>
-                        ) : (
-                          <Button
-                            fullWidth
-                            variant="contained"
-                            color="success"
-                            startIcon={<Save fontSize="small" />}
-                            disabled={saving}
-                            onClick={async () => {
-                              const saved = await saveMeeting();
-                              if (saved) setEditingActa(false);
-                            }}
-                          >
-                            Guardar edición
-                          </Button>
-                        )}
-                        <Button
-                          fullWidth
-                          variant="outlined"
-                          endIcon={<KeyboardArrowDown fontSize="small" />}
-                          startIcon={<Download fontSize="small" />}
-                          onClick={(e) => setPdfMenuAnchor(e.currentTarget)}
-                        >
-                          Descargar PDF
-                        </Button>
-                        {activeMeeting && (
-                          <Button
-                            fullWidth
-                            variant="outlined"
-                            startIcon={<Refresh fontSize="small" />}
-                            onClick={load}
-                          >
-                            Actualizar firmas
-                          </Button>
-                        )}
-                      </Box>
+                    {(() => {
+                      const isFinalized = Boolean(activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized');
+                      const isSigning = Boolean(latestMinute?.status === 'signing');
+                      const isLocked = Boolean(activeMeeting?.id && (isSigning || isFinalized));
+                      const requiredParticipants = meetingParticipants.filter((p) => p.signature_required !== false);
+                      const signedParticipants = requiredParticipants.filter((p) => p.status === 'signed');
+                      const pendingCount = Math.max(0, requiredParticipants.length - signedParticipants.length);
+                      const allSigned = requiredParticipants.length > 0 && pendingCount === 0;
+                      const canRevise = Boolean(isSigning || isFinalized);
+                      const canSendFinal = Boolean(allSigned || isFinalized);
+                      const needsManualDriveSync = Boolean(isFinalized && !latestMinute?.drive_file_id);
 
-                      {/* Fila 2: Gestión de firmas y envío final (ocupa ancho completo si está solo) */}
-                      {activeMeeting && (() => {
-                        const isFinalized = activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized';
-                        const isSigning = activeMeeting?.minuteVersions?.some((v) => v.status === 'signing');
-                        const allSigned = meetingParticipants.length > 0 && meetingParticipants.filter((p) => p.signature_required).every((p) => p.status === 'signed');
-                        const showResend = isSigning && !allSigned && !isFinalized;
-                        const showInvite = !isSigning && !isFinalized;
-                        const canSendQr = showResend || showInvite;
-                        const canFinalize = (allSigned || isSigning) && !isFinalized;
-
-                        const row2Buttons = [];
-                        if (canSendQr) {
-                          row2Buttons.push(
-                            <Button
-                              key="qr-action"
-                              fullWidth
-                              variant="contained"
-                              startIcon={<QrCode2 fontSize="small" />}
-                              onClick={enableQrSigning}
-                              sx={{ bgcolor: '#244f91', '&:hover': { bgcolor: '#173b73' } }}
-                            >
-                              {showResend ? 'Reenviar invitaciones' : 'Enviar para firmas'}
-                            </Button>
-                          );
-                        }
-                        if (canFinalize) {
-                          row2Buttons.push(
-                            <Button
-                              key="finalize-action"
-                              fullWidth
-                              variant="contained"
-                              color="success"
-                              disabled={syncingMinute || !allSigned}
-                              startIcon={syncingMinute ? <CircularProgress size={16} color="inherit" /> : <Send fontSize="small" />}
-                              onClick={handleFinalizeMinute}
-                            >
-                              {allSigned ? 'Enviar y formalizar acta' : 'Firma pendiente de participantes'}
-                            </Button>
-                          );
-                        }
-                        if (isFinalized) {
-                          row2Buttons.push(
-                            <Button
-                              key="sync-drive-action"
-                              fullWidth
-                              variant="contained"
-                              color="success"
-                              disabled={syncingMinute}
-                              startIcon={syncingMinute ? <CircularProgress size={16} color="inherit" /> : <InsertDriveFile fontSize="small" />}
-                              onClick={() => handleFinalizeMinute(false)}
+                      if (isLocked) {
+                        return (
+                          <Stack spacing={1} sx={{
+                            width: '100%', mb: 2,
+                            '& .MuiButton-root': {
+                              width: '100%',
+                              minHeight: 38,
+                              py: 0.6,
+                              px: 1.5,
+                              textTransform: 'none',
+                              fontWeight: 800,
+                              fontSize: { xs: 11.5, sm: 12.5 },
+                              borderRadius: 2,
+                              boxShadow: 'none',
+                              '& .MuiButton-startIcon': { mr: 0.75, ml: 0 }
+                            }
+                          }}>
+                            {/* Fila 1: Documento y Control del Acta */}
+                            <Box
                               sx={{
-                                bgcolor: latestMinute?.drive_file_id ? '#15803d' : '#1e40af',
-                                '&:hover': { bgcolor: latestMinute?.drive_file_id ? '#166534' : '#1d3485' }
+                                display: 'grid',
+                                gridTemplateColumns: { xs: '1fr', sm: canRevise ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))' },
+                                gap: 1,
+                                width: '100%'
                               }}
                             >
-                              {syncingMinute
-                                ? 'Sincronizando con Drive...'
-                                : (latestMinute?.drive_file_id ? 'Acta sincronizada en Google Drive' : 'Sincronizar con Google Drive')}
-                            </Button>
-                          );
-                        }
+                              <Button
+                                id="meeting-download-button"
+                                fullWidth
+                                variant="outlined"
+                                endIcon={<KeyboardArrowDown fontSize="small" />}
+                                startIcon={<Download fontSize="small" />}
+                                disabled={!activeMeeting?.id}
+                                onClick={(e) => setPdfMenuAnchor(e.currentTarget)}
+                              >
+                                Descargar PDF
+                              </Button>
+                              {canRevise && (
+                                <Button
+                                  fullWidth
+                                  variant={editingActa ? "contained" : "outlined"}
+                                  color={editingActa ? "success" : "warning"}
+                                  startIcon={editingActa ? <Save fontSize="small" /> : <EditNote fontSize="small" />}
+                                  disabled={saving}
+                                  onClick={async () => {
+                                    if (editingActa) {
+                                      const saved = await saveMeeting();
+                                      if (saved) setEditingActa(false);
+                                    } else {
+                                      setEditingActa(true);
+                                    }
+                                  }}
+                                  sx={{ fontWeight: 850 }}
+                                >
+                                  {editingActa ? 'Guardar ajuste' : 'Ajustar y volver a firmar'}
+                                </Button>
+                              )}
+                              <Button
+                                id="meeting-refresh-signatures-button"
+                                fullWidth
+                                variant="outlined"
+                                startIcon={<Refresh fontSize="small" />}
+                                disabled={saving}
+                                onClick={() => load(false)}
+                              >
+                                Actualizar firmas
+                              </Button>
+                            </Box>
 
-                        if (!row2Buttons.length) return null;
+                            {/* Fila 2: Gestión de Firmas y Envío */}
+                            {(() => {
+                              const row2Items = [];
+                              if (isSigning) {
+                                row2Items.push(
+                                  <Button
+                                    key="ver-qr"
+                                    fullWidth
+                                    variant="outlined"
+                                    startIcon={<QrCode2 fontSize="small" />}
+                                    disabled={saving}
+                                    onClick={() => enableQrSigning(false)}
+                                  >
+                                    Ver enlace y QR
+                                  </Button>
+                                );
+                              }
+                              if (isSigning && !allSigned) {
+                                row2Items.push(
+                                  <Tooltip key="reenviar-pendientes" title={`Enviar nuevamente el correo solo a ${pendingCount} participante${pendingCount === 1 ? '' : 's'} pendiente${pendingCount === 1 ? '' : 's'}`}>
+                                    <Button
+                                      fullWidth
+                                      variant="outlined"
+                                      startIcon={<Email fontSize="small" />}
+                                      disabled={saving}
+                                      onClick={() => enableQrSigning(true)}
+                                    >
+                                      Reenviar solo a pendientes
+                                    </Button>
+                                  </Tooltip>
+                                );
+                              }
+                              if (canSendFinal) {
+                                row2Items.push(
+                                  <Tooltip key="enviar-final" title={!allSigned ? `Se habilitará cuando todos los participantes hayan firmado (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'})` : 'Enviar versión final del acta con firmas a todos los participantes'}>
+                                    <Box component="span" sx={{ display: 'flex', width: '100%' }}>
+                                      <Button
+                                        id="meeting-send-final-button"
+                                        fullWidth
+                                        startIcon={syncingMinute ? <CircularProgress size={16} color="inherit" /> : <Send fontSize="small" />}
+                                        disabled={saving || syncingMinute || !allSigned}
+                                        onClick={() => handleFinalizeMinute(false)}
+                                        color="success"
+                                        variant={allSigned ? "contained" : "outlined"}
+                                        sx={{ fontWeight: 850 }}
+                                      >
+                                        {isFinalized ? "Reenviar acta firmada" : "Enviar acta firmada"}
+                                      </Button>
+                                    </Box>
+                                  </Tooltip>
+                                );
+                              }
+                              if (needsManualDriveSync) {
+                                row2Items.push(
+                                  <Tooltip key="manual-drive-sync" title="El acta aún no se ha sincronizado con Google Drive. Haga clic para sincronizarla.">
+                                    <Button
+                                      fullWidth
+                                      variant="outlined"
+                                      color="success"
+                                      startIcon={syncingMinute ? <CircularProgress size={16} color="inherit" /> : <InsertDriveFile fontSize="small" />}
+                                      disabled={syncingMinute}
+                                      onClick={() => handleFinalizeMinute(false)}
+                                      sx={{ fontWeight: 850 }}
+                                    >
+                                      {syncingMinute ? 'Sincronizando con Drive...' : 'Sincronizar con Google Drive'}
+                                    </Button>
+                                  </Tooltip>
+                                );
+                              }
 
-                        return (
-                          <Box
-                            sx={{
-                              display: 'grid',
-                              gridTemplateColumns: {
-                                xs: '1fr',
-                                sm: `repeat(${row2Buttons.length}, minmax(0, 1fr))`
-                              },
-                              gap: 1,
-                              width: '100%'
-                            }}
-                          >
-                            {row2Buttons}
-                          </Box>
+                              if (!row2Items.length) return null;
+
+                              return (
+                                <Box
+                                  sx={{
+                                    display: 'grid',
+                                    gridTemplateColumns: {
+                                      xs: '1fr',
+                                      sm: `repeat(${row2Items.length}, minmax(0, 1fr))`
+                                    },
+                                    gap: 1,
+                                    width: '100%'
+                                  }}
+                                >
+                                  {row2Items}
+                                </Box>
+                              );
+                            })()}
+                          </Stack>
                         );
-                      })()}
-                    </Stack>
+                      }
+
+                      /* Estado borrador (draft) - Idéntico a Registro de Asistencia y Reunión */
+                      return (
+                        <Box
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' },
+                            gap: 1,
+                            width: '100%',
+                            mb: 2,
+                            '& .MuiButton-root': {
+                              width: '100%',
+                              minHeight: 38,
+                              py: 0.6,
+                              px: 1.5,
+                              textTransform: 'none',
+                              fontWeight: 800,
+                              fontSize: { xs: 11.5, sm: 12.5 },
+                              borderRadius: 2,
+                              boxShadow: 'none',
+                              '& .MuiButton-startIcon': { mr: 0.75, ml: 0 }
+                            }
+                          }}
+                        >
+                          <Button
+                            id="meeting-download-button"
+                            fullWidth
+                            variant="outlined"
+                            endIcon={<KeyboardArrowDown fontSize="small" />}
+                            startIcon={<Download fontSize="small" />}
+                            disabled={!activeMeeting?.id}
+                            onClick={(e) => setPdfMenuAnchor(e.currentTarget)}
+                          >
+                            Descargar PDF
+                          </Button>
+                          {!editingActa ? (
+                            <Button
+                              fullWidth
+                              variant="outlined"
+                              color="primary"
+                              startIcon={<EditNote fontSize="small" />}
+                              onClick={() => setEditingActa(true)}
+                              sx={{ fontWeight: 850 }}
+                            >
+                              Editar acta
+                            </Button>
+                          ) : (
+                            <Button
+                              fullWidth
+                              variant="contained"
+                              color="success"
+                              startIcon={<Save fontSize="small" />}
+                              disabled={saving}
+                              onClick={async () => {
+                                const saved = await saveMeeting();
+                                if (saved) setEditingActa(false);
+                              }}
+                              sx={{ fontWeight: 850 }}
+                            >
+                              Guardar edición
+                            </Button>
+                          )}
+                          <Tooltip title="Validar el acta completa, habilitar firmas y enviar las invitaciones">
+                            <Box component="span" sx={{ display: 'flex', width: '100%' }}>
+                              <Button
+                                id="meeting-publish-button"
+                                fullWidth
+                                startIcon={<Email fontSize="small" />}
+                                onClick={() => enableQrSigning(false)}
+                                disabled={saving || !activeMeeting?.id}
+                                variant="contained"
+                                sx={{ fontWeight: 850 }}
+                              >
+                                Habilitar y enviar invitaciones
+                              </Button>
+                            </Box>
+                          </Tooltip>
+                        </Box>
+                      );
+                    })()}
 
                     <Menu
                       anchorEl={pdfMenuAnchor}

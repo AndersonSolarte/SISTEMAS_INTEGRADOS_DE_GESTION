@@ -98,7 +98,7 @@ const syncEvidence = async (evidenceId) => {
   return { id: file.data.id, folderId };
 };
 
-const syncMinute = async (minuteId) => {
+const syncMinute = async (minuteId, forceRegenerate = true) => {
   const minute = await StrategicMinuteVersion.findByPk(minuteId, {
     include: [{
       model: StrategicMeeting, as: 'meeting',
@@ -112,7 +112,7 @@ const syncMinute = async (minuteId) => {
     }]
   });
   const { ensureMinuteFinalPdfBuffer } = require('./strategicMinutePdfService');
-  const buffer = await ensureMinuteFinalPdfBuffer(minute);
+  const buffer = await ensureMinuteFinalPdfBuffer(minute, forceRegenerate);
   if (!buffer || !minute?.final_pdf_storage_key || !fs.existsSync(minute.final_pdf_storage_key)) {
     throw new Error('No fue posible preparar el PDF final del acta para sincronización.');
   }

@@ -1556,6 +1556,20 @@ const updateMeeting = wrap(async (req, res) => {
     await audit(req, 'meeting.update', 'meeting', row.id, before, row.toJSON(), null, transaction);
     return row;
   });
+
+  // Sincronización automática a Google Drive ante cualquier cambio si el acta ya fue formalizada o sincronizada previamente
+  try {
+    const existingMinute = await StrategicMinuteVersion.findOne({
+      where: { meeting_id: meeting.id },
+      order: [['version', 'DESC']]
+    });
+    if (existingMinute && (meeting.status === 'formalized' || existingMinute.status === 'finalized' || existingMinute.drive_file_id)) {
+      syncMinute(existingMinute.id, true).catch((e) => console.warn('Auto-sync Drive tras updateMeeting:', e.message));
+    }
+  } catch (syncErr) {
+    console.warn('Error verificando syncMinute en updateMeeting:', syncErr.message);
+  }
+
   ok(res, meeting, 'Reunión y participantes actualizados.');
 });
 
