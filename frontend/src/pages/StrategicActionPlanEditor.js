@@ -1057,48 +1057,77 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   };
 
   const handleWhatIsNext = () => {
-    const hasPrincipal = meetingParticipants.some((p) => p.meeting_role === 'principal');
-    const hasMinParticipants = meetingParticipants.length >= 2;
+    const latestMin = latestMinute || [...(activeMeeting?.minuteVersions || [])].sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
+    const isFinalized = Boolean(activeMeeting?.status === 'formalized' || latestMin?.status === 'finalized');
+    const isSigning = Boolean(latestMin?.status === 'signing');
+    const requiredParticipants = meetingParticipants.filter((p) => p.signature_required !== false);
+    const signedParticipants = requiredParticipants.filter((p) => p.status === 'signed');
+    const pendingCount = Math.max(0, requiredParticipants.length - signedParticipants.length);
+    const allSigned = requiredParticipants.length > 0 && pendingCount === 0;
+
+    // 1. Si el acta del plan de acción ya fue formalizada:
+    if (isFinalized) {
+      enqueueSnackbar('¡Acta formalizada con éxito! Siguiente paso del Plan de Acción: pase a la pestaña "Actividades y metas" para estructurar o revisar las metas institucionales, o a "Exportación institucional" para verificar el archivo oficial DIR-PE-FR-003.', {
+        variant: 'success',
+        autoHideDuration: 9000
+      });
+      return;
+    }
+
+    // 2. Si todos los participantes ya firmaron:
+    if (allSigned) {
+      enqueueSnackbar('Siguiente paso: Todos los participantes han firmado. En la parte superior de la vista previa, haga clic en "Enviar acta firmada" para formalizar y sincronizar con Google Drive.', {
+        variant: 'success',
+        autoHideDuration: 8000
+      });
+      return;
+    }
+
+    // 3. Si el acta está en proceso de firmas:
+    if (isSigning) {
+      enqueueSnackbar(`Siguiente paso: Firmas en proceso (${pendingCount} participante${pendingCount === 1 ? '' : 's'} pendiente${pendingCount === 1 ? '' : 's'}). Puede hacer clic en "Actualizar firmas" o usar "Reenviar solo a pendientes".`, {
+        variant: 'info',
+        autoHideDuration: 8000
+      });
+      return;
+    }
+
+    // 4. Si el acta está en borrador / preparación:
     const hasTitle = Boolean(meeting.title?.trim());
     const hasObjective = Boolean(richTextPlain(meeting.objective));
+    const hasPrincipal = meetingParticipants.some((p) => p.meeting_role === 'principal');
+    const hasAnyParticipant = meetingParticipants.length >= 1;
     const isSaved = Boolean(activeMeeting?.id);
-    const latestMin = [...(activeMeeting?.minuteVersions || [])].sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
-    const isSigning = latestMin?.status === 'signing';
-    const allSigned = meetingParticipants.length > 0 && meetingParticipants.filter((p) => p.signature_required).every((p) => p.status === 'signed');
-    const isFinalized = activeMeeting?.status === 'formalized' || latestMin?.status === 'finalized';
 
     if (!hasTitle || !hasObjective) {
-      enqueueSnackbar('Siguiente paso: Complete el título y el objetivo de la reunión del Plan de Acción.', { variant: 'info' });
+      enqueueSnackbar('Siguiente paso: Complete el título corto y el objetivo de la reunión de concertación del Plan de Acción.', {
+        variant: 'warning',
+        autoHideDuration: 6000
+      });
       return;
     }
-    if (!hasPrincipal) {
-      enqueueSnackbar('Siguiente paso: Asigne un Responsable principal en la lista de responsables.', { variant: 'warning' });
+
+    if (!hasPrincipal || !hasAnyParticipant) {
+      enqueueSnackbar('Siguiente paso: Busque y asigne el Responsable Principal de la reunión al inicio de la sección 1.', {
+        variant: 'warning',
+        autoHideDuration: 6000
+      });
       return;
     }
-    if (!hasMinParticipants) {
-      enqueueSnackbar('Siguiente paso: Agregue al menos 2 participantes para habilitar las firmas.', { variant: 'warning' });
-      return;
-    }
+
     if (!isSaved) {
-      enqueueSnackbar('Siguiente paso: Guarde los cambios de la reunión haciendo clic en "Guardar reunión".', { variant: 'info' });
+      enqueueSnackbar('Siguiente paso: Guarde los cambios de la reunión haciendo clic en "Guardar reunión".', {
+        variant: 'info',
+        autoHideDuration: 6000
+      });
       return;
     }
-    if (!isSigning && !isFinalized) {
-      enqueueSnackbar('Siguiente paso: Haga clic en "Enviar para firmas" o genere el QR para que los participantes firmen.', { variant: 'success' });
-      return;
-    }
-    if (isSigning && !allSigned) {
-      const pendingCount = meetingParticipants.filter((p) => p.signature_required && p.status !== 'signed').length;
-      enqueueSnackbar(`Siguiente paso: Esperar las firmas pendientes (${pendingCount} participantes por firmar). Puede usar "Actualizar firmas" o reenviar invitaciones.`, { variant: 'info' });
-      return;
-    }
-    if (allSigned && !isFinalized) {
-      enqueueSnackbar('Siguiente paso: Todos han firmado. Haga clic en "Enviar y formalizar acta" para sincronizarla en Google Drive.', { variant: 'success' });
-      return;
-    }
-    if (isFinalized) {
-      enqueueSnackbar('Acta formalizada con éxito. Puede continuar con las siguientes etapas del Plan de Acción.', { variant: 'success' });
-    }
+
+    // 5. Borrador listo para habilitar firmas
+    enqueueSnackbar('Siguiente paso: La reunión está lista. En la parte superior de la vista previa, use "Habilitar y enviar invitaciones" para iniciar la firma electrónica.', {
+      variant: 'success',
+      autoHideDuration: 7000
+    });
   };
   const updateMeetingParticipantRole = (index, meetingRole) => {
     const participant = meetingParticipants[index];
@@ -1852,7 +1881,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   overflowY: { lg: 'auto' },
                   pr: { lg: 1 }
                 }}>
-                  <Paper variant="outlined" sx={{ order: 1, p: 2.25, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#cbd9e9' }}>
+                  <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#cbd9e9' }}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} justifyContent="space-between" gap={1.5} mb={1.5}>
                       <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 15.5 }}>Actas de reunión</Typography>
                       <Button variant="outlined" startIcon={<Add />} onClick={startNewMeeting} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 850 }}>
