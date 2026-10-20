@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import {
   Add, ArrowBack, AssignmentTurnedIn, AttachFile, AutoAwesome, CheckCircle, CheckCircleOutline,
-  Close, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Email, Event,
+  Close, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Email,
   AccessTime, CalendarMonth, Folder, History, LockOutlined, MoreTime, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, OpenInNew,
   PersonSearch, PictureAsPdf as PdfIcon, PlayArrow, PriorityHigh, QrCode2, Refresh, Save, Search, Send,
   HelpOutline, Sync, TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility
@@ -175,6 +175,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [previewPlanSearch, setPreviewPlanSearch] = useState('');
   const [syncingDriveExcel, setSyncingDriveExcel] = useState(false);
   const autoSyncedTabRef = useRef(false);
+  const [saveStatus, setSaveStatus] = useState('saved'); // 'saved' | 'saving' | 'pending' | 'error'
+  const hasUnsavedChangesRef = useRef(false);
+  const isApplyingLoadRef = useRef(false);
 
   // Minute preview state (COM-IF-FR-002)
   const [editingActa, setEditingActa] = useState(false);
@@ -397,6 +400,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   useEffect(() => {
     if (detail) {
+      isApplyingLoadRef.current = true;
       const currentMeeting = activeMeeting || {};
       if (!selectedMeetingId && currentMeeting.id) setSelectedMeetingId(String(currentMeeting.id));
       const firstItem = detail.items?.[0] || {};
@@ -517,6 +521,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
           { nombre: detail.owner?.name || 'Líder del Proceso', cargo: detail.owner?.cargo || 'Responsable' }
         ]
       });
+      hasUnsavedChangesRef.current = false;
+      setSaveStatus('saved');
+      window.setTimeout(() => {
+        isApplyingLoadRef.current = false;
+      }, 400);
     }
   }, [detail, locations, activeMeeting, selectedMeetingId]);
 
@@ -1248,6 +1257,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
   };
   const startNewMeeting = () => {
+    isApplyingLoadRef.current = true;
     const firstItem = detail?.items?.[0] || {};
     setSelectedMeetingId('__new__');
     setMeeting({
@@ -1296,22 +1306,28 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     setUnifiedDraft({ document: '', name: '', email: '', organization: '', role_title: '', meeting_role: 'participant', user_id: null });
     setAttendeeOptions([]);
     setPublished(null);
+    hasUnsavedChangesRef.current = false;
+    setSaveStatus('saved');
+    window.setTimeout(() => {
+      isApplyingLoadRef.current = false;
+    }, 400);
     enqueueSnackbar('Nueva acta preparada con el Responsable del Plan y Planeación y Efectividad cargados.', { variant: 'info' });
   };
-  const saveMeeting = async () => {
+  const saveMeeting = async (silent = false) => {
     if (!meeting.title?.trim() || !meeting.starts_at || !richTextPlain(meeting.objective)) {
-      enqueueSnackbar('Título, fecha y objetivo son obligatorios.', { variant: 'warning' });
+      if (!silent) enqueueSnackbar('Título, fecha y objetivo son obligatorios.', { variant: 'warning' });
       return false;
     }
     if (!meetingParticipants.length) {
-      enqueueSnackbar('Agregue al menos un participante a la agenda.', { variant: 'warning' });
+      if (!silent) enqueueSnackbar('Agregue al menos un participante a la agenda.', { variant: 'warning' });
       return false;
     }
     if (!meetingParticipants.some((participant) => participant.meeting_role === 'principal')) {
-      enqueueSnackbar('Seleccione un Responsable principal para el acta.', { variant: 'warning' });
+      if (!silent) enqueueSnackbar('Seleccione un Responsable principal para el acta.', { variant: 'warning' });
       return false;
     }
     setSaving(true);
+    setSaveStatus('saving');
     try {
       const payload = {
         ...meeting,
@@ -1324,18 +1340,48 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         ? await strategicPlanningService.updateMeeting(activeMeetingId, payload)
         : await strategicPlanningService.createMeeting(planId, payload);
       if (!activeMeetingId && savedMeeting?.data?.id) setSelectedMeetingId(String(savedMeeting.data.id));
+      hasUnsavedChangesRef.current = false;
+      setSaveStatus('saved');
+      isApplyingLoadRef.current = true;
       await load();
-      enqueueSnackbar(activeMeetingId ? 'Reunión y roles actualizados.' : 'Reunión y participantes registrados.', { variant: 'success' });
+      window.setTimeout(() => {
+        isApplyingLoadRef.current = false;
+      }, 500);
+      if (!silent) {
+        enqueueSnackbar(activeMeetingId ? 'Reunión y roles actualizados.' : 'Reunión y participantes registrados.', { variant: 'success' });
+      }
       if (latestMinute?.id && (activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized' || latestMinute?.drive_file_id)) {
         handleFinalizeMinute(true);
       }
       return true;
     } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'No fue posible programar la reunión.', { variant: 'error' });
+      setSaveStatus('error');
+      if (!silent) {
+        enqueueSnackbar(error.response?.data?.message || 'No fue posible programar la reunión.', { variant: 'error' });
+      }
       return false;
     }
     finally { setSaving(false); }
   };
+
+  // Seguimiento de cambios y autoguardado de reunión / acta
+  useEffect(() => {
+    if (isApplyingLoadRef.current) return;
+    hasUnsavedChangesRef.current = true;
+    setSaveStatus((prev) => (prev === 'saving' ? prev : 'pending'));
+  }, [meeting, meetingParticipants]);
+
+  useEffect(() => {
+    if (!open || tab !== 'meeting' || !hasUnsavedChangesRef.current || saving || isApplyingLoadRef.current) return undefined;
+    if (!meeting.title?.trim() || !meeting.starts_at || !richTextPlain(meeting.objective)) return undefined;
+    if (!meetingParticipants.length || !meetingParticipants.some((p) => p.meeting_role === 'principal')) return undefined;
+
+    const timer = window.setTimeout(() => {
+      saveMeeting(true);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meeting, meetingParticipants, open, tab, saving]);
   // eslint-disable-next-line no-unused-vars
   const generateMinute = async (meetingId) => {
     try {
@@ -2572,10 +2618,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </Button>
                     </Stack>
                   </Paper>
-
-                  <Button sx={{ borderRadius: 2.5, px: 3, fontWeight: 900, alignSelf: 'flex-start' }} variant="contained" startIcon={<Event />} onClick={saveMeeting}>
-                    Guardar reunión
-                  </Button>
                 </Box>
 
                 <Box sx={{
@@ -2643,9 +2685,42 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           />
                         ) : null}
 
-                        <Stack direction="row" alignItems="center" gap={0.75} sx={{ color: activeMeeting ? '#15803d' : '#1d4ed8', fontSize: 11, fontWeight: 750, bgcolor: activeMeeting ? '#f0fdf4' : '#eff6ff', px: 1.25, py: 0.35, borderRadius: 1.5, border: `1px solid ${activeMeeting ? '#bbf7d0' : '#bfdbfe'}` }}>
-                          <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: saving ? '#f59e0b' : (activeMeeting ? '#22c55e' : '#3b82f6') }} />
-                          <span>{saving ? 'Guardando cambios…' : (activeMeeting ? 'Guardado en la base de datos' : 'Guarde la reunión para conservar los cambios')}</span>
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          gap={0.75}
+                          sx={{
+                            color: saveStatus === 'error' ? '#b91c1c' : saveStatus === 'saved' ? '#15803d' : '#a16207',
+                            fontSize: 11,
+                            fontWeight: 750,
+                            bgcolor: saveStatus === 'error' ? '#fef2f2' : saveStatus === 'saved' ? '#f0fdf4' : '#fffbeb',
+                            px: 1,
+                            py: 0.35,
+                            borderRadius: 1.5,
+                            border: `1px solid ${saveStatus === 'error' ? '#fecaca' : saveStatus === 'saved' ? '#bbf7d0' : '#fde68a'}`
+                          }}
+                        >
+                          {saveStatus === 'saving' ? (
+                            <CircularProgress size={10} color="inherit" />
+                          ) : (
+                            <Box
+                              sx={{
+                                width: 7,
+                                height: 7,
+                                borderRadius: '50%',
+                                bgcolor: saveStatus === 'error' ? '#ef4444' : saveStatus === 'saved' ? '#22c55e' : '#eab308'
+                              }}
+                            />
+                          )}
+                          <span>
+                            {saveStatus === 'saving'
+                              ? 'Guardando automáticamente…'
+                              : saveStatus === 'pending'
+                              ? 'Cambios pendientes…'
+                              : saveStatus === 'error'
+                              ? 'Error al guardar'
+                              : 'Todo guardado · Autoguardado activo'}
+                          </span>
                         </Stack>
                       </Stack>
                     </Stack>
@@ -3104,6 +3179,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   Cerrar
                 </Button>
                 <Stack direction="row" spacing={1} alignItems="center">
+                  {['pending', 'error'].includes(saveStatus) && (
+                    <Button
+                      variant="outlined"
+                      startIcon={saveStatus === 'error' ? <Refresh /> : <Save />}
+                      disabled={saving}
+                      onClick={() => saveMeeting(false)}
+                      color={saveStatus === 'error' ? 'error' : 'primary'}
+                      sx={{ textTransform: 'none', fontWeight: 850, borderRadius: 2 }}
+                    >
+                      {saveStatus === 'error' ? 'Reintentar guardado' : 'Guardar borrador'}
+                    </Button>
+                  )}
                   <Button
                     variant="outlined"
                     color="success"
