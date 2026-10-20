@@ -422,14 +422,65 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             : `${detail.owner?.name || 'Líder del Proceso'} | ${detail.owner?.email || 'lider@unicesmag.edu.co'} | UNICESMAG | Responsable Institucional`
         )
       });
-      const storedParticipants = currentMeeting.participants || [];
-      const hasStoredPrincipal = storedParticipants.some((participant) => participant.meeting_role === 'principal');
-      setMeetingParticipants(storedParticipants.map((p, index) => ({
+      const storedParticipants = (currentMeeting.participants || []).map((p, index) => ({
         id: p.id, user_id: p.user_id, document: p.user?.username || p.document || '', name: p.name || '', email: p.email || '',
         organization: p.organization || '', role_title: p.role_title || '', signature_required: p.signature_required !== false,
-        meeting_role: p.meeting_role === 'principal' || hasStoredPrincipal ? (p.meeting_role || 'participant') : (index === 0 ? 'principal' : 'participant'),
+        meeting_role: p.meeting_role || (index === 0 ? 'principal' : 'participant'),
         status: p.status || 'invited'
-      })));
+      }));
+
+      // Cargar automáticamente el Responsable del Plan de Acción y el usuario de Planeación y Efectividad
+      const planResp = detail.planResponsibleUser || detail.currentResponsibility?.responsibleUser || detail.owner;
+      const peUser = detail.planningEfectividadUser;
+      const baseList = [...storedParticipants];
+
+      if (planResp) {
+        const hasResp = baseList.some((p) =>
+          (p.user_id && planResp.id && String(p.user_id) === String(planResp.id)) ||
+          (p.email && planResp.email && String(p.email).toLowerCase() === String(planResp.email).toLowerCase())
+        );
+        if (!hasResp) {
+          baseList.unshift({
+            user_id: planResp.id || null,
+            document: planResp.document || planResp.username || '',
+            name: planResp.nombre || planResp.name || '',
+            email: planResp.email || '',
+            organization: planResp.dependencia || detail.organizationalUnit?.name || 'UNICESMAG',
+            role_title: planResp.cargo || 'Responsable del Plan de Acción',
+            meeting_role: 'principal',
+            signature_required: true,
+            status: 'invited'
+          });
+        }
+      }
+
+      if (peUser && (!planResp || String(peUser.id) !== String(planResp.id))) {
+        const hasPe = baseList.some((p) =>
+          (p.user_id && peUser.id && String(p.user_id) === String(peUser.id)) ||
+          (p.email && peUser.email && String(p.email).toLowerCase() === String(peUser.email).toLowerCase())
+        );
+        if (!hasPe) {
+          baseList.push({
+            user_id: peUser.id || null,
+            document: peUser.username || peUser.document || '',
+            name: peUser.nombre || peUser.name || '',
+            email: peUser.email || '',
+            organization: peUser.dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
+            role_title: peUser.cargo || 'Planeación y Efectividad',
+            meeting_role: 'participant',
+            signature_required: true,
+            status: 'invited'
+          });
+        }
+      }
+
+      const hasPrincipal = baseList.some((p) => p.meeting_role === 'principal');
+      const finalParticipants = baseList.map((p, index) => ({
+        ...p,
+        meeting_role: p.meeting_role === 'principal' || hasPrincipal ? (p.meeting_role || 'participant') : (index === 0 ? 'principal' : 'participant')
+      }));
+
+      setMeetingParticipants(finalParticipants);
 
       const dateStr = currentMeeting.starts_at ? new Date(currentMeeting.starts_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
       const timeStr = currentMeeting.starts_at && currentMeeting.ends_at
@@ -441,10 +492,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         (latestMinute?.signatures || []).map((signature) => [String(signature.participant_id), signature])
       );
       const rolePosition = { principal: 0, co_responsible: 1, collaborator: 2, participant: 3 };
-      const parsedParts = storedParticipants.map((p, index) => ({
+      const parsedParts = finalParticipants.map((p) => ({
         nombre: p.name || '',
         cargo: p.role_title || p.organization || '',
-        rol_reunion: p.meeting_role === 'principal' || hasStoredPrincipal ? (p.meeting_role || 'participant') : (index === 0 ? 'principal' : 'participant'),
+        rol_reunion: p.meeting_role || 'participant',
         status: p.status || 'invited',
         signature_preview: signaturesByParticipant.get(String(p.id))?.signature_preview || ''
       })).sort((a, b) => (rolePosition[a.rol_reunion] ?? 3) - (rolePosition[b.rol_reunion] ?? 3));
@@ -1208,14 +1259,44 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       objective: firstItem.activity ? `Concertación y revisión de la actividad: ${firstItem.activity}` : 'Concertación e integración del Plan de Acción Institucional.',
       development: '', conclusions: ''
     });
-    setMeetingParticipants([]);
+
+    const initialParticipants = [];
+    const planResp = detail?.planResponsibleUser || detail?.currentResponsibility?.responsibleUser || detail?.owner;
+    const peUser = detail?.planningEfectividadUser;
+    if (planResp) {
+      initialParticipants.push({
+        user_id: planResp.id || null,
+        document: planResp.document || planResp.username || '',
+        name: planResp.nombre || planResp.name || '',
+        email: planResp.email || '',
+        organization: planResp.dependencia || detail?.organizationalUnit?.name || 'UNICESMAG',
+        role_title: planResp.cargo || 'Responsable del Plan de Acción',
+        meeting_role: 'principal',
+        signature_required: true,
+        status: 'invited'
+      });
+    }
+    if (peUser && (!planResp || String(peUser.id) !== String(planResp.id))) {
+      initialParticipants.push({
+        user_id: peUser.id || null,
+        document: peUser.username || peUser.document || '',
+        name: peUser.nombre || peUser.name || '',
+        email: peUser.email || '',
+        organization: peUser.dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
+        role_title: peUser.cargo || 'Planeación y Efectividad',
+        meeting_role: 'participant',
+        signature_required: true,
+        status: 'invited'
+      });
+    }
+    setMeetingParticipants(initialParticipants);
     setResponsibleCandidate(null);
     setResponsibleDocument('');
     setResponsibleOptions([]);
     setUnifiedDraft({ document: '', name: '', email: '', organization: '', role_title: '', meeting_role: 'participant', user_id: null });
     setAttendeeOptions([]);
     setPublished(null);
-    enqueueSnackbar('Nueva acta preparada. Complete la información y guárdela.', { variant: 'info' });
+    enqueueSnackbar('Nueva acta preparada con el Responsable del Plan y Planeación y Efectividad cargados.', { variant: 'info' });
   };
   const saveMeeting = async () => {
     if (!meeting.title?.trim() || !meeting.starts_at || !richTextPlain(meeting.objective)) {

@@ -808,8 +808,8 @@ const getActionPlan = wrap(async (req, res) => {
     include: [
       { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }, { model: StrategicMonitoringPeriod, as: 'monitoringPeriods', separate: true, order: [['position', 'ASC']] }] },
       { model: StrategicCatalogItem, as: 'organizationalUnit' },
-      { model: StrategicResponsibility, as: 'currentResponsibility', required: false, include: [{ model: StrategicCatalogItem, as: 'position', required: false }, { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo'], required: false }] },
-      { model: StrategicResponsibility, as: 'responsibilityHistory', required: false, separate: true, include: [{ model: StrategicCatalogItem, as: 'position', required: false }, { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo'], required: false }] },
+      { model: StrategicResponsibility, as: 'currentResponsibility', required: false, include: [{ model: StrategicCatalogItem, as: 'position', required: false }, { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false }] },
+      { model: StrategicResponsibility, as: 'responsibilityHistory', required: false, separate: true, include: [{ model: StrategicCatalogItem, as: 'position', required: false }, { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false }] },
       { model: StrategicActionItem, as: 'items', where: { deleted_at: null }, required: false, separate: true, order: [['code', 'ASC']], include: [{ model: StrategicMonitoringResult, as: 'monitoringResults', required: false, separate: true }, { model: StrategicEvidence, as: 'evidence', required: false, separate: true }] },
       { model: StrategicWorkflowEvent, as: 'workflowEvents', required: false, separate: true, order: [['created_at', 'ASC']] },
       { model: StrategicMeeting, as: 'meetings', required: false, separate: true, order: [['starts_at', 'DESC']], include: [{ model: StrategicMeetingParticipant, as: 'participants', required: false, separate: true, include: [{ model: User, as: 'user', attributes: ['id', 'username'], required: false }] }, { model: StrategicMinuteVersion, as: 'minuteVersions', required: false, separate: true, include: [{ model: StrategicMinuteSignature, as: 'signatures', required: false }] }] }
@@ -878,6 +878,37 @@ const getActionPlan = wrap(async (req, res) => {
   if (!actionPlan.metadata?.drive_sync?.official_file_id) {
     syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
   }
+
+  // Resolver líder del Plan de Acción para auto-asignación en actas
+  let planResponsibleUser = actionPlan.currentResponsibility?.responsibleUser;
+  if (!planResponsibleUser && actionPlan.catalog_item_id && actionPlan.term_id) {
+    const annualAssignment = await StrategicResponsibility.findOne({
+      where: {
+        term_id: actionPlan.term_id,
+        catalog_item_id: actionPlan.catalog_item_id,
+        status: 'active'
+      },
+      include: [{ model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'] }],
+      order: [['updated_at', 'DESC']]
+    });
+    if (annualAssignment?.responsibleUser) {
+      planResponsibleUser = annualAssignment.responsibleUser;
+    }
+  }
+  if (planResponsibleUser) {
+    actionPlan.setDataValue('planResponsibleUser', planResponsibleUser);
+  }
+
+  // Resolver usuario con rol de Planeación y Efectividad dinámicamente
+  const peUser = await User.findOne({
+    where: { role: ROLES.PLANEACION_EFECTIVIDAD, estado: 'activo' },
+    attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username', 'role'],
+    order: [['updated_at', 'DESC']]
+  });
+  if (peUser) {
+    actionPlan.setDataValue('planningEfectividadUser', peUser);
+  }
+
   ok(res, actionPlan);
 });
 
@@ -1478,7 +1509,45 @@ const createMeeting = wrap(async (req, res) => {
   const meeting = await sequelize.transaction(async (transaction) => {
     const row = await StrategicMeeting.create({ action_plan_id: req.params.id, monitoring_period_id: req.body.monitoring_period_id || null, title: req.body.title || null, type: req.body.type || 'formulation', starts_at: req.body.starts_at, ends_at: req.body.ends_at || null, location: req.body.location || null, modality: req.body.modality || null, objective: req.body.objective, development: req.body.development || null, commitments: req.body.commitments || [], created_by: req.user.id, updated_by: req.user.id }, { transaction });
     const allowedMeetingRoles = new Set(['principal', 'co_responsible', 'collaborator', 'participant']);
-    const requestedParticipants = req.body.participants || [];
+    let requestedParticipants = req.body.participants || [];
+    if (!requestedParticipants.length) {
+      const plan = await StrategicActionPlan.findByPk(req.params.id, {
+        include: [{ model: StrategicResponsibility, as: 'currentResponsibility', include: [{ model: User, as: 'responsibleUser' }] }]
+      });
+      let respUser = plan?.currentResponsibility?.responsibleUser;
+      if (!respUser && plan?.catalog_item_id && plan?.term_id) {
+        const annualAssignment = await StrategicResponsibility.findOne({
+          where: { term_id: plan.term_id, catalog_item_id: plan.catalog_item_id, status: 'active' },
+          include: [{ model: User, as: 'responsibleUser' }]
+        });
+        respUser = annualAssignment?.responsibleUser;
+      }
+      const peUser = await User.findOne({ where: { role: ROLES.PLANEACION_EFECTIVIDAD, estado: 'activo' } });
+      if (respUser) {
+        requestedParticipants.push({
+          user_id: respUser.id,
+          name: respUser.nombre,
+          email: respUser.email,
+          document: respUser.username,
+          organization: respUser.dependencia || 'UNICESMAG',
+          role_title: respUser.cargo || 'Responsable del Plan de Acción',
+          meeting_role: 'principal',
+          signature_required: true
+        });
+      }
+      if (peUser && (!respUser || String(peUser.id) !== String(respUser.id))) {
+        requestedParticipants.push({
+          user_id: peUser.id,
+          name: peUser.nombre,
+          email: peUser.email,
+          document: peUser.username,
+          organization: peUser.dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
+          role_title: peUser.cargo || 'Planeación y Efectividad',
+          meeting_role: 'participant',
+          signature_required: true
+        });
+      }
+    }
     const requestedHasPrincipal = requestedParticipants.some((participant) => participant.meeting_role === 'principal');
     let principalAssigned = false;
     for (const [index, p] of requestedParticipants.entries()) {
