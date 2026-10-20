@@ -909,11 +909,7 @@ const getActionPlan = wrap(async (req, res) => {
   const peUser = await User.findOne({
     where: {
       role: ROLES.PLANEACION_EFECTIVIDAD,
-      [Op.or]: [
-        { estado: 'activo' },
-        { estado: 'ACTIVO' },
-        { estado: null }
-      ]
+      estado: 'activo'
     },
     attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username', 'role'],
     order: [['updated_at', 'DESC']]
@@ -1541,11 +1537,7 @@ const createMeeting = wrap(async (req, res) => {
       const peUser = await User.findOne({
         where: {
           role: ROLES.PLANEACION_EFECTIVIDAD,
-          [Op.or]: [
-            { estado: 'activo' },
-            { estado: 'ACTIVO' },
-            { estado: null }
-          ]
+          estado: 'activo'
         }
       });
       if (respUser) {
