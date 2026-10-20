@@ -5,6 +5,7 @@ const ExcelJS = require('exceljs');
 const QRCode = require('qrcode');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { ROLES } = require('../constants/roles');
 const {
   StrategicPlan, StrategicLevel, StrategicElement, StrategicTerm, StrategicCatalogItem,
   StrategicResponsibility, StrategicFieldDefinition, StrategicMonitoringPeriod,
@@ -895,13 +896,25 @@ const getActionPlan = wrap(async (req, res) => {
       planResponsibleUser = annualAssignment.responsibleUser;
     }
   }
+  if (!planResponsibleUser && (actionPlan.responsible_user_id || actionPlan.user_id)) {
+    planResponsibleUser = await User.findByPk(actionPlan.responsible_user_id || actionPlan.user_id, {
+      attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username']
+    });
+  }
   if (planResponsibleUser) {
     actionPlan.setDataValue('planResponsibleUser', planResponsibleUser);
   }
 
   // Resolver usuario con rol de Planeación y Efectividad dinámicamente
   const peUser = await User.findOne({
-    where: { role: ROLES.PLANEACION_EFECTIVIDAD, estado: 'activo' },
+    where: {
+      role: ROLES.PLANEACION_EFECTIVIDAD,
+      [Op.or]: [
+        { estado: 'activo' },
+        { estado: 'ACTIVO' },
+        { estado: null }
+      ]
+    },
     attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username', 'role'],
     order: [['updated_at', 'DESC']]
   });
@@ -1522,7 +1535,19 @@ const createMeeting = wrap(async (req, res) => {
         });
         respUser = annualAssignment?.responsibleUser;
       }
-      const peUser = await User.findOne({ where: { role: ROLES.PLANEACION_EFECTIVIDAD, estado: 'activo' } });
+      if (!respUser && (plan?.responsible_user_id || plan?.user_id)) {
+        respUser = await User.findByPk(plan.responsible_user_id || plan.user_id);
+      }
+      const peUser = await User.findOne({
+        where: {
+          role: ROLES.PLANEACION_EFECTIVIDAD,
+          [Op.or]: [
+            { estado: 'activo' },
+            { estado: 'ACTIVO' },
+            { estado: null }
+          ]
+        }
+      });
       if (respUser) {
         requestedParticipants.push({
           user_id: respUser.id,

@@ -3,7 +3,8 @@ const { UserModulePermission } = require('../models');
 
 const requireStrategicPermission = (...keys) => async (req, res, next) => {
   if (!req.user) return res.status(401).json({ success: false, message: 'No autorizado' });
-  if (req.user.role === 'administrador') return next();
+  const fullAccessRoles = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'];
+  if (fullAccessRoles.includes(req.user.role)) return next();
   if (keys.length === 0) return next();
   const requested = Array.from(new Set(keys));
   const permission = await UserModulePermission.findOne({

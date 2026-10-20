@@ -459,11 +459,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       }
 
       if (peUser && (!planResp || String(peUser.id) !== String(planResp.id))) {
-        const hasPe = baseList.some((p) =>
+        const peIndex = baseList.findIndex((p) =>
           (p.user_id && peUser.id && String(p.user_id) === String(peUser.id)) ||
           (p.email && peUser.email && String(p.email).toLowerCase() === String(peUser.email).toLowerCase())
         );
-        if (!hasPe) {
+        if (peIndex === -1) {
           baseList.push({
             user_id: peUser.id || null,
             document: peUser.username || peUser.document || '',
@@ -471,10 +471,16 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             email: peUser.email || '',
             organization: peUser.dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
             role_title: peUser.cargo || 'Planeación y Efectividad',
-            meeting_role: 'participant',
+            meeting_role: 'co_responsible',
             signature_required: true,
             status: 'invited'
           });
+        } else if (baseList[peIndex].meeting_role === 'participant') {
+          baseList[peIndex] = {
+            ...baseList[peIndex],
+            meeting_role: 'co_responsible',
+            role_title: baseList[peIndex].role_title || peUser.cargo || 'Planeación y Efectividad'
+          };
         }
       }
 
@@ -1294,7 +1300,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         email: peUser.email || '',
         organization: peUser.dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
         role_title: peUser.cargo || 'Planeación y Efectividad',
-        meeting_role: 'participant',
+        meeting_role: 'co_responsible',
         signature_required: true,
         status: 'invited'
       });
@@ -2519,76 +2525,90 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </Stack>
                     </Paper>
 
-                    <Stack spacing={1} mt={meetingParticipants.some((p) => !['principal', 'co_responsible'].includes(p.meeting_role)) ? 2 : 0}>
+                    <Stack spacing={1} mt={meetingParticipants.length ? 2 : 0}>
                       {meetingParticipants
                         .map((participant, index) => ({ participant, index }))
-                        .filter(({ participant }) => !['principal', 'co_responsible'].includes(participant.meeting_role))
-                        .map(({ participant, index }) => (
-                          <Paper
-                            key={participant.id || participant.user_id || `${participant.document || participant.email}-${index}`}
-                            variant="outlined"
-                            sx={{
-                              p: 1.5,
-                              borderRadius: 2.5,
-                              bgcolor: '#ffffff',
-                              borderColor: '#dbe7f4',
-                              display: 'flex',
-                              flexDirection: { xs: 'column', md: 'row' },
-                              alignItems: { xs: 'stretch', md: 'center' },
-                              justifyContent: 'space-between',
-                              gap: 1.25
-                            }}
-                          >
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                              <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
-                                <Typography variant="body2" fontWeight={850} color="#0f172a">{participant.name}</Typography>
-                                {!participant.user_id && (
-                                  <Chip size="small" label="Externo" variant="outlined" color="primary" sx={{ height: 20, fontSize: 11 }} />
-                                )}
-                                {participant.meeting_role === 'collaborator' ? (
-                                  <Chip size="small" label="Colaborador" variant="outlined" sx={{ height: 20, fontSize: 11 }} />
-                                ) : (
-                                  <Chip size="small" label="Participante" variant="outlined" color="default" sx={{ height: 20, fontSize: 11 }} />
-                                )}
+                        .map(({ participant, index }) => {
+                          const isPrimary = participant.meeting_role === 'principal';
+                          const isCoResp = participant.meeting_role === 'co_responsible';
+                          return (
+                            <Paper
+                              key={participant.id || participant.user_id || `${participant.document || participant.email}-${index}`}
+                              variant="outlined"
+                              sx={{
+                                p: 1.5,
+                                borderRadius: 2.5,
+                                bgcolor: isPrimary ? '#f0fdf4' : isCoResp ? '#eff6ff' : '#ffffff',
+                                borderColor: isPrimary ? '#86efac' : isCoResp ? '#bfdbfe' : '#dbe7f4',
+                                display: 'flex',
+                                flexDirection: { xs: 'column', md: 'row' },
+                                alignItems: { xs: 'stretch', md: 'center' },
+                                justifyContent: 'space-between',
+                                gap: 1.25
+                              }}
+                            >
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
+                                  <Typography variant="body2" fontWeight={850} color="#0f172a">{participant.name}</Typography>
+                                  {isPrimary && (
+                                    <Chip size="small" label="Responsable Principal" color="success" sx={{ height: 20, fontSize: 11, fontWeight: 800 }} />
+                                  )}
+                                  {isCoResp && (
+                                    <Chip size="small" label="Co-responsable · Planeación y Efectividad" color="primary" variant="outlined" sx={{ height: 20, fontSize: 11, fontWeight: 750 }} />
+                                  )}
+                                  {!participant.user_id && !isPrimary && !isCoResp && (
+                                    <Chip size="small" label="Externo" variant="outlined" color="primary" sx={{ height: 20, fontSize: 11 }} />
+                                  )}
+                                  {!isPrimary && !isCoResp && participant.meeting_role === 'collaborator' && (
+                                    <Chip size="small" label="Colaborador" variant="outlined" sx={{ height: 20, fontSize: 11 }} />
+                                  )}
+                                  {!isPrimary && !isCoResp && participant.meeting_role === 'participant' && (
+                                    <Chip size="small" label="Participante" variant="outlined" color="default" sx={{ height: 20, fontSize: 11 }} />
+                                  )}
+                                </Stack>
+                                <Typography variant="caption" color="#64748b" sx={{ display: 'block', mt: 0.25 }}>
+                                  CC {participant.document || 'registrada'} · {participant.email}
+                                </Typography>
+                                <Typography variant="caption" color="#475569" sx={{ display: 'block', fontWeight: 600 }}>
+                                  {participant.role_title || 'Sin cargo'} · {participant.organization || 'UNICESMAG'}
+                                </Typography>
+                              </Box>
+                              <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" justifyContent={{ xs: 'space-between', md: 'flex-end' }}>
+                                <TextField
+                                  select
+                                  size="small"
+                                  label="Rol"
+                                  value={participant.meeting_role || 'participant'}
+                                  disabled={participant.status === 'signed'}
+                                  onChange={(event) => updateMeetingParticipantRole(index, event.target.value)}
+                                  sx={{ minWidth: 160 }}
+                                >
+                                  <MenuItem value="principal">Responsable principal</MenuItem>
+                                  <MenuItem value="co_responsible">Co-responsable</MenuItem>
+                                  <MenuItem value="collaborator">Colaborador</MenuItem>
+                                  <MenuItem value="participant">Participante</MenuItem>
+                                </TextField>
+                                <Chip
+                                  size="small"
+                                  label={participant.status === 'signed' ? 'Firmado' : 'Firma pendiente'}
+                                  color={participant.status === 'signed' ? 'success' : 'default'}
+                                  variant={participant.status === 'signed' ? 'filled' : 'outlined'}
+                                  sx={{ fontWeight: 800, fontSize: 11 }}
+                                />
+                                <IconButton
+                                  aria-label={`Retirar a ${participant.name}`}
+                                  color="error"
+                                  size="small"
+                                  disabled={participant.status === 'signed'}
+                                  onClick={() => removeMeetingParticipant(index)}
+                                  sx={{ bgcolor: '#fef2f2', '&:hover': { bgcolor: '#fee2e2' } }}
+                                >
+                                  <DeleteOutline fontSize="small" />
+                                </IconButton>
                               </Stack>
-                              <Typography variant="caption" color="#64748b" sx={{ display: 'block', mt: 0.25 }}>
-                                CC {participant.document || 'registrada'} · {participant.email}
-                              </Typography>
-                              <Typography variant="caption" color="#475569" sx={{ display: 'block', fontWeight: 600 }}>
-                                {participant.role_title || 'Sin cargo'} · {participant.organization || 'UNICESMAG'}
-                              </Typography>
-                            </Box>
-                            <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" justifyContent={{ xs: 'space-between', md: 'flex-end' }}>
-                              <TextField
-                                select
-                                size="small"
-                                label="Rol"
-                                value={participant.meeting_role || 'participant'}
-                                disabled={participant.status === 'signed'}
-                                onChange={(event) => updateMeetingParticipantRole(index, event.target.value)}
-                                sx={{ minWidth: 160 }}
-                              >
-                                <MenuItem value="participant">Participante</MenuItem>
-                                <MenuItem value="collaborator">Colaborador</MenuItem>
-                              </TextField>
-                              <Chip
-                                size="small"
-                                label={participant.status === 'signed' ? 'Firmado' : 'Firma pendiente'}
-                                color={participant.status === 'signed' ? 'success' : 'default'}
-                              />
-                              <IconButton
-                                aria-label={`Retirar a ${participant.name}`}
-                                color="error"
-                                size="small"
-                                disabled={participant.status === 'signed'}
-                                onClick={() => removeMeetingParticipant(index)}
-                                sx={{ bgcolor: '#fef2f2', '&:hover': { bgcolor: '#fee2e2' } }}
-                              >
-                                <DeleteOutline fontSize="small" />
-                              </IconButton>
-                            </Stack>
-                          </Paper>
-                        ))}
+                            </Paper>
+                          );
+                        })}
                     </Stack>
                   </Paper>
 
