@@ -2166,10 +2166,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   width: meetingLayoutMode === 'form' ? '100%' : meetingLayoutMode === 'split' ? { xs: '100%', lg: '47%' } : '100%',
                   display: meetingLayoutMode === 'preview' ? 'none' : 'flex',
                   flexDirection: 'column',
-                  gap: 2.5,
+                  gap: 3,
                   height: { lg: '100%' },
                   overflowY: { lg: 'auto' },
-                  pr: { lg: 1 }
+                  pr: { lg: 1.5 },
+                  pb: { xs: 4, lg: 6 }
                 }}>
                   <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#cbd9e9' }}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} justifyContent="space-between" gap={1.5} mb={1.5}>
@@ -2346,7 +2347,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             Busque por nombre o cédula para asignar al <strong>Responsable Principal</strong> de la reunión.
                           </Alert>
                         ) : (
-                          <Stack gap={1}>
+                          <Stack gap={1.75}>
                             {meetingParticipants
                               .map((participant, index) => ({ participant, index }))
                               .filter(({ participant }) => ['principal', 'co_responsible'].includes(participant.meeting_role))
@@ -2357,15 +2358,16 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                     key={participant.id || participant.user_id || `${participant.document || participant.email}-${index}`}
                                     variant="outlined"
                                     sx={{
-                                      p: 1.5,
-                                      borderRadius: 2.5,
+                                      p: 2.25,
+                                      borderRadius: 3,
                                       bgcolor: isPrimary ? '#f0fdf4' : '#ffffff',
                                       borderColor: isPrimary ? '#86efac' : '#cbd5e1',
+                                      boxShadow: '0 2px 6px rgba(15,23,42,0.04)',
                                       display: 'flex',
                                       flexDirection: { xs: 'column', md: 'row' },
                                       alignItems: { xs: 'stretch', md: 'center' },
                                       justifyContent: 'space-between',
-                                      gap: 1.25
+                                      gap: 1.5
                                     }}
                                   >
                                     <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -2798,7 +2800,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </Stack>
                     </Paper>
 
-                    <Stack spacing={1} mt={meetingParticipants.length ? 2 : 0}>
+                    <Stack spacing={2} mt={meetingParticipants.length ? 2.5 : 0}>
                       {meetingParticipants
                         .map((participant, index) => ({ participant, index }))
                         .map(({ participant, index }) => {
@@ -2809,20 +2811,21 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               key={participant.id || participant.user_id || `${participant.document || participant.email}-${index}`}
                               variant="outlined"
                               sx={{
-                                p: 1.5,
-                                borderRadius: 2.5,
+                                p: 2.25,
+                                borderRadius: 3,
                                 bgcolor: isPrimary ? '#f0fdf4' : isCoResp ? '#eff6ff' : '#ffffff',
-                                borderColor: isPrimary ? '#86efac' : isCoResp ? '#bfdbfe' : '#dbe7f4',
+                                borderColor: isPrimary ? '#86efac' : isCoResp ? '#bfdbfe' : '#cbd5e1',
+                                boxShadow: '0 2px 6px rgba(15,23,42,0.04)',
                                 display: 'flex',
                                 flexDirection: { xs: 'column', md: 'row' },
                                 alignItems: { xs: 'stretch', md: 'center' },
                                 justifyContent: 'space-between',
-                                gap: 1.25
+                                gap: 1.5
                               }}
                             >
                               <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
-                                  <Typography variant="body2" fontWeight={850} color="#0f172a">{participant.name}</Typography>
+                                <Stack direction="row" alignItems="center" spacing={1.25} flexWrap="wrap">
+                                  <Typography variant="body2" fontWeight={850} color="#0f172a" sx={{ fontSize: 14.5 }}>{participant.name}</Typography>
                                   {isPrimary && (
                                     <Chip
                                       size="small"
@@ -2830,7 +2833,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                         ? 'Responsable Principal · Planeación y Efectividad'
                                         : 'Responsable Principal'}
                                       color="success"
-                                      sx={{ height: 20, fontSize: 11, fontWeight: 800 }}
+                                      sx={{ height: 22, fontSize: 11, fontWeight: 800 }}
                                     />
                                   )}
                                   {isCoResp && (
@@ -2841,27 +2844,27 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                         : 'Co-responsable · Plan de Acción'}
                                       color="primary"
                                       variant="outlined"
-                                      sx={{ height: 20, fontSize: 11, fontWeight: 750 }}
+                                      sx={{ height: 22, fontSize: 11, fontWeight: 750 }}
                                     />
                                   )}
                                   {!participant.user_id && !isPrimary && !isCoResp && (
-                                    <Chip size="small" label="Externo" variant="outlined" color="primary" sx={{ height: 20, fontSize: 11 }} />
+                                    <Chip size="small" label="Externo" variant="outlined" color="primary" sx={{ height: 22, fontSize: 11 }} />
                                   )}
                                   {!isPrimary && !isCoResp && participant.meeting_role === 'collaborator' && (
-                                    <Chip size="small" label="Colaborador" variant="outlined" sx={{ height: 20, fontSize: 11 }} />
+                                    <Chip size="small" label="Colaborador" variant="outlined" sx={{ height: 22, fontSize: 11 }} />
                                   )}
                                   {!isPrimary && !isCoResp && participant.meeting_role === 'participant' && (
-                                    <Chip size="small" label="Participante" variant="outlined" color="default" sx={{ height: 20, fontSize: 11 }} />
+                                    <Chip size="small" label="Participante" variant="outlined" color="default" sx={{ height: 22, fontSize: 11 }} />
                                   )}
                                 </Stack>
-                                <Typography variant="caption" color="#64748b" sx={{ display: 'block', mt: 0.25 }}>
+                                <Typography variant="caption" color="#64748b" sx={{ display: 'block', mt: 0.5 }}>
                                   CC {participant.document || 'registrada'} · {participant.email}
                                 </Typography>
-                                <Typography variant="caption" color="#475569" sx={{ display: 'block', fontWeight: 600 }}>
+                                <Typography variant="caption" color="#475569" sx={{ display: 'block', fontWeight: 600, mt: 0.25 }}>
                                   {participant.role_title || 'Sin cargo'} · {participant.organization || 'UNICESMAG'}
                                 </Typography>
                               </Box>
-                              <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" justifyContent={{ xs: 'space-between', md: 'flex-end' }}>
+                              <Stack direction="row" alignItems="center" spacing={1.25} flexWrap="wrap" justifyContent={{ xs: 'space-between', md: 'flex-end' }}>
                                 <TextField
                                   select
                                   size="small"
@@ -2901,7 +2904,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Paper>
 
                   {/* CARD: PROGRAMAR SIGUIENTE SESIÓN */}
-                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, borderColor: '#93c5fd', bgcolor: '#f8fbff' }}>
+                  <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3.5, borderColor: '#93c5fd', bgcolor: '#f8fbff', boxShadow: '0 2px 10px rgba(37,99,235,0.06)', mt: 1, mb: 1.5 }}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" gap={1.5}>
                       <Stack direction="row" alignItems="center" gap={1.25}>
                         <Box sx={{ width: 46, height: 46, borderRadius: 2.5, display: 'grid', placeItems: 'center', bgcolor: '#dbeafe', color: '#1d4ed8', flexShrink: 0 }}>
@@ -2933,7 +2936,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   display: meetingLayoutMode === 'form' ? 'none' : 'block',
                   height: { lg: '100%' },
                   overflowY: { lg: 'auto' },
-                  pr: { lg: 1 }
+                  pr: { lg: 1.5 },
+                  pb: { xs: 4, lg: 6 }
                 }}>
                   <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5} flexWrap="wrap" gap={1}>
