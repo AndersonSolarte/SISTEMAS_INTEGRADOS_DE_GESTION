@@ -15,7 +15,7 @@ function databaseConfig() {
     password: process.env.INSTITUTIONAL_DB_PASSWORD,
     ssl: String(process.env.INSTITUTIONAL_DB_SSL || 'false').toLowerCase() === 'true'
       ? { rejectUnauthorized: true } : false,
-    application_name: 'siac_saber_pro_readonly',
+    application_name: 'siac_saber_pro_readonly', options: '-c default_transaction_read_only=on',
     connectionTimeoutMillis: 10000,
     statement_timeout: 30000,
     query_timeout: 30000

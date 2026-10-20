@@ -556,41 +556,144 @@ async function createTemplateWorkbook() {
 
 async function createResultWorkbook(importId) {
   await ensureImportSchema();
-  const record = await SaberProDocumentImport.findByPk(importId, {
+  let record = await SaberProDocumentImport.findByPk(importId, {
     include: [{ model: SaberProDocumentImportItem, as: 'items' }],
     order: [[{ model: SaberProDocumentImportItem, as: 'items' }, 'row_number', 'ASC']]
   });
   if (!record) throw apiError('La consulta no existe.', 404, 'IMPORT_NOT_FOUND');
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Resultados');
-  sheet.columns = [
-    { header: 'Fila original', key: 'row', width: 14 },
-    { header: 'numero_identificacion (BD)', key: 'dbIdentification', width: 24 },
-    { header: 'Documento leído (PDF)', key: 'pdfIdentification', width: 24 },
-    { header: 'Estado', key: 'status', width: 20 },
-    { header: 'codigo_ek (BD)', key: 'dbRegistration', width: 24 },
-    { header: 'EK leído (PDF)', key: 'registration', width: 24 },
-    { header: 'fecha_presentacion_ek (BD)', key: 'dbDate', width: 26 },
-    { header: 'Fecha leída (PDF)', key: 'date', width: 24 },
-    { header: 'Validación contra BD', key: 'message', width: 85 }
-  ];
-  for (const item of record.items || []) {
-    const row = sheet.addRow({
-      row: item.row_number,
-      dbIdentification: item.db_identification || item.identification,
-      pdfIdentification: item.pdf_identification || '',
-      status: STATUS_EXPORT_LABELS[item.status] || item.status,
-      dbRegistration: item.db_registration_number || 'Sin dato',
-      registration: item.registration_number || '',
-      dbDate: item.db_exam_date ? new Date(`${item.db_exam_date}T00:00:00Z`) : 'Sin dato',
-      date: item.exam_date ? new Date(`${item.exam_date}T00:00:00Z`) : null,
-      message: item.message
+  const synced = await syncProcessedItemsWithInstitutionalDb(record.id, record.items || []);
+  if (synced) {
+    record = await SaberProDocumentImport.findByPk(importId, {
+      include: [{ model: SaberProDocumentImportItem, as: 'items' }],
+      order: [[{ model: SaberProDocumentImportItem, as: 'items' }, 'row_number', 'ASC']]
     });
-    if (item.db_exam_date) row.getCell('dbDate').numFmt = 'dd/mm/yyyy';
-    if (item.exam_date) row.getCell('date').numFmt = 'dd/mm/yyyy';
   }
-  sheet.getRow(1).font = { bold: true };
-  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'SIAC - UNICESMAG';
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet('Resultados', {
+    views: [{ state: 'frozen', ySplit: 1 }]
+  });
+
+  sheet.columns = [
+    { header: 'Fila', key: 'row', width: 10 },
+    { header: 'Doc. BD', key: 'dbIdentification', width: 18 },
+    { header: 'Doc. PDF', key: 'pdfIdentification', width: 18 },
+    { header: 'Estado', key: 'status', width: 22 },
+    { header: 'EK BD', key: 'dbRegistration', width: 22 },
+    { header: 'EK PDF', key: 'registration', width: 22 },
+    { header: 'Fecha BD', key: 'dbDate', width: 18 },
+    { header: 'Fecha PDF', key: 'date', width: 18 },
+    { header: 'Validación contra BD', key: 'message', width: 78 }
+  ];
+
+  const thinBorder = {
+    top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+  };
+
+  const headerRow = sheet.getRow(1);
+  headerRow.height = 26;
+  headerRow.eachCell((cell) => {
+    cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF1E3A8A' } },
+      left: { style: 'thin', color: { argb: 'FF3B82F6' } },
+      bottom: { style: 'medium', color: { argb: 'FF1D4ED8' } },
+      right: { style: 'thin', color: { argb: 'FF3B82F6' } }
+    };
+  });
+
+  const statusStyles = {
+    EXTRACTED: { bg: 'FFDCFCE7', fg: 'FF166534' },
+    CORRECTED: { bg: 'FFDBEAFE', fg: 'FF1E40AF' },
+    INCOMPLETE: { bg: 'FFFEF3C7', fg: 'FF92400E' },
+    NO_PDF: { bg: 'FFFFEDD5', fg: 'FF9A3412' },
+    NOT_FOUND: { bg: 'FFFFEDD5', fg: 'FF9A3412' },
+    ERROR: { bg: 'FFFEE2E2', fg: 'FF991B1B' },
+    INVALID: { bg: 'FFFEE2E2', fg: 'FF991B1B' },
+    PENDING: { bg: 'FFF1F5F9', fg: 'FF475569' }
+  };
+
+  for (const rawItem of record.items || []) {
+    const item = mapItem(rawItem);
+    const row = sheet.addRow({
+      row: item.rowNumber,
+      dbIdentification: item.dbIdentification || 'Sin dato',
+      pdfIdentification: item.pdfIdentification || (item.hasDocument ? 'No leído' : 'Sin PDF'),
+      status: STATUS_EXPORT_LABELS[item.status] || item.status,
+      dbRegistration: item.dbRegistrationNumber || 'Sin dato',
+      registration: item.registrationNumber || (item.hasDocument ? 'No leído' : 'Sin PDF'),
+      dbDate: item.dbExamDate ? toDisplayDate(item.dbExamDate) : 'Sin dato',
+      date: item.examDate ? toDisplayDate(item.examDate) : (item.hasDocument ? 'No leída' : 'Sin PDF'),
+      message: item.message || ''
+    });
+
+    row.height = 22;
+    const isEven = row.number % 2 === 0;
+    const baseBg = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
+
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cell.font = { name: 'Calibri', size: 10.5, color: { argb: 'FF0F172A' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: baseBg } };
+      cell.border = thinBorder;
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: colNumber === 1 || colNumber === 4 || colNumber === 7 || colNumber === 8 ? 'center' : 'left',
+        wrapText: colNumber === 9
+      };
+    });
+
+    row.getCell('dbIdentification').font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FF0F172A' } };
+
+    const stStyle = statusStyles[item.status] || statusStyles.PENDING;
+    const statusCell = row.getCell('status');
+    statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: stStyle.bg } };
+    statusCell.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: stStyle.fg } };
+
+    const styleDbCell = (cellKey, hasValue) => {
+      if (!hasValue) {
+        const cell = row.getCell(cellKey);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF2F2' } };
+        cell.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FF991B1B' } };
+      }
+    };
+
+    const stylePdfCell = (cellKey, hasValue, matches) => {
+      if (!item.hasDocument) return;
+      const cell = row.getCell(cellKey);
+      if (!hasValue) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF2F2' } };
+        cell.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FF991B1B' } };
+      } else if (matches) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0FDF4' } };
+        cell.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FF166534' } };
+      } else {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } };
+        cell.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FF92400E' } };
+      }
+    };
+
+    styleDbCell('dbIdentification', Boolean(item.dbIdentification));
+    stylePdfCell('pdfIdentification', Boolean(item.pdfIdentification), item.identificationMatch);
+
+    styleDbCell('dbRegistration', Boolean(item.dbRegistrationNumber));
+    stylePdfCell('registration', Boolean(item.registrationNumber), item.registrationMatch);
+
+    styleDbCell('dbDate', Boolean(item.dbExamDate));
+    stylePdfCell('date', Boolean(item.examDate), item.examDateMatch);
+  }
+
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: Math.max(1, (record.items || []).length + 1), column: 9 }
+  };
+
   return workbook.xlsx.writeBuffer();
 }
 

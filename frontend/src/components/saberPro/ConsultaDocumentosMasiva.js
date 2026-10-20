@@ -13,8 +13,6 @@ import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import FindInPageRoundedIcon from '@mui/icons-material/FindInPageRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
 import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded';
-import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
-import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import api from '../../services/api';
 
 const BASE_URL = '/planeacion/gestion-informacion/saber-pro/consulta/documentos-masivos';
@@ -125,27 +123,23 @@ function saveBlob(response, fileName) {
 function ComparisonValue({ value, matches, emptyLabel = '—' }) {
   const hasValue = Boolean(value);
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center">
-      {hasValue ? (
-        matches ? (
-          <CheckCircleRoundedIcon sx={{ fontSize: 14, color: '#16a34a', flexShrink: 0 }} />
-        ) : (
-          <WarningAmberRoundedIcon sx={{ fontSize: 14, color: '#d97706', flexShrink: 0 }} />
-        )
-      ) : (
-        <WarningAmberRoundedIcon sx={{ fontSize: 14, color: '#dc2626', flexShrink: 0 }} />
-      )}
-      <Typography
-        sx={{
-          fontSize: 12,
-          fontWeight: matches ? 700 : 800,
-          color: !hasValue ? '#dc2626' : matches ? '#15803d' : '#b45309',
-          whiteSpace: 'nowrap'
-        }}
-      >
-        {value || emptyLabel}
-      </Typography>
-    </Stack>
+    <Box
+      component="span"
+      sx={{
+        display: 'inline-block',
+        px: 0.9,
+        py: 0.25,
+        borderRadius: 1,
+        fontSize: 12,
+        fontWeight: 700,
+        whiteSpace: 'nowrap',
+        bgcolor: !hasValue ? '#fef2f2' : matches ? '#f0fdf4' : '#fffbeb',
+        color: !hasValue ? '#dc2626' : matches ? '#15803d' : '#b45309',
+        border: `1px solid ${!hasValue ? '#fecaca' : matches ? '#bbf7d0' : '#fde68a'}`
+      }}
+    >
+      {value || emptyLabel}
+    </Box>
   );
 }
 
