@@ -25,6 +25,32 @@ SaberProDocumentImportItem.belongsTo(SaberProDocumentImport, {
 });
 
 let activeImportId = null;
+let schemaEnsured = false;
+
+const STATUS_EXPORT_LABELS = {
+  PENDING: 'Pendiente',
+  EXTRACTED: 'Extraído',
+  CORRECTED: 'Corregido manualmente',
+  INCOMPLETE: 'Revisar',
+  ERROR: 'Error',
+  NOT_FOUND: 'No encontrado',
+  NO_PDF: 'Sin PDF',
+  INVALID: 'Inválido'
+};
+
+async function ensureImportSchema() {
+  if (schemaEnsured) return;
+  await SaberProDocumentImport.sync();
+  await SaberProDocumentImportItem.sync();
+  await sequelize.query(`
+    ALTER TABLE saber_pro_document_import_items
+      ADD COLUMN IF NOT EXISTS pdf_identification VARCHAR(30),
+      ADD COLUMN IF NOT EXISTS db_identification VARCHAR(30),
+      ADD COLUMN IF NOT EXISTS db_registration_number VARCHAR(40),
+      ADD COLUMN IF NOT EXISTS db_exam_date DATE;
+  `);
+  schemaEnsured = true;
+}
 
 function apiError(message, status = 500, code = 'SABER_PRO_DOCUMENT_IMPORT_ERROR') {
   const error = new Error(message);
@@ -121,10 +147,11 @@ function selectPdf(rows) {
 }
 
 function institutionalReference(document) {
+  const dbIdentification = String(document?.identification || '').replace(/\D/g, '') || null;
   const registrationNumber = String(document?.registration_number || '').replace(/\s/g, '').toUpperCase() || null;
   const examDate = toIsoDate(document?.expected_exam_date);
-  const label = `Referencia BD: EK ${registrationNumber || 'sin dato'} · fecha ${toDisplayDate(examDate) || 'sin dato'}`;
-  return { registrationNumber, examDate, label };
+  const label = `Referencia BD: doc ${dbIdentification || 'sin dato'} · EK ${registrationNumber || 'sin dato'} · fecha ${toDisplayDate(examDate) || 'sin dato'}`;
+  return { dbIdentification, registrationNumber, examDate, label };
 }
 
 async function refreshCounters(importId) {
@@ -144,16 +171,29 @@ async function refreshCounters(importId) {
 
 async function extractItem(item, institutionalRows) {
   if (!institutionalRows?.length) {
-    return { status: 'NOT_FOUND', message: 'La cédula no existe en la consulta institucional.' };
+    return {
+      status: 'NOT_FOUND',
+      db_identification: null,
+      db_registration_number: null,
+      db_exam_date: null,
+      message: 'La cédula no existe en la base de datos institucional (personas).'
+    };
   }
   const document = selectPdf(institutionalRows);
+  const firstRow = document || institutionalRows[0];
+  const reference = institutionalReference(firstRow);
   if (!document) {
-    return { status: 'NO_PDF', message: 'La persona existe, pero no tiene una ruta PDF válida.' };
+    return {
+      status: 'NO_PDF',
+      db_identification: reference.dbIdentification,
+      db_registration_number: reference.registrationNumber,
+      db_exam_date: reference.examDate,
+      message: `La persona existe en BD, pero no tiene una ruta PDF válida (url_ek). ${reference.label}.`
+    };
   }
   const documentPath = normalizeRemotePath(document.document_path);
-  const reference = institutionalReference(document);
   const hints = {
-    identification: item.identification,
+    identification: reference.dbIdentification || item.identification,
     registrationNumber: reference.registrationNumber,
     examDate: reference.examDate
   };
@@ -162,26 +202,39 @@ async function extractItem(item, institutionalRows) {
     const extraction = await extractPdfBuffer(buffer, hints);
     const parsed = parseEvaluatedData(extraction.text, hints);
     if (!parsed.complete) {
-      const detail = `${(parsed.missingFields || []).join('. ')}. ${reference.label}.`;
+      const detail = `${(parsed.missingFields || []).join('. ')}. ${reference.label}. Lectura ${extraction.method}.`;
       return {
         status: 'INCOMPLETE',
+        pdf_identification: parsed.identification,
+        db_identification: reference.dbIdentification,
         registration_number: parsed.registrationNumber,
+        db_registration_number: reference.registrationNumber,
         exam_date: parsed.examDate,
+        db_exam_date: reference.examDate,
         document_path: documentPath,
-        message: detail
+        message: detail.slice(0, 700)
       };
     }
     return {
       status: 'EXTRACTED',
+      pdf_identification: parsed.identification,
+      db_identification: reference.dbIdentification,
       registration_number: parsed.registrationNumber,
+      db_registration_number: reference.registrationNumber,
       exam_date: parsed.examDate,
+      db_exam_date: reference.examDate,
       document_path: documentPath,
-      message: `Coincide con codigo_ek y fecha_presentacion_ek. ${reference.label}. Lectura ${extraction.method}.`
+      message: `Coincide numero_identificacion, codigo_ek y fecha_presentacion_ek. ${reference.label}. Lectura ${extraction.method}.`.slice(0, 700)
     };
   } catch (error) {
     return {
       status: 'ERROR',
+      pdf_identification: null,
+      db_identification: reference.dbIdentification,
       registration_number: null,
+      db_registration_number: reference.registrationNumber,
+      exam_date: null,
+      db_exam_date: reference.examDate,
       document_path: documentPath,
       message: String(error.message || 'No fue posible procesar el PDF.').slice(0, 700)
     };
@@ -189,6 +242,7 @@ async function extractItem(item, institutionalRows) {
 }
 
 async function processImport(importId) {
+  await ensureImportSchema();
   activeImportId = String(importId);
   const importRecord = await SaberProDocumentImport.findByPk(importId);
   if (!importRecord) return;
@@ -226,15 +280,107 @@ function startImport(importId) {
   }));
 }
 
+async function syncProcessedItemsWithInstitutionalDb(importId, items) {
+  const needsSync = (items || []).filter((item) => {
+    if (!['EXTRACTED', 'INCOMPLETE', 'CORRECTED', 'NO_PDF', 'ERROR'].includes(item.status)) return false;
+    if (!item.db_identification) return true;
+    if (item.status === 'EXTRACTED') {
+      const missingOrMismatch = !item.db_identification || !item.pdf_identification
+        || !item.db_registration_number || !item.registration_number
+        || !item.db_exam_date || !item.exam_date
+        || item.db_identification !== item.pdf_identification
+        || item.db_registration_number !== item.registration_number
+        || item.db_exam_date !== item.exam_date;
+      if (missingOrMismatch) return true;
+    }
+    return false;
+  });
+  if (!needsSync.length) return false;
+  try {
+    const identifications = [...new Set(needsSync.map((item) => item.identification))];
+    const institutionalRows = await queryDocumentsByIdentifications(identifications);
+    const institutionalMap = rowsByIdentification(institutionalRows);
+    let changed = false;
+
+    for (const item of needsSync) {
+      const rows = institutionalMap.get(item.identification) || [];
+      if (!rows.length) continue;
+      const doc = selectPdf(rows) || rows[0];
+      const ref = institutionalReference(doc);
+      const pdfId = item.pdf_identification
+        || (['EXTRACTED', 'CORRECTED'].includes(item.status) ? item.identification : null)
+        || (!String(item.message || '').includes('Cédula') && !String(item.message || '').includes('documento') && item.registration_number ? item.identification : null);
+
+      const idMatch = Boolean(pdfId && ref.dbIdentification && pdfId === ref.dbIdentification);
+      const ekMatch = Boolean(item.registration_number && ref.registrationNumber && item.registration_number === ref.registrationNumber);
+      const dateVal = validateRegistrationDate(item.registration_number, item.exam_date);
+      const dateMatch = Boolean(item.exam_date && ref.examDate && item.exam_date === ref.examDate && dateVal.valid);
+
+      const updates = {
+        db_identification: ref.dbIdentification,
+        db_registration_number: ref.registrationNumber,
+        db_exam_date: ref.examDate,
+        pdf_identification: pdfId
+      };
+
+      if (item.status === 'EXTRACTED' && (!idMatch || !ekMatch || !dateMatch)) {
+        const reasons = [];
+        if (!idMatch) {
+          reasons.push(`El documento leído en el PDF (${pdfId || 'sin dato'}) no coincide con numero_identificacion en BD (${ref.dbIdentification || 'sin dato'})`);
+        }
+        if (!ekMatch) {
+          reasons.push(`El EK leído en el PDF (${item.registration_number || 'sin dato'}) no coincide con codigo_ek en BD (${ref.registrationNumber || 'sin dato'})`);
+        }
+        if (!dateMatch) {
+          reasons.push(`La fecha leída en el PDF (${toDisplayDate(item.exam_date) || 'sin dato'}) no coincide con fecha_presentacion_ek en BD (${toDisplayDate(ref.examDate) || 'sin dato'})`);
+        }
+        updates.status = 'INCOMPLETE';
+        updates.message = `${reasons.join('. ')}. ${ref.label}.`.slice(0, 700);
+      }
+
+      await item.update(updates);
+      changed = true;
+    }
+
+    if (changed) {
+      await refreshCounters(importId);
+    }
+    return changed;
+  } catch (error) {
+    console.error('[saberProDocumentImport:sync]', error?.message || error);
+    return false;
+  }
+}
+
 function mapItem(item) {
   const row = item.toJSON ? item.toJSON() : item;
+  const dbIdentification = row.db_identification || row.identification || null;
+  const pdfIdentification = row.pdf_identification || null;
+  const dbRegistrationNumber = row.db_registration_number || null;
+  const registrationNumber = row.registration_number || null;
+  const dbExamDate = row.db_exam_date || null;
+  const examDate = row.exam_date || null;
+
+  const identificationMatch = Boolean(dbIdentification && pdfIdentification && dbIdentification === pdfIdentification);
+  const registrationMatch = Boolean(dbRegistrationNumber && registrationNumber && dbRegistrationNumber === registrationNumber);
+  const examDateMatch = Boolean(dbExamDate && examDate && dbExamDate === examDate);
+  const hasMissingOrMismatch = !identificationMatch || !registrationMatch || !examDateMatch;
+  const effectiveStatus = row.status === 'EXTRACTED' && hasMissingOrMismatch ? 'INCOMPLETE' : row.status;
+
   return {
     id: String(row.id),
     rowNumber: row.row_number,
     identification: row.identification,
-    status: row.status,
-    registrationNumber: row.registration_number,
-    examDate: row.exam_date,
+    dbIdentification,
+    pdfIdentification,
+    identificationMatch,
+    status: effectiveStatus,
+    dbRegistrationNumber,
+    registrationNumber,
+    registrationMatch,
+    dbExamDate,
+    examDate,
+    examDateMatch,
     hasDocument: Boolean(row.document_path),
     message: row.message,
     correctedBy: row.corrected_by,
@@ -243,11 +389,19 @@ function mapItem(item) {
 }
 
 async function getImport(importId) {
-  const record = await SaberProDocumentImport.findByPk(importId, {
+  await ensureImportSchema();
+  let record = await SaberProDocumentImport.findByPk(importId, {
     include: [{ model: SaberProDocumentImportItem, as: 'items' }],
     order: [[{ model: SaberProDocumentImportItem, as: 'items' }, 'row_number', 'ASC']]
   });
   if (!record) return null;
+  const synced = await syncProcessedItemsWithInstitutionalDb(record.id, record.items || []);
+  if (synced) {
+    record = await SaberProDocumentImport.findByPk(importId, {
+      include: [{ model: SaberProDocumentImportItem, as: 'items' }],
+      order: [[{ model: SaberProDocumentImportItem, as: 'items' }, 'row_number', 'ASC']]
+    });
+  }
   const row = record.toJSON();
   return {
     id: String(row.id),
@@ -267,11 +421,13 @@ async function getImport(importId) {
 }
 
 async function getLatestImport() {
+  await ensureImportSchema();
   const latest = await SaberProDocumentImport.findOne({ order: [['created_at', 'DESC']] });
   return latest ? getImport(latest.id) : null;
 }
 
 async function createImport(file, userId) {
+  await ensureImportSchema();
   if (!file) throw apiError('Seleccione un archivo Excel o CSV.', 400, 'FILE_REQUIRED');
   if (activeImportId || await SaberProDocumentImport.count({ where: { status: 'PROCESSING' } })) {
     throw apiError('Ya existe una consulta documental en procesamiento.', 409, 'IMPORT_IN_PROGRESS');
@@ -290,6 +446,7 @@ async function createImport(file, userId) {
 }
 
 async function retryImport(importId) {
+  await ensureImportSchema();
   if (activeImportId) {
     throw apiError('Ya existe una consulta documental en procesamiento.', 409, 'IMPORT_IN_PROGRESS');
   }
@@ -298,7 +455,7 @@ async function retryImport(importId) {
   const retryable = await SaberProDocumentImportItem.count({
     where: { import_id: importId, status: { [Op.in]: ['PENDING', 'INCOMPLETE', 'ERROR'] } }
   });
-  if (!retryable) throw apiError('No existen filas pendientes, incompletas o con error.', 409, 'NOTHING_TO_RETRY');
+  if (!retryable) throw apiError('No existen filas pendientes, por revisar o con error.', 409, 'NOTHING_TO_RETRY');
   await SaberProDocumentImportItem.update({
     status: 'PENDING', message: null, exam_date: null, corrected_by: null, corrected_at: null
   }, {
@@ -311,15 +468,27 @@ async function retryImport(importId) {
 }
 
 async function correctItem(itemId, values, userId) {
+  await ensureImportSchema();
   const item = await SaberProDocumentImportItem.findByPk(itemId);
   if (!item) throw apiError('La fila no existe.', 404, 'ITEM_NOT_FOUND');
-  if (!['INCOMPLETE', 'ERROR'].includes(item.status)) {
-    throw apiError('Solo se pueden corregir filas incompletas o con error.', 409, 'ITEM_NOT_REVIEWABLE');
+  if (!['INCOMPLETE', 'ERROR', 'CORRECTED', 'EXTRACTED'].includes(item.status)) {
+    throw apiError('Solo se pueden revisar filas con PDF asociado.', 409, 'ITEM_NOT_REVIEWABLE');
   }
-  if (String(item.message || '').includes('no coincide con la cédula consultada')) {
-    throw apiError('No se puede corregir este registro: la cédula del PDF pertenece a otra persona.',
-      409, 'IDENTIFICATION_MISMATCH');
+
+  const expectedId = normalizeIdentification(item.db_identification || item.identification);
+  const rawPdfId = values.pdfIdentification !== undefined ? values.pdfIdentification : (item.pdf_identification || item.identification);
+  const pdfIdentification = normalizeIdentification(rawPdfId);
+  if (!pdfIdentification) {
+    throw apiError('El número de documento del PDF no tiene un formato válido.', 400, 'INVALID_IDENTIFICATION');
   }
+  if (expectedId && pdfIdentification !== expectedId) {
+    throw apiError(
+      `El documento del PDF (${pdfIdentification}) no coincide con numero_identificacion en BD (${expectedId}). No se puede validar un certificado de otra persona.`,
+      400,
+      'IDENTIFICATION_MISMATCH'
+    );
+  }
+
   const registrationNumber = String(values.registrationNumber || '').replace(/\s/g, '').toUpperCase();
   if (!/^EKA?\d{8,}$/.test(registrationNumber)) {
     throw apiError('El número de registro EK no tiene un formato válido.', 400, 'INVALID_REGISTRATION');
@@ -331,22 +500,36 @@ async function correctItem(itemId, values, userId) {
     throw apiError(`La fecha debe pertenecer al año ${dateValidation.expectedYear}, según el número de registro EK.`,
       400, 'DATE_YEAR_MISMATCH');
   }
+
   const institutionalRows = await queryDocumentsByIdentifications([item.identification]);
-  const institutionalDocument = selectPdf(institutionalRows);
+  const institutionalDocument = selectPdf(institutionalRows) || institutionalRows[0];
   const reference = institutionalReference(institutionalDocument);
-  if (reference.registrationNumber && registrationNumber !== reference.registrationNumber) {
-    throw apiError(`El EK ingresado (${registrationNumber}) no coincide con codigo_ek (${reference.registrationNumber}).`,
-      400, 'REGISTRATION_MISMATCH');
+
+  const notes = [];
+  if (!reference.registrationNumber) {
+    notes.push(`codigo_ek en BD sin dato (verificado en PDF: ${registrationNumber})`);
+  } else if (registrationNumber !== reference.registrationNumber) {
+    notes.push(`codigo_ek en BD (${reference.registrationNumber}) difiere del verificado en PDF (${registrationNumber})`);
   }
-  if (reference.examDate && examDate !== reference.examDate) {
-    throw apiError(`La fecha ingresada (${toDisplayDate(examDate)}) no coincide con fecha_presentacion_ek (${toDisplayDate(reference.examDate)}).`,
-      400, 'EXAM_DATE_MISMATCH');
+  if (!reference.examDate) {
+    notes.push(`fecha_presentacion_ek en BD sin dato (verificada en PDF: ${toDisplayDate(examDate)})`);
+  } else if (examDate !== reference.examDate) {
+    notes.push(`fecha_presentacion_ek en BD (${toDisplayDate(reference.examDate)}) difiere de la verificada en PDF (${toDisplayDate(examDate)})`);
   }
+
+  const detailMessage = notes.length
+    ? `Verificado manualmente en PDF: ${notes.join('; ')}. ${reference.label}.`
+    : `Verificado manualmente: coincide documento, codigo_ek y fecha_presentacion_ek con BD. ${reference.label}.`;
+
   await item.update({
+    pdf_identification: pdfIdentification,
+    db_identification: reference.dbIdentification || expectedId,
     registration_number: registrationNumber,
+    db_registration_number: reference.registrationNumber,
     exam_date: examDate,
+    db_exam_date: reference.examDate,
     status: 'CORRECTED',
-    message: `Información revisada manualmente y validada. ${reference.label}.`,
+    message: detailMessage.slice(0, 700),
     corrected_by: userId,
     corrected_at: new Date()
   });
@@ -355,11 +538,9 @@ async function correctItem(itemId, values, userId) {
 }
 
 async function getItemPdf(itemId) {
+  await ensureImportSchema();
   const item = await SaberProDocumentImportItem.findByPk(itemId);
   if (!item) throw apiError('La fila no existe.', 404, 'ITEM_NOT_FOUND');
-  if (!['INCOMPLETE', 'ERROR'].includes(item.status)) {
-    throw apiError('El visor está disponible únicamente para filas incompletas o con error.', 409, 'ITEM_NOT_REVIEWABLE');
-  }
   if (!item.document_path) throw apiError('La fila no tiene un PDF institucional asociado.', 404, 'PDF_NOT_FOUND');
   return fetchPdfBuffer(item.document_path);
 }
@@ -374,6 +555,7 @@ async function createTemplateWorkbook() {
 }
 
 async function createResultWorkbook(importId) {
+  await ensureImportSchema();
   const record = await SaberProDocumentImport.findByPk(importId, {
     include: [{ model: SaberProDocumentImportItem, as: 'items' }],
     order: [[{ model: SaberProDocumentImportItem, as: 'items' }, 'row_number', 'ASC']]
@@ -383,21 +565,28 @@ async function createResultWorkbook(importId) {
   const sheet = workbook.addWorksheet('Resultados');
   sheet.columns = [
     { header: 'Fila original', key: 'row', width: 14 },
-    { header: 'Identificación', key: 'identification', width: 22 },
+    { header: 'numero_identificacion (BD)', key: 'dbIdentification', width: 24 },
+    { header: 'Documento leído (PDF)', key: 'pdfIdentification', width: 24 },
     { header: 'Estado', key: 'status', width: 20 },
-    { header: 'EK leído del PDF', key: 'registration', width: 25 },
-    { header: 'Fecha leída del PDF (DD/MM/AAAA)', key: 'date', width: 34 },
-    { header: 'Comparación con codigo_ek y fecha_presentacion_ek', key: 'message', width: 85 }
+    { header: 'codigo_ek (BD)', key: 'dbRegistration', width: 24 },
+    { header: 'EK leído (PDF)', key: 'registration', width: 24 },
+    { header: 'fecha_presentacion_ek (BD)', key: 'dbDate', width: 26 },
+    { header: 'Fecha leída (PDF)', key: 'date', width: 24 },
+    { header: 'Validación contra BD', key: 'message', width: 85 }
   ];
   for (const item of record.items || []) {
     const row = sheet.addRow({
       row: item.row_number,
-      identification: item.identification,
-      status: item.status,
-      registration: item.registration_number,
+      dbIdentification: item.db_identification || item.identification,
+      pdfIdentification: item.pdf_identification || '',
+      status: STATUS_EXPORT_LABELS[item.status] || item.status,
+      dbRegistration: item.db_registration_number || 'Sin dato',
+      registration: item.registration_number || '',
+      dbDate: item.db_exam_date ? new Date(`${item.db_exam_date}T00:00:00Z`) : 'Sin dato',
       date: item.exam_date ? new Date(`${item.exam_date}T00:00:00Z`) : null,
       message: item.message
     });
+    if (item.db_exam_date) row.getCell('dbDate').numFmt = 'dd/mm/yyyy';
     if (item.exam_date) row.getCell('date').numFmt = 'dd/mm/yyyy';
   }
   sheet.getRow(1).font = { bold: true };
@@ -454,7 +643,12 @@ async function queueLatestUnverifiedIdentifications() {
     where: {
       import_id: latest.id,
       status: 'EXTRACTED',
-      message: { [Op.notLike]: 'Cédula, EK y fecha validados%' }
+      message: {
+        [Op.and]: [
+          { [Op.notLike]: 'Cédula, EK y fecha validados%' },
+          { [Op.notLike]: 'Coincide%' }
+        ]
+      }
     }
   });
   if (affected) {
@@ -465,8 +659,7 @@ async function queueLatestUnverifiedIdentifications() {
 }
 
 async function initialize() {
-  await SaberProDocumentImport.sync();
-  await SaberProDocumentImportItem.sync();
+  await ensureImportSchema();
   await invalidateStoredDateYearMismatches();
   await queueLatestUnverifiedIdentifications();
   const interrupted = await SaberProDocumentImport.findOne({

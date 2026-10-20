@@ -79,6 +79,11 @@ function textContainsIdentification(text, identification) {
     line.replace(/\D/g, '').includes(identification));
 }
 
+function toDisplayDate(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
+}
+
 function parseEvaluatedData(rawText, hints = {}) {
   const text = normalizeText(rawText);
   const detectedRegistration = firstMatch(text, [
@@ -87,23 +92,25 @@ function parseEvaluatedData(rawText, hints = {}) {
     /\b(EKA?\s*\d{8,})\b/iu
   ])?.replace(/\s/g, '').toUpperCase() || null;
   const hintedRegistration = String(hints.registrationNumber || '').replace(/\s/g, '').toUpperCase();
-  const expectedRegistrationNumber = /^EKA?\d{8,}$/.test(hintedRegistration)
-    ? hintedRegistration : null;
+  const expectedRegistrationNumber = hintedRegistration || null;
   const registrationNumber = detectedRegistration;
-  const registrationMismatch = Boolean(registrationNumber && expectedRegistrationNumber
-    && registrationNumber !== expectedRegistrationNumber);
+  const registrationMatches = Boolean(
+    registrationNumber && expectedRegistrationNumber && registrationNumber === expectedRegistrationNumber
+  );
+  const registrationMismatch = Boolean(!registrationMatches);
 
   let identification = firstMatch(text, [
-    /identificaci[oó]n\s*:?\s*(?:C\.?[ \t]*C\.?|C[ÉE]DULA(?:[ \t]+DE[ \t]+CIUDADAN[IÍ]A)?)?[ \t]*([0-9][0-9. \t]{5,14})/iu,
-    /(?:c[eé]dula[ \t]+de[ \t]+ciudadan[ií]a|documento)[ \t]*:?[ \t]*(?:\n[ \t]*)?([0-9][0-9. \t]{5,14})/iu,
-    /\bC\.?[ \t]*C\.?[ \t]*:?[ \t]*([0-9][0-9. \t]{5,14})/iu
+    /(?:tipo\s+y\s+n[uú]mero\s+de\s+documento|n[uú]mero\s+de\s+(?:documento|identificaci[oó]n)|documento\s+de\s+identidad|identificaci[oó]n|c[eé]dula(?:\s+de\s+ciudadan[ií]a)?|documento)[ \t]*:?[ \t]*(?:\n[ \t]*)?(?:(?:C\.?[ \t]*C\.?|T\.?[ \t]*I\.?|C\.?[ \t]*E\.?|P\.?[ \t]*E\.?[ \t]*P\.?|P\.?[ \t]*P\.?[ \t]*T\.?|P\.?[ \t]*A\.?|C[ÉE]DULA(?:[ \t]+DE[ \t]+CIUDADAN[IÍ]A|[ \t]+DE[ \t]+EXTRANJER[IÍ]A)?|TARJETA(?:[ \t]+DE[ \t]+IDENTIDAD)?)[ \t:.-]*)?([0-9][0-9. \t]{5,14})/iu,
+    /\b(?:C\.?[ \t]*C\.?|T\.?[ \t]*I\.?|C\.?[ \t]*E\.?)[ \t]*:?[ \t]*([0-9][0-9. \t]{5,14})/iu
   ]);
   if (identification) identification = identification.replace(/\D/g, '');
   const expectedIdentification = String(hints.identification || '').replace(/\D/g, '');
   const expectedIdentificationRead = textContainsIdentification(text, expectedIdentification);
   if (expectedIdentificationRead) identification = expectedIdentification;
-  const identificationMismatch = Boolean(identification && /^\d{5,20}$/.test(expectedIdentification)
-    && identification !== expectedIdentification);
+  const identificationMatches = Boolean(
+    identification && /^\d{5,20}$/.test(expectedIdentification) && identification === expectedIdentification
+  );
+  const identificationMismatch = Boolean(!identificationMatches);
 
   const dateText = firstMatch(text, [
     /fecha\s+de\s+presentaci[oó]n\s+del\s+examen\s+y\s+expedici[oó]n\s+del\s+certificado\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/iu,
@@ -125,47 +132,66 @@ function parseEvaluatedData(rawText, hints = {}) {
   const parsedExamDate = dateValidation.examDate;
   const expectedYear = dateValidation.expectedYear;
   const dateYearMismatch = Boolean(parsedExamDate && expectedYear && !dateValidation.valid);
-  const examDate = dateValidation.valid ? parsedExamDate : null;
+  const examDate = parsedExamDate;
   const expectedExamDate = toIsoDate(hints.examDate);
-  const examDateMismatch = Boolean(examDate && expectedExamDate && examDate !== expectedExamDate);
+  const examDateMatches = Boolean(
+    examDate && expectedExamDate && examDate === expectedExamDate && !dateYearMismatch
+  );
+  const examDateMismatch = Boolean(!examDateMatches);
+
   const missingFields = [];
-  if (!registrationNumber) missingFields.push('Número de registro');
-  else if (registrationMismatch) {
-    missingFields.push(`El EK leído en el PDF (${registrationNumber}) no coincide con codigo_ek (${expectedRegistrationNumber})`);
+  if (!identification) {
+    missingFields.push(`No se pudo leer el número de documento en el PDF (numero_identificacion BD: ${expectedIdentification || 'sin dato'})`);
+  } else if (!expectedIdentification) {
+    missingFields.push(`Documento leído en PDF (${identification}) sin numero_identificacion en BD`);
+  } else if (identification !== expectedIdentification) {
+    missingFields.push(`El documento leído en el PDF (${identification}) no coincide con numero_identificacion en BD (${expectedIdentification})`);
   }
-  if (!examDate) missingFields.push(dateYearMismatch
-    ? `Fecha del examen (debe corresponder al año ${expectedYear} del EK)`
-    : 'Fecha de presentación');
-  else if (examDateMismatch) {
-    missingFields.push(`La fecha leída en el PDF (${examDate}) no coincide con fecha_presentacion_ek (${expectedExamDate})`);
+
+  if (!registrationNumber) {
+    missingFields.push(`No se pudo leer el código EK en el PDF (codigo_ek BD: ${expectedRegistrationNumber || 'sin dato'})`);
+  } else if (!expectedRegistrationNumber) {
+    missingFields.push(`El EK leído en el PDF (${registrationNumber}) no coincide con codigo_ek en BD (sin dato)`);
+  } else if (registrationNumber !== expectedRegistrationNumber) {
+    missingFields.push(`El EK leído en el PDF (${registrationNumber}) no coincide con codigo_ek en BD (${expectedRegistrationNumber})`);
   }
-  if (!identification) missingFields.push('Cédula no legible en el PDF');
-  else if (identificationMismatch) {
-    missingFields.push(`La cédula leída en el PDF (${identification}) no coincide con la cédula consultada (${expectedIdentification})`);
+
+  if (!examDate) {
+    missingFields.push(`No se pudo leer la fecha en el PDF (fecha_presentacion_ek BD: ${toDisplayDate(expectedExamDate) || 'sin dato'})`);
+  } else if (dateYearMismatch) {
+    missingFields.push(`La fecha leída en el PDF (${toDisplayDate(examDate)}) no corresponde al año ${expectedYear} del código EK (${registrationNumber})`);
+  } else if (!expectedExamDate) {
+    missingFields.push(`La fecha leída en el PDF (${toDisplayDate(examDate)}) no coincide con fecha_presentacion_ek en BD (sin dato)`);
+  } else if (examDate !== expectedExamDate) {
+    missingFields.push(`La fecha leída en el PDF (${toDisplayDate(examDate)}) no coincide con fecha_presentacion_ek en BD (${toDisplayDate(expectedExamDate)})`);
   }
+
   return {
     registrationNumber,
     expectedRegistrationNumber,
+    registrationMatches,
     registrationMismatch,
     examDate,
     expectedExamDate,
+    examDateMatches,
     examDateMismatch,
+    dateYearMismatch,
     identification,
     expectedIdentification: expectedIdentification || null,
     expectedIdentificationRead,
+    identificationMatches,
     identificationMismatch,
-    readComplete: Boolean(registrationNumber && examDate && identification),
+    readComplete: Boolean(registrationNumber && dateValidation.valid && identification),
     complete: missingFields.length === 0,
     missingFields
   };
 }
 
-function toDisplayDate(value) {
-  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
-}
-
 module.exports = {
-  normalizeText, parseEvaluatedData, toIsoDate, toDisplayDate, registrationYear,
+  normalizeText,
+  parseEvaluatedData,
+  toIsoDate,
+  toDisplayDate,
+  registrationYear,
   validateRegistrationDate
 };

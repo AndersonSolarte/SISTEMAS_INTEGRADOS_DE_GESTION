@@ -75,7 +75,7 @@ const NAV_CONFIG = [
     items: [
       { key: 'individual', label: 'Consulta Individual',   desc: 'Busca resultados por número de documento.',           icon: PersonSearchRoundedIcon, color: '#0891b2' },
       { key: 'masiva',     label: 'Validación Masiva',     desc: 'Carga un Excel/CSV con documentos para validar masivamente.', icon: UploadFileRoundedIcon,   color: '#10b981' },
-      { key: 'extraccion', label: 'Consulta masiva de documentos', desc: 'Consulta PDF institucionales en memoria y extrae EK y fecha.', icon: DocumentScannerRoundedIcon, color: '#7c3aed' }
+      { key: 'extraccion', label: 'Consulta masiva de documentos', desc: '', icon: DocumentScannerRoundedIcon, color: '#7c3aed' }
     ]
   }
 ];
@@ -1237,7 +1237,7 @@ function SaberProLandingPage({ onBack, allowedDashboards = [] }) {
                             onClick={() => handleItemClick(group.key, item.key)}
                             sx={{
                               px: 2, py: 1, cursor: 'pointer',
-                              display: 'flex', alignItems: 'flex-start', gap: 1.4,
+                              display: 'flex', alignItems: item.desc ? 'flex-start' : 'center', gap: 1.4,
                               bgcolor: isSel ? `${group.color}08` : 'transparent',
                               borderLeft: isSel ? `3px solid ${group.color}` : '3px solid transparent',
                               transition: 'background 0.1s, border-color 0.1s',
@@ -1249,7 +1249,7 @@ function SaberProLandingPage({ onBack, allowedDashboards = [] }) {
                             </Box>
                             <Box>
                               <Typography sx={{ fontWeight: 700, fontSize: 12.5, color: isSel ? group.color : '#1e293b', lineHeight: 1.2 }}>{item.label}</Typography>
-                              <Typography sx={{ fontSize: 11, color: '#94a3b8', mt: 0.2, lineHeight: 1.35 }}>{item.desc}</Typography>
+                              {item.desc && <Typography sx={{ fontSize: 11, color: '#94a3b8', mt: 0.2, lineHeight: 1.35 }}>{item.desc}</Typography>}
                             </Box>
                           </Box>
                         );
