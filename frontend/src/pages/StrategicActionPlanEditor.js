@@ -1700,10 +1700,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between" gap={1.5}>
                     <Box>
                       <Typography fontWeight={900} sx={{ fontSize: { xs: 18, md: 20 }, lineHeight: 1.2 }}>
-                        Registro de Asistencia y Reunión
+                        Acta del Plan de Acción
                       </Typography>
                       <Typography sx={{ mt: 0.35, fontSize: 12.5, color: 'rgba(255,255,255,.86)' }}>
-                        COM-IF-FR-002 · Acta del Plan de Acción asistida por inteligencia artificial
+                        Concertación institucional y firmas · {detail?.code || ''}
                       </Typography>
                     </Box>
                     <ToggleButtonGroup
@@ -1731,12 +1731,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   display: meetingLayoutMode === 'preview' ? 'none' : 'flex',
                   flexDirection: 'column', gap: 2.5
                 }}>
-                  <Paper variant="outlined" sx={{ order: 1, p: 2.5, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#cbd9e9' }}>
+                  <Paper variant="outlined" sx={{ order: 1, p: 2.25, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#cbd9e9' }}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} justifyContent="space-between" gap={1.5} mb={1.5}>
-                      <Box>
-                        <Typography fontWeight={900} color="#0f172a">Actas de reunión</Typography>
-                        <Typography variant="body2" color="#64748b">Cree una nueva acta o continúe trabajando en una guardada de este Plan de Acción.</Typography>
-                      </Box>
+                      <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 15.5 }}>Actas de reunión</Typography>
                       <Button variant="outlined" startIcon={<Add />} onClick={startNewMeeting} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 850 }}>
                         Nueva acta
                       </Button>
@@ -1753,31 +1750,22 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                         </MenuItem>
                       ))}
                     </TextField>
-                    <Typography variant="caption" color="#526176" sx={{ display: 'block', mt: 1 }}>
-                      Esta acta pertenece únicamente al Plan de Acción {detail?.code}. No modifica el módulo general de actas.
-                    </Typography>
                   </Paper>
 
-                  <Paper variant="outlined" sx={{ order: 3, p: 2.5, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#d8e5f2' }}>
-                    <Stack direction="row" spacing={1.5} alignItems="center" mb={1.5}>
-                      <AutoAwesome sx={{ color: '#6f9fd7' }} />
-                      <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 16 }}>Acta Asistida por IA</Typography>
+                  <Paper variant="outlined" sx={{ order: 3, p: 2, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#d8e5f2' }}>
+                    <Stack direction="row" spacing={1.5} alignItems="center" mb={1.25}>
+                      <AutoAwesome sx={{ color: '#0284c7', fontSize: 18 }} />
+                      <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 15 }}>Acta Asistida por IA</Typography>
                     </Stack>
-                    <Typography variant="body2" color="#64748b" mb={2}>
-                      El acta se alimenta automáticamente de observaciones, actividades y audio temporal de la sesión.
-                    </Typography>
-
-                    <Button fullWidth component="label" variant="outlined" startIcon={<CloudUpload />} sx={{ height: 44, borderRadius: 2.5, textTransform: 'none', fontWeight: 800, borderColor: '#cbd5e1', color: '#1e293b' }}>
+                    <Button fullWidth component="label" variant="outlined" startIcon={<CloudUpload />} sx={{ height: 38, borderRadius: 2.5, textTransform: 'none', fontWeight: 800, borderColor: '#cbd5e1', color: '#1e293b' }}>
                       Adjuntar audio temporal de la sesión
                       <input hidden type="file" accept="audio/*" onChange={() => enqueueSnackbar('Audio adjuntado temporalmente para transcripción.', { variant: 'info' })} />
                     </Button>
-
                   </Paper>
 
                   <Paper variant="outlined" sx={{ order: 2, p: 2.5, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#cbd9e9' }}>
                     <Box mb={2}>
                       <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 16 }}>1. Información de la reunión</Typography>
-                      <Typography variant="body2" color="#64748b">Complete los datos y responsables. Los cambios aparecen inmediatamente en el formato.</Typography>
                     </Box>
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', sm: 'repeat(2,minmax(0,1fr))' }, gap: 2 }}>
                       <TextField fullWidth required label="Título corto del acta" value={meeting.title || ''} onChange={(e) => setMeeting({ ...meeting, title: e.target.value })} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
@@ -1880,8 +1868,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       ))}
                       <Box sx={{ gridColumn: '1 / -1', gridRow: 1 }}>
                         <Box sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f5f9ff', border: '1px solid #cfe0f4' }}>
-                          <Typography fontWeight={900} color="#17345f">Responsables de la reunión ({meetingParticipants.filter((entry) => ['principal', 'co_responsible'].includes(entry.meeting_role)).length})</Typography>
-                          <Typography variant="body2" color="#64748b" mb={1.5}>Busque por nombre, correo o cédula y asigne solamente Responsable principal o Corresponsable. El responsable principal aparecerá primero en el acta.</Typography>
+                          <Typography fontWeight={900} color="#17345f" mb={1.25}>Responsables de la reunión ({meetingParticipants.filter((entry) => ['principal', 'co_responsible'].includes(entry.meeting_role)).length})</Typography>
                           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                             <Autocomplete
                               fullWidth
@@ -1947,8 +1934,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </Box>
                     </Box>
                     <Paper elevation={0} sx={{ mt: 2, p: 2, borderRadius: 2.5, bgcolor: '#ffffff', border: '1px solid #dbe7f4' }}>
-                      <Typography fontWeight={900} color="#17345f">2. Participantes y firmas ({meetingParticipants.filter((entry) => ['collaborator', 'participant'].includes(entry.meeting_role)).length})</Typography>
-                      <Typography variant="body2" color="#64748b" mb={1.5}>Busque asistentes por nombre, correo o cédula. Si no existen en SIAC, puede agregarlos como participantes externos.</Typography>
+                      <Typography fontWeight={900} color="#17345f" mb={1.25}>2. Participantes y firmas ({meetingParticipants.filter((entry) => ['collaborator', 'participant'].includes(entry.meeting_role)).length})</Typography>
                       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                         <Autocomplete
                           fullWidth
