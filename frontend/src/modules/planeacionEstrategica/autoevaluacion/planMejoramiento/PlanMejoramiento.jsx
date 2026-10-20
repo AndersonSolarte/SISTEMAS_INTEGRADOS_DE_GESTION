@@ -866,28 +866,31 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     })
   }));
 
-  const removeObjectiveAspect = (objectiveIndex, aspectId) => setEditor((previous) => ({
-    ...previous,
-    objetivos: previous.objetivos.map((objective, index) => {
-      if (index !== objectiveIndex) return objective;
-      const selected = (objective.aspectosAutoevaluacion || []).filter((item) => String(item.id) !== String(aspectId));
-      if (!selected.length) {
-        return { ...objective, aspecto: '', calificacion: '', tipoAccion: '', origenAutoevaluacion: undefined, aspectosAutoevaluacion: [] };
-      }
-      const source = objectiveFromOpportunity(selected[0], objectiveIndex + 1);
-      const scores = selected.map((item) => Number(item.calificacion)).filter(Number.isFinite);
-      return {
-        ...objective,
-        factor: source.factor,
-        caracteristica: source.caracteristica,
-        aspecto: selected.map((item) => item.aspecto).join('\n'),
-        calificacion: scores.length ? Math.min(...scores) : '',
-        tipoAccion: scores.some((score) => score < 4) ? 'Mejoramiento' : 'Fortalecimiento',
-        origenAutoevaluacion: source.origenAutoevaluacion,
-        aspectosAutoevaluacion: selected
-      };
-    })
-  }));
+  const removeObjectiveAspect = (objectiveIndex, aspectId) => {
+    setEditor((previous) => ({
+      ...previous,
+      objetivos: previous.objetivos.map((objective, index) => {
+        if (index !== objectiveIndex) return objective;
+        const selected = (objective.aspectosAutoevaluacion || []).filter((item) => String(item.id) !== String(aspectId));
+        if (!selected.length) {
+          return { ...objective, aspecto: '', calificacion: '', tipoAccion: '', origenAutoevaluacion: undefined, aspectosAutoevaluacion: [] };
+        }
+        const source = objectiveFromOpportunity(selected[0], objectiveIndex + 1);
+        const scores = selected.map((item) => Number(item.calificacion)).filter(Number.isFinite);
+        return {
+          ...objective,
+          factor: source.factor,
+          caracteristica: source.caracteristica,
+          aspecto: selected.map((item) => item.aspecto).join('\n'),
+          calificacion: scores.length ? Math.min(...scores) : '',
+          tipoAccion: scores.some((score) => score < 4) ? 'Mejoramiento' : 'Fortalecimiento',
+          origenAutoevaluacion: source.origenAutoevaluacion,
+          aspectosAutoevaluacion: selected
+        };
+      })
+    }));
+    enqueueSnackbar('Aspecto retirado del objetivo y devuelto a la lista de pendientes.', { variant: 'info' });
+  };
 
   const availableObjectives = associationOpportunity
     ? (editor?.objetivos || []).map((objective, index) => ({ objective, index }))
