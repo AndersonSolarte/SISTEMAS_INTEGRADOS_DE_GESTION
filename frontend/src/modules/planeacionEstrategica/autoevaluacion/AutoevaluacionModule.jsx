@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Box, Button, Fade, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Fade, Paper, Stack, Typography } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
   AutoGraph as AutoGraphIcon,
@@ -8,6 +8,8 @@ import {
   TrendingUpRounded as TrendingUpIcon
 } from '@mui/icons-material';
 import Autoevaluacion from '../../../pages/Autoevaluacion';
+import { useAuth } from '../../../context/AuthContext';
+import { ROLES } from '../../../constants/roles';
 import PlanMejoramiento from './planMejoramiento/PlanMejoramiento';
 
 const cards = [
@@ -36,7 +38,11 @@ const cards = [
 function AutoevaluacionModule({ executionMode = false }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const submodule = useMemo(() => new URLSearchParams(location.search).get('submodulo') || '', [location.search]);
+  const canManageImprovementPlans = [ROLES.ADMINISTRADOR, ROLES.AUTOEVALUACION].includes(user?.role)
+    || (user?.allowedModules || []).includes('autoevaluacion.plan_mejoramiento');
+  const visibleCards = canManageImprovementPlans ? cards : cards.filter((card) => card.key !== 'plan-mejoramiento');
 
   const selectSubmodule = (key) => {
     const params = new URLSearchParams(location.search);
@@ -55,6 +61,14 @@ function AutoevaluacionModule({ executionMode = false }) {
 
   if (submodule === 'autoevaluacion') return <Autoevaluacion />;
   if (submodule === 'plan-mejoramiento') {
+    if (!canManageImprovementPlans) {
+      return (
+        <Stack spacing={2} sx={{ py: 4 }}>
+          <Alert severity="warning">La administración de planes de mejoramiento corresponde exclusivamente al equipo de Autoevaluación. Si tiene un plan asignado, ingrese desde “Ejecución Autoevaluación”.</Alert>
+          <Button startIcon={<ArrowBackIcon />} onClick={goHome} sx={{ alignSelf: 'flex-start', textTransform: 'none', fontWeight: 850 }}>Volver</Button>
+        </Stack>
+      );
+    }
     return <PlanMejoramiento onBack={goHome} />;
   }
 
@@ -81,8 +95,8 @@ function AutoevaluacionModule({ executionMode = false }) {
         <Typography variant="h5" sx={{ textAlign: 'center', color: '#0f172a', fontWeight: 950, mb: 3.5 }}>
           Seleccione un submódulo para ingresar
         </Typography>
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 3, maxWidth: 1120, mx: 'auto' }}>
-          {cards.map((card) => (
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: canManageImprovementPlans ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)' }, gap: 3, maxWidth: canManageImprovementPlans ? 1120 : 560, mx: 'auto' }}>
+          {visibleCards.map((card) => (
             <Paper
               key={card.key}
               elevation={0}

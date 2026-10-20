@@ -3,10 +3,11 @@ const path = require('path');
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const { Op } = require('sequelize');
-const { Autoevaluacion, AutoevaluacionPrograma, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission } = require('../models');
+const { Autoevaluacion, AutoevaluacionPrograma, Documento, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission } = require('../models');
 
-const ALLOWED_ROLES = new Set(['administrador', 'planeacion_estrategica', 'autoevaluacion']);
+const PLAN_MANAGER_ROLES = new Set(['administrador', 'autoevaluacion']);
 const VALID_STATES = new Set(['borrador', 'en_ejecucion', 'cerrado']);
+const ACTIONABLE_PLAN_STATES = ['asignado', 'en_ejecucion', 'devuelto'];
 const ACTIONABLE_ACTIVITY_STATES = ['asignada', 'en_ejecucion', 'devuelta'];
 const TEMPLATE_PATH = path.join(__dirname, '../templates/plan_mejoramiento_2026.xlsx');
 
@@ -36,7 +37,8 @@ const budgetItemTotal = (item = {}) => {
 const emptyActivity = (indicator = '') => ({
   nombre: '', descripcion: '', indicador: text(indicator), meta: '', fechaInicio: '', fechaFin: '', recursos: '',
   procesoResponsable: '', cargoResponsable: '', alcance: 'PROGRAMA', ejeEstrategico: '', objetivoEstrategico: '',
-  proyectoPdi: '', metaAlcanzada: '', fechaSeguimiento: '', evidencia: '', observaciones: ''
+  proyectoPdi: '', politicasInstitucionales: [], lineasAccionPolitica: [],
+  metaAlcanzada: '', fechaSeguimiento: '', evidencia: '', observaciones: ''
 });
 const opportunityFromAutoevaluacion = (row, transferMode) => ({
   id: row.id,
@@ -66,7 +68,7 @@ const opportunitiesFromObjective = (objective = {}) => {
 
 const isUnformulatedImportedObjective = (objective = {}) => {
   if (!objective?.origenAutoevaluacion?.id || !objective?.origenAutoevaluacion?.modoTraslado || text(objective.objetivo)) return false;
-  const meaningfulActivityFields = ['nombre', 'descripcion', 'meta', 'fechaInicio', 'fechaFin', 'recursos', 'procesoResponsable', 'cargoResponsable', 'ejeEstrategico', 'objetivoEstrategico', 'proyectoPdi', 'metaAlcanzada', 'fechaSeguimiento', 'evidencia', 'observaciones'];
+  const meaningfulActivityFields = ['nombre', 'descripcion', 'meta', 'fechaInicio', 'fechaFin', 'recursos', 'procesoResponsable', 'cargoResponsable', 'ejeEstrategico', 'objetivoEstrategico', 'proyectoPdi', 'politicasInstitucionales', 'lineasAccionPolitica', 'metaAlcanzada', 'fechaSeguimiento', 'evidencia', 'observaciones'];
   return !array(objective.actividades).some((activity) => meaningfulActivityFields.some((field) => text(activity?.[field])));
 };
 
@@ -119,7 +121,7 @@ const findOrCreateProgramPlan = async (programa, userId) => {
 
 const ensureAccess = async (req, res, next) => {
   try {
-    if (ALLOWED_ROLES.has(req.user?.role)) {
+    if (PLAN_MANAGER_ROLES.has(req.user?.role)) {
       req.planMejoramientoManager = true;
       return next();
     }
@@ -131,12 +133,12 @@ const ensureAccess = async (req, res, next) => {
       },
       attributes: ['module_key'], raw: true
     });
-    if (permissions.some((item) => ['autoevaluacion', 'autoevaluacion.plan_mejoramiento'].includes(item.module_key))) {
+    if (permissions.some((item) => item.module_key === 'autoevaluacion.plan_mejoramiento')) {
       req.planMejoramientoManager = true;
       return next();
     }
     const [assigned, delegated] = await Promise.all([
-      PlanMejoramientoAsignacion.count({ where: { user_id: req.user?.id, activo: true } }),
+      PlanMejoramientoAsignacion.count({ where: { user_id: req.user?.id, activo: true, estado_flujo: { [Op.in]: ACTIONABLE_PLAN_STATES } } }),
       PlanMejoramientoActividadAsignacion.count({ where: { user_id: req.user?.id, activo: true, estado_flujo: { [Op.in]: ACTIONABLE_ACTIVITY_STATES } } })
     ]);
     if (assigned > 0 || delegated > 0) {
@@ -156,7 +158,7 @@ const ensureManager = (req, res, next) => req.planMejoramientoManager
 const canAccessPlan = async (req, planId) => {
   if (!req.planExecutionOnly) return true;
   const [leader, collaborator] = await Promise.all([
-    PlanMejoramientoAsignacion.count({ where: { plan_id: planId, user_id: req.user?.id, activo: true } }),
+    PlanMejoramientoAsignacion.count({ where: { plan_id: planId, user_id: req.user?.id, activo: true, estado_flujo: { [Op.in]: ACTIONABLE_PLAN_STATES } } }),
     PlanMejoramientoActividadAsignacion.count({ where: { plan_id: planId, user_id: req.user?.id, activo: true, ...(req.planCollaboratorOnly ? { estado_flujo: { [Op.in]: ACTIONABLE_ACTIVITY_STATES } } : {}) } })
   ]);
   return Boolean(leader || collaborator);
@@ -188,25 +190,50 @@ const mergeExecutionContent = (stored = {}, incoming = {}, allowedActivityUids =
   });
 };
 
+const mergeLeaderExecutionContent = (stored = {}, incoming = {}) => ({
+  ...stored,
+  objetivos: array(incoming.objetivos),
+  presupuesto: array(incoming.presupuesto),
+  oportunidadesAutoevaluacion: array(stored.oportunidadesAutoevaluacion),
+  origen: stored.origen || incoming.origen
+});
+
 const assignmentData = async (planId) => {
   const assignment = await PlanMejoramientoAsignacion.findOne({ where: { plan_id: planId, activo: true }, order: [['id', 'DESC']], raw: true });
   const activityAssignments = await PlanMejoramientoActividadAsignacion.findAll({ where: { plan_id: planId, activo: true }, order: [['id', 'ASC']], raw: true });
   if (!assignment && !activityAssignments.length) return null;
   const userIds = Array.from(new Set([assignment?.user_id, ...activityAssignments.map((item) => item.user_id)].filter(Boolean)));
   const [users, history] = await Promise.all([
-    User.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ['id', 'nombre', 'username', 'email', 'cargo', 'dependencia', 'vicerrectoria'], raw: true }),
+    User.findAll({ where: { id: { [Op.in]: userIds }, estado: 'activo' }, attributes: ['id', 'nombre', 'username', 'email', 'cargo', 'dependencia', 'vicerrectoria'], raw: true }),
     PlanMejoramientoFlujoHistorial.findAll({ where: { plan_id: planId }, order: [['createdAt', 'ASC'], ['id', 'ASC']], raw: true })
   ]);
-  const userMap = new Map(users.map((item) => [item.id, { ...item, documento: item.username }]));
+  const userMap = new Map(users.map((item) => [String(item.id), { ...item, documento: item.username }]));
   return {
     ...assignment,
-    usuario: assignment ? userMap.get(assignment.user_id) || null : null,
+    usuario: assignment ? userMap.get(String(assignment.user_id)) || null : null,
     historial: history,
-    actividades: activityAssignments.map((item) => ({ ...item, usuario: userMap.get(item.user_id) || null }))
+    actividades: activityAssignments.map((item) => ({ ...item, usuario: userMap.get(String(item.user_id)) || null }))
   };
 };
 
-const serializeWithAssignment = async (plan) => ({ ...serialize(plan), asignacion: await assignmentData(plan.id) });
+const planStateForAssignment = (currentState, assignment) => {
+  if (assignment?.usuario?.id) return assignment.estado_flujo === 'en_firme' ? 'cerrado' : 'en_ejecucion';
+  return currentState === 'en_ejecucion' ? 'borrador' : currentState;
+};
+
+const serializeWithAssignment = async (plan) => {
+  const assignment = await assignmentData(plan.id);
+  const expectedState = planStateForAssignment(plan.estado, assignment);
+  if (expectedState !== plan.estado) {
+    try {
+      await plan.update({ estado: expectedState });
+    } catch (error) {
+      console.error(`[plan-mejoramiento] No se pudo reconciliar el estado del plan ${plan.id}:`, error.message);
+      plan.setDataValue('estado', expectedState);
+    }
+  }
+  return { ...serialize(plan), asignacion: assignment };
+};
 const ensureActivityUids = async (plan) => {
   const content = plan.contenido && typeof plan.contenido === 'object' ? plan.contenido : {};
   let changed = false;
@@ -364,7 +391,10 @@ const assignPlan = async (req, res) => {
     if (!selectedUser) return res.status(404).json({ success: false, message: 'No se encontró un usuario interno activo con ese documento' });
 
     const currentAssignment = await PlanMejoramientoAsignacion.findOne({ where: { plan_id: plan.id, activo: true } });
-    if (currentAssignment?.user_id === selectedUser.id) return res.json({ success: true, data: await assignmentData(plan.id), message: `${selectedUser.nombre} ya es el responsable de este plan` });
+    if (currentAssignment?.user_id === selectedUser.id) {
+      if (plan.estado === 'borrador') await plan.update({ estado: 'en_ejecucion', actualizado_por: req.user?.id });
+      return res.json({ success: true, data: { ...(await assignmentData(plan.id)), planEstado: plan.estado }, message: `${selectedUser.nombre} ya es el responsable de este plan` });
+    }
 
     const transaction = await PlanMejoramientoAsignacion.sequelize.transaction();
     let assignment;
@@ -393,6 +423,7 @@ const assignPlan = async (req, res) => {
         observacion: text(req.body?.observacion) || `Responsable asignado: ${selectedUser.nombre}`
       }, { transaction });
       await UserModulePermission.upsert({ user_id: selectedUser.id, module_key: 'autoevaluacion_ejecucion', can_view: true, can_manage: true }, { transaction });
+      if (plan.estado === 'borrador') await plan.update({ estado: 'en_ejecucion', actualizado_por: req.user?.id }, { transaction });
       await transaction.commit();
     } catch (error) {
       await transaction.rollback();
@@ -405,7 +436,7 @@ const assignPlan = async (req, res) => {
       ]);
       if (!remainingPlans && !remainingActivities) await UserModulePermission.update({ can_view: false, can_manage: false }, { where: { user_id: previousUserId, module_key: 'autoevaluacion_ejecucion' } });
     }
-    return res.status(201).json({ success: true, data: await assignmentData(plan.id), message: `Plan asignado a ${selectedUser.nombre}` });
+    return res.status(201).json({ success: true, data: { ...(await assignmentData(plan.id)), planEstado: plan.estado }, message: `Plan asignado a ${selectedUser.nombre} y puesto en ejecución` });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message || 'No fue posible asignar el plan' });
   }
@@ -441,6 +472,8 @@ const workflowAction = async (req, res) => {
     }
     const previousState = assignment.estado_flujo;
     await assignment.update({ estado_flujo: transition.to, ultima_observacion: observation || assignment.ultima_observacion });
+    const nextPlanState = transition.to === 'en_firme' ? 'cerrado' : transition.to === 'en_ejecucion' ? 'en_ejecucion' : null;
+    if (nextPlanState && plan.estado !== nextPlanState) await plan.update({ estado: nextPlanState, actualizado_por: req.user?.id });
     await PlanMejoramientoFlujoHistorial.create({
       asignacion_id: assignment.id,
       plan_id: plan.id,
@@ -451,7 +484,7 @@ const workflowAction = async (req, res) => {
       estado_nuevo: transition.to,
       observacion: observation || null
     });
-    return res.json({ success: true, data: await assignmentData(plan.id), message: `Plan actualizado a ${transition.to.replace(/_/g, ' ')}` });
+    return res.json({ success: true, data: { ...(await assignmentData(plan.id)), planEstado: plan.estado }, message: `Plan actualizado a ${transition.to.replace(/_/g, ' ')}` });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'No fue posible actualizar el flujo del plan' });
   }
@@ -459,7 +492,9 @@ const workflowAction = async (req, res) => {
 
 const executionBadge = async (req, res) => {
   try {
-    const where = req.planExecutionOnly ? { user_id: req.user?.id, activo: true } : { activo: true };
+    const where = req.planExecutionOnly
+      ? { user_id: req.user?.id, activo: true, estado_flujo: { [Op.in]: ACTIONABLE_PLAN_STATES } }
+      : { activo: true };
     const taskWhere = req.planCollaboratorOnly ? { ...where, estado_flujo: { [Op.in]: ACTIONABLE_ACTIVITY_STATES } } : where;
     const [rows, tasks] = await Promise.all([
       PlanMejoramientoAsignacion.findAll({ where, attributes: ['estado_flujo'], raw: true }),
@@ -690,7 +725,7 @@ const list = async (req, res) => {
     const where = {};
     if (req.planExecutionOnly) {
       const [assignments, tasks] = await Promise.all([
-        PlanMejoramientoAsignacion.findAll({ where: { user_id: req.user?.id, activo: true }, attributes: ['plan_id'], raw: true }),
+        PlanMejoramientoAsignacion.findAll({ where: { user_id: req.user?.id, activo: true, estado_flujo: { [Op.in]: ACTIONABLE_PLAN_STATES } }, attributes: ['plan_id'], raw: true }),
         PlanMejoramientoActividadAsignacion.findAll({ where: { user_id: req.user?.id, activo: true, ...(req.planCollaboratorOnly ? { estado_flujo: { [Op.in]: ACTIONABLE_ACTIVITY_STATES } } : {}) }, attributes: ['plan_id'], raw: true })
       ]);
       where.id = { [Op.in]: Array.from(new Set([...assignments, ...tasks].map((item) => item.plan_id))) };
@@ -773,7 +808,9 @@ const update = async (req, res) => {
       payload.periodo_inicio = plan.periodo_inicio;
       payload.periodo_fin = plan.periodo_fin;
       payload.estado = plan.estado;
-      payload.contenido = mergeExecutionContent(plan.contenido || {}, payload.contenido || {}, assignment ? null : new Set(delegated.filter((item) => ['asignada', 'en_ejecucion', 'devuelta'].includes(item.estado_flujo)).map((item) => String(item.actividad_uid))));
+      payload.contenido = assignment
+        ? mergeLeaderExecutionContent(plan.contenido || {}, payload.contenido || {})
+        : mergeExecutionContent(plan.contenido || {}, payload.contenido || {}, new Set(delegated.filter((item) => ['asignada', 'en_ejecucion', 'devuelta'].includes(item.estado_flujo)).map((item) => String(item.actividad_uid))));
     }
     await plan.update({ ...payload, actualizado_por: req.user?.id });
     return res.json({ success: true, data: await serializeForRequest(plan, req) });
@@ -811,6 +848,55 @@ const priceValues = (sheet, start, end, group) => {
 };
 
 const normalizeKey = (value) => text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+
+const catalogValues = (value) => {
+  if (Array.isArray(value)) return value.flatMap(catalogValues);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(catalogValues);
+  return text(value).split(/\r?\n|;|\|/).map(text).filter(Boolean);
+};
+
+const readInstitutionalPolicies = async () => {
+  try {
+    const documents = await Documento.findAll({
+      attributes: ['titulo', 'estado', 'datos_originales'],
+      where: { estado: 'vigente' },
+      order: [['titulo', 'ASC']]
+    });
+    const policies = new Map();
+    documents.forEach((document) => {
+      if (normalizeKey(document.estado) !== 'vigente') return;
+      let source = document.datos_originales && typeof document.datos_originales === 'object' ? document.datos_originales : {};
+      if (!Object.keys(source).length && typeof document.datos_originales === 'string') {
+        try { source = JSON.parse(document.datos_originales); } catch (_) { source = {}; }
+      }
+      const sheet = normalizeKey(source.hoja);
+      const policyFields = Object.entries(source).filter(([key]) => {
+        const normalized = normalizeKey(key);
+        return normalized === 'politica' || normalized === 'politica_institucional' || normalized === 'nombre_politica';
+      });
+      const isPolicyDocument = sheet === 'politicas' || policyFields.length > 0;
+      if (!isPolicyDocument) return;
+
+      const name = text(policyFields[0]?.[1] || document.titulo);
+      if (!name) return;
+      const actionLines = Object.entries(source)
+        .filter(([key]) => {
+          const normalized = normalizeKey(key);
+          return normalized.includes('linea') && normalized.includes('accion');
+        })
+        .flatMap(([, value]) => catalogValues(value));
+      const current = policies.get(name) || new Set();
+      actionLines.forEach((line) => current.add(line));
+      policies.set(name, current);
+    });
+    return Array.from(policies.entries()).map(([name, actionLines]) => ({
+      name,
+      actionLines: Array.from(actionLines).sort((a, b) => a.localeCompare(b, 'es'))
+    }));
+  } catch (_) {
+    return [];
+  }
+};
 const tariffCategories = new Set(['personal', 'activos', 'publicidad', 'papeleria', 'espacios', 'diversos']);
 const parseTariffWorkbook = (workbook) => {
   const sheet = workbook.getWorksheet('TARIFAS') || workbook.worksheets[0];
@@ -915,7 +1001,8 @@ const readCatalogs = async () => {
 const getCatalogs = async (req, res) => {
   try {
     if (!catalogsPromise) catalogsPromise = readCatalogs().catch((error) => { catalogsPromise = null; throw error; });
-    return res.json({ success: true, data: await catalogsPromise });
+    const [catalogs, institutionalPolicies] = await Promise.all([catalogsPromise, readInstitutionalPolicies()]);
+    return res.json({ success: true, data: { ...catalogs, institutionalPolicies } });
   } catch (error) {
     return res.status(500).json({ success: false, message: `No fue posible leer los catálogos de la plantilla: ${error.message}` });
   }
@@ -1020,6 +1107,98 @@ const budgetFor = (contenido, code) => array(contenido.presupuesto)
 const setCell = (sheet, address, value) => {
   const cell = sheet.getCell(address);
   cell.value = value === undefined || value === null ? '' : value;
+};
+
+const planBudgetFormula = (row) => (
+  `SUMIF(PERSONAL!H:H,PM!B${row},PERSONAL!G:G)`
+  + `+SUMIF('ADQUISICIÓN DE ACTIVOS'!H:H,PM!B${row},'ADQUISICIÓN DE ACTIVOS'!G:G)`
+  + `+SUMIF(PUBLICIDAD!H:H,PM!B${row},PUBLICIDAD!G:G)`
+  + `+SUMIF('ÚTILES Y PAPELERÍA'!H:H,PM!B${row},'ÚTILES Y PAPELERÍA'!G:G)`
+  + `+SUMIF('ESPACIOS FÍSICOS y EQUIP'!I:I,PM!B${row},'ESPACIOS FÍSICOS y EQUIP'!H:H)`
+  + `+SUMIF(DIVERSOS!H:H,PM!B${row},DIVERSOS!G:G)`
+);
+
+const fillPlanSheet = (sheet, plan, contenido, rows) => {
+  if (!sheet) throw Object.assign(new Error('La plantilla institucional no contiene la hoja PM'), { status: 500 });
+  setCell(sheet, 'E5', `${plan.periodo_inicio} - ${plan.periodo_fin}`);
+  setCell(sheet, 'E7', plan.programa);
+  setCell(sheet, 'V10', 'LINEAMIENTO ESTRATÉGICO');
+
+  const editableColumns = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'Q', 'R', 'S', 'T', 'U', 'V'];
+  for (let row = 11; row <= 140; row += 1) {
+    editableColumns.forEach((column) => setCell(sheet, `${column}${row}`, ''));
+    setCell(sheet, `P${row}`, { formula: planBudgetFormula(row), result: 0 });
+  }
+
+  rows.forEach((item, index) => {
+    const row = 11 + index;
+    const values = {
+      B: item.code,
+      C: item.factor,
+      D: item.characteristic,
+      E: item.aspect,
+      F: item.score || '',
+      G: item.actionType,
+      H: item.objective,
+      I: text(item.nombre),
+      J: text(item.descripcion),
+      K: text(item.indicador),
+      L: number(item.meta) || '',
+      M: item.fechaInicio ? new Date(item.fechaInicio) : '',
+      N: item.fechaFin ? new Date(item.fechaFin) : '',
+      O: text(item.recursos),
+      Q: text(item.procesoResponsable),
+      R: text(item.cargoResponsable),
+      S: text(item.alcance),
+      T: text(item.ejeEstrategico),
+      U: text(item.objetivoEstrategico),
+      V: text(item.proyectoPdi)
+    };
+    Object.entries(values).forEach(([column, value]) => setCell(sheet, `${column}${row}`, value));
+    setCell(sheet, `P${row}`, {
+      formula: planBudgetFormula(row),
+      result: budgetFor(contenido, item.code)
+    });
+    sheet.getCell(`M${row}`).numFmt = 'dd/mm/yyyy';
+    sheet.getCell(`N${row}`).numFmt = 'dd/mm/yyyy';
+    sheet.getCell(`P${row}`).numFmt = '$#,##0.00';
+    sheet.getRow(row).height = 60;
+  });
+};
+
+const addPolicyAlignmentSheet = (workbook, rows) => {
+  const selectedRows = rows.filter((row) => array(row.politicasInstitucionales).length || array(row.lineasAccionPolitica).length);
+  const previous = workbook.getWorksheet('POLÍTICAS Y LÍNEAS');
+  if (previous) workbook.removeWorksheet(previous.id);
+  if (!selectedRows.length) return;
+
+  const sheet = workbook.addWorksheet('POLÍTICAS Y LÍNEAS', { views: [{ state: 'frozen', ySplit: 1 }] });
+  sheet.columns = [
+    { header: 'CÓDIGO OBJETIVO', key: 'code', width: 21 },
+    { header: 'ACTIVIDAD', key: 'activity', width: 44 },
+    { header: 'OBJETIVO ESTRATÉGICO', key: 'strategicObjective', width: 48 },
+    { header: 'LINEAMIENTO ESTRATÉGICO', key: 'strategicGuideline', width: 48 },
+    { header: 'POLÍTICAS INSTITUCIONALES', key: 'policies', width: 58 },
+    { header: 'LÍNEAS DE ACCIÓN', key: 'actionLines', width: 68 }
+  ];
+  selectedRows.forEach((row) => sheet.addRow({
+    code: row.code,
+    activity: text(row.nombre),
+    strategicObjective: text(row.objetivoEstrategico),
+    strategicGuideline: text(row.proyectoPdi),
+    policies: array(row.politicasInstitucionales).map(text).filter(Boolean).join('\n'),
+    actionLines: array(row.lineasAccionPolitica).map(text).filter(Boolean).join('\n')
+  }));
+  sheet.getRow(1).eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  });
+  sheet.eachRow((row, index) => {
+    row.alignment = { vertical: 'top', wrapText: true };
+    if (index > 1) row.height = 48;
+  });
+  sheet.autoFilter = `A1:F${Math.max(2, sheet.rowCount)}`;
 };
 
 const fillBudgetSheets = (workbook, contenido) => {
@@ -1178,58 +1357,47 @@ const addBudgetSummarySheet = (workbook, contenido) => {
   sheet.autoFilter = `A1:H${Math.max(2, totalRow.number - 1)}`;
 };
 
+const buildPlanMejoramientoWorkbook = async (plan, templatePath = TEMPLATE_PATH) => {
+  if (!fs.existsSync(templatePath)) {
+    throw Object.assign(new Error('No se encontró la plantilla institucional de exportación'), { status: 500 });
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(templatePath);
+  const contenido = plan.contenido || {};
+  const rows = activityRows(contenido);
+  if (rows.length > 130) {
+    throw Object.assign(new Error('La plantilla admite hasta 130 actividades por archivo de exportación'), { status: 422 });
+  }
+
+  fillPlanSheet(workbook.getWorksheet('PM'), plan, contenido, rows);
+  fillBudgetSheets(workbook, contenido);
+  const perObjectiveSheet = workbook.getWorksheet('Presupuesto x Objetivo');
+  if (perObjectiveSheet) setCell(perObjectiveSheet, 'H8', rows[0]?.code || '');
+  addFollowUpSheet(workbook, rows);
+  addBudgetSummarySheet(workbook, contenido);
+  addPolicyAlignmentSheet(workbook, rows);
+  workbook.calcProperties.fullCalcOnLoad = true;
+  workbook.calcProperties.forceFullCalc = true;
+  workbook.calcProperties.calcMode = 'auto';
+  return workbook;
+};
+
 const exportExcel = async (req, res) => {
   try {
     if (req.planCollaboratorOnly) return res.status(403).json({ success: false, message: 'El colaborador solo puede consultar y entregar las actividades asignadas' });
     const plan = await PlanMejoramiento.findByPk(req.params.id);
     if (!plan) return res.status(404).json({ success: false, message: 'Plan de mejoramiento no encontrado' });
     if (!(await canAccessPlan(req, plan.id))) return res.status(403).json({ success: false, message: 'Este plan no está asignado a tu usuario' });
-    if (!fs.existsSync(TEMPLATE_PATH)) {
-      return res.status(500).json({ success: false, message: 'No se encontró la plantilla institucional de exportación' });
-    }
-
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(TEMPLATE_PATH);
-    const sheet = workbook.getWorksheet('PM');
-    const contenido = plan.contenido || {};
-    const rows = activityRows(contenido);
-    if (rows.length > 130) {
-      return res.status(422).json({ success: false, message: 'La plantilla admite hasta 130 actividades por archivo de exportación' });
-    }
-    setCell(sheet, 'E5', `${plan.periodo_inicio} - ${plan.periodo_fin}`);
-    setCell(sheet, 'E7', plan.programa);
-
-    for (let row = 11; row <= 140; row += 1) {
-      ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'Q', 'R', 'S', 'T', 'U', 'V'].forEach((column) => setCell(sheet, `${column}${row}`, ''));
-    }
-    rows.forEach((item, index) => {
-      const row = 11 + index;
-      const values = [item.code, item.factor, item.characteristic, item.aspect, item.score || '', item.actionType,
-        item.objective, text(item.nombre), text(item.descripcion), text(item.indicador), number(item.meta) || '',
-        item.fechaInicio ? new Date(item.fechaInicio) : '', item.fechaFin ? new Date(item.fechaFin) : '', text(item.recursos),
-        budgetFor(contenido, item.code), text(item.procesoResponsable), text(item.cargoResponsable), text(item.alcance),
-        text(item.ejeEstrategico), text(item.objetivoEstrategico), text(item.proyectoPdi)];
-      values.forEach((value, offset) => setCell(sheet, `${String.fromCharCode(66 + offset)}${row}`, value));
-      sheet.getCell(`M${row}`).numFmt = 'dd/mm/yyyy';
-      sheet.getCell(`N${row}`).numFmt = 'dd/mm/yyyy';
-      sheet.getCell(`P${row}`).numFmt = '$#,##0.00';
-      sheet.getRow(row).height = 60;
-    });
-
-    fillBudgetSheets(workbook, contenido);
-    const perObjectiveSheet = workbook.getWorksheet('Presupuesto x Objetivo');
-    if (perObjectiveSheet) setCell(perObjectiveSheet, 'H8', rows[0]?.code || '');
-    addFollowUpSheet(workbook, rows);
-    addBudgetSummarySheet(workbook, contenido);
-    workbook.calcProperties.fullCalcOnLoad = true;
+    const workbook = await buildPlanMejoramientoWorkbook(plan);
     const safeName = plan.programa.replace(/[^a-z0-9áéíóúñ_-]+/gi, '_').slice(0, 70);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="Plan_mejoramiento_${safeName}_${plan.periodo_inicio}_${plan.periodo_fin}.xlsx"`);
     await workbook.xlsx.write(res);
     return res.end();
   } catch (error) {
-    return res.status(500).json({ success: false, message: `No fue posible generar el Excel: ${error.message}` });
+    return res.status(error.status || 500).json({ success: false, message: `No fue posible generar el Excel: ${error.message}` });
   }
 };
 
-module.exports = { ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, exportExcel };
+module.exports = { ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, exportExcel, buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, planStateForAssignment };

@@ -45,7 +45,8 @@ const emptyActivity = () => ({
   nombre: '', descripcion: '', indicador: '', meta: '', fechaInicio: '', fechaFin: '', recursos: '',
   procesoResponsable: '', responsableId: null, responsableNombre: '', responsableDocumento: '', responsableEmail: '',
   responsableDependencia: '', responsableVicerrectoria: '', cargoResponsable: '', alcance: 'PROGRAMA', ejeEstrategico: '', objetivoEstrategico: '',
-  proyectoPdi: '', metaAlcanzada: '', fechaSeguimiento: '', evidencia: '', observaciones: '', verificacionSeguimiento: 'pendiente', seguimientos: []
+  proyectoPdi: '', politicasInstitucionales: [], lineasAccionPolitica: [],
+  metaAlcanzada: '', fechaSeguimiento: '', evidencia: '', observaciones: '', verificacionSeguimiento: 'pendiente', seguimientos: []
 });
 const emptyObjective = (number) => ({
   codigo: `OPM_${String(number).padStart(2, '0')}`, factor: '', caracteristica: '', aspecto: '', calificacion: '',
@@ -92,6 +93,8 @@ const planSnapshot = (plan) => JSON.stringify(buildPlanPayload(plan));
 
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const withCurrent = (options = [], current = '') => current && !options.includes(current) ? [current, ...options] : options;
+const asStringArray = (value) => Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
+const withCurrentMany = (options = [], current = []) => Array.from(new Set([...(options || []), ...asStringArray(current)]));
 const percent = (activity) => {
   const goal = Number(activity.meta || 0);
   return goal > 0 ? Math.min(100, Math.max(0, (Number(activity.metaAlcanzada || 0) / goal) * 100)) : 0;
@@ -126,9 +129,10 @@ const planStats = (plan) => {
 };
 const statusTone = (status) => ({
   borrador: { label: 'Borrador', color: '#2563eb', soft: '#eff6ff', border: '#bfdbfe' },
-  en_ejecucion: { label: 'En ejecución', color: '#d97706', soft: '#fff7ed', border: '#fed7aa' },
-  cerrado: { label: 'Cerrado', color: '#047857', soft: '#ecfdf5', border: '#a7f3d0' }
+  en_ejecucion: { label: 'En ejecución', color: '#047857', soft: '#ecfdf5', border: '#a7f3d0' },
+  cerrado: { label: 'Cerrado', color: '#475569', soft: '#f1f5f9', border: '#cbd5e1' }
 }[status] || { label: status || 'Sin estado', color: '#475569', soft: '#f1f5f9', border: '#cbd5e1' });
+const visiblePlanState = (plan) => !plan?.asignacion?.usuario && plan?.estado === 'en_ejecucion' ? 'borrador' : plan?.estado;
 const saveTone = (status) => ({
   pending: { label: 'Cambios pendientes', color: '#b45309', soft: '#fff7ed', border: '#fed7aa' },
   saving: { label: 'Guardando…', color: '#1d4ed8', soft: '#eff6ff', border: '#bfdbfe' },
@@ -152,7 +156,7 @@ function Metric({ icon, label, value, color }) {
   );
 }
 
-function ResponsibleAutocomplete({ activity, onChange, label = 'Responsable (nombre o cédula)', helperText = '' }) {
+function ResponsibleAutocomplete({ activity, onChange, label = 'Responsable (nombre o cédula)', helperText = '', size = 'medium' }) {
   const [inputValue, setInputValue] = useState(activity.responsableNombre || activity.responsableDocumento || '');
   const [options, setOptions] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -233,6 +237,7 @@ function ResponsibleAutocomplete({ activity, onChange, label = 'Responsable (nom
       renderInput={(params) => (
         <TextField
           {...params}
+          size={size}
           label={label}
           placeholder="Digite nombre o número de documento"
           helperText={helperText}
@@ -254,6 +259,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [opportunities, setOpportunities] = useState([]);
   const [loadingOpportunities, setLoadingOpportunities] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exportingPlanId, setExportingPlanId] = useState(null);
   const [saveStatus, setSaveStatus] = useState('saved');
   const [autoSaveNonce, setAutoSaveNonce] = useState(0);
   const [tariffYear, setTariffYear] = useState(currentYear);
@@ -264,10 +270,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [activityWorkflowObservations, setActivityWorkflowObservations] = useState({});
   const [correctionResponses, setCorrectionResponses] = useState({});
   const [workflowBusy, setWorkflowBusy] = useState(false);
+  const [improvementSearch, setImprovementSearch] = useState('');
+  const [associationOpportunity, setAssociationOpportunity] = useState(null);
+  const [associationObjectiveIndex, setAssociationObjectiveIndex] = useState('new');
+  const [evidenceOpportunity, setEvidenceOpportunity] = useState(null);
   const [editor, setEditor] = useState(null);
   const [assignmentPlan, setAssignmentPlan] = useState(null);
   const [tab, setTab] = useState(0);
   const [expandedObjective, setExpandedObjective] = useState(null);
+  const [expandedTraceability, setExpandedTraceability] = useState(false);
   const [expandedFollowUpObjective, setExpandedFollowUpObjective] = useState(0);
   const [expandedFollowUpActivity, setExpandedFollowUpActivity] = useState(null);
   const editorRef = useRef(null);
@@ -319,10 +330,10 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     gestionInformacionService.getAutoevaluacionDashboard({ programa: program })
       .then((response) => {
         if (!active) return;
-        const critical = (response?.data?.aspectos || [])
-          .filter((item) => Number.isFinite(Number(item.calificacion)) && Number(item.calificacion) < 4)
+        const evaluated = (response?.data?.aspectos || [])
+          .filter((item) => Number.isFinite(Number(item.calificacion)))
           .sort((a, b) => Number(a.calificacion) - Number(b.calificacion));
-        setOpportunities(critical);
+        setOpportunities(evaluated);
       })
       .catch(() => { if (active) setOpportunities([]); })
       .finally(() => { if (active) setLoadingOpportunities(false); });
@@ -352,6 +363,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             actividades: (objective.actividades?.length ? objective.actividades : [emptyActivity()]).map((activity) => ({
               ...activity,
               uid: activity.uid || makeLocalId(),
+              politicasInstitucionales: asStringArray(activity.politicasInstitucionales),
+              lineasAccionPolitica: asStringArray(activity.lineasAccionPolitica),
               verificacionSeguimiento: activity.verificacionSeguimiento || 'pendiente',
               seguimientos: activity.seguimientos || []
             }))
@@ -365,9 +378,10 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       setSaveStatus('saved');
       setEditor(nextEditor);
       setExpandedObjective(null);
+      setExpandedTraceability(false);
       setExpandedFollowUpObjective(0);
       setExpandedFollowUpActivity(nextEditor.objetivos?.[0]?.actividades?.[0]?.uid || null);
-      setTab(executionMode ? 3 : 0);
+      setTab(executionMode ? (row.asignacion?.esColaborador ? 4 : 2) : 0);
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible abrir el plan', { variant: 'error' }); }
   };
 
@@ -442,6 +456,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     lastSavedSnapshotRef.current = planSnapshot(plan);
     setSaveStatus('saved');
     setEditor(plan);
+    setExpandedTraceability(false);
   };
 
   const remove = async (id) => {
@@ -450,14 +465,52 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar el plan', { variant: 'error' }); }
   };
 
-  const exportExcel = async (id, name = 'plan_mejoramiento') => {
+  const waitForSaveIdle = useCallback(() => new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const check = () => {
+      if (!saveInFlightRef.current) return resolve();
+      if (Date.now() - startedAt > 30000) return reject(new Error('El autoguardado está tardando demasiado. Inténtelo nuevamente.'));
+      return window.setTimeout(check, 80);
+    };
+    check();
+  }), []);
+
+  const flushCurrentPlanForExport = useCallback(async () => {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await waitForSaveIdle();
+      const current = editorRef.current;
+      if (!current?.programa?.trim()) throw new Error('Ingrese el programa o dependencia antes de exportar.');
+      const currentSnapshot = planSnapshot(current);
+      if (current.id && currentSnapshot === lastSavedSnapshotRef.current) return current.id;
+      const saved = await persistPlan(current);
+      await waitForSaveIdle();
+      const latest = editorRef.current;
+      if (latest?.id && planSnapshot(latest) === lastSavedSnapshotRef.current) return latest.id;
+      if (!saved && saveStatus === 'error') break;
+    }
+    throw new Error('No fue posible guardar todos los cambios antes de generar el Excel.');
+  }, [persistPlan, saveStatus, waitForSaveIdle]);
+
+  const exportExcel = async (id, name = 'plan_mejoramiento', syncCurrentPlan = false) => {
+    if (exportingPlanId !== null) return;
+    setExportingPlanId(id || 'current');
     try {
-      const response = await planMejoramientoService.exportExcel(id);
+      const exportId = syncCurrentPlan ? await flushCurrentPlanForExport() : id;
+      if (!exportId) throw new Error('Guarde el plan antes de exportarlo.');
+      const response = await planMejoramientoService.exportExcel(exportId);
       const url = URL.createObjectURL(response.data);
       const link = document.createElement('a');
       link.href = url; link.download = `Plan_mejoramiento_${name.replace(/\s+/g, '_')}.xlsx`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
-      enqueueSnackbar('Excel institucional generado correctamente', { variant: 'success' });
-    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible exportar el Excel', { variant: 'error' }); }
+      enqueueSnackbar('Excel institucional actualizado y generado correctamente', { variant: 'success' });
+    } catch (error) {
+      let message = error.response?.data?.message || error.message;
+      if (error.response?.data instanceof Blob) {
+        try { message = JSON.parse(await error.response.data.text())?.message || message; } catch (_) {}
+      }
+      enqueueSnackbar(message || 'No fue posible exportar el Excel', { variant: 'error' });
+    } finally {
+      setExportingPlanId(null);
+    }
   };
 
   const updateObjective = (index, key, value) => setEditor((previous) => ({ ...previous, objetivos: previous.objetivos.map((item, i) => i === index ? { ...item, [key]: value } : item) }));
@@ -465,6 +518,28 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     ...previous,
     objetivos: previous.objetivos.map((objective, oi) => oi !== objectiveIndex ? objective : {
       ...objective, actividades: objective.actividades.map((activity, ai) => ai === activityIndex ? { ...activity, [key]: value } : activity)
+    })
+  }));
+  const policyActionLines = (selectedPolicies = []) => {
+    const selected = new Set(asStringArray(selectedPolicies));
+    return Array.from(new Set((catalogs.institutionalPolicies || [])
+      .filter((policy) => selected.has(policy.name))
+      .flatMap((policy) => policy.actionLines || [])));
+  };
+  const updateActivityPolicies = (objectiveIndex, activityIndex, selectedPolicies) => setEditor((previous) => ({
+    ...previous,
+    objetivos: previous.objetivos.map((objective, oi) => oi !== objectiveIndex ? objective : {
+      ...objective,
+      actividades: objective.actividades.map((activity, ai) => {
+        if (ai !== activityIndex) return activity;
+        const policies = asStringArray(selectedPolicies);
+        const availableLines = new Set(policyActionLines(policies));
+        return {
+          ...activity,
+          politicasInstitucionales: policies,
+          lineasAccionPolitica: asStringArray(activity.lineasAccionPolitica).filter((line) => availableLines.has(line))
+        };
+      })
     })
   }));
   const updateActivityResponsible = (objectiveIndex, activityIndex, user) => setEditor((previous) => ({
@@ -614,7 +689,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     setWorkflowBusy(true);
     try {
       const response = await planMejoramientoService.assignPlan(editor.id, { userId: user.id, documento: user.documento });
-      setEditor((previous) => ({ ...previous, asignacion: response.data }));
+      setEditor((previous) => ({ ...previous, estado: response.data?.planEstado || previous.estado, asignacion: response.data }));
       enqueueSnackbar(response.message || 'Responsable de ejecución asignado', { variant: 'success' });
       await loadPlans();
     } catch (error) {
@@ -643,7 +718,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     setWorkflowBusy(true);
     try {
       const response = await planMejoramientoService.workflowAction(editor.id, { accion: action, observacion: workflowObservation });
-      setEditor((previous) => ({ ...previous, asignacion: response.data }));
+      setEditor((previous) => ({ ...previous, estado: response.data?.planEstado || previous.estado, asignacion: response.data }));
       setWorkflowObservation('');
       enqueueSnackbar(response.message || 'Flujo actualizado', { variant: 'success' });
     } catch (error) {
@@ -734,17 +809,18 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     return Array.from(map.values());
   }, [editor?.oportunidadesAutoevaluacion, opportunities]);
 
-  const availableOpportunities = (objectiveIndex) => {
-    const usedIds = new Set((editor?.objetivos || [])
-      .filter((_, index) => index !== objectiveIndex)
-      .flatMap((item) => item.aspectosAutoevaluacion?.length
-        ? item.aspectosAutoevaluacion.map((aspect) => String(aspect.id))
-        : [String(item.origenAutoevaluacion?.id || '')])
-      .filter(Boolean));
-    return planOpportunities.filter((item) => !usedIds.has(String(item.id)));
+  const assignedOpportunityIds = () => new Set((editor?.objetivos || [])
+    .flatMap((item) => item.aspectosAutoevaluacion?.length
+      ? item.aspectosAutoevaluacion.map((aspect) => String(aspect.id))
+      : [String(item.origenAutoevaluacion?.id || '')])
+    .filter(Boolean));
+
+  const pendingOpportunities = () => {
+    const assignedIds = assignedOpportunityIds();
+    return planOpportunities.filter((item) => !assignedIds.has(String(item.id)));
   };
 
-  const aspectOptionsForObjective = (objectiveIndex, objective) => availableOpportunities(objectiveIndex)
+  const aspectOptionsForObjective = (objective) => pendingOpportunities()
     .filter((item) => item.factor === objective.factor && item.caracteristica === objective.caracteristica);
 
   const changeObjectiveFactor = (objectiveIndex, factor) => setEditor((previous) => ({
@@ -761,12 +837,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       : item)
   }));
 
-  const assignObjectiveAspects = (objectiveIndex, selectedIds) => setEditor((previous) => ({
+  const addObjectiveAspects = (objectiveIndex, selectedIds) => setEditor((previous) => ({
     ...previous,
     objetivos: previous.objetivos.map((objective, index) => {
       if (index !== objectiveIndex) return objective;
-      const selected = availableOpportunities(objectiveIndex).filter((item) => selectedIds.includes(String(item.id)));
-      if (!selected.length) return { ...objective, aspecto: '', calificacion: '', tipoAccion: '', origenAutoevaluacion: undefined, aspectosAutoevaluacion: [] };
+      const current = objective.aspectosAutoevaluacion || [];
+      const currentIds = new Set(current.map((item) => String(item.id)));
+      const additions = planOpportunities.filter((item) => selectedIds.includes(String(item.id)) && !currentIds.has(String(item.id)));
+      const selected = [...current, ...additions];
+      if (!selected.length) return objective;
       const source = objectiveFromOpportunity(selected[0], objectiveIndex + 1);
       const scores = selected.map((item) => Number(item.calificacion)).filter(Number.isFinite);
       const activities = objective.actividades?.length ? [...objective.actividades] : [emptyActivity()];
@@ -785,14 +864,87 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     })
   }));
 
-  const opportunityStatus = useMemo(() => {
-    if (!editor) return { imported: 0, pending: [] };
-    const importedIds = new Set((editor.oportunidadesAutoevaluacion || []).map((item) => String(item.id)).filter(Boolean));
-    return {
-      imported: opportunities.filter((item) => importedIds.has(String(item.id))).length,
-      pending: opportunities.filter((item) => !importedIds.has(String(item.id)))
-    };
-  }, [editor, opportunities]);
+  const removeObjectiveAspect = (objectiveIndex, aspectId) => setEditor((previous) => ({
+    ...previous,
+    objetivos: previous.objetivos.map((objective, index) => {
+      if (index !== objectiveIndex) return objective;
+      const selected = (objective.aspectosAutoevaluacion || []).filter((item) => String(item.id) !== String(aspectId));
+      if (!selected.length) {
+        return { ...objective, aspecto: '', calificacion: '', tipoAccion: '', origenAutoevaluacion: undefined, aspectosAutoevaluacion: [] };
+      }
+      const source = objectiveFromOpportunity(selected[0], objectiveIndex + 1);
+      const scores = selected.map((item) => Number(item.calificacion)).filter(Number.isFinite);
+      return {
+        ...objective,
+        factor: source.factor,
+        caracteristica: source.caracteristica,
+        aspecto: selected.map((item) => item.aspecto).join('\n'),
+        calificacion: scores.length ? Math.min(...scores) : '',
+        tipoAccion: scores.some((score) => score < 4) ? 'Mejoramiento' : 'Fortalecimiento',
+        origenAutoevaluacion: source.origenAutoevaluacion,
+        aspectosAutoevaluacion: selected
+      };
+    })
+  }));
+
+  const compatibleObjectives = associationOpportunity ? (editor?.objetivos || [])
+    .map((objective, index) => ({ objective, index }))
+    .filter(({ objective }) => {
+      const selected = objective.aspectosAutoevaluacion || [];
+      if (!selected.length && !objective.factor && !objective.caracteristica) return true;
+      return objective.factor === associationOpportunity.factor && objective.caracteristica === associationOpportunity.caracteristica;
+    }) : [];
+
+  const openObjectiveAssociation = (opportunity) => {
+    const compatibleIndex = (editor?.objetivos || []).findIndex((objective) => {
+      const selected = objective.aspectosAutoevaluacion || [];
+      if (!selected.length && !objective.factor && !objective.caracteristica) return true;
+      return objective.factor === opportunity.factor && objective.caracteristica === opportunity.caracteristica;
+    });
+    setAssociationOpportunity(opportunity);
+    setAssociationObjectiveIndex(compatibleIndex >= 0 ? String(compatibleIndex) : 'new');
+  };
+
+  const associateOpportunityToObjective = () => {
+    if (!associationOpportunity) return;
+    setEditor((previous) => {
+      const objectives = [...(previous.objetivos || [])];
+      const selectedIndex = associationObjectiveIndex === 'new' ? objectives.length : Number(associationObjectiveIndex);
+      const currentObjective = objectives[selectedIndex] || emptyObjective(selectedIndex + 1);
+      const currentAspects = currentObjective.aspectosAutoevaluacion || [];
+      if (currentAspects.some((item) => String(item.id) === String(associationOpportunity.id))) return previous;
+      const selected = [...currentAspects, associationOpportunity];
+      const source = objectiveFromOpportunity(selected[0], selectedIndex + 1);
+      const scores = selected.map((item) => Number(item.calificacion)).filter(Number.isFinite);
+      const activities = currentObjective.actividades?.length ? [...currentObjective.actividades] : [emptyActivity()];
+      activities[0] = {
+        ...activities[0],
+        indicador: selected.map((item) => item.indicador).filter(Boolean).join(' | ') || activities[0].indicador || ''
+      };
+      objectives[selectedIndex] = {
+        ...currentObjective,
+        factor: source.factor,
+        caracteristica: source.caracteristica,
+        aspecto: selected.map((item) => item.aspecto).join('\n'),
+        calificacion: scores.length ? Math.min(...scores) : '',
+        tipoAccion: scores.some((score) => score < 4) ? 'Mejoramiento' : 'Fortalecimiento',
+        origenAutoevaluacion: source.origenAutoevaluacion,
+        aspectosAutoevaluacion: selected,
+        actividades: activities
+      };
+      return { ...previous, objetivos: objectives };
+    });
+    enqueueSnackbar('Aspecto asociado al objetivo. Ya no aparece en la lista de pendientes.', { variant: 'success' });
+    setAssociationOpportunity(null);
+    setAssociationObjectiveIndex('new');
+  };
+
+  const filteredImprovementOpportunities = pendingOpportunities().filter((item) => {
+    const query = improvementSearch.trim().toLocaleLowerCase('es');
+    if (!query) return true;
+    return [item.factor, item.caracteristica, item.aspecto, item.indicador]
+      .some((value) => String(value || '').toLocaleLowerCase('es').includes(query));
+  });
 
   if (!editor) {
     return (
@@ -818,13 +970,13 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   '&:hover': { transform: 'translateY(-5px)', borderColor: '#93c5fd', boxShadow: '0 22px 48px rgba(37,99,235,.11)' }
                 }}
               >
-                <Box sx={{ height: 6, background: `linear-gradient(90deg, ${statusTone(plan.estado).color}, #38bdf8)` }} />
+                <Box sx={{ height: 6, background: `linear-gradient(90deg, ${statusTone(visiblePlanState(plan)).color}, #38bdf8)` }} />
                 <Box sx={{ p: { xs: 2.4, md: 3 } }}>
                   <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
                     <Stack direction="row" spacing={1.7} alignItems="center" sx={{ minWidth: 0 }}>
                       <Box sx={{ width: 54, height: 54, borderRadius: 3, display: 'grid', placeItems: 'center', color: '#1d4ed8', bgcolor: '#eff6ff', border: '1px solid #dbeafe', flexShrink: 0 }}><ProgramIcon sx={{ fontSize: 30 }} /></Box>
                       <Box sx={{ minWidth: 0 }}>
-                        <Stack direction="row" spacing={0.7} sx={{ mb: 1 }}><Chip size="small" label={statusTone(plan.estado).label} sx={{ height: 24, fontWeight: 900, bgcolor: statusTone(plan.estado).soft, color: statusTone(plan.estado).color, border: `1px solid ${statusTone(plan.estado).border}` }} />{plan.asignacion && <Chip size="small" label={workflowTone(plan.asignacion.estado_flujo).label} color={workflowTone(plan.asignacion.estado_flujo).color} sx={{ height: 24, fontWeight: 850 }} />}</Stack>
+                        <Stack direction="row" spacing={0.7} sx={{ mb: 1 }}><Chip size="small" label={statusTone(visiblePlanState(plan)).label} sx={{ height: 24, fontWeight: 900, bgcolor: statusTone(visiblePlanState(plan)).soft, color: statusTone(visiblePlanState(plan)).color, border: `1px solid ${statusTone(visiblePlanState(plan)).border}` }} /></Stack>
                         <Typography variant="h6" sx={{ fontWeight: 950, color: '#0f172a', lineHeight: 1.25, textTransform: 'uppercase' }}>{plan.programa}</Typography>
                         <Stack direction="row" spacing={0.7} alignItems="center" sx={{ mt: 0.7, color: '#64748b' }}><CalendarIcon sx={{ fontSize: 17 }} /><Typography variant="body2" sx={{ fontWeight: 700 }}>{plan.periodo_inicio} – {plan.periodo_fin}</Typography></Stack>
                       </Box>
@@ -869,7 +1021,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
                   <Stack direction="row" spacing={1.2}>
                     <Button fullWidth variant="contained" startIcon={<EditIcon />} onClick={() => openPlan(plan.id)} sx={{ py: 1.15, borderRadius: 2.7, textTransform: 'none', fontWeight: 900, boxShadow: '0 7px 18px rgba(37,99,235,.18)' }}>Abrir plan</Button>
-                    {!plan.asignacion?.esColaborador && <Button fullWidth variant="outlined" startIcon={<DownloadIcon />} onClick={() => exportExcel(plan.id, plan.programa)} sx={{ py: 1.15, borderRadius: 2.7, textTransform: 'none', fontWeight: 900, bgcolor: 'white' }}>Exportar Excel</Button>}
+                    {!plan.asignacion?.esColaborador && <Button fullWidth variant="outlined" disabled={exportingPlanId !== null} startIcon={exportingPlanId === plan.id ? <CircularProgress size={18} /> : <DownloadIcon />} onClick={() => exportExcel(plan.id, plan.programa)} sx={{ py: 1.15, borderRadius: 2.7, textTransform: 'none', fontWeight: 900, bgcolor: 'white' }}>{exportingPlanId === plan.id ? 'Generando…' : 'Exportar Excel'}</Button>}
                   </Stack>
                 </Box>
               </Paper>
@@ -927,7 +1079,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               </Stack>
             </Box>
           </Stack>
-          <Stack direction="row" spacing={1}>{!collaboratorMode && <Button disabled={!editor.id} startIcon={<DownloadIcon />} onClick={() => exportExcel(editor.id, editor.programa)} sx={{ textTransform: 'none', fontWeight: 850 }}>Exportar Excel</Button>}<Button variant="contained" disabled={saving || executionLocked} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={save} sx={{ textTransform: 'none', fontWeight: 900 }}>{saving ? 'Guardando…' : 'Guardar ahora'}</Button></Stack>
+          <Stack direction="row" spacing={1}>{!collaboratorMode && <Button disabled={!editor.id || exportingPlanId !== null} startIcon={exportingPlanId !== null ? <CircularProgress size={18} /> : <DownloadIcon />} onClick={() => exportExcel(editor.id, editor.programa, true)} sx={{ textTransform: 'none', fontWeight: 850 }}>{exportingPlanId !== null ? 'Actualizando Excel…' : 'Exportar Excel'}</Button>}<Button variant="contained" disabled={saving || executionLocked} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={save} sx={{ textTransform: 'none', fontWeight: 900 }}>{saving ? 'Guardando…' : 'Guardar ahora'}</Button></Stack>
         </Stack>
       </Paper>
 
@@ -939,22 +1091,28 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       </Box>
 
       {editor.id && (
-        <Paper elevation={0} sx={{ p: 1.7, mb: 1.5, borderRadius: 3, border: '1px solid #cbd5e1', bgcolor: '#fff', flexShrink: 0 }}>
-          <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" spacing={2} alignItems={{ lg: 'center' }}>
-            <Box>
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>Responsable y control del flujo</Typography>
-                <Chip size="small" label={workflowTone(workflowState).label} color={workflowTone(workflowState).color} sx={{ fontWeight: 850 }} />
-              </Stack>
-              <Typography variant="body2" sx={{ color: '#64748b', mt: 0.4 }}>
-                {assignedUser ? `${assignedUser.nombre} · CC ${assignedUser.documento || 'sin documento'} · ${assignedUser.cargo || 'cargo no registrado'}` : 'El plan todavía no tiene responsable de ejecución asignado.'}
-              </Typography>
-              {editor.asignacion?.ultima_observacion && <Typography variant="caption" sx={{ color: '#9a3412', fontWeight: 750 }}>Última observación: {editor.asignacion.ultima_observacion}</Typography>}
-            </Box>
+        <Paper elevation={0} sx={{ p: 1.25, mb: 1.5, borderRadius: 3, border: '1px solid #dbe3ee', bgcolor: '#fff', flexShrink: 0, boxShadow: '0 5px 18px rgba(15,23,42,.035)' }}>
+          <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" spacing={1.5} alignItems={{ lg: 'center' }}>
+            <Stack direction="row" spacing={1.2} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+              <Box sx={{ width: 38, height: 38, borderRadius: 2.2, flexShrink: 0, display: 'grid', placeItems: 'center', bgcolor: assignedUser ? '#ecfdf5' : '#f1f5f9', color: assignedUser ? '#047857' : '#64748b', border: `1px solid ${assignedUser ? '#a7f3d0' : '#e2e8f0'}` }}>
+                <PersonIcon sx={{ fontSize: 21 }} />
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Stack direction="row" spacing={0.8} alignItems="center" flexWrap="wrap">
+                  <Typography variant="caption" sx={{ fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.03em' }}>Responsable de ejecución</Typography>
+                  <Chip size="small" label={workflowTone(workflowState).label} color={workflowTone(workflowState).color} sx={{ height: 22, fontWeight: 850 }} />
+                </Stack>
+                <Typography variant="body2" noWrap title={assignedUser?.nombre || ''} sx={{ mt: 0.15, color: '#0f172a', fontWeight: 900 }}>
+                  {assignedUser?.nombre || 'Sin responsable asignado'}
+                </Typography>
+                <Typography variant="caption" noWrap sx={{ display: 'block', color: '#64748b' }}>
+                  {assignedUser ? [assignedUser.documento && `CC ${assignedUser.documento}`, assignedUser.cargo].filter(Boolean).join(' · ') : 'Asigne un responsable para iniciar la ejecución del plan.'}
+                </Typography>
+              </Box>
+            </Stack>
             {!executionMode && (
-              <Box sx={{ width: { xs: '100%', lg: 470 } }}>
-                <ResponsibleAutocomplete activity={assignmentResponsible} onChange={assignExecutionResponsible} />
-                <Typography variant="caption" sx={{ color: '#64748b' }}>Al asignar, se habilita automáticamente “Ejecución Autoevaluación” en el SIAC del usuario.</Typography>
+              <Box sx={{ width: { xs: '100%', lg: 430 }, flexShrink: 0 }}>
+                <ResponsibleAutocomplete size="small" activity={assignmentResponsible} onChange={assignExecutionResponsible} label="Asignar o reasignar responsable" />
               </Box>
             )}
             {executionMode && !collaboratorMode && (
@@ -966,7 +1124,18 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               </Stack>
             )}
             {executionMode && collaboratorMode && <Alert severity="info" sx={{ py: 0 }}>Vista de colaborador: gestione únicamente las actividades que el líder le delegó.</Alert>}
+            {(editor.asignacion?.historial || []).length > 0 && (
+              <Button
+                size="small"
+                onClick={() => setExpandedTraceability((current) => !current)}
+                endIcon={<ExpandMoreIcon sx={{ transform: expandedTraceability ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />}
+                sx={{ minWidth: 'max-content', color: '#475569', textTransform: 'none', fontWeight: 850 }}
+              >
+                Historial ({editor.asignacion.historial.length})
+              </Button>
+            )}
           </Stack>
+          {editor.asignacion?.ultima_observacion && <Typography variant="caption" sx={{ display: 'block', mt: 0.6, ml: { lg: 6.2 }, color: '#9a3412', fontWeight: 750 }}>Última observación: {editor.asignacion.ultima_observacion}</Typography>}
           {!executionMode && workflowState === 'en_revision' && (
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} sx={{ mt: 1.5 }}>
               <TextField fullWidth size="small" label="Observación de la revisión" value={workflowObservation} onChange={(event) => setWorkflowObservation(event.target.value)} />
@@ -980,14 +1149,13 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               <Button color="warning" variant="outlined" disabled={workflowBusy} onClick={() => executeWorkflowAction('reabrir')} sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}>Reabrir ejecución</Button>
             </Stack>
           )}
-          {(editor.asignacion?.historial || []).length > 0 && (
-            <Box sx={{ mt: 1.3, pt: 1.1, borderTop: '1px solid #e2e8f0' }}>
-              <Typography variant="caption" sx={{ fontWeight: 900, color: '#475569' }}>Trazabilidad del flujo</Typography>
-              <Stack direction="row" spacing={0.8} sx={{ mt: 0.7, overflowX: 'auto', pb: 0.3 }}>
-                {editor.asignacion.historial.map((item) => <Chip key={item.id} size="small" variant="outlined" label={`${workflowTone(item.estado_nuevo).label} · ${item.actor_nombre || 'Usuario'} · ${item.createdAt ? new Date(item.createdAt).toLocaleString('es-CO') : ''}${item.observacion ? ` · ${item.observacion}` : ''}`} sx={{ flexShrink: 0, maxWidth: 520 }} />)}
+          <Collapse in={expandedTraceability} timeout="auto" unmountOnExit>
+            <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid #e2e8f0' }}>
+              <Stack direction="row" spacing={0.8} sx={{ overflowX: 'auto', pb: 0.2 }}>
+                {(editor.asignacion?.historial || []).map((item) => <Chip key={item.id} size="small" variant="outlined" label={`${workflowTone(item.estado_nuevo).label} · ${item.actor_nombre || 'Usuario'} · ${item.createdAt ? new Date(item.createdAt).toLocaleString('es-CO') : ''}${item.observacion ? ` · ${item.observacion}` : ''}`} sx={{ flexShrink: 0, maxWidth: 520, bgcolor: '#f8fafc' }} />)}
               </Stack>
             </Box>
-          )}
+          </Collapse>
         </Paper>
       )}
 
@@ -995,7 +1163,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         <Box sx={{ p: { xs: 1, md: 1.3 }, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0', overflowX: 'auto', flexShrink: 0 }}>
         <Tabs
           value={tab}
-          onChange={(_, value) => { if (!executionMode || value === 3) setTab(value); }}
+          onChange={(_, value) => {
+            if (!executionMode || value === 4 || (!collaboratorMode && value > 0)) setTab(value);
+          }}
           variant="fullWidth"
           TabIndicatorProps={{ sx: { display: 'none' } }}
           sx={{
@@ -1009,7 +1179,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             '& .Mui-selected': { bgcolor: '#ffffff', color: '#1d4ed8 !important', borderColor: '#bfdbfe', boxShadow: '0 5px 16px rgba(37,99,235,.10)' }
           }}
         >
-          <Tab disabled={executionMode} label="01 · Identificación" /><Tab disabled={executionMode} label="02 · Objetivos y actividades" /><Tab disabled={executionMode} label="03 · Presupuesto" /><Tab label="04 · Seguimiento" />
+          <Tab disabled={executionMode} label="01 · Identificación" /><Tab disabled={executionMode && collaboratorMode} label="02 · Lista de mejoramiento" /><Tab disabled={executionMode && collaboratorMode} label="03 · Objetivos y actividades" /><Tab disabled={executionMode && collaboratorMode} label="04 · Presupuesto" /><Tab label="05 · Seguimiento" />
         </Tabs>
         </Box>
 
@@ -1023,21 +1193,82 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                 </TextField>
                 <TextField label="Año inicial" type="number" value={editor.periodoInicio} onChange={(event) => setEditor({ ...editor, periodoInicio: event.target.value })} />
                 <TextField label="Año final" type="number" value={editor.periodoFin} onChange={(event) => setEditor({ ...editor, periodoFin: event.target.value })} />
-                <TextField select label="Estado" value={editor.estado} onChange={(event) => setEditor({ ...editor, estado: event.target.value })}><MenuItem value="borrador">Borrador</MenuItem><MenuItem value="en_ejecucion">En ejecución</MenuItem><MenuItem value="cerrado">Cerrado</MenuItem></TextField>
+                <TextField select disabled label="Estado (automático)" value={editor.estado} helperText="Cambia al asignar y aprobar el plan"><MenuItem value="borrador">Borrador</MenuItem><MenuItem value="en_ejecucion">En ejecución</MenuItem><MenuItem value="cerrado">Cerrado</MenuItem></TextField>
               </Box>
               {editor.programa && loadingOpportunities && <Alert severity="info" icon={<CircularProgress size={20} />}>Consultando resultados de Autoevaluación para este programa…</Alert>}
               {editor.programa && !loadingOpportunities && opportunities.length > 0 && (
-                <Alert
-                  severity="warning"
-                >
-                  Se encontraron {opportunities.length} aspectos con calificación inferior a 4. {opportunityStatus.imported} están disponibles como insumos; el usuario debe crear y formular los objetivos.
+                <Alert severity="info">
+                  Se cargaron {opportunities.length} aspectos evaluados: {opportunities.filter((item) => Number(item.calificacion) < 4).length} de mejoramiento y {opportunities.filter((item) => Number(item.calificacion) >= 4).length} de fortalecimiento. Quedan {pendingOpportunities().length} pendientes de asociar.
                 </Alert>
               )}
-              {editor.programa && !loadingOpportunities && opportunities.length === 0 && <Alert severity="success">Este programa no tiene aspectos críticos pendientes de trasladar desde Autoevaluación.</Alert>}
+              {editor.programa && !loadingOpportunities && opportunities.length === 0 && <Alert severity="info">Este programa todavía no tiene aspectos calificados en Autoevaluación.</Alert>}
             </Stack>
           )}
 
           {tab === 1 && (
+            <Stack spacing={2}>
+              <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} spacing={1.5}>
+                <Box>
+                  <Typography variant="h6" sx={{ color: '#0f172a', fontWeight: 950 }}>Lista de mejoramiento</Typography>
+                  <Typography variant="body2" sx={{ color: '#64748b' }}>Asocie cada aspecto pendiente con un objetivo. Los asociados desaparecen automáticamente de esta lista.</Typography>
+                </Box>
+                <TextField
+                  size="small"
+                  value={improvementSearch}
+                  onChange={(event) => setImprovementSearch(event.target.value)}
+                  label="Buscar factor, característica o aspecto"
+                  sx={{ width: { xs: '100%', md: 390 } }}
+                />
+              </Stack>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Chip label={`${filteredImprovementOpportunities.length} pendientes`} sx={{ fontWeight: 900, bgcolor: '#eff6ff', color: '#1d4ed8' }} />
+                <Chip label={`${filteredImprovementOpportunities.filter((item) => Number(item.calificacion) < 4).length} mejoramiento`} sx={{ fontWeight: 850, bgcolor: '#fff7ed', color: '#b45309' }} />
+                <Chip label={`${filteredImprovementOpportunities.filter((item) => Number(item.calificacion) >= 4).length} fortalecimiento`} sx={{ fontWeight: 850, bgcolor: '#ecfdf5', color: '#047857' }} />
+              </Stack>
+              {loadingOpportunities ? (
+                <Box sx={{ py: 8, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>
+              ) : filteredImprovementOpportunities.length === 0 ? (
+                <Alert severity="success">No hay aspectos pendientes de asociación para este programa.</Alert>
+              ) : (
+                <TableContainer component={Paper} elevation={0} sx={{ maxHeight: 560, border: '1px solid #dbe3ee', borderRadius: 3, overflow: 'auto' }}>
+                  <Table stickyHeader size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ minWidth: 190, fontWeight: 950, bgcolor: '#f8fafc' }}>Factor</TableCell>
+                        <TableCell sx={{ minWidth: 220, fontWeight: 950, bgcolor: '#f8fafc' }}>Característica</TableCell>
+                        <TableCell sx={{ minWidth: 360, fontWeight: 950, bgcolor: '#f8fafc' }}>Aspecto</TableCell>
+                        <TableCell align="center" sx={{ minWidth: 135, fontWeight: 950, bgcolor: '#f8fafc' }}>Calificación</TableCell>
+                        <TableCell align="center" sx={{ minWidth: 150, fontWeight: 950, bgcolor: '#f8fafc' }}>Tipo</TableCell>
+                        <TableCell align="center" sx={{ minWidth: 210, fontWeight: 950, bgcolor: '#f8fafc' }}>Acciones</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {filteredImprovementOpportunities.map((item) => {
+                        const improvement = Number(item.calificacion) < 4;
+                        return (
+                          <TableRow key={item.id} hover>
+                            <TableCell sx={{ color: '#334155', fontWeight: 750 }}>{item.factor || 'Sin factor'}</TableCell>
+                            <TableCell sx={{ color: '#475569' }}>{item.caracteristica || 'Sin característica'}</TableCell>
+                            <TableCell sx={{ color: '#334155', lineHeight: 1.55 }}>{item.aspecto}</TableCell>
+                            <TableCell align="center"><Chip size="small" label={Number(item.calificacion).toFixed(2)} sx={{ fontWeight: 950, bgcolor: improvement ? '#fef3c7' : '#dcfce7', color: improvement ? '#a16207' : '#15803d' }} /></TableCell>
+                            <TableCell align="center"><Chip size="small" label={improvement ? 'Mejoramiento' : 'Fortalecimiento'} sx={{ fontWeight: 850, bgcolor: improvement ? '#fff7ed' : '#ecfdf5', color: improvement ? '#b45309' : '#047857' }} /></TableCell>
+                            <TableCell align="center">
+                              <Stack direction="row" spacing={0.7} justifyContent="center">
+                                <Tooltip title="Consultar evidencias"><IconButton size="small" onClick={() => setEvidenceOpportunity(item)} sx={{ color: '#2563eb', bgcolor: '#eff6ff' }}><AttachIcon fontSize="small" /></IconButton></Tooltip>
+                                <Button size="small" variant="contained" onClick={() => openObjectiveAssociation(item)} sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}>Asociar con objetivo</Button>
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Stack>
+          )}
+
+          {tab === 2 && (
             <Stack spacing={2.5}>
               {editor.objetivos.length === 0 && (
                 <Alert severity="info" sx={{ borderRadius: 2.5 }}>
@@ -1071,59 +1302,46 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5 }}>
                     <TextField label="Código" value={objective.codigo} onChange={(e) => updateObjective(objectiveIndex, 'codigo', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
                     <TextField select label="Factor / condición" value={objective.factor} onChange={(e) => changeObjectiveFactor(objectiveIndex, e.target.value)} sx={{ gridColumn: { md: 'span 5' } }}>
-                      {withCurrent(Array.from(new Set(availableOpportunities(objectiveIndex).map((item) => item.factor).filter(Boolean))), objective.factor).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
+                      {withCurrent(Array.from(new Set(pendingOpportunities().map((item) => item.factor).filter(Boolean))), objective.factor).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
                     </TextField>
                     <TextField select label="Característica" value={objective.caracteristica} onChange={(e) => changeObjectiveCharacteristic(objectiveIndex, e.target.value)} sx={{ gridColumn: { md: 'span 5' } }} disabled={!objective.factor}>
-                      {withCurrent(Array.from(new Set(availableOpportunities(objectiveIndex).filter((item) => item.factor === objective.factor).map((item) => item.caracteristica).filter(Boolean))), objective.caracteristica).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
+                      {withCurrent(Array.from(new Set(pendingOpportunities().filter((item) => item.factor === objective.factor).map((item) => item.caracteristica).filter(Boolean))), objective.caracteristica).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
                     </TextField>
                     <TextField
                       select
-                      label="Aspectos / hallazgos"
-                      value={(objective.aspectosAutoevaluacion || []).map((item) => String(item.id))}
+                      label="Agregar aspectos / hallazgos pendientes"
+                      value={[]}
                       onChange={(e) => {
                         const values = Array.isArray(e.target.value) ? e.target.value : String(e.target.value).split(',');
-                        const options = aspectOptionsForObjective(objectiveIndex, objective);
+                        const options = aspectOptionsForObjective(objective);
                         const optionIds = options.map((item) => String(item.id));
-                        const currentIds = (objective.aspectosAutoevaluacion || []).map((item) => String(item.id));
-                        assignObjectiveAspects(objectiveIndex, values.includes('__ALL__')
-                          ? (currentIds.length === optionIds.length ? [] : optionIds)
-                          : values);
+                        addObjectiveAspects(objectiveIndex, values.includes('__ALL__') ? optionIds : values);
                       }}
                       SelectProps={{
                         multiple: true,
-                        renderValue: (selected) => `${selected.length} aspecto${selected.length === 1 ? '' : 's'} seleccionado${selected.length === 1 ? '' : 's'}`
+                        displayEmpty: true,
+                        renderValue: () => `${aspectOptionsForObjective(objective).length} aspecto${aspectOptionsForObjective(objective).length === 1 ? '' : 's'} pendiente${aspectOptionsForObjective(objective).length === 1 ? '' : 's'}`
                       }}
-                      sx={{ gridColumn: { md: (objective.aspectosAutoevaluacion || []).length > 1 ? 'span 12' : 'span 6' } }}
+                      sx={{ gridColumn: { md: 'span 12' } }}
                       disabled={!objective.caracteristica}
                     >
-                      <MenuItem value="__ALL__">
-                        <Checkbox checked={Boolean(aspectOptionsForObjective(objectiveIndex, objective).length) && (objective.aspectosAutoevaluacion || []).length === aspectOptionsForObjective(objectiveIndex, objective).length} />
-                        <Typography sx={{ fontWeight: 900 }}>Seleccionar todos los aspectos</Typography>
-                      </MenuItem>
-                      {aspectOptionsForObjective(objectiveIndex, objective).map((item) => (
+                      {aspectOptionsForObjective(objective).length > 0 && <MenuItem value="__ALL__">
+                        <Checkbox checked={false} />
+                        <Typography sx={{ fontWeight: 900 }}>Agregar todos los aspectos pendientes</Typography>
+                      </MenuItem>}
+                      {aspectOptionsForObjective(objective).map((item) => (
                         <MenuItem key={item.id} value={String(item.id)}>
-                          <Checkbox checked={(objective.aspectosAutoevaluacion || []).some((selected) => String(selected.id) === String(item.id))} />
+                          <Checkbox checked={false} />
                           <Box>
                             <Typography variant="body2">{item.aspecto}</Typography>
                             <Typography variant="caption" sx={{ color: '#64748b' }}>Calificación: {item.calificacion}</Typography>
                           </Box>
                         </MenuItem>
                       ))}
+                      {aspectOptionsForObjective(objective).length === 0 && <MenuItem disabled>No quedan aspectos pendientes en esta característica</MenuItem>}
                     </TextField>
-                    {(objective.aspectosAutoevaluacion || []).length <= 1 && (
-                      <>
-                        <TextField label="Calificación" value={objective.calificacion} InputProps={{ readOnly: true }} sx={{ gridColumn: { md: 'span 2' } }} />
-                        <TextField
-                          label="Tipo de acción"
-                          value={objective.calificacion === '' || objective.calificacion === null || objective.calificacion === undefined ? '' : actionTypeForScore(objective.calificacion)}
-                          InputProps={{ readOnly: true }}
-                          helperText="Asignado automáticamente según la calificación"
-                          sx={{ gridColumn: { md: 'span 4' }, '& .MuiInputBase-root': { bgcolor: '#f8fafc' } }}
-                        />
-                      </>
-                    )}
                   </Box>
-                  {(objective.aspectosAutoevaluacion || []).length > 1 && (
+                  {(objective.aspectosAutoevaluacion || []).length > 0 && (
                     <Box sx={{ mt: 1.25 }}>
                       <Typography variant="subtitle2" sx={{ mb: 1, color: '#334155', fontWeight: 900 }}>
                         Detalle de los aspectos asociados al objetivo
@@ -1135,6 +1353,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                               <TableCell sx={{ fontWeight: 900 }}>Aspecto</TableCell>
                               <TableCell align="center" sx={{ width: 125, fontWeight: 900 }}>Calificación</TableCell>
                               <TableCell align="center" sx={{ width: 170, fontWeight: 900 }}>Tipo de acción</TableCell>
+                              <TableCell align="center" sx={{ width: 90, fontWeight: 900 }}>Acción</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -1151,6 +1370,13 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                                       label={aspectActionType}
                                       sx={{ fontWeight: 850, bgcolor: improvement ? '#fff7ed' : '#ecfdf5', color: improvement ? '#b45309' : '#047857' }}
                                     />
+                                  </TableCell>
+                                  <TableCell align="center">
+                                    <Tooltip title="Retirar del objetivo y devolver a pendientes">
+                                      <IconButton size="small" color="error" onClick={() => removeObjectiveAspect(objectiveIndex, aspect.id)}>
+                                        <DeleteIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
                                   </TableCell>
                                 </TableRow>
                               );
@@ -1187,15 +1413,11 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                             <ResponsibleAutocomplete activity={activity} onChange={(user) => updateActivityResponsible(objectiveIndex, activityIndex, user)} />
                           </Box>
                           {activity.responsableId && (
-                            <Paper elevation={0} sx={{ gridColumn: { md: 'span 12' }, p: 1.5, borderRadius: 2.5, bgcolor: '#f8fafc', border: '1px solid #dbeafe' }}>
-                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' }, gap: 1.5 }}>
+                            <Paper elevation={0} sx={{ gridColumn: { md: 'span 12' }, px: 1.5, py: 1.15, borderRadius: 2.5, bgcolor: '#f8fafc', border: '1px solid #dbeafe' }}>
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' }, gap: 1.5 }}>
                                 {[
-                                  ['Nombre', activity.responsableNombre],
-                                  ['Cédula', activity.responsableDocumento],
-                                  ['Cargo', activity.cargoResponsable],
                                   ['Dependencia', activity.responsableDependencia],
-                                  ['Vicerrectoría', activity.responsableVicerrectoria],
-                                  ['Correo', activity.responsableEmail]
+                                  ['Cargo', activity.cargoResponsable]
                                 ].map(([label, value]) => (
                                   <Box key={label} sx={{ minWidth: 0 }}>
                                     <Typography variant="caption" sx={{ display: 'block', color: '#64748b', fontWeight: 850 }}>{label}</Typography>
@@ -1206,9 +1428,29 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                             </Paper>
                           )}
                           <TextField select label="Alcance" value={activity.alcance} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'alcance', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}><MenuItem value="PROGRAMA">Programa</MenuItem><MenuItem value="INSTITUCIONAL">Institucional</MenuItem></TextField>
-                          <TextField select label="Eje estratégico" value={activity.ejeEstrategico} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'ejeEstrategico', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}>{withCurrent(catalogs.strategicAxes, activity.ejeEstrategico).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
-                          <TextField select label="Objetivo estratégico" value={activity.objetivoEstrategico} onChange={(e) => setEditor((previous) => ({ ...previous, objetivos: previous.objetivos.map((obj, oi) => oi !== objectiveIndex ? obj : { ...obj, actividades: obj.actividades.map((act, ai) => ai === activityIndex ? { ...act, objetivoEstrategico: e.target.value, proyectoPdi: '' } : act) }) }))} sx={{ gridColumn: { md: 'span 3' } }}>{withCurrent(catalogs.strategicObjectives, activity.objetivoEstrategico).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
-                          <TextField select label="Proyecto PDI" value={activity.proyectoPdi} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'proyectoPdi', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }} disabled={!activity.objetivoEstrategico}>{withCurrent(catalogs.objectiveProjects?.[activity.objetivoEstrategico], activity.proyectoPdi).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
+                          <TextField select label="Objetivo estratégico" value={activity.objetivoEstrategico} onChange={(e) => setEditor((previous) => ({ ...previous, objetivos: previous.objetivos.map((obj, oi) => oi !== objectiveIndex ? obj : { ...obj, actividades: obj.actividades.map((act, ai) => ai === activityIndex ? { ...act, objetivoEstrategico: e.target.value, proyectoPdi: '' } : act) }) }))} sx={{ gridColumn: { md: 'span 4' } }}>{withCurrent(catalogs.strategicObjectives, activity.objetivoEstrategico).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
+                          <TextField select label="Lineamiento estratégico" value={activity.proyectoPdi} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'proyectoPdi', e.target.value)} sx={{ gridColumn: { md: 'span 5' } }} disabled={!activity.objetivoEstrategico}>{withCurrent(catalogs.objectiveProjects?.[activity.objetivoEstrategico], activity.proyectoPdi).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
+                          <Autocomplete
+                            multiple
+                            disableCloseOnSelect
+                            options={withCurrentMany((catalogs.institutionalPolicies || []).map((policy) => policy.name), activity.politicasInstitucionales)}
+                            value={asStringArray(activity.politicasInstitucionales)}
+                            onChange={(_event, values) => updateActivityPolicies(objectiveIndex, activityIndex, values)}
+                            renderOption={(props, option, { selected }) => <li {...props}><Checkbox checked={selected} sx={{ mr: 1 }} />{option}</li>}
+                            renderInput={(params) => <TextField {...params} label="Políticas institucionales" helperText={(catalogs.institutionalPolicies || []).length ? 'Puede seleccionar una o varias políticas.' : 'No hay políticas institucionales vigentes registradas.'} />}
+                            sx={{ gridColumn: { md: 'span 6' } }}
+                          />
+                          <Autocomplete
+                            multiple
+                            disableCloseOnSelect
+                            options={policyActionLines(activity.politicasInstitucionales)}
+                            value={asStringArray(activity.lineasAccionPolitica).filter((line) => policyActionLines(activity.politicasInstitucionales).includes(line))}
+                            onChange={(_event, values) => updateActivity(objectiveIndex, activityIndex, 'lineasAccionPolitica', values)}
+                            disabled={!asStringArray(activity.politicasInstitucionales).length}
+                            renderOption={(props, option, { selected }) => <li {...props}><Checkbox checked={selected} sx={{ mr: 1 }} />{option}</li>}
+                            renderInput={(params) => <TextField {...params} label="Líneas de acción de las políticas" helperText={asStringArray(activity.politicasInstitucionales).length ? 'Solo se muestran las líneas de las políticas seleccionadas.' : 'Seleccione primero una o varias políticas.'} />}
+                            sx={{ gridColumn: { md: 'span 6' } }}
+                          />
                         </Box>
                       </Paper>
                     ))}
@@ -1222,7 +1464,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             </Stack>
           )}
 
-          {tab === 2 && (
+          {tab === 3 && (
             <Stack spacing={2}>
               <Alert severity="info">Cada rubro se asigna a un código de objetivo. El valor total y el consolidado se calculan automáticamente.</Alert>
               <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #bfdbfe', bgcolor: '#f8fbff' }}>
@@ -1273,7 +1515,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             </Stack>
           )}
 
-          {tab === 3 && (
+          {tab === 4 && (
             <Stack spacing={2.2}>
               <Alert severity="info">Las actividades formuladas se cargan automáticamente. Registre cada corte de seguimiento, adjunte su evidencia y verifique el cumplimiento; los registros anteriores permanecen en la trazabilidad.</Alert>
               {editor.objetivos.map((objective, objectiveIndex) => (
@@ -1371,7 +1613,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5 }}>
                     <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Valor alcanzado" type="number" value={activity.metaAlcanzada} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'metaAlcanzada', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
                     <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Fecha del corte" type="date" InputLabelProps={{ shrink: true }} value={activity.fechaSeguimiento} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'fechaSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
-                    <TextField disabled={executionLocked || collaboratorMode} select label="Verificación del líder" value={activity.verificacionSeguimiento || 'pendiente'} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'verificacionSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}>
+                    <TextField disabled={executionMode || executionLocked} select label="Verificación de Autoevaluación" value={activity.verificacionSeguimiento || 'pendiente'} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'verificacionSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}>
                       <MenuItem value="pendiente">Pendiente de verificación</MenuItem><MenuItem value="verificado">Cumplimiento verificado</MenuItem><MenuItem value="requiere_ajustes">Requiere ajustes</MenuItem>
                     </TextField>
                     <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Enlace de evidencia (opcional si adjunta archivo)" value={activity.evidencia} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'evidencia', e.target.value)} sx={{ gridColumn: { md: 'span 5' } }} />
@@ -1418,6 +1660,42 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           )}
         </Box>
       </Paper>
+      <Dialog open={Boolean(associationOpportunity)} onClose={() => setAssociationOpportunity(null)} fullWidth maxWidth="sm" PaperProps={{ sx: { borderRadius: 3.5 } }}>
+        <Box sx={{ p: { xs: 2.2, md: 3 } }}>
+          <Typography variant="h6" sx={{ fontWeight: 950, color: '#0f172a' }}>Asociar aspecto con un objetivo</Typography>
+          <Typography variant="body2" sx={{ mt: 0.5, color: '#64748b' }}>{associationOpportunity?.aspecto}</Typography>
+          <Alert severity={Number(associationOpportunity?.calificacion) < 4 ? 'warning' : 'success'} sx={{ my: 2 }}>
+            Calificación {Number(associationOpportunity?.calificacion || 0).toFixed(2)} · {actionTypeForScore(associationOpportunity?.calificacion)}
+          </Alert>
+          <TextField
+            select
+            fullWidth
+            label="Objetivo de destino"
+            value={associationObjectiveIndex}
+            onChange={(event) => setAssociationObjectiveIndex(event.target.value)}
+          >
+            {compatibleObjectives.map(({ objective, index }) => (
+              <MenuItem key={`${objective.codigo}-${index}`} value={String(index)}>{objective.codigo} · {objective.objetivo || `Objetivo de mejoramiento ${index + 1}`}</MenuItem>
+            ))}
+            <MenuItem value="new">+ Crear un nuevo objetivo con este aspecto</MenuItem>
+          </TextField>
+          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#64748b' }}>Solo se muestran objetivos compatibles con el mismo factor y característica.</Typography>
+          <Stack direction="row" justifyContent="flex-end" spacing={1} sx={{ mt: 2.5 }}>
+            <Button onClick={() => setAssociationOpportunity(null)} sx={{ textTransform: 'none', fontWeight: 850 }}>Cancelar</Button>
+            <Button variant="contained" onClick={associateOpportunityToObjective} sx={{ textTransform: 'none', fontWeight: 900 }}>Confirmar asociación</Button>
+          </Stack>
+        </Box>
+      </Dialog>
+      <Dialog open={Boolean(evidenceOpportunity)} onClose={() => setEvidenceOpportunity(null)} fullWidth maxWidth="md" PaperProps={{ sx: { borderRadius: 3.5 } }}>
+        <Box sx={{ p: { xs: 2.2, md: 3 } }}>
+          <Typography variant="h6" sx={{ fontWeight: 950, color: '#0f172a' }}>Evidencias del aspecto</Typography>
+          <Typography variant="body2" sx={{ mt: 0.6, color: '#64748b' }}>{evidenceOpportunity?.aspecto}</Typography>
+          <Paper elevation={0} sx={{ mt: 2, p: 2, borderRadius: 2.5, border: '1px solid #dbe3ee', bgcolor: '#f8fafc' }}>
+            <Typography variant="body2" sx={{ color: '#334155', whiteSpace: 'pre-wrap' }}>{evidenceOpportunity?.evidencia || 'No hay evidencias registradas para este aspecto.'}</Typography>
+          </Paper>
+          <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}><Button variant="contained" onClick={() => setEvidenceOpportunity(null)} sx={{ textTransform: 'none', fontWeight: 900 }}>Cerrar</Button></Stack>
+        </Box>
+      </Dialog>
     </Box>
     </Dialog>
   );
