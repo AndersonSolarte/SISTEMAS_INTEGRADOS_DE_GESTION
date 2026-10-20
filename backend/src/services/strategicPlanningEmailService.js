@@ -4,6 +4,7 @@ const nodemailer = require('nodemailer');
 const { google } = require('googleapis');
 
 const GENERAL_EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+const STRATEGIC_PLANNING_OFFICIAL_EMAIL = 'planeacionestrategica@unicesmag.edu.co';
 const HEADER_IMAGE_PATH = path.join(__dirname, '..', 'assets', 'Encabezado_correos.png');
 
 let cachedTransporter = null;
@@ -33,7 +34,7 @@ const resolveConfig = () => {
   const pass = String(process.env.PLAN_ACTION_SMTP_PASS || '').replace(/\s+/g, '');
   const from = String(process.env.PLAN_ACTION_SMTP_FROM || '').trim()
     || `Planeación Estratégica UNICESMAG <${user}>`;
-  const replyTo = String(process.env.PLAN_ACTION_REPLY_TO || user).trim();
+  const replyTo = String(process.env.PLAN_ACTION_REPLY_TO || STRATEGIC_PLANNING_OFFICIAL_EMAIL).trim();
   const oauthClientId = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_ID || '').trim();
   const oauthClientSecret = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_SECRET || '').trim();
   const oauthRefreshToken = String(process.env.PLAN_ACTION_GOOGLE_REFRESH_TOKEN || '').trim();
@@ -94,7 +95,7 @@ const prepareAttachments = (html, attachments) => {
 const buildMailOptions = ({ config, recipients, subject, text, html, attachments, replyTo, headers }) => ({
   from: config.from,
   to: recipients.join(', '),
-  replyTo: replyTo ? normalizeRecipient(replyTo) : config.replyTo,
+  replyTo: normalizeRecipient(replyTo || config.replyTo || STRATEGIC_PLANNING_OFFICIAL_EMAIL),
   subject,
   text: String(text || ''),
   html: html || undefined,
@@ -119,7 +120,7 @@ const { sendInstitutionalEmail } = require('./emailService');
 
 // Transporte de Planes de Acción con respaldo automático en sendInstitutionalEmail.
 const sendStrategicPlanningEmail = async ({
-  to, subject, text, html, attachments = [], replyTo = '', headers = {}
+  to, subject, text, html, attachments = [], replyTo = STRATEGIC_PLANNING_OFFICIAL_EMAIL, headers = {}
 }) => {
   const deliverySetting = String(process.env.EMAIL_DELIVERY_ENABLED || '').trim().toLowerCase();
   const deliveryEnabled = deliverySetting ? deliverySetting === 'true' : process.env.NODE_ENV === 'production';
@@ -127,6 +128,7 @@ const sendStrategicPlanningEmail = async ({
     console.log('[strategic-planning-email] Envío omitido: entorno local de pruebas.');
     return { success: true, suppressed: true, messageId: 'suppressed-local-testing' };
   }
+  const effectiveReplyTo = String(replyTo || STRATEGIC_PLANNING_OFFICIAL_EMAIL).trim();
   if (process.env.PLAN_ACTION_SMTP_USER) {
     try {
       const recipients = (Array.isArray(to) ? to : [to]).map(normalizeRecipient);
@@ -138,7 +140,7 @@ const sendStrategicPlanningEmail = async ({
         : String(subject || '');
       const config = resolveConfig();
       const mailOptions = buildMailOptions({
-        config, recipients: targetRecipients, subject: targetSubject, text, html, attachments, replyTo, headers
+        config, recipients: targetRecipients, subject: targetSubject, text, html, attachments, replyTo: effectiveReplyTo, headers
       });
       const info = config.authMethod === 'oauth2'
         ? await sendWithGoogleOAuth(config, mailOptions)
@@ -156,7 +158,7 @@ const sendStrategicPlanningEmail = async ({
       text,
       html,
       attachments,
-      replyTo: replyTo || undefined,
+      replyTo: effectiveReplyTo,
       allowExternalRecipients: true
     });
     return result;

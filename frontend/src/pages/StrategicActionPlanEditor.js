@@ -1365,13 +1365,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       window.setTimeout(() => {
         isApplyingLoadRef.current = false;
       }, 500);
+      const signaturesReset = Boolean(savedMeeting?.data?.signatures_reset);
       if (!silent) {
-        enqueueSnackbar(activeMeetingId ? 'Reunión y roles actualizados.' : 'Reunión y participantes registrados.', { variant: 'success' });
+        if (signaturesReset) {
+          enqueueSnackbar('Acta modificada. El documento sufrió ajustes y se reactivó el proceso de firmas para todos los participantes.', { variant: 'info' });
+        } else {
+          enqueueSnackbar(activeMeetingId ? 'Reunión y roles actualizados.' : 'Reunión y participantes registrados.', { variant: 'success' });
+        }
       }
       if (latestMinute?.id && (activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized' || latestMinute?.drive_file_id)) {
         handleFinalizeMinute(true);
       }
-      return true;
+      return { success: true, signatures_reset: signaturesReset, minute_id: savedMeeting?.data?.minute_id || latestMinute?.id };
     } catch (error) {
       setSaveStatus('error');
       if (!silent) {
@@ -1414,27 +1419,32 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
     catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible generar el acta.', { variant: 'error' }); }
   };
-  const publishMinute = async (minuteId) => {
+  const publishMinute = async (minuteId, options = {}) => {
     try {
       const current = activeMeeting?.minuteVersions?.find((version) => String(version.id) === String(minuteId));
+      const isRevision = Boolean(options.is_revision || current?.content?.metadata?.was_adjusted);
       const response = await strategicPlanningService.publishMinute(minuteId, {
-        regenerate: current?.status === 'signing',
+        regenerate: options.regenerate ?? (current?.status === 'signing' || isRevision),
+        is_revision: isRevision,
+        only_pending: options.only_pending ?? false,
         public_base_url: window.location.origin
       });
       setPublished(response.data);
       await load();
       const summary = response.data?.invitation_summary;
       if (summary?.failed) {
-        enqueueSnackbar(`Acta habilitada. Se enviaron ${summary.sent} de ${summary.total} invitaciones; revise los correos pendientes.`, { variant: 'warning' });
+        enqueueSnackbar(`Acta ${isRevision ? 'actualizada' : 'habilitada'}. Se enviaron ${summary.sent} de ${summary.total} invitaciones; revise los correos pendientes.`, { variant: 'warning' });
       } else {
-        enqueueSnackbar(summary
-          ? `Acta habilitada y ${summary.sent} invitaci${summary.sent === 1 ? 'Ã³n enviada' : 'ones enviadas'} para firma.`
-          : 'Acta congelada y firmas habilitadas.', { variant: 'success' });
+        enqueueSnackbar(isRevision
+          ? `Acta modificada. Se reactivó el proceso de firmas y se enviaron ${summary?.sent || 0} invitaciones informando de los cambios.`
+          : (summary
+            ? `Acta habilitada y ${summary.sent} invitación(es) enviada(s) para firma.`
+            : 'Acta congelada y firmas habilitadas.'), { variant: 'success' });
       }
     }
     catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible publicar el acta.', { variant: 'error' }); }
   };
-  const enableQrSigning = async () => {
+  const enableQrSigning = async (onlyPending = false) => {
     if (!activeMeeting) return enqueueSnackbar('Primero guarde la reunión y sus participantes.', { variant: 'warning' });
     try {
       const versions = [...(activeMeeting.minuteVersions || [])].sort((a, b) => Number(b.version) - Number(a.version));
@@ -1449,7 +1459,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         } });
         minuteVersion = created.data;
       }
-      await publishMinute(minuteVersion.id);
+      await publishMinute(minuteVersion.id, { only_pending: onlyPending });
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible habilitar la firma por QR.', { variant: 'error' }); }
   };
 
@@ -2850,15 +2860,21 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   disabled={saving}
                                   onClick={async () => {
                                     if (editingActa) {
-                                      const saved = await saveMeeting();
-                                      if (saved) setEditingActa(false);
+                                      const savedResult = await saveMeeting();
+                                      if (savedResult) {
+                                        setEditingActa(false);
+                                        const targetMinuteId = latestMinute?.id || savedResult?.minute_id;
+                                        if (targetMinuteId && (isSigning || isFinalized || savedResult?.signatures_reset)) {
+                                          await publishMinute(targetMinuteId, { is_revision: true, regenerate: true });
+                                        }
+                                      }
                                     } else {
                                       setEditingActa(true);
                                     }
                                   }}
                                   sx={{ fontWeight: 850 }}
                                 >
-                                  {editingActa ? 'Guardar ajuste' : 'Ajustar y volver a firmar'}
+                                  {editingActa ? 'Guardar ajuste y reactivar firmas' : 'Ajustar y volver a firmar'}
                                 </Button>
                               )}
                               <Button

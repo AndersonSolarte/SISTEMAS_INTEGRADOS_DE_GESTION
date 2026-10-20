@@ -84,3 +84,20 @@ test('permite destinatarios externos válidos para las firmas', () => {
   assert.equal(_internals.normalizeRecipient(' Persona@Ejemplo.com '), 'persona@ejemplo.com');
   assert.throws(() => _internals.normalizeRecipient('correo-invalido'));
 });
+
+test('enruta siempre replyTo a planeacionestrategica@unicesmag.edu.co por defecto', () => {
+  withPlanEnvironment({
+    PLAN_ACTION_SMTP_USER: 'otro_usuario@unicesmag.edu.co',
+    PLAN_ACTION_SMTP_PASS: 'clave12345678901'
+  }, () => {
+    const config = _internals.resolveConfig();
+    assert.equal(config.replyTo, 'planeacionestrategica@unicesmag.edu.co');
+    const mailOptions = _internals.buildMailOptions({
+      config,
+      recipients: ['participante@unicesmag.edu.co'],
+      subject: 'Prueba',
+      text: 'Contenido'
+    });
+    assert.equal(mailOptions.replyTo, 'planeacionestrategica@unicesmag.edu.co');
+  });
+});

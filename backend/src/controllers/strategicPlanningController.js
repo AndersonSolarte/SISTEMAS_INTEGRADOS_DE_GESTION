@@ -1583,6 +1583,9 @@ const createMeeting = wrap(async (req, res) => {
 });
 
 const updateMeeting = wrap(async (req, res) => {
+  let signaturesWereReset = false;
+  let affectedMinuteId = null;
+
   const meeting = await sequelize.transaction(async (transaction) => {
     const row = await StrategicMeeting.findByPk(req.params.meetingId, { transaction, lock: transaction.LOCK.UPDATE });
     if (!row) throw Object.assign(new Error('Reunión no encontrada.'), { statusCode: 404 });
@@ -1602,6 +1605,17 @@ const updateMeeting = wrap(async (req, res) => {
     const existingById = new Map(existingParticipants.map((participant) => [String(participant.id), participant]));
     const retainedIds = [];
     let principalAssigned = false;
+    let participantsModified = false;
+
+    // Verificar si el acta ya estaba en firmas o formalizada
+    const existingMinute = await StrategicMinuteVersion.findOne({
+      where: { meeting_id: row.id },
+      order: [['version', 'DESC']],
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+    const isLockedState = Boolean(existingMinute && ['signing', 'finalized'].includes(existingMinute.status));
+
     for (const [index, participant] of requestedParticipants.entries()) {
       const stored = participant.id ? existingById.get(String(participant.id)) : null;
       const matchedUser = participant.user_id
@@ -1625,21 +1639,78 @@ const updateMeeting = wrap(async (req, res) => {
         signature_required: participant.signature_required !== false
       };
       if (stored) {
-        if (stored.status === 'signed' && stored.meeting_role !== meetingRole) {
+        if (!isLockedState && stored.status === 'signed' && stored.meeting_role !== meetingRole) {
           throw Object.assign(new Error(`No puede cambiar el rol de ${stored.name} porque ya firmó el acta.`), { statusCode: 409 });
+        }
+        if (stored.meeting_role !== meetingRole || stored.name !== values.name || stored.email !== values.email || stored.document !== values.document) {
+          participantsModified = true;
         }
         await stored.update(values, { transaction });
         retainedIds.push(stored.id);
       } else {
+        participantsModified = true;
         const created = await StrategicMeetingParticipant.create({ meeting_id: row.id, ...values }, { transaction });
         retainedIds.push(created.id);
       }
     }
     const removableIds = existingParticipants
-      .filter((participant) => !retainedIds.some((id) => String(id) === String(participant.id)) && participant.status !== 'signed')
+      .filter((participant) => !retainedIds.some((id) => String(id) === String(participant.id)))
       .map((participant) => participant.id);
-    if (removableIds.length) await StrategicMeetingParticipant.destroy({ where: { id: removableIds }, transaction });
-    await audit(req, 'meeting.update', 'meeting', row.id, before, row.toJSON(), null, transaction);
+    if (removableIds.length) {
+      participantsModified = true;
+      await StrategicMeetingParticipant.destroy({ where: { id: removableIds }, transaction });
+    }
+
+    const meetingContentChanged = Boolean(
+      String(before.title || '').trim() !== String(row.title || '').trim() ||
+      String(before.starts_at || '') !== String(row.starts_at || '') ||
+      String(before.ends_at || '') !== String(row.ends_at || '') ||
+      String(before.location || '').trim() !== String(row.location || '').trim() ||
+      String(before.modality || '').trim() !== String(row.modality || '').trim() ||
+      String(before.objective || '').trim() !== String(row.objective || '').trim() ||
+      String(before.development || '').trim() !== String(row.development || '').trim() ||
+      JSON.stringify(before.commitments || []) !== JSON.stringify(row.commitments || []) ||
+      participantsModified
+    );
+
+    if (isLockedState && meetingContentChanged) {
+      // Si se hace al menos un ajuste, un punto o cambio en el acta que ya estaba en firmas o formalizada:
+      // se reactiva automáticamente el flujo de firmas para todos y se invalidan firmas del texto anterior.
+      await StrategicMeetingParticipant.update(
+        { status: 'invited', signed_at: null, absence_justification: null },
+        { where: { meeting_id: row.id, signature_required: true }, transaction }
+      );
+      await StrategicMinuteSignature.destroy({
+        where: { minute_version_id: existingMinute.id },
+        transaction
+      });
+      if (row.status === 'formalized') {
+        await row.update({ status: 'in_progress' }, { transaction });
+      }
+      const updatedContent = await minutePayload(row);
+      await existingMinute.update({
+        status: 'signing',
+        content: {
+          ...updatedContent,
+          metadata: {
+            ...(existingMinute.content?.metadata || {}),
+            was_adjusted: true,
+            adjusted_at: new Date().toISOString(),
+            adjusted_by: req.user.id
+          }
+        },
+        content_hash: hashObject(updatedContent),
+        final_pdf_storage_key: null,
+        final_pdf_hash: null
+      }, { transaction });
+
+      signaturesWereReset = true;
+      affectedMinuteId = existingMinute.id;
+      await audit(req, 'meeting.adjustment_signatures_reset', 'minute_version', existingMinute.id, before, row.toJSON(), 'Acta modificada tras habilitación; se reactivó el proceso de firmas para todos.', transaction);
+    } else {
+      await audit(req, 'meeting.update', 'meeting', row.id, before, row.toJSON(), null, transaction);
+    }
+
     return row;
   });
 
@@ -1656,7 +1727,15 @@ const updateMeeting = wrap(async (req, res) => {
     console.warn('Error verificando syncMinute en updateMeeting:', syncErr.message);
   }
 
-  ok(res, meeting, 'Reunión y participantes actualizados.');
+  const responsePayload = {
+    ...meeting.toJSON(),
+    signatures_reset: signaturesWereReset,
+    minute_id: affectedMinuteId
+  };
+  const responseMsg = signaturesWereReset
+    ? 'Reunión y acta actualizadas. El documento sufrió ajustes y se reactivó el proceso de firmas para todos los participantes.'
+    : 'Reunión y participantes actualizados.';
+  ok(res, responsePayload, responseMsg);
 });
 
 const improveMinuteText = wrap(async (req, res) => {
@@ -1799,12 +1878,29 @@ const resolveStrategicSigningAccess = async (token, allowedStatuses = ['signing'
 const publishMinute = wrap(async (req, res) => {
   const minute = await StrategicMinuteVersion.findByPk(req.params.minuteId);
   if (!minute) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
-  const canRegenerate = minute.status === 'signing' && req.body.regenerate === true;
+  const isRevision = Boolean(req.body.is_revision || minute.content?.metadata?.was_adjusted);
+  const canRegenerate = (minute.status === 'signing' || minute.status === 'finalized') && (req.body.regenerate === true || isRevision);
   if (!['draft', 'review'].includes(minute.status) && !canRegenerate) throw Object.assign(new Error('Esta versión del acta ya fue habilitada para firmas o finalizada.'), { statusCode: 409 });
   const pending = await StrategicMinuteProposal.count({ where: { minute_version_id: minute.id, status: 'pending' } });
   if (pending) throw Object.assign(new Error('Hay propuestas de cambio pendientes por resolver.'), { statusCode: 409 });
+
+  if (isRevision || (req.body.regenerate && !req.body.only_pending)) {
+    await StrategicMeetingParticipant.update(
+      { status: 'invited', signed_at: null, absence_justification: null },
+      { where: { meeting_id: minute.meeting_id, signature_required: true } }
+    );
+    await StrategicMinuteSignature.destroy({
+      where: { minute_version_id: minute.id }
+    });
+  }
+
   const token = randomToken();
-  await minute.update({ status: 'signing', public_token_hash: sha256(token), token_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), published_at: new Date() });
+  await minute.update({
+    status: 'signing',
+    public_token_hash: sha256(token),
+    token_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000),
+    published_at: new Date()
+  });
   // En producción PUBLIC_FRONTEND_URL debe ser el dominio público. El origen
   // enviado por la interfaz permite que el mismo flujo funcione en otros entornos.
   const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
@@ -1823,17 +1919,19 @@ const publishMinute = wrap(async (req, res) => {
         from_state: prevStatus,
         to_state: 'owner_validation',
         action: 'submit_owner_validation',
-        comment: 'Acta habilitada para firmas. El Plan de Acción entra en etapa transitoria de revisión y retroalimentación del responsable.',
+        comment: isRevision
+          ? 'Acta modificada tras ajustes y habilitada nuevamente para firmas.'
+          : 'Acta habilitada para firmas. El Plan de Acción entra en etapa transitoria de revisión y retroalimentación del responsable.',
         performed_by: req.user.id,
         ip_address: requestMeta(req).ip_address,
         session_id: requestMeta(req).session_id
       });
-      await audit(req, 'action_plan.submit_owner_validation', 'action_plan', actionPlan.id, { status: prevStatus }, { status: 'owner_validation' }, 'Envío automático a firmas y revisión del responsable');
+      await audit(req, 'action_plan.submit_owner_validation', 'action_plan', actionPlan.id, { status: prevStatus }, { status: 'owner_validation' }, isRevision ? 'Reactivación de firmas por modificación del acta' : 'Envío automático a firmas y revisión del responsable');
     }
   }
   const invitees = (meeting?.participants || []).filter((participant) => (
     participant.signature_required
-    && participant.status !== 'signed'
+    && (isRevision || !req.body.only_pending || participant.status !== 'signed')
     && String(participant.email || '').trim()
   ));
   const meetingDate = meeting?.starts_at
@@ -1852,20 +1950,32 @@ const publishMinute = wrap(async (req, res) => {
         <br><a href="${escapeHtml(PRIVACY_POLICY_URL)}">Consultar política institucional</a>
       </div>` : '';
     const html = renderInstitutionalTemplate({
-      title: 'Invitación para firmar acta',
-      introHtml: `<p style="margin:0 0 18px;">Hola <strong>${safeName}</strong>. El acta de la reunión${meetingDate ? ` del <strong>${escapeHtml(meetingDate)}</strong>` : ''} está disponible para su revisión y firma.</p>`,
+      title: isRevision ? 'Acta modificada · Nueva firma requerida' : 'Invitación para firmar acta',
+      introHtml: isRevision ? `
+        <div style="margin:0 0 16px;padding:14px 16px;background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;color:#92400e;font-size:13.5px;line-height:1.55;">
+          <strong style="display:block;margin-bottom:4px;font-size:14px;color:#b45309;">⚠️ Aviso de actualización de acta:</strong>
+          El contenido del acta de la reunión${meetingDate ? ` del <strong>${escapeHtml(meetingDate)}</strong>` : ''} <strong>sufrió modificaciones y ajustes recientes</strong>. Conforme al procedimiento institucional, se reactivó el proceso de firmas para todos los participantes sobre esta versión actualizada.
+        </div>
+        <p style="margin:0 0 16px;font-size:14px;color:#334155;">Hola <strong>${safeName}</strong>. Por favor revise el texto actualizado del documento y registre su firma electrónica a continuación:</p>
+      ` : `<p style="margin:0 0 18px;">Hola <strong>${safeName}</strong>. El acta de la reunión${meetingDate ? ` del <strong>${escapeHtml(meetingDate)}</strong>` : ''} está disponible para su revisión y firma.</p>`,
       bodyHtml: `
         <div style="text-align:center;margin:22px 0;">
-          <a href="${escapeHtml(participantSigningUrl)}" style="display:inline-block;padding:13px 26px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Revisar y firmar el acta</a>
+          <a href="${escapeHtml(participantSigningUrl)}" style="display:inline-block;padding:13px 26px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">${isRevision ? 'Revisar cambios y firmar acta' : 'Revisar y firmar el acta'}</a>
         </div>
         <p style="margin:0;padding:13px 15px;background:#f8fafc;border-radius:9px;color:#475569;font-size:13px;line-height:1.5;">Este enlace es personal. Al abrirlo podrá revisar el acta completa y firmarla directamente, sin volver a escribir su nombre, correo ni códigos.</p>
+        <div style="margin-top:16px;padding:12px 14px;background:#f1f5f9;border-radius:8px;font-size:12px;color:#475569;line-height:1.45;">
+          <strong>Observaciones o dudas:</strong> Si requiere alguna corrección o ajuste en el acta, puede <strong>responder directamente a este correo</strong> o escribir a <a href="mailto:planeacionestrategica@unicesmag.edu.co" style="color:#2563eb;font-weight:600;">planeacionestrategica@unicesmag.edu.co</a>.
+        </div>
         ${privacyHtml}
       `
     });
     const sent = await sendStrategicPlanningEmail({
       to: participant.email,
-      subject: 'Acta disponible para revisión y firma',
-      text: `Hola ${participant.name || 'participante'}. Revise y firme el acta en: ${participantSigningUrl}${participant.participant_type === 'external' ? `\n\nTratamiento de datos personales:\n${PRIVACY_POLICY_NOTICE}\n${PRIVACY_POLICY_URL}` : ''}`,
+      replyTo: 'planeacionestrategica@unicesmag.edu.co',
+      subject: isRevision ? 'Acta institucional actualizada para revisión y firma · COM-IF-FR-002' : 'Acta disponible para revisión y firma',
+      text: isRevision
+        ? `AVISO: El acta de reunión del ${meetingDate || ''} sufrió modificaciones y ajustes. Se reactivó el flujo de firmas. Por favor revise la versión actualizada y registre su firma en: ${participantSigningUrl}\n\nSi tiene alguna observación o requiere un ajuste adicional, responda directamente a este correo o escriba a planeacionestrategica@unicesmag.edu.co.`
+        : `Hola ${participant.name || 'participante'}. Revise y firme el acta en: ${participantSigningUrl}\n\nSi tiene alguna observación o requiere un ajuste adicional, responda directamente a este correo o escriba a planeacionestrategica@unicesmag.edu.co.${participant.participant_type === 'external' ? `\n\nTratamiento de datos personales:\n${PRIVACY_POLICY_NOTICE}\n${PRIVACY_POLICY_URL}` : ''}`,
       html
     });
     // Si el correo falla, conserve el enlace personal anterior. Así, un simple
@@ -1875,9 +1985,11 @@ const publishMinute = wrap(async (req, res) => {
   }));
   const sentCount = invitationResults.filter((result) => result.success).length;
   const failedCount = invitationResults.length - sentCount;
-  const message = failedCount
-    ? `Acta habilitada para firmas. Se enviaron ${sentCount} de ${invitationResults.length} invitaciones.`
-    : `Acta habilitada y ${sentCount} invitaci${sentCount === 1 ? 'ón enviada' : 'ones enviadas'}.`;
+  const message = isRevision
+    ? `Acta modificada. Se reactivó el flujo de firmas y se enviaron ${sentCount} de ${invitationResults.length} invitaciones con el aviso de actualización.`
+    : (failedCount
+      ? `Acta habilitada para firmas. Se enviaron ${sentCount} de ${invitationResults.length} invitaciones.`
+      : `Acta habilitada y ${sentCount} invitaci${sentCount === 1 ? 'ón enviada' : 'ones enviadas'}.`);
   ok(res, {
     minute,
     signing_url: signingUrl,
@@ -1974,6 +2086,7 @@ const requestExternalOtp = wrap(async (req, res) => {
   });
   const sent = await sendStrategicPlanningEmail({
     to: participant.email,
+    replyTo: 'planeacionestrategica@unicesmag.edu.co',
     subject: `${otp} · Código para firmar acta SIAC`,
     text: `Hola ${participant.name || 'participante'}. Su código para firmar el acta es ${otp}. Vence en 10 minutos. Abra el acta: ${signingUrl}${participant.participant_type === 'external' ? `\n\nTratamiento de datos personales:\n${PRIVACY_POLICY_NOTICE}` : ''}`,
     html
@@ -2155,6 +2268,7 @@ const finalizeAndSyncMinuteInternal = async (minuteId, { req = null, userId = nu
     try {
       await sendStrategicPlanningEmail({
         to: participant.email,
+        replyTo: 'planeacionestrategica@unicesmag.edu.co',
         subject: `Acta de Reunión Firmada · ${minuteCode}${isResponsibleRecipient ? ' (Original)' : ''}`,
         text: `El acta versión ${minute.version} fue formalizada por todos los participantes. Se adjunta ${isResponsibleRecipient ? 'el documento original con las firmas para su custodia' : 'la copia oficial con la constancia ORIGINAL FIRMADO'}. Código de validación: ${minute.id}.`,
         html,
