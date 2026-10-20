@@ -1477,16 +1477,16 @@ const downloadPlanTemplate = async (req, res) => {
     const blankPlan = {
       periodo_inicio: currentYear,
       periodo_fin: currentYear + 2,
-      programa: programaName
-    };
-    const blankContenido = {
       programa: programaName,
-      periodoInicio: blankPlan.periodo_inicio,
-      periodoFin: blankPlan.periodo_fin,
-      objetivos: [],
-      presupuesto: []
+      contenido: {
+        programa: programaName,
+        periodoInicio: currentYear,
+        periodoFin: currentYear + 2,
+        objetivos: [],
+        presupuesto: []
+      }
     };
-    const workbook = await buildPlanMejoramientoWorkbook(blankPlan, blankContenido);
+    const workbook = await buildPlanMejoramientoWorkbook(blankPlan);
     const safeName = programaName.replace(/[^a-z0-9áéíóúñ_-]+/gi, '_').slice(0, 70);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="Plantilla_Plan_Mejoramiento_${safeName}.xlsx"`);

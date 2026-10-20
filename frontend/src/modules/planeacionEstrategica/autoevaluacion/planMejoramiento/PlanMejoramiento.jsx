@@ -311,19 +311,22 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     setDownloadingTemplate(true);
     try {
       const response = await planMejoramientoService.downloadTemplate(programa);
-      const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const url = window.URL.createObjectURL(blob);
+      const url = window.URL.createObjectURL(response.data);
       const link = document.createElement('a');
       link.href = url;
       const cleanProgram = programa ? programa.replace(/[^a-zA-Z0-9_-]/g, '_') : 'General';
       link.download = `Plantilla_Plan_Mejoramiento_${cleanProgram}.xlsx`;
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
+      link.remove();
       window.URL.revokeObjectURL(url);
       enqueueSnackbar('Plantilla descargada con todas las pestañas institucionales', { variant: 'success' });
     } catch (error) {
-      enqueueSnackbar('No fue posible descargar la plantilla del Plan de Mejoramiento', { variant: 'error' });
+      let message = error.response?.data?.message || error.message;
+      if (error.response?.data instanceof Blob) {
+        try { message = JSON.parse(await error.response.data.text())?.message || message; } catch (_) {}
+      }
+      enqueueSnackbar(message || 'No fue posible descargar la plantilla del Plan de Mejoramiento', { variant: 'error' });
     } finally {
       setDownloadingTemplate(false);
     }
@@ -341,7 +344,11 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         await openPlan(planId || result.data?.id);
       }
     } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'Error al compilar el archivo Excel', { variant: 'error' });
+      let message = error.response?.data?.message || error.message;
+      if (error.response?.data instanceof Blob) {
+        try { message = JSON.parse(await error.response.data.text())?.message || message; } catch (_) {}
+      }
+      enqueueSnackbar(message || 'Error al compilar el archivo Excel', { variant: 'error' });
     } finally {
       setImportingPlan(false);
       if (event.target) event.target.value = '';
