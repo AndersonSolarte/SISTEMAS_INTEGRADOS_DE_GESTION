@@ -40,7 +40,21 @@ const planMejoramientoService = {
   exportExcel: (id) => api.get(`/autoevaluacion/planes-mejoramiento/${id}/export`, {
     responseType: 'blob',
     timeout: 120000
-  })
+  }),
+  downloadTemplate: (programa = '') => api.get('/autoevaluacion/planes-mejoramiento/plantilla', {
+    params: programa ? { programa } : {},
+    responseType: 'blob'
+  }),
+  importExcel: (file, planId = null, programa = '') => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (planId) formData.append('planId', planId);
+    if (programa) formData.append('programa', programa);
+    const url = planId
+      ? `/autoevaluacion/planes-mejoramiento/${planId}/importar`
+      : '/autoevaluacion/planes-mejoramiento/importar';
+    return api.post(url, formData, { timeout: 180000 }).then((response) => response.data);
+  }
 };
 
 export default planMejoramientoService;

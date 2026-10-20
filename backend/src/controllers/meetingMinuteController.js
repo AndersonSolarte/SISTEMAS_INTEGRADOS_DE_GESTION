@@ -1034,7 +1034,7 @@ const getStatistics = wrap(async (req, res) => {
       dependency: clean(row.content?.dependencia, 220) || 'Sin dependencia',
       participants: (row.participants || []).length,
       signed_participants: (row.participants || []).filter((participant) => participant.status === 'signed').length,
-      archive_location: `Base de datos SIAC / Actas / ${year} / ${row.code}`
+      archive_location: 'Base de datos SIAC · Plantilla COM-IF-FR-002'
     };
   };
 

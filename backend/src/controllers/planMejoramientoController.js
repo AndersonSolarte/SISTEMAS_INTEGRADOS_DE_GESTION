@@ -6,7 +6,12 @@ const { Op } = require('sequelize');
 const { Autoevaluacion, AutoevaluacionPrograma, Documento, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission } = require('../models');
 const planMejoramientoDriveService = require('../services/planMejoramientoDriveService');
 
-const PLAN_MANAGER_ROLES = new Set(['administrador', 'autoevaluacion']);
+const PLAN_MANAGER_ROLES = new Set([
+  'administrador',
+  'autoevaluacion',
+  'planeacion_estrategica',
+  'planeacion_efectividad'
+]);
 const VALID_STATES = new Set(['borrador', 'en_ejecucion', 'cerrado']);
 const ACTIONABLE_PLAN_STATES = ['asignado', 'en_ejecucion', 'devuelto'];
 const ACTIONABLE_ACTIVITY_STATES = ['asignada', 'en_ejecucion', 'devuelta'];
@@ -1464,4 +1469,288 @@ const exportExcel = async (req, res) => {
   }
 };
 
-module.exports = { ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, syncDriveRepository, uploadActivityEvidence, exportExcel, buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, planStateForAssignment };
+const downloadPlanTemplate = async (req, res) => {
+  try {
+    if (req.planCollaboratorOnly) return res.status(403).json({ success: false, message: 'No tiene permiso para descargar la plantilla' });
+    const currentYear = new Date().getFullYear();
+    const programaName = text(req.query.programa) || 'PROGRAMA ACADÉMICO';
+    const blankPlan = {
+      periodo_inicio: currentYear,
+      periodo_fin: currentYear + 2,
+      programa: programaName
+    };
+    const blankContenido = {
+      programa: programaName,
+      periodoInicio: blankPlan.periodo_inicio,
+      periodoFin: blankPlan.periodo_fin,
+      objetivos: [],
+      presupuesto: []
+    };
+    const workbook = await buildPlanMejoramientoWorkbook(blankPlan, blankContenido);
+    const safeName = programaName.replace(/[^a-z0-9áéíóúñ_-]+/gi, '_').slice(0, 70);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Plantilla_Plan_Mejoramiento_${safeName}.xlsx"`);
+    await workbook.xlsx.write(res);
+    return res.end();
+  } catch (error) {
+    console.error('[plan-mejoramiento] Error al generar plantilla:', error);
+    return res.status(500).json({ success: false, message: `No fue posible generar la plantilla: ${error.message}` });
+  }
+};
+
+const importPlanExcel = async (req, res) => {
+  try {
+    if (!req.file?.buffer) {
+      return res.status(400).json({ success: false, message: 'Seleccione un archivo Excel (.xlsx) para importar' });
+    }
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+
+    const pmSheet = workbook.getWorksheet('PM');
+    if (!pmSheet) {
+      return res.status(422).json({ success: false, message: 'El archivo Excel no contiene la hoja requerida "PM"' });
+    }
+
+    const rawPeriod = text(pmSheet.getCell('E5').value);
+    const periodParts = rawPeriod.split(/[-–—/]/).map((p) => Number(text(p))).filter(Boolean);
+    const periodoInicio = periodParts[0] || new Date().getFullYear();
+    const periodoFin = periodParts[1] || periodoInicio + 2;
+    const programa = text(pmSheet.getCell('E7').value) || text(req.body.programa);
+
+    if (!programa || programa === 'PROGRAMA ACADÉMICO') {
+      return res.status(422).json({ success: false, message: 'Por favor indique el nombre del programa en la celda E7 de la hoja PM' });
+    }
+
+    const objectivesMap = new Map();
+    let currentObjective = null;
+
+    for (let r = 11; r <= 250; r += 1) {
+      const row = pmSheet.getRow(r);
+      const code = text(row.getCell('B').value);
+      const factor = text(row.getCell('C').value);
+      const characteristic = text(row.getCell('D').value);
+      const aspect = text(row.getCell('E').value);
+      const score = row.getCell('F').value;
+      const actionType = text(row.getCell('G').value);
+      const objectiveText = text(row.getCell('H').value);
+      const activityName = text(row.getCell('I').value);
+
+      if (!code && !objectiveText && !activityName) continue;
+
+      const objectiveKey = code.includes('-') ? code.split('-')[0].trim() : (code || `OBJ_${objectivesMap.size + 1}`);
+
+      if (!objectivesMap.has(objectiveKey)) {
+        currentObjective = {
+          codigo: objectiveKey,
+          factor: factor || '',
+          caracteristica: characteristic || '',
+          aspecto: aspect || '',
+          calificacion: score !== null && score !== undefined && score !== '' ? Number(score) : '',
+          tipoAccion: actionType || 'MEJORA',
+          objetivo: objectiveText || '',
+          actividades: []
+        };
+        objectivesMap.set(objectiveKey, currentObjective);
+      } else {
+        currentObjective = objectivesMap.get(objectiveKey);
+        if (objectiveText && !currentObjective.objetivo) currentObjective.objetivo = objectiveText;
+        if (factor && !currentObjective.factor) currentObjective.factor = factor;
+        if (characteristic && !currentObjective.caracteristica) currentObjective.caracteristica = characteristic;
+        if (aspect && !currentObjective.aspecto) currentObjective.aspecto = aspect;
+      }
+
+      if (activityName) {
+        const rawStart = row.getCell('M').value;
+        const rawEnd = row.getCell('N').value;
+        const startDate = rawStart instanceof Date ? rawStart.toISOString().slice(0, 10) : text(rawStart);
+        const endDate = rawEnd instanceof Date ? rawEnd.toISOString().slice(0, 10) : text(rawEnd);
+
+        currentObjective.actividades.push({
+          uid: crypto.randomUUID(),
+          codigo: code,
+          nombre: activityName,
+          descripcion: text(row.getCell('J').value),
+          indicador: text(row.getCell('K').value),
+          meta: text(row.getCell('L').value),
+          fechaInicio: startDate,
+          fechaFin: endDate,
+          recursos: text(row.getCell('O').value),
+          procesoResponsable: text(row.getCell('Q').value),
+          cargoResponsable: text(row.getCell('R').value),
+          alcance: text(row.getCell('S').value) || 'PROGRAMA',
+          ejeEstrategico: text(row.getCell('T').value),
+          objetivoEstrategico: text(row.getCell('U').value),
+          proyectoPdi: text(row.getCell('V').value),
+          politicasInstitucionales: [],
+          lineasAccionPolitica: [],
+          seguimientos: []
+        });
+      }
+    }
+
+    const compiledObjectives = Array.from(objectivesMap.values());
+    if (!compiledObjectives.length) {
+      return res.status(422).json({ success: false, message: 'No se encontraron objetivos ni actividades registrados en la hoja PM' });
+    }
+
+    const policySheet = workbook.getWorksheet('POLÍTICAS Y LÍNEAS');
+    if (policySheet) {
+      policySheet.eachRow((row, rowNumber) => {
+        if (rowNumber <= 1) return;
+        const code = text(row.getCell(1).value);
+        const actName = text(row.getCell(2).value);
+        const policies = text(row.getCell(5).value).split('\n').map(text).filter(Boolean);
+        const actionLines = text(row.getCell(6).value).split('\n').map(text).filter(Boolean);
+
+        compiledObjectives.forEach((obj) => {
+          obj.actividades.forEach((act) => {
+            if ((code && (act.codigo === code || obj.codigo === code)) || (actName && act.nombre === actName)) {
+              if (policies.length) act.politicasInstitucionales = policies;
+              if (actionLines.length) act.lineasAccionPolitica = actionLines;
+            }
+          });
+        });
+      });
+    }
+
+    const budgetLayouts = [
+      { sheetName: 'PERSONAL', categoria: 'personal', defaultSub: 'docente_tc', conceptCol: 'C', descCol: 'D', qtyCol: 'E', unitCol: 'F', codeCol: 'H', rows: [17, 104] },
+      { sheetName: 'ADQUISICIÓN DE ACTIVOS', categoria: 'activos', defaultSub: 'equipos', conceptCol: 'C', descCol: 'D', qtyCol: 'E', unitCol: 'F', codeCol: 'H', rows: [21, 44] },
+      { sheetName: 'PUBLICIDAD', categoria: 'publicidad', defaultSub: 'medios', conceptCol: 'C', descCol: 'D', qtyCol: 'E', unitCol: 'F', codeCol: 'H', rows: [17, 52] },
+      { sheetName: 'ÚTILES Y PAPELERÍA', categoria: 'papeleria', defaultSub: 'papeleria_general', conceptCol: 'C', descCol: 'D', qtyCol: 'E', unitCol: 'F', codeCol: 'H', rows: [19, 47] },
+      { sheetName: 'ESPACIOS FÍSICOS y EQUIP', categoria: 'espacios', defaultSub: 'aulas', conceptCol: 'C', descCol: 'D', qtyCol: 'E', unitCol: 'G', codeCol: 'I', rows: [18, 59] },
+      { sheetName: 'DIVERSOS', categoria: 'diversos', defaultSub: 'otros', conceptCol: 'C', descCol: 'D', qtyCol: 'E', unitCol: 'F', codeCol: 'H', rows: [15, 32] }
+    ];
+
+    const compiledBudget = [];
+    budgetLayouts.forEach((layout) => {
+      const sheet = workbook.getWorksheet(layout.sheetName);
+      if (!sheet) return;
+      for (let r = layout.rows[0]; r <= layout.rows[1]; r += 1) {
+        const row = sheet.getRow(r);
+        const concept = text(row.getCell(layout.conceptCol).value);
+        const description = text(row.getCell(layout.descCol).value);
+        const qty = number(row.getCell(layout.qtyCol).value);
+        const unitVal = number(row.getCell(layout.unitCol).value);
+        const objCode = text(row.getCell(layout.codeCol).value);
+
+        if (concept || description || (qty > 0 && unitVal > 0)) {
+          compiledBudget.push({
+            id: crypto.randomUUID(),
+            categoria: layout.categoria,
+            subcategoria: layout.defaultSub,
+            concepto: concept || 'Rubro presupuestal',
+            descripcion: description,
+            cantidad: qty || 1,
+            valorUnitario: unitVal,
+            codigoObjetivo: objCode || compiledObjectives[0]?.codigo || 'OPM_01'
+          });
+        }
+      }
+    });
+
+    const followUpSheet = workbook.getWorksheet('SEGUIMIENTO');
+    if (followUpSheet) {
+      followUpSheet.eachRow((row, rowNumber) => {
+        if (rowNumber <= 1) return;
+        const code = text(row.getCell(1).value);
+        const actName = text(row.getCell(3).value);
+        const achieved = text(row.getCell(6).value);
+        const evidence = text(row.getCell(11).value);
+        const observations = text(row.getCell(12).value);
+        const dateRaw = row.getCell(13).value;
+        const followDate = dateRaw instanceof Date ? dateRaw.toISOString().slice(0, 10) : text(dateRaw);
+        const verification = text(row.getCell(14).value);
+
+        if (achieved || evidence || observations || followDate) {
+          compiledObjectives.forEach((obj) => {
+            obj.actividades.forEach((act) => {
+              if ((code && (act.codigo === code || obj.codigo === code)) || (actName && act.nombre === actName)) {
+                act.metaAlcanzada = achieved || act.metaAlcanzada;
+                act.fechaSeguimiento = followDate || act.fechaSeguimiento;
+                act.evidencia = evidence || act.evidencia;
+                act.observaciones = observations || act.observaciones;
+                act.verificacionSeguimiento = verification || act.verificacionSeguimiento;
+                act.seguimientos.push({
+                  id: crypto.randomUUID(),
+                  metaPlaneada: act.meta,
+                  valorAlcanzado: achieved,
+                  evidenciaUrl: evidence,
+                  observaciones: observations,
+                  fecha: followDate,
+                  verificacion: verification
+                });
+              }
+            });
+          });
+        }
+      });
+    }
+
+    const requestedPlanId = req.params.id || req.body.planId;
+    let targetPlan = null;
+    if (requestedPlanId) {
+      targetPlan = await PlanMejoramiento.findByPk(requestedPlanId);
+    }
+    if (!targetPlan && programa) {
+      targetPlan = await PlanMejoramiento.findOne({
+        where: { programa: { [Op.iLike]: programa }, estado: { [Op.ne]: 'cerrado' } },
+        order: [['updatedAt', 'DESC']]
+      });
+    }
+
+    const currentContent = targetPlan?.contenido && typeof targetPlan.contenido === 'object' ? targetPlan.contenido : {};
+    const updatedContent = {
+      ...currentContent,
+      programa,
+      periodoInicio,
+      periodoFin,
+      objetivos: compiledObjectives,
+      presupuesto: compiledBudget.length ? compiledBudget : array(currentContent.presupuesto),
+      oportunidadesAutoevaluacion: array(currentContent.oportunidadesAutoevaluacion)
+    };
+
+    if (targetPlan) {
+      await targetPlan.update({
+        programa,
+        periodo_inicio: periodoInicio,
+        periodo_fin: periodoFin,
+        contenido: updatedContent,
+        actualizado_por: req.user?.id
+      });
+    } else {
+      targetPlan = await PlanMejoramiento.create({
+        programa,
+        periodo_inicio: periodoInicio,
+        periodo_fin: periodoFin,
+        estado: 'borrador',
+        contenido: updatedContent,
+        creado_por: req.user?.id,
+        actualizado_por: req.user?.id
+      });
+    }
+
+    const totalActivities = compiledObjectives.reduce((sum, obj) => sum + obj.actividades.length, 0);
+
+    return res.json({
+      success: true,
+      message: `Plan de mejoramiento compilado exitosamente: ${compiledObjectives.length} objetivos, ${totalActivities} actividades y ${compiledBudget.length} rubros presupuestales.`,
+      data: {
+        id: targetPlan.id,
+        programa: targetPlan.programa,
+        periodo: `${periodoInicio} - ${periodoFin}`,
+        objetivosCount: compiledObjectives.length,
+        actividadesCount: totalActivities,
+        rubrosPresupuestoCount: compiledBudget.length
+      }
+    });
+  } catch (error) {
+    console.error('[plan-mejoramiento] Error al importar plantilla Excel:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'No fue posible compilar la información de la plantilla Excel'
+    });
+  }
+};
+
+module.exports = { ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, syncDriveRepository, uploadActivityEvidence, exportExcel, downloadPlanTemplate, importPlanExcel, buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, planStateForAssignment };

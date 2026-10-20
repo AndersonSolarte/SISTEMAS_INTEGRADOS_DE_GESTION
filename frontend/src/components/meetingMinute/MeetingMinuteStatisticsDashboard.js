@@ -2,12 +2,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert, Box, Button, Chip, CircularProgress, FormControl, Grid, InputLabel,
   LinearProgress, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Typography
+  TableContainer, TableHead, TableRow, Tooltip, Typography
 } from '@mui/material';
 import {
   Archive, ArrowBack, Assessment, Description, Drafts, HowToReg, Refresh,
   TaskAlt, Visibility
 } from '@mui/icons-material';
+import {
+  Bar, BarChart, CartesianGrid, Cell, Legend as ChartLegend, Pie, PieChart,
+  ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis
+} from 'recharts';
 import { useSnackbar } from 'notistack';
 import meetingMinuteService from '../../services/meetingMinuteService';
 
@@ -156,9 +160,11 @@ export default function MeetingMinuteStatisticsDashboard() {
         </Stack>
       </Paper>
 
-      <Alert severity="info">Las actas se retiran de “Mis actas” después de {data.retention_days || 30} días, pero permanecen en este archivo histórico y sus estadísticas siguen acumulándose.</Alert>
+      <Alert severity="info" sx={{ borderRadius: 2 }}>
+        Las actas se retiran de la vista operativa de “Mis actas” después de {data.retention_days || 30} días, pero permanecen preservadas en la base de datos institucional y sus estadísticas se mantienen actualizadas sin ocupar almacenamiento de archivos en el servidor.
+      </Alert>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(5, minmax(0, 1fr))' }, gap: 1.5, width: '100%' }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(5, 1fr)' }, gap: 1.5, width: '100%' }}>
         <MetricCard label="Total general" value={summary.total} icon={<Description />} color="#1d4ed8" soft="#eff6ff" detail={`${summary.active} activas`} />
         <MetricCard label="Borradores" value={summary.draft} icon={<Drafts />} color="#64748b" soft="#f8fafc" />
         <MetricCard label="En firmas" value={summary.signing} icon={<HowToReg />} color="#d97706" soft="#fffbeb" />
@@ -174,17 +180,78 @@ export default function MeetingMinuteStatisticsDashboard() {
         <LinearProgress variant="determinate" value={summary.signature_progress} sx={{ height: 10, borderRadius: 99 }} />
       </Paper>
 
+      {/* GRÁFICAS DE DISTRIBUCIÓN Y EVOLUCIÓN HISTÓRICA */}
+      <Grid container spacing={2}>
+        <Grid item xs={12} md={5}>
+          <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0', height: 350, display: 'flex', flexDirection: 'column' }}>
+            <Typography fontWeight={950} color="#0f172a" mb={1}>Actas por estado</Typography>
+            <Box sx={{ flex: 1, width: '100%', minHeight: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={(data.by_status || []).filter((s) => s.total > 0)}
+                    dataKey="total"
+                    nameKey="label"
+                    cx="50%"
+                    cy="45%"
+                    innerRadius={50}
+                    outerRadius={85}
+                    paddingAngle={4}
+                  >
+                    {(data.by_status || []).filter((s) => s.total > 0).map((entry) => (
+                      <Cell key={entry.status} fill={STATUS[entry.status]?.color || '#64748b'} />
+                    ))}
+                  </Pie>
+                  <ChartTooltip />
+                  <ChartLegend verticalAlign="bottom" height={40} wrapperStyle={{ fontSize: 12, fontWeight: 750, paddingTop: 8 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </Box>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} md={7}>
+          <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0', height: 350, display: 'flex', flexDirection: 'column' }}>
+            <Typography fontWeight={950} color="#0f172a" mb={1}>
+              {selectedYear ? `Evolución mensual (${selectedYear})` : 'Evolución histórica por año'}
+            </Typography>
+            <Box sx={{ flex: 1, width: '100%', minHeight: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data.trend || []} margin={{ top: 15, right: 20, left: -10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#64748b', fontWeight: 700 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                  <ChartTooltip />
+                  <Bar dataKey="total" name="Actas" fill="#2563eb" radius={[6, 6, 0, 0]} maxBarSize={55} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
+          </Paper>
+        </Grid>
+      </Grid>
+
       <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" gap={1} mb={1.5}>
           <Box>
             <Typography fontWeight={950}>Control de archivo de actas</Typography>
-            <Typography variant="body2" color="text.secondary">Inventario histórico de datos. El acta se genera desde la plantilla únicamente cuando se consulta.</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Inventario de datos estructurados conservados en base de datos. Los documentos <strong>no se guardan como archivos PDF en el disco del servidor</strong>; la visualización y el documento oficial se compilan dinámicamente en memoria desde la plantilla única institucional COM-IF-FR-002 únicamente cuando son consultados.
+            </Typography>
           </Box>
           <Chip label={`${(data.archive || []).length} documento(s)`} sx={{ alignSelf: { xs: 'flex-start', md: 'center' }, fontWeight: 850 }} />
         </Stack>
         <TableContainer>
           <Table size="small">
-            <TableHead><TableRow><TableCell sx={{ fontWeight: 900 }}>Documento</TableCell><TableCell sx={{ fontWeight: 900 }}>Fecha</TableCell><TableCell sx={{ fontWeight: 900 }}>Estado</TableCell><TableCell sx={{ fontWeight: 900 }}>Responsable / dependencia</TableCell><TableCell sx={{ fontWeight: 900 }}>Firmas</TableCell><TableCell sx={{ fontWeight: 900 }}>Registro</TableCell><TableCell align="right" sx={{ fontWeight: 900 }}>Consulta</TableCell></TableRow></TableHead>
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 900 }}>Documento</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>Fecha</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>Estado</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>Responsable / dependencia</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>Firmas</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>Registro en BD</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 900 }}>Consulta</TableCell>
+              </TableRow>
+            </TableHead>
             <TableBody>
               {(data.archive || []).map((row) => {
                 const status = STATUS[row.status] || STATUS.draft;
@@ -193,9 +260,51 @@ export default function MeetingMinuteStatisticsDashboard() {
                   : row.lifecycle === 'deleted'
                     ? { label: 'Retirada', color: '#dc2626', soft: '#fef2f2' }
                     : { label: 'Operativa', color: '#0284c7', soft: '#f0f9ff' };
-                return <TableRow key={row.id} hover><TableCell><Typography fontSize={13} fontWeight={850}>{row.title}</Typography><Typography variant="caption" color="text.secondary">{row.code}</Typography></TableCell><TableCell>{displayDate(row.meeting_date || row.created_at)}</TableCell><TableCell><Stack spacing={.5} alignItems="flex-start"><Chip size="small" label={status.label} sx={{ fontWeight: 800, color: status.color, bgcolor: status.soft }} /><Chip size="small" label={lifecycle.label} sx={{ fontWeight: 800, color: lifecycle.color, bgcolor: lifecycle.soft }} /></Stack></TableCell><TableCell><Typography variant="body2">{row.creator || 'Sin información'}</Typography><Typography variant="caption" color="text.secondary">{row.dependency}</Typography></TableCell><TableCell>{row.signed_participants} de {row.participants}</TableCell><TableCell><Typography variant="caption" sx={{ color: '#475569' }}>{row.archive_location}</Typography></TableCell><TableCell align="right"><Button size="small" startIcon={consultingId === row.id ? <CircularProgress size={15} /> : <Visibility />} onClick={() => consultArchivedMinute(row)} disabled={Boolean(consultingId)} sx={{ textTransform: 'none', fontWeight: 850, whiteSpace: 'nowrap' }}>Ver acta</Button></TableCell></TableRow>;
+                return (
+                  <TableRow key={row.id} hover>
+                    <TableCell>
+                      <Typography fontSize={13} fontWeight={850}>{row.title}</Typography>
+                      <Typography variant="caption" color="text.secondary">{row.code}</Typography>
+                    </TableCell>
+                    <TableCell>{displayDate(row.meeting_date || row.created_at)}</TableCell>
+                    <TableCell>
+                      <Stack spacing={.5} alignItems="flex-start">
+                        <Chip size="small" label={status.label} sx={{ fontWeight: 800, color: status.color, bgcolor: status.soft }} />
+                        <Chip size="small" label={lifecycle.label} sx={{ fontWeight: 800, color: lifecycle.color, bgcolor: lifecycle.soft }} />
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{row.creator || 'Sin información'}</Typography>
+                      <Typography variant="caption" color="text.secondary">{row.dependency}</Typography>
+                    </TableCell>
+                    <TableCell>{row.signed_participants} de {row.participants}</TableCell>
+                    <TableCell>
+                      <Tooltip title="Datos persistidos en PostgreSQL. Se compila en memoria sobre la plantilla institucional COM-IF-FR-002">
+                        <Chip size="small" label={row.archive_location || 'Base de datos SIAC · COM-IF-FR-002'} sx={{ fontWeight: 700, fontSize: 11, bgcolor: '#f1f5f9', color: '#334155' }} />
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={consultingId === row.id ? <CircularProgress size={15} /> : <Visibility />}
+                        onClick={() => consultArchivedMinute(row)}
+                        disabled={Boolean(consultingId)}
+                        sx={{ textTransform: 'none', fontWeight: 850, whiteSpace: 'nowrap' }}
+                      >
+                        Ver acta
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
               })}
-              {!data.archive?.length && <TableRow><TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>No hay actas registradas para el periodo seleccionado.</TableCell></TableRow>}
+              {!data.archive?.length && (
+                <TableRow>
+                  <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    No hay actas registradas para el periodo seleccionado.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </TableContainer>

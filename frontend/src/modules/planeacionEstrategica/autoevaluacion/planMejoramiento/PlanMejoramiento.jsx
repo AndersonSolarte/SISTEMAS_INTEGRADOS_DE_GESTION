@@ -22,7 +22,8 @@ import {
   PersonRounded as PersonIcon,
   SchoolRounded as ProgramIcon,
   SaveRounded as SaveIcon,
-  TrendingUpRounded as ProgressIcon
+  TrendingUpRounded as ProgressIcon,
+  UploadFileRounded as UploadFileIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import * as XLSX from 'xlsx';
@@ -301,6 +302,51 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const tariffInputRef = useRef(null);
   const driveSyncedPlanRef = useRef(null);
   const driveSyncInFlightRef = useRef(false);
+  const [importingPlan, setImportingPlan] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const importInputRef = useRef(null);
+  const editorImportInputRef = useRef(null);
+
+  const handleDownloadBlankTemplate = async (programa = '') => {
+    setDownloadingTemplate(true);
+    try {
+      const response = await planMejoramientoService.downloadTemplate(programa);
+      const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const cleanProgram = programa ? programa.replace(/[^a-zA-Z0-9_-]/g, '_') : 'General';
+      link.download = `Plantilla_Plan_Mejoramiento_${cleanProgram}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      enqueueSnackbar('Plantilla descargada con todas las pestañas institucionales', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar('No fue posible descargar la plantilla del Plan de Mejoramiento', { variant: 'error' });
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  };
+
+  const handleImportExcel = async (event, planId = null) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImportingPlan(true);
+    try {
+      const result = await planMejoramientoService.importExcel(file, planId, editor?.programa || '');
+      enqueueSnackbar(result.message || 'Plan compilado exitosamente desde Excel', { variant: 'success' });
+      await loadPlans(false);
+      if (planId || result.data?.id) {
+        await openPlan(planId || result.data?.id);
+      }
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'Error al compilar el archivo Excel', { variant: 'error' });
+    } finally {
+      setImportingPlan(false);
+      if (event.target) event.target.value = '';
+    }
+  };
 
   const loadPlans = useCallback(async (synchronize = false) => {
     setLoading(true);
@@ -1068,7 +1114,33 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3.5 }, borderRadius: 4, color: 'white', background: 'linear-gradient(120deg, #0f1f3a 0%, #1d4ed8 55%, #d97706 130%)', mb: 3 }}>
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={2}>
             <Box><Typography variant="h4" sx={{ fontWeight: 950 }}>{executionMode ? 'Ejecución de Autoevaluación' : 'Plan de mejoramiento'}</Typography><Typography sx={{ opacity: .92, mt: .5 }}>{executionMode ? 'Gestione las actividades, evidencias y seguimientos de los planes asignados.' : 'Formulación, presupuesto, seguimiento y exportación de la matriz institucional.'}</Typography></Box>
-            <Stack direction="row" spacing={1}><Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'white', fontWeight: 850, textTransform: 'none' }}>Volver</Button>{!executionMode && <Button variant="contained" startIcon={<AddIcon />} onClick={startNewPlan} sx={{ bgcolor: 'white', color: '#1d4ed8', fontWeight: 900, textTransform: 'none', '&:hover': { bgcolor: '#eff6ff' } }}>Nuevo plan</Button>}</Stack>
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'white', fontWeight: 850, textTransform: 'none' }}>Volver</Button>
+              {!executionMode && (
+                <>
+                  <input ref={importInputRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={(e) => handleImportExcel(e)} />
+                  <Button
+                    variant="outlined"
+                    disabled={downloadingTemplate}
+                    startIcon={downloadingTemplate ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+                    onClick={() => handleDownloadBlankTemplate()}
+                    sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.6)', fontWeight: 850, textTransform: 'none', '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
+                  >
+                    Descargar plantilla
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    disabled={importingPlan}
+                    startIcon={importingPlan ? <CircularProgress size={16} color="inherit" /> : <UploadFileIcon />}
+                    onClick={() => importInputRef.current?.click()}
+                    sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.6)', fontWeight: 850, textTransform: 'none', '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
+                  >
+                    {importingPlan ? 'Compilando…' : 'Cargar Excel'}
+                  </Button>
+                  <Button variant="contained" startIcon={<AddIcon />} onClick={startNewPlan} sx={{ bgcolor: 'white', color: '#1d4ed8', fontWeight: 900, textTransform: 'none', '&:hover': { bgcolor: '#eff6ff' } }}>Nuevo plan</Button>
+                </>
+              )}
+            </Stack>
           </Stack>
         </Paper>
         {loading ? <Box sx={{ py: 10, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box> : plans.length === 0 ? (
@@ -1195,7 +1267,22 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               </Stack>
             </Box>
           </Stack>
-          <Stack direction="row" spacing={1}>{!collaboratorMode && <Button disabled={!editor.id || exportingPlanId !== null} startIcon={exportingPlanId !== null ? <CircularProgress size={18} /> : <DownloadIcon />} onClick={() => exportExcel(editor.id, editor.programa, true)} sx={{ textTransform: 'none', fontWeight: 850 }}>{exportingPlanId !== null ? 'Actualizando Excel…' : 'Exportar Excel'}</Button>}<Button variant="contained" disabled={saving || executionLocked} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={save} sx={{ textTransform: 'none', fontWeight: 900 }}>{saving ? 'Guardando…' : 'Guardar ahora'}</Button></Stack>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            {!collaboratorMode && (
+              <>
+                <input ref={editorImportInputRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={(e) => handleImportExcel(e, editor.id)} />
+                <Button disabled={!editor.id || exportingPlanId !== null} startIcon={exportingPlanId !== null ? <CircularProgress size={18} /> : <DownloadIcon />} onClick={() => exportExcel(editor.id, editor.programa, true)} sx={{ textTransform: 'none', fontWeight: 850 }}>
+                  {exportingPlanId !== null ? 'Actualizando Excel…' : 'Exportar Excel'}
+                </Button>
+                <Button disabled={importingPlan} startIcon={importingPlan ? <CircularProgress size={18} /> : <UploadFileIcon />} onClick={() => editorImportInputRef.current?.click()} sx={{ textTransform: 'none', fontWeight: 850 }}>
+                  {importingPlan ? 'Compilando…' : 'Cargar Excel'}
+                </Button>
+              </>
+            )}
+            <Button variant="contained" disabled={saving || executionLocked} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={save} sx={{ textTransform: 'none', fontWeight: 900 }}>
+              {saving ? 'Guardando…' : 'Guardar ahora'}
+            </Button>
+          </Stack>
         </Stack>
       </Paper>
 
