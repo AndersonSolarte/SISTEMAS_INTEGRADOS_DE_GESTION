@@ -274,6 +274,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [improvementScoreFilter, setImprovementScoreFilter] = useState('all');
   const [associationOpportunity, setAssociationOpportunity] = useState(null);
   const [associationObjectiveIndex, setAssociationObjectiveIndex] = useState('new');
+  const [associationNewObjectiveText, setAssociationNewObjectiveText] = useState('');
   const [evidenceOpportunity, setEvidenceOpportunity] = useState(null);
   const [editor, setEditor] = useState(null);
   const [assignmentPlan, setAssignmentPlan] = useState(null);
@@ -888,30 +889,26 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     })
   }));
 
-  const compatibleObjectives = associationOpportunity ? (editor?.objetivos || [])
-    .map((objective, index) => ({ objective, index }))
-    .filter(({ objective }) => {
-      const selected = objective.aspectosAutoevaluacion || [];
-      if (!selected.length && !objective.factor && !objective.caracteristica) return true;
-      return objective.factor === associationOpportunity.factor && objective.caracteristica === associationOpportunity.caracteristica;
-    }) : [];
+  const availableObjectives = associationOpportunity
+    ? (editor?.objetivos || []).map((objective, index) => ({ objective, index }))
+    : [];
+  const nextAssociationObjectiveNumber = Math.max(0, ...(editor?.objetivos || []).map((item) => Number(String(item.codigo || '').match(/([0-9]+)$/)?.[1] || 0))) + 1;
+  const nextAssociationObjectiveCode = `OPM_${String(nextAssociationObjectiveNumber).padStart(2, '0')}`;
 
   const openObjectiveAssociation = (opportunity) => {
-    const compatibleIndex = (editor?.objetivos || []).findIndex((objective) => {
-      const selected = objective.aspectosAutoevaluacion || [];
-      if (!selected.length && !objective.factor && !objective.caracteristica) return true;
-      return objective.factor === opportunity.factor && objective.caracteristica === opportunity.caracteristica;
-    });
     setAssociationOpportunity(opportunity);
-    setAssociationObjectiveIndex(compatibleIndex >= 0 ? String(compatibleIndex) : 'new');
+    setAssociationObjectiveIndex('new');
+    setAssociationNewObjectiveText('');
   };
 
   const associateOpportunityToObjective = () => {
     if (!associationOpportunity) return;
     setEditor((previous) => {
       const objectives = [...(previous.objetivos || [])];
-      const selectedIndex = associationObjectiveIndex === 'new' ? objectives.length : Number(associationObjectiveIndex);
-      const currentObjective = objectives[selectedIndex] || emptyObjective(selectedIndex + 1);
+      const creatingObjective = associationObjectiveIndex === 'new';
+      const selectedIndex = creatingObjective ? objectives.length : Number(associationObjectiveIndex);
+      const nextNumber = Math.max(0, ...objectives.map((item) => Number(String(item.codigo || '').match(/([0-9]+)$/)?.[1] || 0))) + 1;
+      const currentObjective = objectives[selectedIndex] || { ...emptyObjective(nextNumber), objetivo: associationNewObjectiveText.trim() };
       const currentAspects = currentObjective.aspectosAutoevaluacion || [];
       if (currentAspects.some((item) => String(item.id) === String(associationOpportunity.id))) return previous;
       const selected = [...currentAspects, associationOpportunity];
@@ -938,6 +935,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     enqueueSnackbar('Aspecto asociado al objetivo. Ya no aparece en la lista de pendientes.', { variant: 'success' });
     setAssociationOpportunity(null);
     setAssociationObjectiveIndex('new');
+    setAssociationNewObjectiveText('');
   };
 
   const filteredImprovementOpportunities = pendingOpportunities().filter((item) => {
@@ -1301,7 +1299,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                       <Chip label={objective.codigo} color="primary" sx={{ fontWeight: 900 }} />
                       {objective.origenAutoevaluacion?.id && <Chip size="small" label="Importado de Autoevaluación" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 850 }} />}
                       <Box>
-                        <Typography sx={{ fontWeight: 900 }}>Objetivo de mejoramiento {objectiveIndex + 1}</Typography>
+                        <Typography sx={{ fontWeight: 900 }}>{objective.objetivo?.trim() || `Objetivo de mejoramiento ${objectiveIndex + 1}`}</Typography>
                         <Typography variant="caption" sx={{ color: '#64748b' }}>{objective.factor || 'Sin factor'} · {objective.caracteristica || 'Sin característica'}</Typography>
                       </Box>
                     </Stack>
@@ -1335,6 +1333,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                         displayEmpty: true,
                         renderValue: () => `${aspectOptionsForObjective(objective).length} aspecto${aspectOptionsForObjective(objective).length === 1 ? '' : 's'} pendiente${aspectOptionsForObjective(objective).length === 1 ? '' : 's'}`
                       }}
+                      InputLabelProps={{ shrink: true }}
                       sx={{ gridColumn: { md: 'span 12' } }}
                       disabled={!objective.caracteristica}
                     >
@@ -1673,7 +1672,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           )}
         </Box>
       </Paper>
-      <Dialog open={Boolean(associationOpportunity)} onClose={() => setAssociationOpportunity(null)} fullWidth maxWidth="sm" PaperProps={{ sx: { borderRadius: 3.5 } }}>
+      <Dialog open={Boolean(associationOpportunity)} onClose={() => { setAssociationOpportunity(null); setAssociationNewObjectiveText(''); }} fullWidth maxWidth="sm" PaperProps={{ sx: { borderRadius: 3.5 } }}>
         <Box sx={{ p: { xs: 2.2, md: 3 } }}>
           <Typography variant="h6" sx={{ fontWeight: 950, color: '#0f172a' }}>Asociar aspecto con un objetivo</Typography>
           <Typography variant="body2" sx={{ mt: 0.5, color: '#64748b' }}>{associationOpportunity?.aspecto}</Typography>
@@ -1687,15 +1686,39 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             value={associationObjectiveIndex}
             onChange={(event) => setAssociationObjectiveIndex(event.target.value)}
           >
-            {compatibleObjectives.map(({ objective, index }) => (
+            {availableObjectives.map(({ objective, index }) => (
               <MenuItem key={`${objective.codigo}-${index}`} value={String(index)}>{objective.codigo} · {objective.objetivo || `Objetivo de mejoramiento ${index + 1}`}</MenuItem>
             ))}
-            <MenuItem value="new">+ Crear un nuevo objetivo con este aspecto</MenuItem>
+            <MenuItem value="new">+ Crear nuevo objetivo · {nextAssociationObjectiveCode}</MenuItem>
           </TextField>
-          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#64748b' }}>Solo se muestran objetivos compatibles con el mismo factor y característica.</Typography>
+          {associationObjectiveIndex === 'new' ? (
+            <Paper elevation={0} sx={{ mt: 1.5, p: 1.5, borderRadius: 2.5, border: '1px solid #dbeafe', bgcolor: '#f8fbff' }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ sm: 'flex-start' }}>
+                <Chip label={nextAssociationObjectiveCode} color="primary" sx={{ mt: { sm: 0.7 }, fontWeight: 900 }} />
+                <TextField
+                  fullWidth
+                  autoFocus
+                  multiline
+                  minRows={2}
+                  label="Redactar nuevo objetivo"
+                  value={associationNewObjectiveText}
+                  onChange={(event) => setAssociationNewObjectiveText(event.target.value)}
+                  placeholder="Escriba el objetivo de mejoramiento que agrupará este aspecto"
+                />
+              </Stack>
+            </Paper>
+          ) : (() => {
+            const selectedObjective = editor?.objetivos?.[Number(associationObjectiveIndex)];
+            return selectedObjective ? (
+              <Paper elevation={0} sx={{ mt: 1.5, p: 1.5, borderRadius: 2.5, border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+                <Typography sx={{ color: '#0f172a', fontWeight: 900 }}>{selectedObjective.objetivo || `Objetivo de mejoramiento ${Number(associationObjectiveIndex) + 1}`}</Typography>
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.35, color: '#64748b' }}>{selectedObjective.factor || 'Sin factor'} · {(selectedObjective.aspectosAutoevaluacion || []).length} aspecto(s) asociado(s)</Typography>
+              </Paper>
+            ) : null;
+          })()}
           <Stack direction="row" justifyContent="flex-end" spacing={1} sx={{ mt: 2.5 }}>
-            <Button onClick={() => setAssociationOpportunity(null)} sx={{ textTransform: 'none', fontWeight: 850 }}>Cancelar</Button>
-            <Button variant="contained" onClick={associateOpportunityToObjective} sx={{ textTransform: 'none', fontWeight: 900 }}>Confirmar asociación</Button>
+            <Button onClick={() => { setAssociationOpportunity(null); setAssociationNewObjectiveText(''); }} sx={{ textTransform: 'none', fontWeight: 850 }}>Cancelar</Button>
+            <Button variant="contained" disabled={associationObjectiveIndex === 'new' && !associationNewObjectiveText.trim()} onClick={associateOpportunityToObjective} sx={{ textTransform: 'none', fontWeight: 900 }}>{associationObjectiveIndex === 'new' ? 'Crear y asociar' : 'Confirmar asociación'}</Button>
           </Stack>
         </Box>
       </Dialog>
