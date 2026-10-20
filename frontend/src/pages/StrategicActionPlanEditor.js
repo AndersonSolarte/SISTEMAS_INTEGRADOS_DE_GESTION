@@ -146,6 +146,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   });
   const [improvingMeetingField, setImprovingMeetingField] = useState('');
   const [generatingMinuteSummary, setGeneratingMinuteSummary] = useState(false);
+  const [audioFile, setAudioFile] = useState(null);
   const [activitySearch, setActivitySearch] = useState('');
   const [evidenceModalOpen, setEvidenceModalOpen] = useState(false);
   const [evidenceItem, setEvidenceItem] = useState(null);
@@ -1256,12 +1257,15 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     if (!detail?.items?.length) return enqueueSnackbar('Primero registre al menos una actividad en el Plan de Acción.', { variant: 'warning' });
     setGeneratingMinuteSummary(true);
     try {
-      const response = await strategicPlanningService.generateMinuteSummary(planId, { objective: meeting.objective });
+      const response = await strategicPlanningService.generateMinuteSummary(planId, {
+        objective: meeting.objective,
+        audio_file_name: audioFile?.name || null
+      });
       const development = String(response.data?.development || '').trim();
       const conclusions = String(response.data?.conclusions || '').trim();
       if (!development || !conclusions) throw new Error('No se recibió un resumen completo.');
       setMeeting((previous) => ({ ...previous, development, conclusions }));
-      enqueueSnackbar(`Resumen generado desde ${response.data?.activities_analyzed || detail.items.length} actividades. Revíselo antes de guardar.`, { variant: 'success' });
+      enqueueSnackbar(`Resumen generado desde ${response.data?.activities_analyzed || detail.items.length} actividades${audioFile ? ` y soporte de audio (${audioFile.name})` : ''}. Revíselo antes de guardar.`, { variant: 'success' });
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || error.message || 'No fue posible generar el resumen del acta.', { variant: 'error' });
     } finally {
@@ -2278,11 +2282,21 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                             <AutoAwesome sx={{ color: '#0284c7' }} />
                             <Box>
-                              <Typography fontWeight={850} color="#0369a1" sx={{ fontSize: 13.5 }}>Consolidar borrador del acta con IA</Typography>
-                              <Typography variant="body2" color="#0284c7" sx={{ fontSize: 12 }}>Redacta automáticamente el objetivo, desarrollo y compromisos a partir de las {detail?.items?.length || 0} actividades del plan.</Typography>
+                              <Typography fontWeight={850} color="#0369a1" sx={{ fontSize: 13.5 }}>Consolidar acta con IA</Typography>
+                              <Typography variant="body2" color="#0284c7" sx={{ fontSize: 12 }}>Redacta automáticamente objetivo, desarrollo y compromisos desde actividades o audio de la sesión.</Typography>
                             </Box>
                           </Box>
-                          <Stack direction="row" spacing={1} alignItems="center">
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                            {audioFile && (
+                              <Chip
+                                size="small"
+                                label={`Audio: ${audioFile.name}`}
+                                onDelete={() => setAudioFile(null)}
+                                color="primary"
+                                variant="outlined"
+                                sx={{ fontWeight: 750, maxWidth: 220, bgcolor: '#ffffff' }}
+                              />
+                            )}
                             <Button
                               size="small"
                               variant="contained"
@@ -2291,7 +2305,28 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               onClick={generateMinuteSummary}
                               sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 850, px: 2, py: 0.75, bgcolor: '#0284c7', '&:hover': { bgcolor: '#0369a1' } }}
                             >
-                              {generatingMinuteSummary ? 'Analizando actividades…' : `Generar desde actividades (${detail?.items?.length || 0})`}
+                              {generatingMinuteSummary ? 'Analizando…' : `Generar desde actividades (${detail?.items?.length || 0})`}
+                            </Button>
+                            <Button
+                              size="small"
+                              component="label"
+                              variant="outlined"
+                              startIcon={<CloudUpload fontSize="small" />}
+                              sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 800, fontSize: 12, color: '#0369a1', borderColor: '#bae0ff', bgcolor: '#ffffff' }}
+                            >
+                              {audioFile ? 'Cambiar audio' : 'Adjuntar audio de sesión'}
+                              <input
+                                hidden
+                                type="file"
+                                accept="audio/*"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) {
+                                    setAudioFile(f);
+                                    enqueueSnackbar(`Audio "${f.name}" adjuntado para apoyo en el acta.`, { variant: 'info' });
+                                  }
+                                }}
+                              />
                             </Button>
                             <Button
                               size="small"
@@ -2323,7 +2358,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               }}
                               sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 800, fontSize: 12, color: '#0369a1', borderColor: '#bae0ff', bgcolor: '#ffffff' }}
                             >
-                              Restablecer datos
+                              Restablecer
                             </Button>
                           </Stack>
                         </Paper>
@@ -2362,17 +2397,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                         </Box>
                       ))}
                     </Box>
-                  </Paper>
-
-                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#d8e5f2' }}>
-                    <Stack direction="row" spacing={1.5} alignItems="center" mb={1.25}>
-                      <AutoAwesome sx={{ color: '#0284c7', fontSize: 18 }} />
-                      <Typography fontWeight={900} color="#0f172a" sx={{ fontSize: 15 }}>Acta Asistida por IA</Typography>
-                    </Stack>
-                    <Button fullWidth component="label" variant="outlined" startIcon={<CloudUpload />} sx={{ height: 38, borderRadius: 2.5, textTransform: 'none', fontWeight: 800, borderColor: '#cbd5e1', color: '#1e293b' }}>
-                      Adjuntar audio temporal de la sesión
-                      <input hidden type="file" accept="audio/*" onChange={() => enqueueSnackbar('Audio adjuntado temporalmente para transcripción.', { variant: 'info' })} />
-                    </Button>
                   </Paper>
 
                   <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3.5, bgcolor: '#ffffff', borderColor: '#d8e5f2' }}>
