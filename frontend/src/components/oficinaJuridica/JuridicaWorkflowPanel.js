@@ -1246,7 +1246,7 @@ export default function JuridicaWorkflowPanel() {
     const uid = Number(effectiveUser.id);
     const ids = (selected.metadata?.responsables_ids || (selected.responsable_id ? [selected.responsable_id] : [])).map(Number);
     const isAssigned = ids.includes(uid);
-    const isPrivileged = (!profile.isSimulation && isSuperAdmin) || profile.role === 'jefatura';
+    const isPrivileged = profile.role === 'jefatura';
     const vb = selected.metadata?.vistos_buenos || {};
     const alreadyApproved = vb[uid]?.aprobado === true;
     return (isAssigned || isPrivileged) && !alreadyApproved && !['entregado', 'cerrado', 'cancelado'].includes(selected.estado);

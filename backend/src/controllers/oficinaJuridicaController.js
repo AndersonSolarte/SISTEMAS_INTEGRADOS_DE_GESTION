@@ -41,15 +41,13 @@ const resolveActor = (reqOrUser) => {
 const roleFor = (user) => {
   const perms = (user?.juridicaPermissions || []).map((p) => (typeof p === 'string' ? p : p.module_key));
 
-  // Si es administrador del sistema pero se le asignó explícitamente rol de jefatura o secretaría
+  // 1. Prioridad absoluta al rol operativo marcado en Gestión de Usuarios (Permisos modulares de Oficina Jurídica)
   if (perms.includes('oficina_juridica.jefatura')) return 'jefatura';
   if (perms.includes('oficina_juridica.secretaria')) return 'secretaria';
-
-  if (user?.email === 'sgc@unicesmag.edu.co') return 'administrador';
-  if (user?.role === 'administrador') return 'administrador';
-
-  // Permiso explícito de asesor
   if (perms.includes('oficina_juridica.asesor')) return 'asesor';
+
+  // 2. Fallback únicamente si solo tiene 'oficina_juridica' sin subrol específico:
+  if (String(user?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co') return 'jefatura';
 
   const cargo = normalize(user?.cargo);
   const dep = normalize(user?.dependencia);

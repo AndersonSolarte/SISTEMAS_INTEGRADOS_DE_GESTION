@@ -1216,7 +1216,7 @@ function GestionUsuarios() {
               const hasSubRole = ['oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor'].some((k) => nextModules.includes(k));
               if (!hasSubRole) {
                 const targetCargo = String(permissionsUser?.cargo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-                if (permissionsUser?.role === ROLES.ADMINISTRADOR || targetCargo.includes('jefe') || targetCargo.includes('jefatura') || targetCargo === 'asesora juridica') {
+                if (targetCargo.includes('jefe') || targetCargo.includes('jefatura') || targetCargo === 'asesora juridica') {
                   nextModules.push('oficina_juridica.jefatura');
                 } else if (targetCargo.includes('secretar')) {
                   nextModules.push('oficina_juridica.secretaria');
