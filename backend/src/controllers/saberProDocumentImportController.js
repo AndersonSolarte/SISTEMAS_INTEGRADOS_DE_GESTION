@@ -44,6 +44,15 @@ async function retryImport(req, res) {
   }
 }
 
+async function resumeImport(req, res) {
+  try {
+    const result = await service.resumeImport(req.params.id, req.user?.id);
+    return res.status(result.resumed ? 202 : 200).json({ success: true, data: result });
+  } catch (error) {
+    return handleError(res, error);
+  }
+}
+
 async function clearImports(req, res) {
   try {
     const result = await service.clearImports(req.user?.id);
@@ -106,6 +115,7 @@ module.exports = {
   latestImport,
   getImport,
   retryImport,
+  resumeImport,
   clearImports,
   correctItem,
   viewPdf,

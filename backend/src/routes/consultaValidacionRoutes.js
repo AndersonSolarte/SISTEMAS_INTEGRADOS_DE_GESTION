@@ -9,6 +9,7 @@ const {
   latestImport: latestDocumentImport,
   getImport: getDocumentImport,
   retryImport: retryDocumentImport,
+  resumeImport: resumeDocumentImport,
   clearImports: clearDocumentImports,
   correctItem: correctDocumentImportItem,
   viewPdf: viewDocumentImportPdf,
@@ -62,6 +63,7 @@ router.get('/documentos-masivos/items/:itemId/pdf', auth, canConsultaDocumentos,
 router.patch('/documentos-masivos/items/:itemId', auth, canConsultaDocumentos, correctDocumentImportItem);
 router.get('/documentos-masivos/:id/export', auth, canConsultaDocumentos, exportDocumentImport);
 router.post('/documentos-masivos/:id/retry', auth, canConsultaDocumentos, retryDocumentImport);
+router.post('/documentos-masivos/:id/resume', auth, canConsultaDocumentos, resumeDocumentImport);
 router.get('/documentos-masivos/:id', auth, canConsultaDocumentos, getDocumentImport);
 router.post('/documentos-masivos', auth, canConsultaDocumentos, upload.single('archivo'), createDocumentImport);
 

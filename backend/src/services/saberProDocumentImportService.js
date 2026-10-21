@@ -474,6 +474,7 @@ async function getImport(importId, userId) {
     notFoundItems: row.not_found_items,
     noPdfItems: row.no_pdf_items,
     errorItems: row.error_items,
+    workerActive: activeImportIds.has(String(row.id)),
     createdAt: row.created_at,
     finishedAt: row.finished_at,
     items: (record.items || []).map(mapItem)
@@ -533,6 +534,31 @@ async function retryImport(importId, userId) {
   await refreshCounters(importId);
   startImport(importId);
   return getImport(importId, ownerId);
+}
+
+async function resumeImport(importId, userId) {
+  await ensureImportSchema();
+  const ownerId = requireUserId(userId);
+  const record = await findOwnedImport(importId, ownerId);
+  if (!record) throw apiError('La consulta no existe.', 404, 'IMPORT_NOT_FOUND');
+
+  const pendingItems = await SaberProDocumentImportItem.count({
+    where: { import_id: importId, status: 'PENDING' }
+  });
+  if (!pendingItems || activeImportIds.has(String(importId))) {
+    return { ...(await getImport(importId, ownerId)), resumed: false };
+  }
+
+  const otherProcessing = await SaberProDocumentImport.count({
+    where: { status: 'PROCESSING', created_by: ownerId, id: { [Op.ne]: importId } }
+  });
+  if (otherProcessing) {
+    throw apiError('Usted ya tiene otra consulta documental en procesamiento.', 409, 'IMPORT_IN_PROGRESS');
+  }
+
+  await record.update({ status: 'PROCESSING', finished_at: null });
+  startImport(importId);
+  return { ...(await getImport(importId, ownerId)), resumed: true };
 }
 
 async function correctItem(itemId, values, userId) {
@@ -779,6 +805,7 @@ module.exports = {
   getImport,
   getLatestImport,
   retryImport,
+  resumeImport,
   correctItem,
   getItemPdf,
   createTemplateWorkbook,

@@ -9,6 +9,7 @@ import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import FindInPageRoundedIcon from '@mui/icons-material/FindInPageRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
@@ -301,6 +302,28 @@ export default function ConsultaDocumentosMasiva() {
     }
   }
 
+  async function continueProcessing() {
+    setBusy(true);
+    setNotice(null);
+    try {
+      const response = await api.post(`${BASE_URL}/${data.id}/resume`);
+      const updated = response.data.data;
+      setData(updated);
+      setNotice({
+        severity: updated.resumed ? 'success' : 'info',
+        text: updated.resumed
+          ? 'El procesamiento se reanudó desde las filas pendientes.'
+          : updated.workerActive
+            ? 'El procesamiento sigue activo. Se actualizó el progreso.'
+            : 'El progreso fue actualizado; no hay filas pendientes por continuar.'
+      });
+    } catch (error) {
+      setNotice({ severity: 'error', text: error.response?.data?.message || 'No fue posible continuar el procesamiento.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function clearConsultation() {
     setBusy(true);
     setNotice(null);
@@ -429,6 +452,16 @@ export default function ConsultaDocumentosMasiva() {
                     ))}
                   </Select>
                 </FormControl>
+                {(data.status === 'PROCESSING' || pendingCount > 0) && (
+                  <Tooltip title="Actualizar el progreso y reanudar el trabajador si se detuvo">
+                    <span>
+                      <Button size="small" color="primary" variant="contained" startIcon={<PlayArrowRoundedIcon />}
+                        disabled={busy} onClick={continueProcessing}>
+                        Actualizar y continuar ({pendingCount})
+                      </Button>
+                    </span>
+                  </Tooltip>
+                )}
                 {retryButtonCount > 0 && (
                   <Button size="small" color="warning" variant="outlined" startIcon={<RefreshRoundedIcon />}
                     disabled={data.status === 'PROCESSING' || busy} onClick={retry}>
