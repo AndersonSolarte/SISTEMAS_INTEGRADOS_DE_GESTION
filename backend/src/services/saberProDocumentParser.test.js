@@ -92,3 +92,26 @@ FECHA DE PRESENTACIÓN DEL EXAMEN 29/09/2024
   assert.notEqual(otherPerson.registrationNumber, 'EK202431323393');
   assert.equal(otherPerson.registrationMatches, false);
 });
+
+test('recupera una cedula CamScanner con un error si el EK exacto la respalda', () => {
+  const scannedText = `
+NÚMERO DE DOCUMENTO NÚMERO DE REGISTRO
+1109550383 EK202531651967
+FECHA DE PRESENTACIÓN DEL EXAMEN Y EXPEDICIÓN DEL CERTIFICADO
+09/11/2025 09/11/2025
+`;
+  const parsed = parseEvaluatedData(scannedText, {
+    identification: '1109550363',
+    registrationNumber: 'EK202531651967'
+  });
+  assert.equal(parsed.identification, '1109550363');
+  assert.equal(parsed.identificationMatches, true);
+  assert.equal(parsed.registrationNumber, 'EK202531651967');
+  assert.equal(parsed.examDate, '2025-11-09');
+
+  const withoutExactEk = parseEvaluatedData(scannedText.replace('EK202531651967', 'EK202531851967'), {
+    identification: '1109550363',
+    registrationNumber: 'EK202531651967'
+  });
+  assert.equal(withoutExactEk.identificationMatches, false);
+});

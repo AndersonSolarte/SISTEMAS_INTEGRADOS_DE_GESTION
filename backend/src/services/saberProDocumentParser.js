@@ -114,7 +114,7 @@ function validateRegistrationDate(registrationNumber, value) {
   };
 }
 
-function textContainsIdentification(text, identification) {
+function textContainsIdentification(text, identification, allowSingleDigitCorrection = false) {
   if (!/^\d{5,20}$/.test(identification)) return false;
   const source = String(text || '');
   const separatedDigits = identification.split('').join('[\\s.\\-_|:]*');
@@ -140,6 +140,10 @@ function textContainsIdentification(text, identification) {
   while ((labelMatch = labelPattern.exec(searchable)) !== null) {
     const nearbyText = searchable.slice(labelMatch.index, labelMatch.index + 260);
     if (tolerantPattern.test(nearbyText)) return true;
+    if (allowSingleDigitCorrection) {
+      const numericCandidates = nearbyText.match(/\b\d{5,20}\b/g) || [];
+      if (numericCandidates.some((candidate) => differsByAtMostOneEdit(candidate, identification))) return true;
+    }
   }
   return false;
 }
@@ -154,9 +158,15 @@ function parseEvaluatedData(rawText, hints = {}) {
   const hintedRegistration = String(hints.registrationNumber || '').replace(/\s/g, '').toUpperCase();
   const expectedRegistrationNumber = hintedRegistration || null;
   const hintedIdentification = String(hints.identification || '').replace(/\D/g, '');
-  const hintedIdentificationRead = textContainsIdentification(text, hintedIdentification);
   const rawRegistrationCandidates = [...text.matchAll(/\b(EKA?\s*\d{8,})\b/giu)]
     .map((match) => match[1].replace(/\s/g, '').toUpperCase());
+  const exactExpectedRegistrationRead = isValidRegistrationNumber(expectedRegistrationNumber)
+    && rawRegistrationCandidates.includes(expectedRegistrationNumber);
+  const hintedIdentificationRead = textContainsIdentification(
+    text,
+    hintedIdentification,
+    exactExpectedRegistrationRead
+  );
   const supportedExpectedRegistration = hintedIdentificationRead
     && isValidRegistrationNumber(expectedRegistrationNumber)
     && rawRegistrationCandidates.some((candidate) => differsByAtMostOneEdit(candidate, expectedRegistrationNumber));

@@ -603,41 +603,9 @@ async function createResultWorkbook(importId) {
     { header: 'Validación contra BD', key: 'message', width: 78 }
   ];
 
-  const thinBorder = {
-    top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-    left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-    bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-    right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
-  };
-
-  const headerRow = sheet.getRow(1);
-  headerRow.height = 26;
-  headerRow.eachCell((cell) => {
-    cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
-    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    cell.border = {
-      top: { style: 'thin', color: { argb: 'FF1E3A8A' } },
-      left: { style: 'thin', color: { argb: 'FF3B82F6' } },
-      bottom: { style: 'medium', color: { argb: 'FF1D4ED8' } },
-      right: { style: 'thin', color: { argb: 'FF3B82F6' } }
-    };
-  });
-
-  const statusStyles = {
-    EXTRACTED: { bg: 'FFDCFCE7', fg: 'FF166534' },
-    CORRECTED: { bg: 'FFDBEAFE', fg: 'FF1E40AF' },
-    INCOMPLETE: { bg: 'FFFEF3C7', fg: 'FF92400E' },
-    NO_PDF: { bg: 'FFFFEDD5', fg: 'FF9A3412' },
-    NOT_FOUND: { bg: 'FFFFEDD5', fg: 'FF9A3412' },
-    ERROR: { bg: 'FFFEE2E2', fg: 'FF991B1B' },
-    INVALID: { bg: 'FFFEE2E2', fg: 'FF991B1B' },
-    PENDING: { bg: 'FFF1F5F9', fg: 'FF475569' }
-  };
-
   for (const rawItem of record.items || []) {
     const item = mapItem(rawItem);
-    const row = sheet.addRow({
+    sheet.addRow({
       row: item.rowNumber,
       dbIdentification: item.dbIdentification || 'Sin dato',
       pdfIdentification: item.pdfIdentification || (item.hasDocument ? 'No leído' : 'Sin PDF'),
@@ -648,61 +616,11 @@ async function createResultWorkbook(importId) {
       date: item.examDate ? toDisplayDate(item.examDate) : (item.hasDocument ? 'No leída' : 'Sin PDF'),
       message: item.message || ''
     });
-
-    row.height = 22;
-    const isEven = row.number % 2 === 0;
-    const baseBg = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
-
-    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      cell.font = { name: 'Calibri', size: 10.5, color: { argb: 'FF0F172A' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: baseBg } };
-      cell.border = thinBorder;
-      cell.alignment = {
-        vertical: 'middle',
-        horizontal: colNumber === 1 || colNumber === 4 || colNumber === 7 || colNumber === 8 ? 'center' : 'left',
-        wrapText: colNumber === 9
-      };
-    });
-
-    row.getCell('dbIdentification').font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FF0F172A' } };
-
-    const stStyle = statusStyles[item.status] || statusStyles.PENDING;
-    const statusCell = row.getCell('status');
-    statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: stStyle.bg } };
-    statusCell.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: stStyle.fg } };
-
-    const styleDbCell = (cellKey, hasValue) => {
-      if (!hasValue) {
-        const cell = row.getCell(cellKey);
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF2F2' } };
-        cell.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FF991B1B' } };
-      }
-    };
-
-    const stylePdfCell = (cellKey, hasValue, matches) => {
-      if (!item.hasDocument) return;
-      const cell = row.getCell(cellKey);
-      if (!hasValue) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF2F2' } };
-        cell.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FF991B1B' } };
-      } else if (matches) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0FDF4' } };
-        cell.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FF166534' } };
-      } else {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } };
-        cell.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FF92400E' } };
-      }
-    };
-
-    styleDbCell('dbIdentification', Boolean(item.dbIdentification));
-    stylePdfCell('pdfIdentification', Boolean(item.pdfIdentification), item.identificationMatch);
-
-    styleDbCell('dbRegistration', Boolean(item.dbRegistrationNumber));
-    stylePdfCell('registration', Boolean(item.registrationNumber), item.registrationMatch);
-
-    styleDbCell('dbDate', Boolean(item.dbExamDate));
-    stylePdfCell('date', Boolean(item.examDate), item.examDateMatch);
   }
+
+  // La exportación es deliberadamente plana: solo encabezados y valores.
+  // Los iconos, colores y semáforos pertenecen exclusivamente a la interfaz.
+  sheet.getRow(1).font = { bold: true };
 
   sheet.autoFilter = {
     from: { row: 1, column: 1 },
