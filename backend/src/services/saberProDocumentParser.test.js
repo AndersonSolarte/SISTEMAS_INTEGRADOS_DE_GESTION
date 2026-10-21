@@ -69,3 +69,26 @@ Yurany Nayiby Villa Torres C.C. 1085318009 EK202122401362 3110/2021 19/02/2022
   assert.equal(parsed.examDate, '2021-10-31');
   assert.equal(parsed.dateYearMismatch, false);
 });
+
+test('reconcilia un unico error OCR del EK solo cuando la cedula coincide', () => {
+  const rawText = `
+NÚMERO DE DOCUMENTO 1004134478
+NÚMERO DE REGISTRO EK202431323306
+CC 1004134478 EK2024313233953
+FECHA DE PRESENTACIÓN DEL EXAMEN 29/09/2024
+`;
+  const parsed = parseEvaluatedData(rawText, {
+    identification: '1004134478',
+    registrationNumber: 'EK202431323393'
+  });
+  assert.equal(parsed.registrationNumber, 'EK202431323393');
+  assert.equal(parsed.registrationMatches, true);
+  assert.equal(parsed.examDate, '2024-09-29');
+
+  const otherPerson = parseEvaluatedData(rawText, {
+    identification: '9999999999',
+    registrationNumber: 'EK202431323393'
+  });
+  assert.notEqual(otherPerson.registrationNumber, 'EK202431323393');
+  assert.equal(otherPerson.registrationMatches, false);
+});

@@ -71,6 +71,37 @@ function isValidRegistrationNumber(value) {
   return /^EK\d{12}$/.test(String(value || '').replace(/\s/g, '').toUpperCase());
 }
 
+function differsByAtMostOneEdit(leftValue, rightValue) {
+  const left = String(leftValue || '');
+  const right = String(rightValue || '');
+  if (Math.abs(left.length - right.length) > 1) return false;
+  if (left.length === right.length) {
+    let differences = 0;
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) differences += 1;
+      if (differences > 1) return false;
+    }
+    return true;
+  }
+  const shorter = left.length < right.length ? left : right;
+  const longer = left.length < right.length ? right : left;
+  let shortIndex = 0;
+  let longIndex = 0;
+  let skipped = false;
+  while (shortIndex < shorter.length && longIndex < longer.length) {
+    if (shorter[shortIndex] === longer[longIndex]) {
+      shortIndex += 1;
+      longIndex += 1;
+    } else if (!skipped) {
+      skipped = true;
+      longIndex += 1;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
 function validateRegistrationDate(registrationNumber, value) {
   const examDate = toIsoDate(value);
   const expectedYear = registrationYear(registrationNumber);
@@ -120,13 +151,20 @@ function toDisplayDate(value) {
 
 function parseEvaluatedData(rawText, hints = {}) {
   const text = normalizeText(rawText);
-  const detectedRegistration = firstMatch(text, [
+  const hintedRegistration = String(hints.registrationNumber || '').replace(/\s/g, '').toUpperCase();
+  const expectedRegistrationNumber = hintedRegistration || null;
+  const hintedIdentification = String(hints.identification || '').replace(/\D/g, '');
+  const hintedIdentificationRead = textContainsIdentification(text, hintedIdentification);
+  const rawRegistrationCandidates = [...text.matchAll(/\b(EKA?\s*\d{8,})\b/giu)]
+    .map((match) => match[1].replace(/\s/g, '').toUpperCase());
+  const supportedExpectedRegistration = hintedIdentificationRead
+    && isValidRegistrationNumber(expectedRegistrationNumber)
+    && rawRegistrationCandidates.some((candidate) => differsByAtMostOneEdit(candidate, expectedRegistrationNumber));
+  const detectedRegistration = (supportedExpectedRegistration ? expectedRegistrationNumber : null) || firstMatch(text, [
     /n[uú]mero\s+de\s+registro\s*:?\s*(EKA?\s*\d{8,})/iu,
     /registro\s+n(?:[.\s]*[°ºo])?\s*:?\s*(EKA?\s*\d{8,})/iu,
     /\b(EKA?\s*\d{8,})\b/iu
   ])?.replace(/\s/g, '').toUpperCase() || null;
-  const hintedRegistration = String(hints.registrationNumber || '').replace(/\s/g, '').toUpperCase();
-  const expectedRegistrationNumber = hintedRegistration || null;
   const registrationNumber = detectedRegistration;
   const registrationMatches = Boolean(
     registrationNumber && isValidRegistrationNumber(registrationNumber)
@@ -139,8 +177,8 @@ function parseEvaluatedData(rawText, hints = {}) {
     /\b(?:C\.?[ \t]*C\.?|T\.?[ \t]*I\.?|C\.?[ \t]*E\.?)[ \t]*:?[ \t]*([0-9][0-9. \t]{5,14})/iu
   ]);
   if (identification) identification = identification.replace(/\D/g, '');
-  const expectedIdentification = String(hints.identification || '').replace(/\D/g, '');
-  const expectedIdentificationRead = textContainsIdentification(text, expectedIdentification);
+  const expectedIdentification = hintedIdentification;
+  const expectedIdentificationRead = hintedIdentificationRead;
   if (expectedIdentificationRead) identification = expectedIdentification;
   const identificationMatches = Boolean(
     identification && /^\d{5,20}$/.test(expectedIdentification) && identification === expectedIdentification
