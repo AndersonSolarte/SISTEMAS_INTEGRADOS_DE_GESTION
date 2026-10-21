@@ -589,6 +589,16 @@ export default function JuridicaWorkflowPanel() {
     dias_calculados: null
   });
 
+  // Reasignación masiva / selectiva por cambio o relevo de personal
+  const [bulkReassignOpen, setBulkReassignOpen] = useState(false);
+  const [bulkForm, setBulkForm] = useState({
+    from_user_id: '',
+    to_user_ids: [],
+    caso_ids: [],
+    solo_abiertos: true,
+    comentario: ''
+  });
+
   // Visto Bueno de Concepto Jurídico
   const [vbOpen, setVbOpen] = useState(false);
   const [vbComentario, setVbComentario] = useState('');
@@ -823,8 +833,8 @@ export default function JuridicaWorkflowPanel() {
 
   const isSuperAdmin = String(authUser?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
   const isJefatura = profile.role === 'jefatura';
-  // La secretaría y los asistentes NO pueden asignar expedientes. Solo la Jefatura o el SuperAdmin (en vista real)
-  const canAssign = (!profile.isSimulation && isSuperAdmin) || isJefatura;
+  // La secretaría y los asistentes NO pueden asignar expedientes. Solo Jefatura Jurídica o Administrador con permiso activo
+  const canAssign = ['administrador', 'jefatura'].includes(profile.role);
   // Solo Secretaría, Jefatura y Administrador pueden modificar datos de radicación básica
   const canEditCase = ['administrador', 'jefatura', 'secretaria'].includes(profile.role);
   // Solo Jefatura y Administrador pueden conceder prórrogas de términos legales
@@ -951,7 +961,12 @@ export default function JuridicaWorkflowPanel() {
     }));
   };
 
-  const openAssignment = async () => {
+  const openAssignment = async (targetRow = null) => {
+    const caseItem = targetRow && targetRow.id ? targetRow : selected;
+    if (!caseItem) return;
+    if (targetRow && targetRow.id) {
+      setSelected(targetRow);
+    }
     setBusy(true);
     setError('');
     try {
@@ -961,25 +976,168 @@ export default function JuridicaWorkflowPanel() {
       const currentAdvisers = freshProfile.team.filter((u) => ['asesor', 'jefatura'].includes(u.juridica_rol));
       const currentSecretaries = freshProfile.team.filter((u) => u.juridica_rol === 'secretaria');
 
-      const rawCurrentIds = selected.metadata?.responsables_ids || (selected.responsable_id ? [selected.responsable_id] : []);
+      const rawCurrentIds = caseItem.metadata?.responsables_ids || (caseItem.responsable_id ? [caseItem.responsable_id] : []);
       const activeIds = rawCurrentIds.map(Number).filter((id) => currentAdvisers.some((u) => Number(u.id) === id));
-      const primaryId = activeIds[0] || (currentAdvisers.some((u) => Number(u.id) === Number(selected.responsable_id)) ? selected.responsable_id : '');
-      const activeSecretaryId = currentSecretaries.some((u) => Number(u.id) === Number(selected.secretario_id))
-        ? selected.secretario_id
+      const primaryId = activeIds[0] || (currentAdvisers.some((u) => Number(u.id) === Number(caseItem.responsable_id)) ? caseItem.responsable_id : '');
+      const activeSecretaryId = currentSecretaries.some((u) => Number(u.id) === Number(caseItem.secretario_id))
+        ? caseItem.secretario_id
         : currentSecretaries[0]?.id || '';
 
       setAssignment({
         responsables_ids: activeIds.length ? activeIds : (primaryId ? [Number(primaryId)] : []),
         responsable_id: primaryId,
         secretario_id: activeSecretaryId,
-        nivel: selected.nivel || 'Media',
-        fecha_limite: selected.fecha_limite ? String(selected.fecha_limite).slice(0, 10) : '',
+        nivel: caseItem.nivel || 'Media',
+        fecha_limite: caseItem.fecha_limite ? String(caseItem.fecha_limite).slice(0, 10) : '',
         comentario: '',
         dias_calculados: null
       });
       setAssignOpen(true);
     } catch (e) {
       setError(e.response?.data?.message || 'No fue posible actualizar el equipo jurídico.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Lista de responsables actuales en expedientes (incluyendo ex-funcionarios o usuarios con permisos retirados)
+  const assignableSourceUsers = useMemo(() => {
+    const map = new Map();
+    const activeTeamIds = new Set((profile.team || []).map((u) => Number(u.id)));
+
+    rows.forEach((r) => {
+      const mainId = Number(r.responsable_id || r.responsable?.id || r.metadata?.responsable_snapshot?.id || 0);
+      const mainName = r.responsable?.nombre || r.metadata?.responsable_snapshot?.nombre;
+      const mainCargo = r.responsable?.cargo || r.metadata?.responsable_snapshot?.cargo || 'Asesor Jurídico';
+      const isClosed = ['entregado', 'cerrado', 'cancelado'].includes(r.estado);
+
+      const registerUser = (uid, nombre, cargo) => {
+        if (!uid || !nombre) return;
+        const entry = map.get(uid) || {
+          id: uid,
+          nombre,
+          cargo: cargo || 'Asesor Jurídico',
+          isActiveInTeam: activeTeamIds.has(uid),
+          openCount: 0,
+          totalCount: 0
+        };
+        entry.totalCount += 1;
+        if (!isClosed) entry.openCount += 1;
+        map.set(uid, entry);
+      };
+
+      if (mainId && mainName) {
+        registerUser(mainId, mainName, mainCargo);
+      }
+
+      const coList = Array.isArray(r.metadata?.co_responsables) ? r.metadata.co_responsables : [];
+      coList.forEach((co) => {
+        const coId = Number(co?.id || 0);
+        if (coId && coId !== mainId && co?.nombre) {
+          registerUser(coId, co.nombre, co.cargo);
+        }
+      });
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.isActiveInTeam !== b.isActiveInTeam) return a.isActiveInTeam ? 1 : -1; // Inactivos primero para facilitar relevo
+      return b.openCount - a.openCount;
+    });
+  }, [rows, profile.team]);
+
+  const casesForBulkSource = useMemo(() => {
+    const fromId = Number(bulkForm.from_user_id || 0);
+    if (!fromId) return [];
+    return rows.filter((r) => {
+      const isMain = Number(r.responsable_id) === fromId || Number(r.metadata?.responsable_snapshot?.id) === fromId;
+      const ids = Array.isArray(r.metadata?.responsables_ids) ? r.metadata.responsables_ids.map(Number) : [];
+      const matchesUser = isMain || ids.includes(fromId);
+      if (!matchesUser) return false;
+      if (bulkForm.solo_abiertos) {
+        return !['entregado', 'cerrado', 'cancelado'].includes(r.estado);
+      }
+      return true;
+    });
+  }, [rows, bulkForm.from_user_id, bulkForm.solo_abiertos]);
+
+  const openBulkReassign = async (preselectUserId = '') => {
+    setBusy(true);
+    setError('');
+    try {
+      const response = await oficinaJuridicaService.getProfile();
+      const freshProfile = response.data || { role: profile.role, team: [] };
+      setProfile(freshProfile);
+
+      const defaultFrom = preselectUserId || assignableSourceUsers[0]?.id || '';
+      const defaultCases = rows
+        .filter((r) => {
+          const fid = Number(defaultFrom || 0);
+          if (!fid) return false;
+          const isMain = Number(r.responsable_id) === fid || Number(r.metadata?.responsable_snapshot?.id) === fid;
+          const ids = Array.isArray(r.metadata?.responsables_ids) ? r.metadata.responsables_ids.map(Number) : [];
+          return (isMain || ids.includes(fid)) && !['entregado', 'cerrado', 'cancelado'].includes(r.estado);
+        })
+        .map((r) => r.id);
+
+      setBulkForm({
+        from_user_id: defaultFrom,
+        to_user_ids: [],
+        caso_ids: defaultCases,
+        solo_abiertos: true,
+        comentario: ''
+      });
+      setBulkReassignOpen(true);
+    } catch (e) {
+      setError(e.response?.data?.message || 'No fue posible abrir el asistente de reasignación.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleBulkSourceChange = (newFromId, onlyOpen = bulkForm.solo_abiertos) => {
+    const fid = Number(newFromId || 0);
+    const matchingIds = rows
+      .filter((r) => {
+        if (!fid) return false;
+        const isMain = Number(r.responsable_id) === fid || Number(r.metadata?.responsable_snapshot?.id) === fid;
+        const ids = Array.isArray(r.metadata?.responsables_ids) ? r.metadata.responsables_ids.map(Number) : [];
+        const match = isMain || ids.includes(fid);
+        if (!match) return false;
+        return onlyOpen ? !['entregado', 'cerrado', 'cancelado'].includes(r.estado) : true;
+      })
+      .map((r) => r.id);
+
+    setBulkForm((prev) => ({
+      ...prev,
+      from_user_id: newFromId,
+      solo_abiertos: onlyOpen,
+      caso_ids: matchingIds,
+      to_user_ids: prev.to_user_ids.filter((id) => Number(id) !== fid)
+    }));
+  };
+
+  const handleBulkReassign = async () => {
+    if (!bulkForm.caso_ids.length) {
+      return setError('Seleccione al menos un expediente para reasignar.');
+    }
+    if (!bulkForm.to_user_ids.length) {
+      return setError('Seleccione el nuevo asesor jurídico activo que recibirá los expedientes.');
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const response = await oficinaJuridicaService.bulkReassign({
+        from_user_id: bulkForm.from_user_id || null,
+        to_user_ids: bulkForm.to_user_ids,
+        caso_ids: bulkForm.caso_ids,
+        solo_abiertos: false,
+        comentario: bulkForm.comentario || 'Reasignación por cambio / relevo de personal desde Jefatura Jurídica.'
+      });
+      setBulkReassignOpen(false);
+      setNotice(response.message || 'Expedientes reasignados exitosamente.');
+      await load();
+    } catch (e) {
+      setError(e.response?.data?.message || 'No fue posible completar la reasignación de casos.');
     } finally {
       setBusy(false);
     }
@@ -1810,6 +1968,23 @@ export default function JuridicaWorkflowPanel() {
             />
           </Tabs>
           <Stack direction="row" spacing={1} flexWrap="wrap">
+            {canAssign && (
+              <Button
+                startIcon={<AutorenewRoundedIcon />}
+                variant="outlined"
+                color="secondary"
+                onClick={() => openBulkReassign()}
+                sx={{
+                  fontWeight: 850,
+                  borderColor: '#c4b5fd',
+                  color: '#5b21b6',
+                  bgcolor: '#f5f3ff',
+                  '&:hover': { bgcolor: '#ede9fe', borderColor: '#8b5cf6' }
+                }}
+              >
+                Reasignar Casos (Cambio de Personal)
+              </Button>
+            )}
             {['administrador', 'jefatura', 'secretaria'].includes(profile.role) && (
               <Button
                 startIcon={<AddRoundedIcon />}
@@ -2176,6 +2351,35 @@ export default function JuridicaWorkflowPanel() {
                                     {formatted}
                                   </Typography>
                                 </Tooltip>
+                                {(() => {
+                                  const mainRespId = Number(row.responsable_id || row.responsable?.id || row.metadata?.responsable_snapshot?.id || 0);
+                                  const isRespActive = mainRespId ? profile.team.some((u) => Number(u.id) === mainRespId) : true;
+                                  const isCaseOpen = !['entregado', 'cerrado', 'cancelado'].includes(row.estado);
+                                  if (!isRespActive && isCaseOpen && canAssign) {
+                                    return (
+                                      <Chip
+                                        size="small"
+                                        label="Sin permiso activo · Reasignar"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openAssignment(row);
+                                        }}
+                                        sx={{
+                                          mt: 0.25,
+                                          height: 16,
+                                          fontSize: '0.58rem',
+                                          fontWeight: 900,
+                                          bgcolor: '#fef2f2',
+                                          color: '#dc2626',
+                                          border: '1px solid #fca5a5',
+                                          cursor: 'pointer',
+                                          '& .MuiChip-label': { px: 0.5 }
+                                        }}
+                                      />
+                                    );
+                                  }
+                                  return null;
+                                })()}
                                 {coCount > 1 && (
                                   <Stack direction="row" spacing={0.4} alignItems="center" mt={0.15}>
                                     <Chip
@@ -2225,8 +2429,30 @@ export default function JuridicaWorkflowPanel() {
                       </TableCell>
 
                       {/* Acciones */}
-                      <TableCell align="center" sx={{ py: 0.7, px: 0.4, width: 75, maxWidth: 75, whiteSpace: 'nowrap' }}>
+                      <TableCell align="center" sx={{ py: 0.7, px: 0.4, width: 95, maxWidth: 95, whiteSpace: 'nowrap' }}>
                         <Stack direction="row" spacing={0.3} justifyContent="center" alignItems="center">
+                          {canAssign && (
+                            <Tooltip title={row.responsable_id ? 'Reasignar responsable / cambiar asesor' : 'Asignar responsable'} arrow placement="top">
+                              <IconButton
+                                size="small"
+                                className="action-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openAssignment(row);
+                                }}
+                                sx={{
+                                  color: '#6d28d9',
+                                  p: 0.5,
+                                  borderRadius: 1.5,
+                                  transition: 'all 0.15s ease',
+                                  '&:hover': { bgcolor: '#ede9fe', color: '#4c1d95' }
+                                }}
+                              >
+                                <AssignmentIndRoundedIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+
                           {canEditCase && (
                             <Tooltip title="Editar datos del expediente" arrow placement="top">
                               <IconButton
@@ -3425,12 +3651,12 @@ export default function JuridicaWorkflowPanel() {
 
                 {canAssign && (
                   <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, bgcolor: '#f8fbff' }}>
-                    <Typography fontWeight={950}>Asignación de jefatura</Typography>
+                    <Typography fontWeight={950}>Asignación y Reasignación de Jefatura</Typography>
                     <Typography variant="body2" color="text.secondary" mb={1.5}>
-                      Asigna a uno o varios asesores y fija el término legal de respuesta.
+                      Asigna o reasigna este expediente a otro asesor jurídico (por ejemplo, por cambio de personal) y ajusta el término legal.
                     </Typography>
-                    <Button fullWidth variant="contained" startIcon={<AssignmentIndRoundedIcon />} onClick={openAssignment}>
-                      Asignar o reasignar
+                    <Button fullWidth variant="contained" startIcon={<AssignmentIndRoundedIcon />} onClick={() => openAssignment(selected)}>
+                      {selected?.responsable_id ? 'Cambiar / Reasignar responsable' : 'Asignar responsable'}
                     </Button>
                   </Paper>
                 )}
@@ -3727,11 +3953,35 @@ export default function JuridicaWorkflowPanel() {
         </DialogActions>
       </Dialog>
 
-      {/* DIÁLOGO: ASIGNAR ASUNTO Y TÉRMINO */}
+      {/* DIÁLOGO: ASIGNAR / REASIGNAR ASUNTO Y TÉRMINO */}
       <Dialog open={assignOpen} onClose={() => setAssignOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle fontWeight={950}>Asignar asunto jurídico y fijar término</DialogTitle>
+        <DialogTitle fontWeight={950}>
+          {selected?.responsable_id || selected?.metadata?.responsable_snapshot?.nombre
+            ? `Asignar o Reasignar Expediente (${selected?.nri || ''})`
+            : `Asignar Asunto Jurídico y Fijar Término (${selected?.nri || ''})`}
+        </DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} mt={0.5}>
+            {(selected?.responsable?.nombre || selected?.metadata?.responsable_snapshot?.nombre) && (() => {
+              const currentRespName = selected?.responsable?.nombre || selected?.metadata?.responsable_snapshot?.nombre;
+              const currentRespId = Number(selected?.responsable_id || selected?.responsable?.id || selected?.metadata?.responsable_snapshot?.id || 0);
+              const isStillActive = currentRespId ? advisers.some((u) => Number(u.id) === currentRespId) : true;
+              return (
+                <Alert
+                  severity={isStillActive ? 'info' : 'warning'}
+                  sx={{ borderRadius: 2 }}
+                >
+                  <Typography variant="body2" fontWeight={850}>
+                    Responsable actual: {currentRespName}
+                  </Typography>
+                  <Typography variant="caption" display="block">
+                    {isStillActive
+                      ? 'Si selecciona otro asesor jurídico, el caso se reasignará automáticamente dejando trazabilidad en el historial del expediente.'
+                      : 'Este funcionario ya no tiene permisos activos en el módulo. Seleccione al nuevo asesor jurídico activo para transferirle el caso.'}
+                  </Typography>
+                </Alert>
+              );
+            })()}
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc' }}>
               <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1} flexWrap="wrap" gap={1}>
                 <Typography variant="subtitle2" fontWeight={900} color="#0f172a">
@@ -3948,6 +4198,255 @@ export default function JuridicaWorkflowPanel() {
             sx={{ fontWeight: 900 }}
           >
             Confirmar y emitir visto bueno
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* DIÁLOGO: REASIGNACIÓN MASIVA O SELECTIVA POR CAMBIO DE PERSONAL */}
+      <Dialog open={bulkReassignOpen} onClose={() => setBulkReassignOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle fontWeight={950}>
+          <Stack direction="row" spacing={1.2} alignItems="center">
+            <AutorenewRoundedIcon sx={{ color: '#6d28d9' }} />
+            <Box>
+              <Typography variant="h6" fontWeight={950}>
+                Reasignación de Casos por Cambio o Relevo de Personal
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Transfiere todos o determinados expedientes de un funcionario saliente (o con permisos retirados) a un nuevo asesor jurídico activo.
+              </Typography>
+            </Box>
+          </Stack>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2.5} mt={0.5}>
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  select
+                  fullWidth
+                  label="1. Funcionario actual / saliente (Origen)"
+                  value={bulkForm.from_user_id}
+                  onChange={(e) => handleBulkSourceChange(e.target.value, bulkForm.solo_abiertos)}
+                  helperText="Seleccione la persona cuyos casos desea transferir o reasignar"
+                >
+                  {assignableSourceUsers.length === 0 && (
+                    <MenuItem value="" disabled>
+                      No hay expedientes asignados actualmente
+                    </MenuItem>
+                  )}
+                  {assignableSourceUsers.map((u) => (
+                    <MenuItem key={u.id} value={u.id}>
+                      <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={850} noWrap>
+                            {u.nombre}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {u.openCount} abiertos · {u.totalCount} totales
+                          </Typography>
+                        </Box>
+                        <Chip
+                          size="small"
+                          label={u.isActiveInTeam ? 'Activo' : 'Sin permisos / Retirado'}
+                          sx={{
+                            height: 20,
+                            fontSize: '0.68rem',
+                            fontWeight: 900,
+                            bgcolor: u.isActiveInTeam ? '#ecfdf5' : '#fef2f2',
+                            color: u.isActiveInTeam ? '#047857' : '#dc2626',
+                            border: `1px solid ${u.isActiveInTeam ? '#a7f3d0' : '#fca5a5'}`
+                          }}
+                        />
+                      </Stack>
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: '#f8fafc', height: '100%' }}>
+                  <Typography variant="subtitle2" fontWeight={900} color="#0f172a" mb={0.5}>
+                    Filtro de expedientes del funcionario
+                  </Typography>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={bulkForm.solo_abiertos}
+                        onChange={(e) => handleBulkSourceChange(bulkForm.from_user_id, e.target.checked)}
+                      />
+                    }
+                    label={
+                      <Typography variant="body2" fontWeight={700}>
+                        Mostrar únicamente expedientes en trámite / abiertos (Recomendado)
+                      </Typography>
+                    }
+                  />
+                </Paper>
+              </Grid>
+            </Grid>
+
+            {/* Lista de casos a transferir */}
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5, bgcolor: '#ffffff' }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1} flexWrap="wrap" gap={1}>
+                <Typography variant="subtitle2" fontWeight={900} color="#0f172a">
+                  2. Expedientes seleccionados para reasignar ({bulkForm.caso_ids.length} de {casesForBulkSource.length})
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    size="small"
+                    onClick={() => setBulkForm((prev) => ({ ...prev, caso_ids: casesForBulkSource.map((c) => c.id) }))}
+                    sx={{ textTransform: 'none', fontWeight: 850, fontSize: 12 }}
+                  >
+                    Seleccionar todos ({casesForBulkSource.length})
+                  </Button>
+                  <Button
+                    size="small"
+                    color="secondary"
+                    onClick={() => setBulkForm((prev) => ({ ...prev, caso_ids: [] }))}
+                    sx={{ textTransform: 'none', fontWeight: 850, fontSize: 12 }}
+                  >
+                    Desmarcar todos
+                  </Button>
+                </Stack>
+              </Stack>
+
+              {casesForBulkSource.length === 0 ? (
+                <Alert severity="info" sx={{ borderRadius: 2 }}>
+                  El funcionario seleccionado no tiene expedientes {bulkForm.solo_abiertos ? 'abiertos en trámite' : 'registrados'}.
+                </Alert>
+              ) : (
+                <Box sx={{ maxHeight: 220, overflowY: 'auto', pr: 0.5 }}>
+                  {casesForBulkSource.map((c) => {
+                    const checked = bulkForm.caso_ids.includes(c.id);
+                    return (
+                      <Paper
+                        key={c.id}
+                        variant="outlined"
+                        sx={{
+                          p: 0.8,
+                          px: 1.2,
+                          mb: 0.6,
+                          borderRadius: 2,
+                          bgcolor: checked ? '#f5f3ff' : '#fff',
+                          borderColor: checked ? '#c4b5fd' : '#e2e8f0'
+                        }}
+                      >
+                        <FormControlLabel
+                          sx={{ m: 0, width: '100%' }}
+                          control={
+                            <Checkbox
+                              size="small"
+                              checked={checked}
+                              onChange={(e) => {
+                                const isChk = e.target.checked;
+                                setBulkForm((prev) => ({
+                                  ...prev,
+                                  caso_ids: isChk ? [...prev.caso_ids, c.id] : prev.caso_ids.filter((id) => id !== c.id)
+                                }));
+                              }}
+                            />
+                          }
+                          label={
+                            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ width: '100%' }}>
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="body2" fontWeight={850} noWrap>
+                                  {c.nri} — {c.asunto}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" display="block">
+                                  Interesado: {c.interesado} · Vence: {formatDateBrief(c.fecha_limite)}
+                                </Typography>
+                              </Box>
+                              <StatusChip value={c.estado} />
+                            </Stack>
+                          }
+                        />
+                      </Paper>
+                    );
+                  })}
+                </Box>
+              )}
+            </Paper>
+
+            {/* Selección del nuevo responsable activo */}
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc' }}>
+              <Typography variant="subtitle2" fontWeight={900} color="#0f172a" mb={0.5}>
+                3. Nuevo(s) Asesor(es) Jurídico(s) con Permisos Activos (Destino)
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
+                Solo aparecen aquí los funcionarios que tienen el permiso de Oficina Jurídica activo en Gestión de Usuarios.
+              </Typography>
+
+              <FormGroup>
+                {advisers
+                  .filter((u) => Number(u.id) !== Number(bulkForm.from_user_id))
+                  .map((u) => {
+                    const isChecked = bulkForm.to_user_ids.includes(u.id);
+                    return (
+                      <Paper
+                        key={u.id}
+                        variant="outlined"
+                        sx={{
+                          p: 0.8,
+                          px: 1.2,
+                          mb: 0.8,
+                          borderRadius: 2,
+                          bgcolor: isChecked ? '#eff6ff' : '#ffffff',
+                          borderColor: isChecked ? '#93c5fd' : '#e2e8f0'
+                        }}
+                      >
+                        <FormControlLabel
+                          sx={{ m: 0, width: '100%' }}
+                          control={
+                            <Checkbox
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const chk = e.target.checked;
+                                setBulkForm((prev) => ({
+                                  ...prev,
+                                  to_user_ids: chk ? [...prev.to_user_ids, u.id] : prev.to_user_ids.filter((id) => id !== u.id)
+                                }));
+                              }}
+                            />
+                          }
+                          label={
+                            <Box>
+                              <Typography variant="body2" fontWeight={850}>
+                                {u.nombre}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {u.cargo} · {u.email}
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                      </Paper>
+                    );
+                  })}
+              </FormGroup>
+            </Paper>
+
+            <TextField
+              fullWidth
+              multiline
+              minRows={2}
+              label="4. Motivo o instrucción de reasignación (Trazabilidad)"
+              placeholder="Ej: Reasignación de expedientes por relevo de personal / ingreso de nuevo asesor jurídico..."
+              value={bulkForm.comentario}
+              onChange={(e) => setBulkForm((prev) => ({ ...prev, comentario: e.target.value }))}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setBulkReassignOpen(false)}>Cancelar</Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<AutorenewRoundedIcon />}
+            disabled={busy || !bulkForm.caso_ids.length || !bulkForm.to_user_ids.length}
+            onClick={handleBulkReassign}
+            sx={{ fontWeight: 900 }}
+          >
+            Confirmar Reasignación ({bulkForm.caso_ids.length} expediente{bulkForm.caso_ids.length === 1 ? '' : 's'})
           </Button>
         </DialogActions>
       </Dialog>

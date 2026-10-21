@@ -1216,7 +1216,14 @@ function GestionUsuarios() {
             if (key === 'oficina_juridica') {
               const hasSubRole = ['oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor'].some((k) => nextModules.includes(k));
               if (!hasSubRole) {
-                nextModules.push('oficina_juridica.asesor');
+                const targetCargo = String(permissionsUser?.cargo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                if (permissionsUser?.role === ROLES.ADMINISTRADOR || targetCargo.includes('jefe') || targetCargo.includes('jefatura') || targetCargo === 'asesora juridica') {
+                  nextModules.push('oficina_juridica.jefatura');
+                } else if (targetCargo.includes('secretar')) {
+                  nextModules.push('oficina_juridica.secretaria');
+                } else {
+                  nextModules.push('oficina_juridica.asesor');
+                }
               }
             } else if (key.startsWith('oficina_juridica.')) {
               if (!nextModules.includes('oficina_juridica')) nextModules.push('oficina_juridica');
@@ -1503,9 +1510,10 @@ function GestionUsuarios() {
         throw new Error('El servidor no reconoció todos los permisos de Saber Pro. Reinicie el backend actualizado e intente guardar nuevamente.');
       }
 
-      if (Number(permissionsUser.id) === Number(currentUser?.id) && typeof refreshProfile === 'function') {
+      if (typeof refreshProfile === 'function') {
         await refreshProfile();
       }
+      window.dispatchEvent(new CustomEvent('juridica:permissions-updated'));
       enqueueSnackbar(response.message || 'Permisos actualizados', { variant: 'success' });
       setOpenPermissionsDialog(false);
       setPermissionsUser(null);

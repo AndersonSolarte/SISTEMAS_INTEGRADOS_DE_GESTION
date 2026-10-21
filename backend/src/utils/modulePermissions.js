@@ -171,9 +171,8 @@ const RECURSO_HUMANO_DASHBOARD_KEYS = new Set([
   'recurso_humano_tiempo_reponer'
 ]);
 
-const getDefaultPermissionsByRole = (role, email = null) => {
+const getDefaultPermissionsByRole = (role, _email = null) => {
   if ([ROLES.ADMINISTRADOR].includes(role)) {
-    const isSuperAdmin = String(email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
     return {
       menuPermissions: [
         'dashboard',
@@ -186,12 +185,9 @@ const getDefaultPermissionsByRole = (role, email = null) => {
         'gestion_usuarios',
         'buscar_documentos'
       ],
-      allowedModules: Array.from(GESTION_INFO_MODULE_KEYS).filter((key) => {
-        if (JURIDICA_PERMISSION_KEYS.has(key)) {
-          return isSuperAdmin;
-        }
-        return true;
-      }),
+      // El módulo de Oficina Jurídica es estrictamente por asignación de permisos en Gestión de Usuarios.
+      // Ningún administrador ni usuario lo hereda por defecto.
+      allowedModules: Array.from(GESTION_INFO_MODULE_KEYS).filter((key) => !JURIDICA_PERMISSION_KEYS.has(key)),
       allowedGestionProcesosDashboards: Array.from(GESTION_PROCESOS_DASHBOARD_KEYS),
       allowedPoblacionalDashboards: Array.from(POBLACIONAL_DASHBOARD_KEYS),
       allowedSaberProDashboards: Array.from(SABER_PRO_DASHBOARD_KEYS),
@@ -344,9 +340,6 @@ const getUserModulePermissions = async (userId, role, email = null) => {
   const isSuperAdmin = String(email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
   const defaults = getDefaultPermissionsByRole(role, email);
 
-  // El Administrador General institucional (sgc@unicesmag.edu.co) tiene acceso completo por defecto
-  if (isSuperAdmin) return defaults;
-
   if (!UserModulePermission) return defaults;
 
   const rows = await UserModulePermission.findAll({
@@ -361,7 +354,25 @@ const getUserModulePermissions = async (userId, role, email = null) => {
     .filter(Boolean);
 
   if (role === ROLES.ADMINISTRADOR) {
-    const customModules = keys.filter((k) => GESTION_INFO_MODULE_KEYS.has(k));
+    const juridicaCustom = keys.filter((k) => JURIDICA_PERMISSION_KEYS.has(k));
+    if (juridicaCustom.length > 0 && !juridicaCustom.includes('oficina_juridica')) {
+      juridicaCustom.push('oficina_juridica');
+    }
+
+    if (isSuperAdmin) {
+      return {
+        ...defaults,
+        allowedModules: Array.from(new Set([...defaults.allowedModules, ...juridicaCustom])),
+        allowedRecursoHumanoDashboards: keys.includes('recurso_humano_tiempo_reponer')
+          ? Array.from(new Set([...defaults.allowedRecursoHumanoDashboards, 'recurso_humano_tiempo_reponer']))
+          : defaults.allowedRecursoHumanoDashboards
+      };
+    }
+
+    const customModules = Array.from(new Set([
+      ...keys.filter((k) => GESTION_INFO_MODULE_KEYS.has(k) && !JURIDICA_PERMISSION_KEYS.has(k)),
+      ...juridicaCustom
+    ]));
     const customGP = keys.filter((k) => GESTION_PROCESOS_DASHBOARD_KEYS.has(k));
     const customPob = keys.filter((k) => POBLACIONAL_DASHBOARD_KEYS.has(k));
     const customSP = keys.filter((k) => SABER_PRO_DASHBOARD_KEYS.has(k));

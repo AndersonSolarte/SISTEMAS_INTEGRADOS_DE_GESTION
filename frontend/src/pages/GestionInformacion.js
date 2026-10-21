@@ -597,8 +597,6 @@ const normalizeModulePermissionList = (raw) => {
 
 const canViewOficinaJuridica = (user) => {
   if (!user) return false;
-  const isSuperAdmin = String(user?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
-  if (isSuperAdmin) return true;
 
   // Permisos explícitos asignados en Gestión de Usuarios (allowedModules, modulePermissions, etc.)
   const permissions = [

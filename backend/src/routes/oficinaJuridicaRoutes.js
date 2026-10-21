@@ -9,43 +9,12 @@ const { UserModulePermission } = require('../models');
 
 const router = express.Router();
 
-// Candado estricto: Acceso exclusivo a sgc@unicesmag.edu.co y personal adscrito a Oficina Jurídica con permiso activo
+// Candado estricto: TODO usuario (incluyendo administradores) DEBE tener el permiso de Oficina Jurídica activo en Gestión de Usuarios
 const juridicaAccess = async (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({ success: false, message: 'No autenticado.' });
   }
 
-  const email = String(req.user.email || '').trim().toLowerCase();
-
-  // 1. SuperAdmin institucional exclusivo (con soporte para simulación de perspectivas de pruebas)
-  if (email === 'sgc@unicesmag.edu.co') {
-    const simId = req.headers['x-simulated-user-id'] || req.query.simulate_user_id;
-    if (simId) {
-      try {
-        const { User } = require('../models');
-        const simUser = await User.findByPk(simId);
-        if (simUser && simUser.estado === 'activo') {
-          const simPerms = await UserModulePermission.findAll({
-            where: {
-              user_id: simUser.id,
-              can_view: true,
-              module_key: {
-                [Op.in]: ['oficina_juridica', 'oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor']
-              }
-            },
-            attributes: ['module_key']
-          });
-          simUser.juridicaPermissions = simPerms.map((p) => p.module_key);
-          req.simulatedUser = simUser;
-        }
-      } catch (simErr) {
-        console.warn('Error resolviendo usuario simulado:', simErr);
-      }
-    }
-    return next();
-  }
-
-  // 2. Control por permisos: Cualquier otro usuario DEBE tener permiso explícito en Oficina Jurídica otorgado por el administrador
   try {
     const userPerms = await UserModulePermission.findAll({
       where: {
@@ -66,6 +35,35 @@ const juridicaAccess = async (req, res, next) => {
     }
 
     req.user.juridicaPermissions = userPerms.map((p) => p.module_key);
+
+    // Si tiene permisos activos y es sgc@unicesmag.edu.co, soportar simulación de perspectiva
+    const email = String(req.user.email || '').trim().toLowerCase();
+    if (email === 'sgc@unicesmag.edu.co') {
+      const simId = req.headers['x-simulated-user-id'] || req.query.simulate_user_id;
+      if (simId) {
+        try {
+          const { User } = require('../models');
+          const simUser = await User.findByPk(simId);
+          if (simUser && simUser.estado === 'activo') {
+            const simPerms = await UserModulePermission.findAll({
+              where: {
+                user_id: simUser.id,
+                can_view: true,
+                module_key: {
+                  [Op.in]: ['oficina_juridica', 'oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor']
+                }
+              },
+              attributes: ['module_key']
+            });
+            simUser.juridicaPermissions = simPerms.map((p) => p.module_key);
+            req.simulatedUser = simUser;
+          }
+        } catch (simErr) {
+          console.warn('Error resolviendo usuario simulado:', simErr);
+        }
+      }
+    }
+
     return next();
   } catch (err) {
     console.error('Error verificando permisos de Oficina Jurídica:', err);
@@ -92,6 +90,7 @@ router.get('/perfil', controller.getProfile);
 router.get('/usuarios-internos', controller.getInternalUsers);
 router.get('/casos', controller.listCases);
 router.post('/casos', upload.array('archivos', 10), controller.createCase);
+router.post('/casos/reasignar-masivo', controller.bulkReassignCases);
 router.get('/casos/:id', controller.getCase);
 router.patch('/casos/:id', controller.updateCase);
 router.post('/casos/:id/asignar', controller.assignCase);

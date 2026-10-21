@@ -13,6 +13,7 @@ const oficinaJuridicaService = {
   },
   update: (id, payload) => api.patch(`/oficina-juridica/casos/${id}`, payload).then((r) => r.data),
   assign: (id, payload) => api.post(`/oficina-juridica/casos/${id}/asignar`, payload).then((r) => r.data),
+  bulkReassign: (payload) => api.post('/oficina-juridica/casos/reasignar-masivo', payload).then((r) => r.data),
   vistoBueno: (id, payload = {}) => api.post(`/oficina-juridica/casos/${id}/visto-bueno`, payload).then((r) => r.data),
   transition: (id, payload) => api.post(`/oficina-juridica/casos/${id}/transicion`, payload).then((r) => r.data),
   stats: (params = {}) => api.get('/oficina-juridica/estadisticas', { params }).then((r) => r.data),

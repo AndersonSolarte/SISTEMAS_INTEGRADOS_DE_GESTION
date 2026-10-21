@@ -39,22 +39,25 @@ const resolveActor = (reqOrUser) => {
 };
 
 const roleFor = (user) => {
+  const perms = (user?.juridicaPermissions || []).map((p) => (typeof p === 'string' ? p : p.module_key));
+
+  // Si es administrador del sistema pero se le asignó explícitamente rol de jefatura o secretaría
+  if (perms.includes('oficina_juridica.jefatura')) return 'jefatura';
+  if (perms.includes('oficina_juridica.secretaria')) return 'secretaria';
+
   if (user?.email === 'sgc@unicesmag.edu.co') return 'administrador';
   if (user?.role === 'administrador') return 'administrador';
 
-  // 1. Prioridad absoluta: Permiso modular explícito asignado en Gestión de Usuarios
-  const perms = (user?.juridicaPermissions || []).map((p) => (typeof p === 'string' ? p : p.module_key));
-  if (perms.includes('oficina_juridica.jefatura')) return 'jefatura';
-  if (perms.includes('oficina_juridica.secretaria')) return 'secretaria';
+  // Permiso explícito de asesor
   if (perms.includes('oficina_juridica.asesor')) return 'asesor';
 
   const cargo = normalize(user?.cargo);
   const dep = normalize(user?.dependencia);
 
-  // 2. Fallback institucional: Secretaría
+  // Fallback institucional: Secretaría
   if (cargo.includes('secretari')) return 'secretaria';
 
-  // 3. Fallback institucional: Jefatura / Asesora Jurídica titular
+  // Fallback institucional: Jefatura / Asesora Jurídica titular
   if (
     (cargo.includes('asesor') || cargo.includes('jefe') || cargo.includes('director') || cargo.includes('lider')) &&
     !cargo.includes('asistente') &&
@@ -64,7 +67,7 @@ const roleFor = (user) => {
     return 'jefatura';
   }
 
-  // 4. Asistentes y Abogados ejecutores
+  // Asistentes y Abogados ejecutores
   return 'asesor';
 };
 const userSnapshot = (user) => user ? ({ id: user.id, nombre: user.nombre, email: user.email, cargo: user.cargo, dependencia: user.dependencia }) : null;
@@ -106,67 +109,70 @@ const getCaseEmailAttachments = async (casoId, maxBytes = 25 * 1024 * 1024) => {
 };
 
 // Helper: Obtener dinámicamente todo el personal ACTIVO adscrito a Oficina Jurídica o con permisos explícitos
-// Si se crea un nuevo usuario activo o se le asigna permiso, aparece de inmediato. Si se inactiva o elimina, desaparece.
+// Si se crea un nuevo usuario activo o se le asigna permiso, aparece de inmediato. Si se le quita el permiso o inactiva, desaparece.
 const getJuridicaActiveUsers = async () => {
-  const users = await User.findAll({
-    attributes: USER_FIELDS,
+  const allJuridicaPermRows = await UserModulePermission.findAll({
+    where: {
+      module_key: {
+        [Op.in]: ['oficina_juridica', 'oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor']
+      }
+    },
+    attributes: ['user_id', 'module_key', 'can_view']
+  });
+
+  const permMap = {};
+  const permUserIds = new Set();
+  const revokedUserIds = new Set();
+
+  allJuridicaPermRows.forEach((r) => {
+    if (r.can_view) {
+      if (!permMap[r.user_id]) permMap[r.user_id] = [];
+      permMap[r.user_id].push(r.module_key);
+      permUserIds.add(Number(r.user_id));
+    } else if (r.module_key === 'oficina_juridica') {
+      revokedUserIds.add(Number(r.user_id));
+    }
+  });
+
+  // Usuarios que tienen permisos configurados en Gestión de Usuarios pero NO tienen oficina_juridica activo
+  const allConfiguredRows = await UserModulePermission.findAll({
+    attributes: ['user_id'],
+    group: ['user_id']
+  });
+  const configuredUserIds = new Set(allConfiguredRows.map((r) => Number(r.user_id)));
+
+  const candidateUsers = await User.findAll({
+    attributes: [...USER_FIELDS, 'role'],
     where: {
       estado: 'activo',
       [Op.or]: [
-        {
-          dependencia: { [Op.iLike]: '%JURID%' },
-          [Op.and]: [{ dependencia: { [Op.notILike]: '%CONSULTOR%' } }]
-        },
-        {
-          cargo: { [Op.iLike]: '%JURID%' },
-          [Op.and]: [{ cargo: { [Op.notILike]: '%CONSULTOR%' } }]
-        },
-        {
-          cargo: { [Op.iLike]: '%ABOGAD%' },
-          [Op.and]: [{ cargo: { [Op.notILike]: '%CONSULTOR%' } }]
-        }
+        { id: Array.from(permUserIds) },
+        { dependencia: { [Op.iLike]: '%JURID%' } },
+        { cargo: { [Op.iLike]: '%JURID%' } },
+        { cargo: { [Op.iLike]: '%ABOGAD%' } }
       ]
     },
     order: [['nombre', 'ASC']]
   });
 
-  // Consultar también usuarios activos con permisos explícitos de oficina_juridica
-  const permittedRows = await UserModulePermission.findAll({
-    where: {
-      can_view: true,
-      module_key: {
-        [Op.in]: ['oficina_juridica', 'oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor']
-      }
-    },
-    attributes: ['user_id', 'module_key']
+  const validUsers = candidateUsers.filter((u) => {
+    const uid = Number(u.id);
+    // Si tiene permiso explícito activo en Gestión de Usuarios, siempre incluirlo
+    if (permUserIds.has(uid)) return true;
+    // Si se le revocó el permiso o ya se le parametrizaron permisos sin incluir Oficina Jurídica, excluirlo
+    if (revokedUserIds.has(uid) || configuredUserIds.has(uid)) return false;
+    // Excluir estrictamente personal de Consultorio Jurídico (con o sin tilde)
+    const depNorm = normalize(u.dependencia);
+    const cargoNorm = normalize(u.cargo);
+    if (depNorm.includes('consultor') || cargoNorm.includes('consultor')) return false;
+    return depNorm.includes('oficina juridica') || cargoNorm.includes('jurid') || cargoNorm.includes('abogad');
   });
 
-  const permMap = {};
-  const permUserIds = [];
-  permittedRows.forEach((r) => {
-    if (!permMap[r.user_id]) permMap[r.user_id] = [];
-    permMap[r.user_id].push(r.module_key);
-    permUserIds.push(r.user_id);
-  });
-
-  const existingIds = new Set(users.map((u) => u.id));
-  const missingIds = Array.from(new Set(permUserIds)).filter((id) => !existingIds.has(id));
-
-  let allUsers = [...users];
-  if (missingIds.length > 0) {
-    const extraUsers = await User.findAll({
-      attributes: USER_FIELDS,
-      where: { id: missingIds, estado: 'activo' },
-      order: [['nombre', 'ASC']]
-    });
-    allUsers.push(...extraUsers);
-  }
-
-  allUsers.forEach((u) => {
+  validUsers.forEach((u) => {
     u.juridicaPermissions = permMap[u.id] || u.juridicaPermissions || [];
   });
 
-  return allUsers;
+  return validUsers;
 };
 
 // Helper: Obtener personal activo agrupado de la Oficina Jurídica
@@ -511,18 +517,18 @@ const createCase = async (req, res) => {
 const assignCase = async (req, res) => {
   const actor = resolveActor(req);
   const role = roleFor(actor);
-  const email = String(actor?.email || '').trim().toLowerCase();
-  const isSuperAdmin = email === 'sgc@unicesmag.edu.co';
-  const isJefatura = role === 'jefatura';
+  const canManageAssignment = ['administrador', 'jefatura'].includes(role);
 
-  // Seguridad: La secretaría solo transcribe, NO puede asignar expedientes
-  if (!isSuperAdmin && !isJefatura) {
+  // Seguridad: Solo Jefatura Jurídica o Administración con permiso activo pueden asignar o reasignar expedientes
+  if (!canManageAssignment) {
     return res.status(403).json({
       success: false,
-      message: 'Solo la Asesora Jurídica (jefatura) o la administración SGC pueden asignar expedientes. La secretaría solo sistematiza solicitudes y radica salidas.'
+      message: 'Solo la Jefatura Jurídica puede asignar o reasignar expedientes.'
     });
   }
-  const caso = await JuridicaCaso.findByPk(req.params.id);
+  const caso = await JuridicaCaso.findByPk(req.params.id, {
+    include: [{ model: User, as: 'responsable', attributes: USER_FIELDS }]
+  });
   if (!caso) return res.status(404).json({ success: false, message: 'Caso no encontrado.' });
 
   // Soportar responsable único o array de múltiples responsables
@@ -531,7 +537,7 @@ const assignCase = async (req, res) => {
     rawIds = [req.body.responsable_id];
   }
   if (!Array.isArray(rawIds)) rawIds = [rawIds];
-  const ids = rawIds.map(Number).filter(Boolean);
+  const ids = Array.from(new Set(rawIds.map(Number).filter(Boolean)));
   if (!ids.length) {
     return res.status(400).json({ success: false, message: 'Debe seleccionar al menos un asesor responsable.' });
   }
@@ -544,11 +550,20 @@ const assignCase = async (req, res) => {
     return res.status(404).json({ success: false, message: 'No se encontraron los usuarios asignados.' });
   }
 
+  const prevIds = (caso.metadata?.responsables_ids || (caso.responsable_id ? [caso.responsable_id] : [])).map(Number).filter(Boolean);
+  const prevNames = (caso.metadata?.co_responsables || [])
+    .map((u) => u?.nombre)
+    .filter(Boolean)
+    .join(', ') || caso.responsable?.nombre || caso.metadata?.responsable_snapshot?.nombre || null;
+  const isReassignment = prevIds.length > 0 && (
+    prevIds.length !== ids.length || prevIds.some((id) => !ids.includes(id))
+  );
+
   const primaryResponsible = assignees[0];
   const secretary = req.body.secretario_id ? await User.findByPk(req.body.secretario_id) : null;
   const previous = caso.estado;
 
-  // Inicializar o preservar vistos buenos
+  // Inicializar o preservar vistos buenos (solo para quienes continúan asignados)
   const existingVb = caso.metadata?.vistos_buenos || {};
   const vistos_buenos = {};
   assignees.forEach((u) => {
@@ -564,13 +579,14 @@ const assignCase = async (req, res) => {
 
   const co_responsables = assignees.map((u) => userSnapshot(u));
   const asignacionMultiple = assignees.length > 1;
+  const allVb = ids.every((id) => vistos_buenos[id]?.aprobado === true);
 
   await caso.update({
     responsable_id: primaryResponsible.id,
     secretario_id: req.body.secretario_id || caso.secretario_id || null,
     nivel: clean(req.body.nivel, 60) || caso.nivel,
     fecha_limite: parseDate(req.body.fecha_limite) || caso.fecha_limite,
-    estado: 'asignado',
+    estado: CLOSED.includes(caso.estado) ? caso.estado : 'asignado',
     fecha_asignacion: new Date(),
     actualizado_por: actor.id,
     metadata: {
@@ -579,54 +595,38 @@ const assignCase = async (req, res) => {
       co_responsables,
       vistos_buenos,
       asignacion_multiple: asignacionMultiple,
-      todos_vistos_buenos: false,
+      todos_vistos_buenos: allVb,
       responsable_snapshot: userSnapshot(primaryResponsible),
-      secretario_snapshot: userSnapshot(secretary)
+      secretario_snapshot: userSnapshot(secretary),
+      ultima_reasignacion: isReassignment ? {
+        fecha: new Date().toISOString(),
+        anterior_responsable: prevNames,
+        nuevo_responsable: assignees.map((u) => u.nombre).join(', '),
+        por_usuario_id: actor.id,
+        por_usuario_nombre: actor.nombre
+      } : caso.metadata?.ultima_reasignacion
     }
   });
 
-  // Auto-activación de permiso en SIAC: al asignarle un expediente a los asistentes,
-  // el sistema les habilita automáticamente el módulo de Oficina Jurídica con rol asesor si aún no lo tenían activo
-  for (const assignee of assignees) {
-    try {
-      const [perm, created] = await UserModulePermission.findOrCreate({
-        where: { user_id: assignee.id, module_key: 'oficina_juridica' },
-        defaults: { user_id: assignee.id, module_key: 'oficina_juridica', can_view: true, can_create: true, can_edit: true, can_delete: false }
-      });
-      if (!created && !perm.can_view) {
-        await perm.update({ can_view: true });
-      }
-
-      const hasSubRole = await UserModulePermission.count({
-        where: {
-          user_id: assignee.id,
-          module_key: { [Op.in]: ['oficina_juridica.jefatura', 'oficina_juridica.secretaria', 'oficina_juridica.asesor'] },
-          can_view: true
-        }
-      });
-      if (hasSubRole === 0) {
-        await UserModulePermission.findOrCreate({
-          where: { user_id: assignee.id, module_key: 'oficina_juridica.asesor' },
-          defaults: { user_id: assignee.id, module_key: 'oficina_juridica.asesor', can_view: true, can_create: true, can_edit: true, can_delete: false }
-        });
-      }
-    } catch (permErr) {
-      console.warn('Error auto-activando permiso a asesor asignado:', permErr);
-    }
-  }
-
   const nombresAsignados = assignees.map((u) => u.nombre).join(', ');
+  const defaultHistoryComment = isReassignment
+    ? `Reasignado de ${prevNames || 'anterior responsable'} a ${nombresAsignados}`
+    : (asignacionMultiple ? `Asignación colectiva a ${assignees.length} asesores: ${nombresAsignados}` : `Asignado a ${primaryResponsible.nombre}`);
+
   await addHistory(
     caso,
     actor.id,
-    'asignacion',
+    isReassignment ? 'reasignacion' : 'asignacion',
     previous,
-    'asignado',
-    req.body.comentario || (asignacionMultiple ? `Asignación colectiva a ${assignees.length} asesores: ${nombresAsignados}` : `Asignado a ${primaryResponsible.nombre}`),
+    CLOSED.includes(caso.estado) ? caso.estado : 'asignado',
+    req.body.comentario ? `${defaultHistoryComment}. Observación: ${req.body.comentario}` : defaultHistoryComment,
     {
+      anterior_responsables_ids: prevIds,
+      anterior_responsables_nombres: prevNames,
       responsables_ids: ids,
       responsables_nombres: nombresAsignados,
-      multiple: asignacionMultiple
+      multiple: asignacionMultiple,
+      reasignacion: isReassignment
     }
   );
 
@@ -643,12 +643,13 @@ const assignCase = async (req, res) => {
   sendJuridicaNotification({
     caso,
     recipients: notifyRecipients,
-    subject: `[Oficina Jurídica] Asignación de Caso - NRI ${caso.nri}: ${caso.asunto.slice(0, 45)}...`,
-    title: 'Asignación de expediente jurídico',
-    intro: `<p>Cordial Saludo de Paz y Bien,</p><p>La Asesora Jurídica ha asignado el expediente <strong>NRI ${escapeHtml(caso.nri)}</strong> para su estudio, proyección de respuesta y trámite:</p>`,
-    badgeText: asignacionMultiple ? `Asignación Colectiva (${assignees.length} Asesores)` : 'Expediente Asignado',
+    subject: `[Oficina Jurídica] ${isReassignment ? 'Reasignación' : 'Asignación'} de Caso - NRI ${caso.nri}: ${caso.asunto.slice(0, 45)}...`,
+    title: isReassignment ? 'Reasignación de expediente jurídico' : 'Asignación de expediente jurídico',
+    intro: `<p>Cordial Saludo de Paz y Bien,</p><p>La Jefatura Jurídica ha ${isReassignment ? 'reasignado' : 'asignado'} el expediente <strong>NRI ${escapeHtml(caso.nri)}</strong> para su estudio, proyección de respuesta y trámite:</p>`,
+    badgeText: isReassignment ? 'Expediente Reasignado' : (asignacionMultiple ? `Asignación Colectiva (${assignees.length} Asesores)` : 'Expediente Asignado'),
     badgeColor: '#1d4ed8',
     details: [
+      ...(isReassignment && prevNames ? [{ label: 'Responsable anterior', value: prevNames }] : []),
       { label: 'Asignado a', value: nombresAsignados },
       { label: 'Término legal / Fecha límite', value: caso.fecha_limite ? `${caso.fecha_limite} (Improrrogable)` : 'Por definir' },
       { label: 'Nivel de prioridad', value: caso.nivel || 'Media' },
@@ -661,6 +662,167 @@ const assignCase = async (req, res) => {
   });
 
   res.json({ success: true, data: await JuridicaCaso.findByPk(caso.id, { include: includeCase() }) });
+};
+
+const bulkReassignCases = async (req, res) => {
+  const actor = resolveActor(req);
+  const role = roleFor(actor);
+  if (!['administrador', 'jefatura'].includes(role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Solo la Jefatura Jurídica puede reasignar expedientes.'
+    });
+  }
+
+  const fromUserId = req.body.from_user_id ? Number(req.body.from_user_id) : null;
+  let rawToIds = req.body.to_user_ids || (req.body.to_user_id ? [req.body.to_user_id] : []);
+  if (!Array.isArray(rawToIds)) rawToIds = [rawToIds];
+  const toIds = Array.from(new Set(rawToIds.map(Number).filter(Boolean)));
+
+  if (!toIds.length) {
+    return res.status(400).json({
+      success: false,
+      message: 'Debe seleccionar al menos un nuevo asesor responsable.'
+    });
+  }
+
+  const newAssignees = await User.findAll({
+    where: { id: toIds },
+    attributes: USER_FIELDS
+  });
+  if (!newAssignees.length) {
+    return res.status(404).json({
+      success: false,
+      message: 'No se encontró el nuevo asesor seleccionado.'
+    });
+  }
+
+  const rawCaseIds = Array.isArray(req.body.caso_ids) ? req.body.caso_ids.map(Number).filter(Boolean) : [];
+  const soloAbiertos = req.body.solo_abiertos !== false;
+
+  const where = {};
+  if (rawCaseIds.length > 0) {
+    where.id = { [Op.in]: rawCaseIds };
+  } else if (fromUserId) {
+    where[Op.or] = [
+      { responsable_id: fromUserId },
+      Sequelize.literal(`("juridica_casos"."metadata"->'responsables_ids' @> '[${fromUserId}]')`)
+    ];
+    if (soloAbiertos) {
+      where.estado = { [Op.notIn]: CLOSED };
+    }
+  } else {
+    return res.status(400).json({
+      success: false,
+      message: 'Debe indicar los casos o el funcionario saliente a reasignar.'
+    });
+  }
+
+  const casos = await JuridicaCaso.findAll({
+    where,
+    include: [{ model: User, as: 'responsable', attributes: USER_FIELDS }]
+  });
+
+  if (!casos.length) {
+    return res.status(404).json({
+      success: false,
+      message: 'No se encontraron expedientes que coincidan para reasignar.'
+    });
+  }
+
+  const fromUser = fromUserId ? await User.findByPk(fromUserId, { attributes: USER_FIELDS }) : null;
+  const nombresNuevos = newAssignees.map((u) => u.nombre).join(', ');
+  const comentarioExtra = clean(req.body.comentario, 2000);
+
+  for (const caso of casos) {
+    const prevIds = (caso.metadata?.responsables_ids || (caso.responsable_id ? [caso.responsable_id] : [])).map(Number).filter(Boolean);
+    const prevNames = (caso.metadata?.co_responsables || [])
+      .map((u) => u?.nombre)
+      .filter(Boolean)
+      .join(', ') || caso.responsable?.nombre || caso.metadata?.responsable_snapshot?.nombre || fromUser?.nombre || 'Anterior responsable';
+
+    // Si el caso tenía varios co-responsables y se especificó fromUserId, reemplazamos a fromUserId manteniendo a los demás co-responsables activos
+    let finalIds = toIds;
+    if (fromUserId && prevIds.length > 1 && req.body.reemplazar_solo_saliente !== false) {
+      const remaining = prevIds.filter((id) => id !== fromUserId);
+      finalIds = Array.from(new Set([...remaining, ...toIds]));
+    }
+
+    const finalUsers = finalIds.length === toIds.length && finalIds.every((id, idx) => id === toIds[idx])
+      ? newAssignees
+      : await User.findAll({ where: { id: finalIds }, attributes: USER_FIELDS });
+
+    const primaryResponsible = finalUsers.find((u) => u.id === toIds[0]) || finalUsers[0];
+    const existingVb = caso.metadata?.vistos_buenos || {};
+    const vistos_buenos = {};
+    finalUsers.forEach((u) => {
+      vistos_buenos[u.id] = (u.id !== fromUserId && existingVb[u.id]) ? existingVb[u.id] : {
+        aprobado: false,
+        fecha: null,
+        comentario: null,
+        usuario_id: u.id,
+        nombre: u.nombre,
+        cargo: u.cargo
+      };
+    });
+
+    const co_responsables = finalUsers.map((u) => userSnapshot(u));
+    const asignacionMultiple = finalUsers.length > 1;
+    const allVb = finalIds.every((id) => vistos_buenos[id]?.aprobado === true);
+    const prevState = caso.estado;
+    const nextState = CLOSED.includes(caso.estado)
+      ? caso.estado
+      : (caso.estado === 'pendiente_clasificacion' ? 'asignado' : caso.estado);
+
+    await caso.update({
+      responsable_id: primaryResponsible.id,
+      estado: nextState,
+      fecha_asignacion: new Date(),
+      actualizado_por: actor.id,
+      metadata: {
+        ...(caso.metadata || {}),
+        responsables_ids: finalIds,
+        co_responsables,
+        vistos_buenos,
+        asignacion_multiple: asignacionMultiple,
+        todos_vistos_buenos: allVb,
+        responsable_snapshot: userSnapshot(primaryResponsible),
+        ultima_reasignacion: {
+          fecha: new Date().toISOString(),
+          anterior_responsable: prevNames,
+          nuevo_responsable: finalUsers.map((u) => u.nombre).join(', '),
+          por_usuario_id: actor.id,
+          por_usuario_nombre: actor.nombre
+        }
+      }
+    });
+
+    const baseComment = `Reasignación dispuesta por Jefatura Jurídica: de ${prevNames} a ${finalUsers.map((u) => u.nombre).join(', ')}`;
+    await addHistory(
+      caso,
+      actor.id,
+      'reasignacion',
+      prevState,
+      nextState,
+      comentarioExtra ? `${baseComment}. Motivo: ${comentarioExtra}` : baseComment,
+      {
+        anterior_responsables_ids: prevIds,
+        anterior_responsables_nombres: prevNames,
+        responsables_ids: finalIds,
+        responsables_nombres: finalUsers.map((u) => u.nombre).join(', '),
+        reasignacion_masiva: true
+      }
+    );
+  }
+
+  res.json({
+    success: true,
+    message: `Se reasignaron ${casos.length} expediente(s) exitosamente a ${nombresNuevos}.`,
+    data: {
+      updatedCount: casos.length,
+      nuevoResponsable: nombresNuevos
+    }
+  });
 };
 
 const vistoBuenoCase = async (req, res) => {
@@ -1153,6 +1315,7 @@ module.exports = {
   getCase,
   createCase,
   assignCase,
+  bulkReassignCases,
   vistoBuenoCase,
   transitionCase,
   updateCase,

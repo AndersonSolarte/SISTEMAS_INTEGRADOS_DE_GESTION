@@ -36,7 +36,7 @@ const FIXED_SECTION_ORDER = [
 function DashboardLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshProfile } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
   const [collapsed, setCollapsed] = useState(() => {
@@ -66,10 +66,10 @@ function DashboardLayout() {
   const [reposicionBadge, setReposicionBadge] = useState(null);
   const [legalizacionesPendientes, setLegalizacionesPendientes] = useState(0);
   const [juridicaBadge, setJuridicaBadge] = useState(0);
+  const [juridicaForbidden, setJuridicaForbidden] = useState(false);
 
   const refrescarBadgeJuridica = useCallback(async () => {
     if (!user) return;
-    const isSuperAdmin = String(user?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
     const perms = [
       ...(Array.isArray(user?.allowedModules) ? user.allowedModules : []),
       ...(Array.isArray(user?.modulos_autorizados) ? user.modulos_autorizados : []),
@@ -79,21 +79,28 @@ function DashboardLayout() {
       ...(Array.isArray(user?.modules) ? user.modules : [])
     ].map((item) => typeof item === 'string' ? item : item?.module_key || item?.moduleKey || item?.key || '').filter(Boolean);
 
-    if (!isSuperAdmin && !perms.some((k) => k === 'oficina_juridica' || k.startsWith('oficina_juridica.'))) {
+    if (!perms.some((k) => k === 'oficina_juridica' || k.startsWith('oficina_juridica.'))) {
       setJuridicaBadge(0);
       return;
     }
 
     try {
       const resp = await oficinaJuridicaService.stats();
+      setJuridicaForbidden(false);
       if (resp?.success && resp?.data) {
         const count = Number(resp.data.vencidos || 0) + Number(resp.data.por_vencer || 0);
         setJuridicaBadge(count > 0 ? count : 0);
       }
-    } catch (_) {
+    } catch (err) {
       setJuridicaBadge(0);
+      if (err?.response?.status === 403) {
+        setJuridicaForbidden(true);
+        if (typeof refreshProfile === 'function') {
+          refreshProfile();
+        }
+      }
     }
-  }, [user]);
+  }, [user, refreshProfile]);
 
   const refrescarBadgePlanAccion = useCallback(async () => {
     if (!user) return;
@@ -165,6 +172,27 @@ function DashboardLayout() {
     window.addEventListener('reposicion:updated', handleReposicionUpdated);
     return () => window.removeEventListener('reposicion:updated', handleReposicionUpdated);
   }, [refrescarBadgeReposicion]);
+
+  useEffect(() => {
+    const handleJuridicaPermsUpdated = async () => {
+      setJuridicaForbidden(false);
+      if (typeof refreshProfile === 'function') {
+        await refreshProfile();
+      }
+      refrescarBadgeJuridica();
+    };
+    const handleWindowFocus = () => {
+      if (typeof refreshProfile === 'function') {
+        refreshProfile();
+      }
+    };
+    window.addEventListener('juridica:permissions-updated', handleJuridicaPermsUpdated);
+    window.addEventListener('focus', handleWindowFocus);
+    return () => {
+      window.removeEventListener('juridica:permissions-updated', handleJuridicaPermsUpdated);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [refreshProfile, refrescarBadgeJuridica]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -575,11 +603,10 @@ function DashboardLayout() {
     ...(Array.isArray(user?.modules) ? user.modules : [])
   ].map((item) => typeof item === 'string' ? item : item?.module_key || item?.moduleKey || item?.key || '').filter(Boolean);
 
-  const isSuperAdmin = String(user?.email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
   const hasExplicitJuridicaPerm = userPermList.some((k) => k === 'oficina_juridica' || k.startsWith('oficina_juridica.'));
 
-  // Solo se muestra el módulo si es el Administrador General (sgc@unicesmag.edu.co) o si tiene el permiso explícitamente parametrizado
-  const canAccessJuridica = isSuperAdmin || hasExplicitJuridicaPerm;
+  // Control 100% estricto: SOLO se muestra el módulo si tiene el permiso activo en Gestión de Usuarios
+  const canAccessJuridica = hasExplicitJuridicaPerm && !juridicaForbidden;
 
   if (canAccessJuridica) {
     const juridicaMenuItem = {

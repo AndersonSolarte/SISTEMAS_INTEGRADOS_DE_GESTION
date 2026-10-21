@@ -2301,20 +2301,26 @@ const updateUserModulePermissions = async (req, res) => {
       cleanMenu.push('gestion_informacion');
     }
 
-    const allSelected = [...cleanMenu, ...cleanModules, ...cleanGestionProcesosDashboards, ...cleanPoblacionalDashboards, ...cleanSaberProDashboards, ...cleanRecursoHumanoDashboards, ...cleanInfraestructuraFisicaDashboards, ...cleanPlanAccionDashboards, ...cleanInternacionalizacionDashboards];
+    const allSelected = Array.from(new Set([...cleanMenu, ...cleanModules, ...cleanGestionProcesosDashboards, ...cleanPoblacionalDashboards, ...cleanSaberProDashboards, ...cleanRecursoHumanoDashboards, ...cleanInfraestructuraFisicaDashboards, ...cleanPlanAccionDashboards, ...cleanInternacionalizacionDashboards]));
 
     await User.sequelize.transaction(async (t) => {
       await UserModulePermission.destroy({ where: { user_id: id }, transaction: t });
-      if (allSelected.length > 0) {
-        await UserModulePermission.bulkCreate(
-          allSelected.map((module_key) => ({
-            user_id: Number(id),
-            module_key,
-            can_view: true,
-            can_manage: false
-          })),
-          { transaction: t }
-        );
+      const rowsToInsert = allSelected.map((module_key) => ({
+        user_id: Number(id),
+        module_key,
+        can_view: true,
+        can_manage: false
+      }));
+      if (!cleanModules.includes('oficina_juridica')) {
+        rowsToInsert.push({
+          user_id: Number(id),
+          module_key: 'oficina_juridica',
+          can_view: false,
+          can_manage: false
+        });
+      }
+      if (rowsToInsert.length > 0) {
+        await UserModulePermission.bulkCreate(rowsToInsert, { transaction: t });
       }
     });
 
