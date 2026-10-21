@@ -2390,8 +2390,10 @@ const finalizeMinute = wrap(async (req, res) => {
     userId: req.user.id,
     justification: req.body.justification
   });
-  const successMsg = driveSync
+  const successMsg = driveSync?.webViewLink
     ? `Acta formalizada, notificada y sincronizada en Google Drive como "${driveSync.fileName}".`
+    : driveSync?.folderWebViewLink
+    ? `Acta formalizada y guardada en SIAC. Carpeta institucional preparada en Google Drive.`
     : 'Acta formalizada y notificada en SIAC. Sincronización con Google Drive programada.';
   ok(res, { ...minute.toJSON(), driveSync }, successMsg);
 });

@@ -2991,7 +2991,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                         </Typography>
                       </Stack>
                       <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-                        {latestMinute?.drive_file_id ? (
+                        {latestMinute?.drive_file_id && !latestMinute?.content?.storage_quota_limited ? (
                           <Chip
                             size="small"
                             icon={<CheckCircle sx={{ color: '#16a34a !important', fontSize: 16 }} />}
@@ -3011,6 +3011,26 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               '& .MuiChip-icon': { ml: 0.5 }
                             }}
                           />
+                        ) : (latestMinute?.content?.storage_quota_limited || (latestMinute?.content?.drive_folder_id && !latestMinute?.drive_file_id)) ? (
+                          <Chip
+                            size="small"
+                            icon={<InsertDriveFile sx={{ color: '#d97706 !important', fontSize: 16 }} />}
+                            label="Carpeta lista en Drive"
+                            clickable={Boolean(latestMinute?.content?.drive_folder_url)}
+                            component={latestMinute?.content?.drive_folder_url ? 'a' : 'div'}
+                            href={latestMinute?.content?.drive_folder_url || undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{
+                              fontWeight: 750,
+                              fontSize: 11,
+                              bgcolor: '#fffbeb',
+                              color: '#b45309',
+                              border: '1px solid #fde68a',
+                              height: 24,
+                              '& .MuiChip-icon': { ml: 0.5 }
+                            }}
+                          />
                         ) : syncingMinute ? (
                           <Chip
                             size="small"
@@ -3026,6 +3046,57 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             }}
                           />
                         ) : null}
+
+                        {latestMinute?.content?.drive_file_url && (
+                          <Button
+                            size="small"
+                            variant="text"
+                            startIcon={<OpenInNew sx={{ fontSize: 13 }} />}
+                            href={latestMinute.content.drive_file_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{
+                              fontSize: 11,
+                              fontWeight: 750,
+                              color: '#15803d',
+                              py: 0.2,
+                              px: 0.8,
+                              minWidth: 'auto',
+                              textTransform: 'none',
+                              bgcolor: '#f0fdf4',
+                              borderRadius: 1.5,
+                              border: '1px solid #bbf7d0',
+                              '&:hover': { bgcolor: '#dcfce7' }
+                            }}
+                          >
+                            Ver PDF en Drive
+                          </Button>
+                        )}
+                        {latestMinute?.content?.drive_folder_url && (
+                          <Button
+                            size="small"
+                            variant="text"
+                            startIcon={<Folder sx={{ fontSize: 13, color: '#0284c7' }} />}
+                            href={latestMinute.content.drive_folder_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{
+                              fontSize: 11,
+                              fontWeight: 750,
+                              color: '#0369a1',
+                              py: 0.2,
+                              px: 0.8,
+                              minWidth: 'auto',
+                              textTransform: 'none',
+                              bgcolor: '#f0f9ff',
+                              borderRadius: 1.5,
+                              border: '1px solid #bae6fd',
+                              '&:hover': { bgcolor: '#e0f2fe' }
+                            }}
+                          >
+                            Abrir carpeta
+                          </Button>
+                        )}
 
                         <Stack
                           direction="row"
