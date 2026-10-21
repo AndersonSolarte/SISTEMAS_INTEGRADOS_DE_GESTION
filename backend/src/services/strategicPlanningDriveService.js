@@ -144,21 +144,31 @@ const syncMinute = async (minuteId, forceRegenerate = true) => {
     }
   };
   const media = { mimeType: 'application/pdf', body: fs.createReadStream(minute.final_pdf_storage_key) };
-  let response;
-  if (minute.drive_file_id) {
-    try {
-      const existing = await drive.files.get({ fileId: minute.drive_file_id, fields: 'id,parents,trashed', supportsAllDrives: true });
-      const currentParents = existing.data?.parents || [];
-      const hasParent = currentParents.includes(folderId);
-      response = await drive.files.update({
-        fileId: minute.drive_file_id,
-        ...(hasParent ? {} : { addParents: folderId }),
-        requestBody: { ...requestBody, trashed: false },
-        media,
-        fields: 'id,webViewLink',
-        supportsAllDrives: true
-      });
-    } catch (_) {
+  let response = null;
+  let storageQuotaLimited = false;
+  try {
+    if (minute.drive_file_id) {
+      try {
+        const existing = await drive.files.get({ fileId: minute.drive_file_id, fields: 'id,parents,trashed', supportsAllDrives: true });
+        const currentParents = existing.data?.parents || [];
+        const hasParent = currentParents.includes(folderId);
+        response = await drive.files.update({
+          fileId: minute.drive_file_id,
+          ...(hasParent ? {} : { addParents: folderId }),
+          requestBody: { ...requestBody, trashed: false },
+          media,
+          fields: 'id,webViewLink',
+          supportsAllDrives: true
+        });
+      } catch (_) {
+        response = await drive.files.create({
+          requestBody: { ...requestBody, parents: [folderId] },
+          media,
+          fields: 'id,webViewLink',
+          supportsAllDrives: true
+        });
+      }
+    } else {
       response = await drive.files.create({
         requestBody: { ...requestBody, parents: [folderId] },
         media,
@@ -166,29 +176,35 @@ const syncMinute = async (minuteId, forceRegenerate = true) => {
         supportsAllDrives: true
       });
     }
-  } else {
-    response = await drive.files.create({
-      requestBody: { ...requestBody, parents: [folderId] },
-      media,
-      fields: 'id,webViewLink',
-      supportsAllDrives: true
-    });
+  } catch (fileErr) {
+    const msg = String(fileErr?.response?.data?.error?.message || fileErr?.message || '');
+    if (msg.includes('storage quota') || msg.includes('Service Accounts do not have storage quota')) {
+      console.warn(`[Drive Quota Notice]: La cuenta de servicio no tiene cuota propia al subir el acta PDF "${minuteFileName}". La carpeta permanece creada y lista en Drive.`);
+      storageQuotaLimited = true;
+    } else {
+      throw fileErr;
+    }
   }
+
   const folderWebViewLink = `https://drive.google.com/drive/folders/${folderId}`;
+  const fileId = response?.data?.id || null;
+  const webViewLink = response?.data?.webViewLink || null;
   const updatedContent = {
     ...(minute.content || {}),
     drive_folder_id: folderId,
     drive_folder_url: folderWebViewLink,
-    drive_file_id: response.data.id,
-    drive_file_url: response.data.webViewLink
+    drive_file_id: fileId,
+    drive_file_url: webViewLink,
+    storage_quota_limited: storageQuotaLimited
   };
-  await minute.update({ drive_file_id: response.data.id, content: updatedContent });
+  await minute.update({ drive_file_id: fileId, content: updatedContent });
   return {
-    id: response.data.id,
+    id: fileId,
     folderId,
     fileName: minuteFileName,
-    webViewLink: response.data.webViewLink,
-    folderWebViewLink
+    webViewLink,
+    folderWebViewLink,
+    storageQuotaLimited
   };
 };
 

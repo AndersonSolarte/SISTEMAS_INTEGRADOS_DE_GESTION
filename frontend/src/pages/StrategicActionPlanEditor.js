@@ -3716,7 +3716,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                         </Box>
                       </Stack>
 
-                      <Stack direction="row" spacing={1} alignItems="center">
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                         {syncingDriveExcel ? (
                           <Chip
                             icon={<CircularProgress size={16} color="inherit" />}
@@ -3728,6 +3728,20 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               color: '#0369a1',
                               height: 38,
                               borderRadius: 2.5
+                            }}
+                          />
+                        ) : detail?.metadata?.drive_sync?.storage_quota_limited ? (
+                          <Chip
+                            icon={<Folder sx={{ color: '#d97706 !important', fontSize: 20 }} />}
+                            label="Carpeta oficial lista en Drive"
+                            size="medium"
+                            sx={{
+                              fontWeight: 800,
+                              bgcolor: '#fef3c7',
+                              color: '#b45309',
+                              height: 38,
+                              borderRadius: 2.5,
+                              px: 0.5
                             }}
                           />
                         ) : (
@@ -3745,7 +3759,29 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             }}
                           />
                         )}
-                        <Tooltip title="Actualización manual opcional">
+                        {detail?.metadata?.drive_sync?.folder_id && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<OpenInNew />}
+                            href={`https://drive.google.com/drive/folders/${detail.metadata.drive_sync.folder_id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            sx={{
+                              height: 38,
+                              borderRadius: 2.5,
+                              textTransform: 'none',
+                              fontWeight: 800,
+                              borderColor: '#86efac',
+                              color: '#15803d',
+                              bgcolor: '#fff',
+                              '&:hover': { bgcolor: '#f0fdf4', borderColor: '#16a34a' }
+                            }}
+                          >
+                            Abrir en Drive
+                          </Button>
+                        )}
+                        <Tooltip title="Actualizar en Google Drive">
                           <IconButton
                             size="small"
                             disabled={syncingDriveExcel}

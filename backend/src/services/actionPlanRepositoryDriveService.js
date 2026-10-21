@@ -71,7 +71,18 @@ const buildActionRepositoryServiceAccountAuth = () => {
     error.statusCode = 503;
     throw error;
   }
-  return new google.auth.JWT({ email, key, scopes: ['https://www.googleapis.com/auth/drive'] });
+  const subject = String(
+    process.env.GOOGLE_SERVICE_ACCOUNT_SUBJECT ||
+    process.env.GOOGLE_IMPERSONATE_EMAIL ||
+    process.env.GOOGLE_WORKSPACE_ADMIN_EMAIL ||
+    ''
+  ).trim();
+  return new google.auth.JWT({
+    email,
+    key,
+    scopes: ['https://www.googleapis.com/auth/drive'],
+    ...(subject ? { subject } : {})
+  });
 };
 
 const buildActionRepositoryDriveClient = () => {
@@ -230,11 +241,21 @@ const upsertFile = async (drive, { parentId, name, key, mimeType, buffer, hash }
     appProperties: { [REPOSITORY_PROPERTY]: repositoryPropertyValue(key), contentHash: String(hash) }
   };
   const media = { mimeType, body: Readable.from(buffer) };
-  const response = found
-    ? await drive.files.update({ fileId: found.id, requestBody, media, fields: 'id', supportsAllDrives: true })
-    : await drive.files.create({ requestBody: { ...requestBody, parents: [parentId] }, media, fields: 'id', supportsAllDrives: true });
-  counters[found ? 'files_updated' : 'files_created'] += 1;
-  return response.data.id;
+  try {
+    const response = found
+      ? await drive.files.update({ fileId: found.id, requestBody, media, fields: 'id', supportsAllDrives: true })
+      : await drive.files.create({ requestBody: { ...requestBody, parents: [parentId] }, media, fields: 'id', supportsAllDrives: true });
+    counters[found ? 'files_updated' : 'files_created'] += 1;
+    return response.data.id;
+  } catch (error) {
+    const errorMsg = String(error?.response?.data?.error?.message || error?.message || '');
+    if (errorMsg.includes('Service Accounts do not have storage quota') || errorMsg.includes('storage quota')) {
+      console.warn(`[Drive Quota Notice]: La cuenta de servicio no tiene cuota directa para alojar "${name}". La estructura de carpetas en Google Drive permanece creada y lista.`);
+      counters.files_storage_quota_limited = (counters.files_storage_quota_limited || 0) + 1;
+      return null;
+    }
+    throw error;
+  }
 };
 
 const intersectsPeriod = (item, period) => {
@@ -427,13 +448,34 @@ const syncActionPlanRepositoryTerm = async (termId) => {
 
   // Las cuentas de servicio pueden organizar carpetas compartidas en "Mi unidad",
   // pero Google no les concede cuota para crear archivos. En este modo temporal se
-  // prepara toda la estructura; los documentos se incorporan al instalar el OAuth.
+  // prepara toda la estructura; los documentos se incorporan al instalar el OAuth o Shared Drive.
   if (!usingOAuth) {
-    return {
+    const serviceAccountResult = {
       ...counters, year: term.year, ped_folder_id: pedFolder, ped_folder_name: pedFolderName, folder_id: yearFolder,
       folder_url: `https://drive.google.com/drive/folders/${yearFolder}`,
-      drive_mode: 'service_account_folders_only', files_deferred: true
+      drive_mode: 'service_account_folders_only', files_deferred: true,
+      synced_at: new Date().toISOString()
     };
+    try {
+      await term.update({
+        metadata: {
+          ...(term.metadata || {}),
+          drive_sync: {
+            synced_at: serviceAccountResult.synced_at,
+            folder_id: yearFolder,
+            folder_url: serviceAccountResult.folder_url,
+            ped_folder_id: pedFolder,
+            ped_folder_name: pedFolderName,
+            drive_mode: serviceAccountResult.drive_mode,
+            files_deferred: true,
+            dependencies: repositoryEntries.length
+          }
+        }
+      });
+    } catch (e) {
+      console.warn('[syncActionPlanRepositoryTerm]: No se pudo guardar metadata en term:', e.message);
+    }
+    return serviceAccountResult;
   }
 
   for (const context of planContexts) {
@@ -490,10 +532,33 @@ const syncActionPlanRepositoryTerm = async (termId) => {
     }
   }
 
-  return {
+  const fullOAuthResult = {
     ...counters, year: term.year, ped_folder_id: pedFolder, ped_folder_name: pedFolderName, folder_id: yearFolder,
-    folder_url: `https://drive.google.com/drive/folders/${yearFolder}`
+    folder_url: `https://drive.google.com/drive/folders/${yearFolder}`,
+    drive_mode: 'oauth_full', files_deferred: false,
+    synced_at: new Date().toISOString()
   };
+  try {
+    await term.update({
+      metadata: {
+        ...(term.metadata || {}),
+        drive_sync: {
+          synced_at: fullOAuthResult.synced_at,
+          folder_id: yearFolder,
+          folder_url: fullOAuthResult.folder_url,
+          ped_folder_id: pedFolder,
+          ped_folder_name: pedFolderName,
+          drive_mode: 'oauth_full',
+          files_deferred: false,
+          folders_created: counters.folders_created,
+          dependencies: repositoryEntries.length
+        }
+      }
+    });
+  } catch (e) {
+    console.warn('[syncActionPlanRepositoryTerm]: No se pudo guardar metadata en term:', e.message);
+  }
+  return fullOAuthResult;
 };
 
 const syncSinglePlanOfficialWorkbook = async (actionPlanId) => {
@@ -603,7 +668,8 @@ const syncSinglePlanOfficialWorkbook = async (actionPlanId) => {
     folder_id: officialFolder,
     folder_name: 'PLAN DE ACCIÓN OFICIAL DIR-PE-FR-003',
     synced_at: new Date().toISOString(),
-    hash: fileHash
+    hash: fileHash,
+    storage_quota_limited: !driveFileId
   };
 
   actionPlan.metadata = {
@@ -614,11 +680,15 @@ const syncSinglePlanOfficialWorkbook = async (actionPlanId) => {
 
   return {
     synchronized: true,
+    storageQuotaLimited: !driveFileId,
     fileId: driveFileId,
     fileName,
     folderId: officialFolder,
     folderUrl: `https://drive.google.com/drive/folders/${officialFolder}`,
-    syncedAt: driveSync.synced_at
+    syncedAt: driveSync.synced_at,
+    message: !driveFileId
+      ? 'Carpeta oficial preparada en Google Drive. Para alojar el archivo Excel directamente en la nube, Google requiere que la carpeta esté en una Unidad Compartida (Shared Drive) o vincular la cuenta institucional con OAuth.'
+      : 'Plan de Acción Oficial DIR-PE-FR-003 sincronizado con Drive.'
   };
 };
 

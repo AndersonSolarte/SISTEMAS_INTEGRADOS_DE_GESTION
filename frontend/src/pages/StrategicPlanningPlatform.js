@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import {
   AccessTimeOutlined, Add, Analytics, ArrowBack, ArrowDownward, ArrowUpward, AssessmentOutlined, AssignmentOutlined, CalendarTodayOutlined, Close, MoreTime, CheckCircleOutline, CloudSync, CorporateFare,
-  DeleteOutline, Description, Download, EditOutlined, FolderOutlined, GridView, LockOutlined, Payments, Search,
+  DeleteOutline, Description, Download, EditOutlined, FolderOutlined, GridView, LockOutlined, OpenInNew, Payments, Search,
   SettingsOutlined, SwapHoriz, TableRows, Timeline, UploadFile, ViewWeekOutlined
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
@@ -598,10 +598,11 @@ export default function StrategicPlanningPlatform({ onBack }) {
       setRepositoryResult(response.data);
       enqueueSnackbar(
         response.data?.files_deferred
-          ? `Estructura de carpetas de ${selectedActionTerm.year} preparada. Los archivos se subirán al habilitar OAuth.`
-          : `Repositorio de ${selectedActionTerm.year} sincronizado correctamente.`,
-        { variant: response.data?.files_deferred ? 'warning' : 'success' }
+          ? `Estructura de carpetas de ${selectedActionTerm.year} preparada en Google Drive.`
+          : `Repositorio de ${selectedActionTerm.year} sincronizado correctamente con Drive.`,
+        { variant: 'success' }
       );
+      await Promise.all([load(), refreshTermDependencies()]);
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'No fue posible sincronizar el repositorio con Drive.', { variant: 'error' });
     } finally { setRepositorySyncing(false); }
@@ -1306,8 +1307,15 @@ export default function StrategicPlanningPlatform({ onBack }) {
       {pedWorkspaceOpen && space === 'actions' && <Box>
         <SectionHeader title="Planes de Acción por vigencia" />
 
+        {/* PASO 1: SELECCIONE EL AÑO DE EJECUCIÓN (VIGENCIA) */}
         <Paper variant="outlined" sx={{ p: { xs: 1.75, md: 2.25 }, borderRadius: 3.5, borderColor: '#dbe3ee', bgcolor: '#fff' }}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={2}><Typography variant="h6" fontWeight={950}>1. Seleccione el año de ejecución</Typography><Chip variant="outlined" color="primary" label={`${actionTerms.length} vigencias`} sx={{ fontWeight: 850 }} /></Stack>
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={2}>
+            <Stack direction="row" alignItems="center" spacing={1.5}>
+              <Box sx={{ width: 30, height: 30, borderRadius: '50%', bgcolor: '#2563eb', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>1</Box>
+              <Typography variant="h6" fontWeight={950}>Seleccione el año de ejecución (Vigencia)</Typography>
+            </Stack>
+            <Chip variant="outlined" color="primary" label={`${actionTerms.length} vigencias`} sx={{ fontWeight: 850 }} />
+          </Stack>
           {!actionTerms.length ? <Alert severity="warning">Este PED no tiene años configurados.</Alert> : <Box sx={{ display: { xs: 'flex', md: 'grid' }, gridTemplateColumns: { md: 'repeat(auto-fit,minmax(175px,1fr))' }, gap: 1.25, overflowX: { xs: 'auto', md: 'visible' }, pb: { xs: 1, md: 0 } }}>
             {actionTerms.map((term) => {
               const yearDependencies = termDependencies.filter((item) => String(item.term_id) === String(term.id));
@@ -1321,7 +1329,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               const expectedPlansCount = expectedUnitIds.size;
               const selected = String(term.id) === String(selectedActionTerm?.id);
               const percentage = expectedPlansCount ? Math.min(100, (createdPlansCount / expectedPlansCount) * 100) : 0;
-              return <Paper key={term.id} component="button" type="button" onClick={() => { setSelectedActionTermId(term.id); setDependencySearch(''); setRepositoryResult(null); }} elevation={0} sx={{ appearance: 'none', font: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: { xs: 190, md: 0 }, p: 1.6, borderRadius: 2.75, border: '1px solid', borderColor: selected ? '#2563eb' : '#dce3ed', bgcolor: selected ? '#eff6ff' : '#fff', boxShadow: selected ? '0 8px 20px rgba(37,99,235,.12)' : 'none', transition: 'all .2s', '&:hover': { borderColor: '#60a5fa', transform: 'translateY(-2px)' } }}>
+              return <Paper key={term.id} component="button" type="button" onClick={() => { setSelectedActionTermId(term.id); setDependencySearch(''); setRepositoryResult(null); }} elevation={0} sx={{ appearance: 'none', font: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: { xs: 190, md: 0 }, p: 1.6, borderRadius: 2.75, border: '1.5px solid', borderColor: selected ? '#2563eb' : '#dce3ed', bgcolor: selected ? '#eff6ff' : '#fff', boxShadow: selected ? '0 8px 20px rgba(37,99,235,.15)' : 'none', transition: 'all .2s', '&:hover': { borderColor: '#60a5fa', transform: 'translateY(-2px)' } }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start"><Box><Typography variant="caption" color={selected ? 'primary' : 'text.secondary'} fontWeight={900}>VIGENCIA</Typography><Typography sx={{ fontSize: 26, lineHeight: 1.1, fontWeight: 950 }}>{term.year}</Typography></Box><Box sx={{ width: 34, height: 34, borderRadius: 2, bgcolor: selected ? '#2563eb' : '#f1f5f9', color: selected ? '#fff' : '#64748b', display: 'grid', placeItems: 'center' }}><CalendarTodayOutlined sx={{ fontSize: 17 }} /></Box></Stack>
                 <Stack direction="row" justifyContent="space-between" alignItems="center" mt={1.5} mb={0.7}><Typography variant="caption" fontWeight={850}>{createdPlansCount} de {expectedPlansCount} planes</Typography><Chip size="small" color={term.status === 'active' ? 'success' : 'default'} label={TERM_STATUS_LABEL[term.status] || term.status} sx={{ height: 21, fontSize: 11 }} /></Stack><LinearProgress variant="determinate" value={percentage} sx={{ height: 6, borderRadius: 10, bgcolor: '#e2e8f0' }} />
               </Paper>;
@@ -1329,7 +1337,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
           </Box>}
         </Paper>
 
-        {/* BARRA DE VIGENCIA Y PLAZO GENERAL DE FORMULACIÓN (ETAPA 1) */}
+        {/* PASO 2: PROGRAMACIÓN DEL TIEMPO (PLAZO GENERAL DE FORMULACIÓN) */}
         {selectedActionTerm && (() => {
           const generalStartsOn = selectedActionTerm.metadata?.formulation_starts_on || `${selectedActionTerm.year}-01-01`;
           const generalEndsOn = selectedActionTerm.metadata?.formulation_ends_on || `${selectedActionTerm.year}-03-31`;
@@ -1353,6 +1361,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
             >
               <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} gap={2}>
                 <Stack direction="row" alignItems="center" gap={1.5}>
+                  <Box sx={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', bgcolor: '#16a34a', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>2</Box>
                   <Box
                     sx={{
                       width: 44,
@@ -1425,54 +1434,148 @@ export default function StrategicPlanningPlatform({ onBack }) {
           );
         })()}
 
-        {selectedActionTerm && <Paper variant="outlined" sx={{ mt: 2, p: { xs: 1.75, md: 2.25 }, borderRadius: 3.5, borderColor: '#bfdbfe', background: 'linear-gradient(110deg,#f8fbff 0%,#eff6ff 100%)' }}>
-          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
-            <Stack direction="row" alignItems="flex-start" gap={1.5}>
-              <Box sx={{ width: 40, height: 40, flex: '0 0 40px', borderRadius: 2, bgcolor: '#eff6ff', color: '#2563eb', display: 'grid', placeItems: 'center' }}><FolderOutlined sx={{ fontSize: 22 }} /></Box>
-              <Box>
-                <Typography fontWeight={900} fontSize={15}>Repositorio Digital {selectedActionTerm.year}</Typography>
-                <Typography variant="caption" color="text.secondary">Expediente en Google Drive</Typography>
-              </Box>
-            </Stack>
-            <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems="center" flexWrap="wrap">
-              <Button
-                variant="outlined"
-                color="primary"
-                disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
-                onClick={handleBulkCreateActionPlans}
-                sx={{ height: 44, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
-              >
-                {bulkActionLoading ? 'Generando…' : 'Generar todos los planes'}
-              </Button>
-              {selectedYearPlans.length > 0 && (
-                <Button
-                  variant="outlined"
-                  color="error"
-                  disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
-                  onClick={() => { setBulkDeleteCandidate(selectedActionTerm); setBulkDeleteConfirmText(''); }}
-                  sx={{ height: 44, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
-                >
-                  Limpiar vigencia ({selectedYearPlans.length})
-                </Button>
-              )}
-              <Button variant="contained" startIcon={repositorySyncing ? <CircularProgress size={18} color="inherit" /> : <CloudSync />} disabled={repositorySyncing || !selectedActionUnits.length} onClick={syncActionRepository} sx={{ minWidth: 200, height: 44, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}>
-                {repositorySyncing ? 'Sincronizando…' : 'Sincronizar con Drive'}
-              </Button>
-            </Stack>
-          </Stack>
-          {!selectedActionUnits.length && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Configure por lo menos una dependencia para esta vigencia.</Typography>}
-          {repositoryResult && <Alert severity={repositoryResult.files_deferred ? 'warning' : 'success'} sx={{ mt: 1.75, borderRadius: 2.25 }} action={<Button color="inherit" size="small" href={repositoryResult.folder_url} target="_blank" rel="noreferrer" sx={{ fontWeight: 900 }}>Abrir Drive</Button>}>
-            <strong>{repositoryResult.files_deferred ? 'Estructura de carpetas preparada:' : 'Sincronización completa:'}</strong> {repositoryResult.ped_folder_name ? `${repositoryResult.ped_folder_name} → ` : ''}Planes de Acción {repositoryResult.year}. {repositoryResult.dependencies ?? repositoryResult.plans} dependencias preparadas ({repositoryResult.plans} con plan y {repositoryResult.pending_plans ?? 0} pendientes), {repositoryResult.activities} actividades y {repositoryResult.folders_created} carpetas nuevas.{repositoryResult.files_deferred ? ' Los Excel, actas y evidencias se incorporarán cuando Planeación autorice OAuth.' : ` ${repositoryResult.evidence} evidencias y ${repositoryResult.minutes} actas; ${repositoryResult.files_created} archivos creados.`}
-          </Alert>}
-        </Paper>}
+        {/* PASO 3: REPOSITORIO DIGITAL Y SINCRONIZACIÓN EN GOOGLE DRIVE */}
+        {selectedActionTerm && (() => {
+          const driveSync = selectedActionTerm.metadata?.drive_sync;
+          const isDriveSynced = Boolean(driveSync?.synced_at || repositoryResult);
+          const driveFolderUrl = driveSync?.folder_url || repositoryResult?.folder_url;
 
+          return (
+            <Paper
+              variant="outlined"
+              sx={{
+                mt: 2,
+                p: { xs: 1.75, md: 2.25 },
+                borderRadius: 3.5,
+                borderColor: isDriveSynced ? '#86efac' : '#bfdbfe',
+                background: isDriveSynced
+                  ? 'linear-gradient(110deg,#f0fdf4 0%,#f8fafc 100%)'
+                  : 'linear-gradient(110deg,#f8fbff 0%,#eff6ff 100%)'
+              }}
+            >
+              <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
+                <Stack direction="row" alignItems="center" gap={1.5}>
+                  <Box sx={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', bgcolor: '#7c3aed', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>3</Box>
+                  <Box sx={{ width: 44, height: 44, flex: '0 0 44px', borderRadius: 2.5, bgcolor: isDriveSynced ? '#dcfce7' : '#eff6ff', color: isDriveSynced ? '#16a34a' : '#2563eb', display: 'grid', placeItems: 'center' }}>
+                    <FolderOutlined sx={{ fontSize: 24 }} />
+                  </Box>
+                  <Box>
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                      <Typography fontWeight={950} fontSize={15} color="#0f172a">
+                        Repositorio Digital {selectedActionTerm.year} · Google Drive
+                      </Typography>
+                      {isDriveSynced ? (
+                        <Chip
+                          size="small"
+                          color="success"
+                          icon={<CheckCircleOutline sx={{ fontSize: '14px !important' }} />}
+                          label="Estructura de carpetas lista en Drive"
+                          sx={{ fontWeight: 850, fontSize: 11 }}
+                        />
+                      ) : (
+                        <Chip
+                          size="small"
+                          color="warning"
+                          label="Pendiente de sincronizar con Drive"
+                          sx={{ fontWeight: 850, fontSize: 11 }}
+                        />
+                      )}
+                    </Stack>
+                    <Typography variant="body2" color="#64748b" sx={{ mt: 0.25, fontSize: 12.5 }}>
+                      {isDriveSynced && (driveSync?.synced_at || repositoryResult)
+                        ? `Carpetas institucionales para actas y formatos preparadas en Google Drive (Actualizado: ${new Date(driveSync?.synced_at || new Date()).toLocaleDateString('es-CO')} ${new Date(driveSync?.synced_at || new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
+                        : 'Sincronice para preparar la estructura de carpetas de dependencias, actas COM-IF-FR-002 y formatos DIR-PE-FR-003 en Drive.'}
+                    </Typography>
+                  </Box>
+                </Stack>
+
+                <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems="center" flexWrap="wrap">
+                  {driveFolderUrl && (
+                    <Button
+                      variant="outlined"
+                      color="success"
+                      startIcon={<OpenInNew />}
+                      href={driveFolderUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      sx={{ height: 42, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
+                    >
+                      Abrir Drive {selectedActionTerm.year}
+                    </Button>
+                  )}
+                  <Button
+                    variant="outlined"
+                    color="primary"
+                    disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
+                    onClick={handleBulkCreateActionPlans}
+                    sx={{ height: 42, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
+                  >
+                    {bulkActionLoading ? 'Generando…' : 'Generar todos los planes'}
+                  </Button>
+                  {selectedYearPlans.length > 0 && (
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
+                      onClick={() => { setBulkDeleteCandidate(selectedActionTerm); setBulkDeleteConfirmText(''); }}
+                      sx={{ height: 42, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
+                    >
+                      Limpiar vigencia ({selectedYearPlans.length})
+                    </Button>
+                  )}
+                  <Button
+                    variant="contained"
+                    startIcon={repositorySyncing ? <CircularProgress size={18} color="inherit" /> : <CloudSync />}
+                    disabled={repositorySyncing || !selectedActionUnits.length}
+                    onClick={syncActionRepository}
+                    sx={{
+                      minWidth: 200,
+                      height: 42,
+                      borderRadius: 2.25,
+                      textTransform: 'none',
+                      fontWeight: 900,
+                      bgcolor: isDriveSynced ? '#0f766e' : '#2563eb',
+                      '&:hover': { bgcolor: isDriveSynced ? '#115e59' : '#1d4ed8' }
+                    }}
+                  >
+                    {repositorySyncing ? 'Sincronizando…' : isDriveSynced ? 'Actualizar en Drive' : 'Sincronizar con Drive'}
+                  </Button>
+                </Stack>
+              </Stack>
+
+              {!selectedActionUnits.length && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                  Configure por lo menos una dependencia para esta vigencia antes de sincronizar.
+                </Typography>
+              )}
+
+              {repositoryResult && (
+                <Alert
+                  severity={repositoryResult.files_deferred ? 'info' : 'success'}
+                  sx={{ mt: 1.75, borderRadius: 2.25 }}
+                  action={
+                    repositoryResult.folder_url ? (
+                      <Button color="inherit" size="small" href={repositoryResult.folder_url} target="_blank" rel="noreferrer" sx={{ fontWeight: 900 }}>
+                        Abrir en Drive
+                      </Button>
+                    ) : null
+                  }
+                >
+                  <strong>Estructura de carpetas en Google Drive lista:</strong> {repositoryResult.ped_folder_name ? `${repositoryResult.ped_folder_name} → ` : ''}Planes de Acción {repositoryResult.year}. {repositoryResult.dependencies ?? repositoryResult.plans} dependencias preparadas ({repositoryResult.plans} con plan y {repositoryResult.pending_plans ?? 0} pendientes). Las actas y formatos institucionales se alojarán directamente en estas carpetas.
+                </Alert>
+              )}
+            </Paper>
+          );
+        })()}
+
+        {/* PASO 4: FORMULACIÓN Y GESTIÓN POR DEPENDENCIAS */}
         {selectedActionTerm && <Paper variant="outlined" sx={{ mt: 2, borderRadius: 3.5, overflow: 'hidden', borderColor: '#dbe3ee' }}>
           <Box sx={{ px: { xs: 1.75, md: 2.5 }, py: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
             <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ lg: 'center' }} gap={1.5}>
-              <Box>
-                <Typography variant="h6" fontWeight={950}>2. Dependencias ({visibleActionUnits.length})</Typography>
-
-              </Box>
+              <Stack direction="row" alignItems="center" spacing={1.5}>
+                <Box sx={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', bgcolor: '#0284c7', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>4</Box>
+                <Typography variant="h6" fontWeight={950}>Planes de Acción por Dependencia ({visibleActionUnits.length})</Typography>
+              </Stack>
               <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} gap={1} sx={{ width: { xs: '100%', lg: 'auto' } }}>
                 <TextField
                   size="small"
