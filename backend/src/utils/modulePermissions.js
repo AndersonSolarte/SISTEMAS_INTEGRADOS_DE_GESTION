@@ -1,6 +1,13 @@
 const { ROLES } = require('../constants/roles');
 const { ACADEMIC_PROGRAM_PERMISSION_KEYS } = require('../constants/academicPrograms');
-const { UserModulePermission } = require('../models');
+const { User, UserModulePermission } = require('../models');
+
+const JURIDICA_PERMISSION_KEYS = new Set([
+  'oficina_juridica',
+  'oficina_juridica.jefatura',
+  'oficina_juridica.secretaria',
+  'oficina_juridica.asesor'
+]);
 
 const MENU_KEYS = new Set([
   'dashboard',
@@ -164,8 +171,9 @@ const RECURSO_HUMANO_DASHBOARD_KEYS = new Set([
   'recurso_humano_tiempo_reponer'
 ]);
 
-const getDefaultPermissionsByRole = (role) => {
+const getDefaultPermissionsByRole = (role, email = null) => {
   if ([ROLES.ADMINISTRADOR].includes(role)) {
+    const isSuperAdmin = String(email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
     return {
       menuPermissions: [
         'dashboard',
@@ -178,7 +186,12 @@ const getDefaultPermissionsByRole = (role) => {
         'gestion_usuarios',
         'buscar_documentos'
       ],
-      allowedModules: Array.from(GESTION_INFO_MODULE_KEYS),
+      allowedModules: Array.from(GESTION_INFO_MODULE_KEYS).filter((key) => {
+        if (JURIDICA_PERMISSION_KEYS.has(key)) {
+          return isSuperAdmin;
+        }
+        return true;
+      }),
       allowedGestionProcesosDashboards: Array.from(GESTION_PROCESOS_DASHBOARD_KEYS),
       allowedPoblacionalDashboards: Array.from(POBLACIONAL_DASHBOARD_KEYS),
       allowedSaberProDashboards: Array.from(SABER_PRO_DASHBOARD_KEYS),
@@ -323,10 +336,16 @@ const getDefaultPermissionsByRole = (role) => {
   };
 };
 
-const getUserModulePermissions = async (userId, role) => {
-  const defaults = getDefaultPermissionsByRole(role);
+const getUserModulePermissions = async (userId, role, email = null) => {
+  if (!email && userId && User) {
+    const u = await User.findByPk(userId, { attributes: ['email'] }).catch(() => null);
+    if (u?.email) email = u.email;
+  }
+  const isSuperAdmin = String(email || '').trim().toLowerCase() === 'sgc@unicesmag.edu.co';
+  const defaults = getDefaultPermissionsByRole(role, email);
 
-  if (role === ROLES.ADMINISTRADOR) return defaults;
+  // El Administrador General institucional (sgc@unicesmag.edu.co) tiene acceso completo por defecto
+  if (isSuperAdmin) return defaults;
 
   if (!UserModulePermission) return defaults;
 
@@ -340,6 +359,29 @@ const getUserModulePermissions = async (userId, role) => {
   const keys = rows
     .map((row) => String(row.module_key || '').trim())
     .filter(Boolean);
+
+  if (role === ROLES.ADMINISTRADOR) {
+    const customModules = keys.filter((k) => GESTION_INFO_MODULE_KEYS.has(k));
+    const customGP = keys.filter((k) => GESTION_PROCESOS_DASHBOARD_KEYS.has(k));
+    const customPob = keys.filter((k) => POBLACIONAL_DASHBOARD_KEYS.has(k));
+    const customSP = keys.filter((k) => SABER_PRO_DASHBOARD_KEYS.has(k));
+    const customRH = keys.filter((k) => RECURSO_HUMANO_DASHBOARD_KEYS.has(k));
+    const customIF = keys.filter((k) => INFRAESTRUCTURA_FISICA_DASHBOARD_KEYS.has(k));
+    const customPA = keys.filter((k) => PLAN_ACCION_DASHBOARD_KEYS.has(k));
+    const customInt = keys.filter((k) => INTERNACIONALIZACION_DASHBOARD_KEYS.has(k));
+
+    return {
+      ...defaults,
+      allowedModules: customModules,
+      allowedGestionProcesosDashboards: customGP.length > 0 ? customGP : defaults.allowedGestionProcesosDashboards,
+      allowedPoblacionalDashboards: customPob.length > 0 ? customPob : defaults.allowedPoblacionalDashboards,
+      allowedSaberProDashboards: customSP.length > 0 ? customSP : defaults.allowedSaberProDashboards,
+      allowedRecursoHumanoDashboards: customRH.length > 0 ? customRH : defaults.allowedRecursoHumanoDashboards,
+      allowedInfraestructuraFisicaDashboards: customIF.length > 0 ? customIF : defaults.allowedInfraestructuraFisicaDashboards,
+      allowedPlanAccionDashboards: customPA.length > 0 ? customPA : defaults.allowedPlanAccionDashboards,
+      allowedInternacionalizacionDashboards: customInt.length > 0 ? customInt : defaults.allowedInternacionalizacionDashboards
+    };
+  }
 
   let menuPermissions = Array.from(new Set(keys.filter((k) => MENU_KEYS.has(k))));
   let allowedModules = Array.from(new Set(keys.filter((k) => GESTION_INFO_MODULE_KEYS.has(k))));
@@ -528,7 +570,7 @@ const getUserModulePermissions = async (userId, role) => {
 };
 
 const buildUserPayloadWithPermissions = async (user) => {
-  const perms = await getUserModulePermissions(user.id, user.role);
+  const perms = await getUserModulePermissions(user.id, user.role, user.email);
   return {
     id: user.id,
     nombre: user.nombre,
