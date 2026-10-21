@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseEvaluatedData } = require('./saberProDocumentParser');
+const { isValidRegistrationNumber, parseEvaluatedData } = require('./saberProDocumentParser');
 
 const hints = {
   identification: '1004235273',
@@ -34,4 +34,22 @@ FECHA DE PRESENTACION DEL EXAMEN
   const parsed = parseEvaluatedData(text, hints);
   assert.equal(parsed.identification, '1004235273');
   assert.equal(parsed.expectedIdentificationRead, true);
+});
+
+test('exige un codigo EK de exactamente 14 caracteres', () => {
+  assert.equal(isValidRegistrationNumber('EK202531202662'), true);
+  assert.equal(isValidRegistrationNumber('EK20253120266'), false);
+  assert.equal(isValidRegistrationNumber('EKA202531202662'), false);
+
+  const parsed = parseEvaluatedData(`
+NUMERO DE DOCUMENTO 1004235273
+NUMERO DE REGISTRO EK20253120266
+FECHA DE PRESENTACION DEL EXAMEN 30/09/2025
+`, {
+    identification: '1004235273',
+    registrationNumber: 'EK20253120266',
+    examDate: '2025-09-30'
+  });
+  assert.equal(parsed.readComplete, false);
+  assert.match(parsed.missingFields.join(' '), /exactamente 14 caracteres/i);
 });

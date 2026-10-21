@@ -188,13 +188,20 @@ async function* renderPdfCandidatesWithPdftoppm(buffer) {
       }
 
       yield encodeRgbToPng(thresholdRgb(band, 215));
+
+      // Muchos certificados fueron escaneados de lado aunque el visor aplique
+      // una rotación visual. Se prueba primero esa orientación para evitar
+      // OCR costoso sobre recortes que no contienen texto horizontal.
+      for (const candidate of rotationRgbCandidates(img, false)) yield candidate;
       yield encodeRgbToPng(cropRgb(img, 0, 0.58));
     } else {
       yield encodeRgbToPng(cropRgb(img, 0, 0.58));
     }
     yield encodeRgbToPng(cropRgb(img, 0.42, 1));
     for (const candidate of rotationRgbCandidates(img, true)) yield candidate;
-    for (const candidate of rotationRgbCandidates(img, false)) yield candidate;
+    if (pageNumber !== 1) {
+      for (const candidate of rotationRgbCandidates(img, false)) yield candidate;
+    }
   }
 }
 
@@ -279,13 +286,19 @@ async function* renderPdfCandidatesWithCanvas(buffer) {
       yield thresholdImage(await loadImage(identificationBand), 220);
 
       yield thresholdImage(await loadImage(dateBand), 215);
+
+      // Prioriza los escaneos almacenados de lado. El visor PDF suele
+      // mostrarlos derechos, pero OCR recibe la imagen sin esa corrección.
+      for (const candidate of rotationCandidates(canvas, -Math.PI / 2)) yield candidate;
       yield cropCanvas(canvas, 0, 0.58);
     } else {
       yield cropCanvas(canvas, 0, 0.58);
     }
     yield cropCanvas(canvas, 0.42, 1);
     for (const candidate of rotationCandidates(canvas, Math.PI / 2)) yield candidate;
-    for (const candidate of rotationCandidates(canvas, -Math.PI / 2)) yield candidate;
+    if (pageNumber !== 1) {
+      for (const candidate of rotationCandidates(canvas, -Math.PI / 2)) yield candidate;
+    }
   }
 }
 
@@ -308,8 +321,22 @@ async function extractPdfBuffer(buffer, hints = {}) {
     return { text: directText, method: 'PDF_TEXT' };
   }
   let ocrText = '';
+  let candidateNumber = 0;
   for await (const image of renderPdfCandidates(buffer)) {
+    candidateNumber += 1;
+    const startedAt = Date.now();
     ocrText += `\n${await recognizeImage(image)}`;
+    if (String(process.env.OCR_DEBUG_TIMINGS || '').toLowerCase() === 'true') {
+      const parsed = parseEvaluatedData(`${directText}\n${ocrText}`, hints);
+      console.info('[saberProOcr:timing]', {
+        candidate: candidateNumber,
+        elapsedMs: Date.now() - startedAt,
+        identification: Boolean(parsed.identification),
+        registrationNumber: Boolean(parsed.registrationNumber),
+        examDate: Boolean(parsed.examDate),
+        readComplete: parsed.readComplete
+      });
+    }
     if (complete(`${directText}\n${ocrText}`, hints)) break;
   }
   return { text: `${directText}\n${ocrText}`, method: 'OCR' };

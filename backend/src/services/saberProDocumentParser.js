@@ -57,8 +57,12 @@ function firstMatch(text, patterns) {
 }
 
 function registrationYear(value) {
-  const match = String(value || '').replace(/\s/g, '').toUpperCase().match(/^EKA?(\d{4})/);
+  const match = String(value || '').replace(/\s/g, '').toUpperCase().match(/^EK(\d{4})\d{8}$/);
   return match ? Number(match[1]) : null;
+}
+
+function isValidRegistrationNumber(value) {
+  return /^EK\d{12}$/.test(String(value || '').replace(/\s/g, '').toUpperCase());
 }
 
 function validateRegistrationDate(registrationNumber, value) {
@@ -119,7 +123,8 @@ function parseEvaluatedData(rawText, hints = {}) {
   const expectedRegistrationNumber = hintedRegistration || null;
   const registrationNumber = detectedRegistration;
   const registrationMatches = Boolean(
-    registrationNumber && expectedRegistrationNumber && registrationNumber === expectedRegistrationNumber
+    registrationNumber && isValidRegistrationNumber(registrationNumber)
+    && expectedRegistrationNumber && registrationNumber === expectedRegistrationNumber
   );
   const registrationMismatch = Boolean(!registrationMatches);
 
@@ -174,6 +179,8 @@ function parseEvaluatedData(rawText, hints = {}) {
 
   if (!registrationNumber) {
     missingFields.push(`No se pudo leer el código EK en el PDF (codigo_ek BD: ${expectedRegistrationNumber || 'sin dato'})`);
+  } else if (!isValidRegistrationNumber(registrationNumber)) {
+    missingFields.push(`El código EK leído en el PDF (${registrationNumber}) es inválido: debe tener exactamente 14 caracteres (EK y 12 dígitos)`);
   } else if (!expectedRegistrationNumber) {
     missingFields.push(`El EK leído en el PDF (${registrationNumber}) no coincide con codigo_ek en BD (sin dato)`);
   } else if (registrationNumber !== expectedRegistrationNumber) {
@@ -205,7 +212,7 @@ function parseEvaluatedData(rawText, hints = {}) {
     expectedIdentificationRead,
     identificationMatches,
     identificationMismatch,
-    readComplete: Boolean(registrationNumber && dateValidation.valid && identification),
+    readComplete: Boolean(isValidRegistrationNumber(registrationNumber) && dateValidation.valid && identification),
     complete: missingFields.length === 0,
     missingFields
   };
@@ -217,5 +224,6 @@ module.exports = {
   toIsoDate,
   toDisplayDate,
   registrationYear,
+  isValidRegistrationNumber,
   validateRegistrationDate
 };

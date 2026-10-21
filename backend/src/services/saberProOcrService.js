@@ -6,7 +6,7 @@ const recognitionQueues = [];
 let nextWorker = 0;
 
 function poolSize() {
-  return Math.max(1, Math.min(4, Number(process.env.OCR_CONCURRENCY || 2)));
+  return Math.max(1, Math.min(4, Number(process.env.OCR_CONCURRENCY || 3)));
 }
 
 async function getWorker(index) {

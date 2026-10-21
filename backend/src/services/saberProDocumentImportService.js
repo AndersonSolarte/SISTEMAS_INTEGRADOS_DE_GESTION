@@ -6,7 +6,7 @@ const SaberProDocumentImportItem = require('../models/SaberProDocumentImportItem
 const { sequelize } = require('../config/database');
 const { extractPdfBuffer } = require('./saberProTextExtractionService');
 const {
-  parseEvaluatedData, validateRegistrationDate, toIsoDate, toDisplayDate
+  parseEvaluatedData, validateRegistrationDate, toIsoDate, toDisplayDate, isValidRegistrationNumber
 } = require('./saberProDocumentParser');
 const {
   queryDocumentsByIdentifications,
@@ -254,7 +254,7 @@ async function processImport(importId) {
     const identifications = [...new Set(pending.map((item) => item.identification))];
     const institutionalRows = await queryDocumentsByIdentifications(identifications);
     const institutionalMap = rowsByIdentification(institutionalRows);
-    const concurrency = Math.max(1, Math.min(4, Number(process.env.IMPORT_PROCESS_CONCURRENCY || 2)));
+    const concurrency = Math.max(1, Math.min(4, Number(process.env.IMPORT_PROCESS_CONCURRENCY || 3)));
     for (let index = 0; index < pending.length; index += concurrency) {
       const batch = pending.slice(index, index + concurrency);
       const outcomes = await Promise.all(batch.map((item) =>
@@ -287,6 +287,7 @@ async function syncProcessedItemsWithInstitutionalDb(importId, items) {
     if (item.status === 'EXTRACTED') {
       const missingOrMismatch = !item.db_identification || !item.pdf_identification
         || !item.db_registration_number || !item.registration_number
+        || !isValidRegistrationNumber(item.registration_number)
         || !item.db_exam_date || !item.exam_date
         || item.db_identification !== item.pdf_identification
         || item.db_registration_number !== item.registration_number
@@ -312,7 +313,8 @@ async function syncProcessedItemsWithInstitutionalDb(importId, items) {
         || (!String(item.message || '').includes('Cédula') && !String(item.message || '').includes('documento') && item.registration_number ? item.identification : null);
 
       const idMatch = Boolean(pdfId && ref.dbIdentification && pdfId === ref.dbIdentification);
-      const ekMatch = Boolean(item.registration_number && ref.registrationNumber && item.registration_number === ref.registrationNumber);
+      const ekMatch = Boolean(isValidRegistrationNumber(item.registration_number)
+        && ref.registrationNumber && item.registration_number === ref.registrationNumber);
       const dateVal = validateRegistrationDate(item.registration_number, item.exam_date);
       const dateMatch = Boolean(item.exam_date && ref.examDate && item.exam_date === ref.examDate && dateVal.valid);
 
@@ -360,9 +362,11 @@ function mapItem(item) {
   const registrationNumber = row.registration_number || null;
   const dbExamDate = row.db_exam_date || null;
   const examDate = row.exam_date || null;
+  const registrationFormatValid = isValidRegistrationNumber(registrationNumber);
 
   const identificationMatch = Boolean(dbIdentification && pdfIdentification && dbIdentification === pdfIdentification);
-  const registrationMatch = Boolean(dbRegistrationNumber && registrationNumber && dbRegistrationNumber === registrationNumber);
+  const registrationMatch = Boolean(registrationFormatValid
+    && dbRegistrationNumber && registrationNumber && dbRegistrationNumber === registrationNumber);
   const examDateMatch = Boolean(dbExamDate && examDate && dbExamDate === examDate);
   const hasMissingOrMismatch = !identificationMatch || !registrationMatch || !examDateMatch;
   const effectiveStatus = row.status === 'EXTRACTED' && hasMissingOrMismatch ? 'INCOMPLETE' : row.status;
@@ -377,6 +381,7 @@ function mapItem(item) {
     status: effectiveStatus,
     dbRegistrationNumber,
     registrationNumber,
+    registrationFormatValid,
     registrationMatch,
     dbExamDate,
     examDate,
@@ -490,8 +495,8 @@ async function correctItem(itemId, values, userId) {
   }
 
   const registrationNumber = String(values.registrationNumber || '').replace(/\s/g, '').toUpperCase();
-  if (!/^EKA?\d{8,}$/.test(registrationNumber)) {
-    throw apiError('El número de registro EK no tiene un formato válido.', 400, 'INVALID_REGISTRATION');
+  if (!isValidRegistrationNumber(registrationNumber)) {
+    throw apiError('El número de registro debe tener exactamente 14 caracteres: EK y 12 dígitos.', 400, 'INVALID_REGISTRATION');
   }
   const dateValidation = validateRegistrationDate(registrationNumber, values.examDate);
   const examDate = dateValidation.examDate;

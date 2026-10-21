@@ -74,6 +74,7 @@ function enrichItem(rawItem) {
     ? rawItem.dbRegistrationNumber
     : parsedDbEk;
   const registrationNumber = rawItem.registrationNumber || null;
+  const registrationFormatValid = /^EK\d{12}$/.test(String(registrationNumber || '').replace(/\s/g, '').toUpperCase());
 
   const dbExamDate = rawItem.dbExamDate !== undefined
     ? rawItem.dbExamDate
@@ -81,11 +82,12 @@ function enrichItem(rawItem) {
   const examDate = rawItem.examDate || null;
 
   const identificationMatch = Boolean(dbIdentification && pdfIdentification && dbIdentification === pdfIdentification);
-  const registrationMatch = Boolean(dbRegistrationNumber && registrationNumber && dbRegistrationNumber === registrationNumber);
+  const registrationMatch = Boolean(registrationFormatValid
+    && dbRegistrationNumber && registrationNumber && dbRegistrationNumber === registrationNumber);
   const examDateMatch = Boolean(dbExamDate && examDate && dbExamDate === examDate);
 
   const hasMissingOrMismatch = !dbIdentification || !pdfIdentification
-    || !dbRegistrationNumber || !registrationNumber
+    || !dbRegistrationNumber || !registrationNumber || !registrationFormatValid
     || !dbExamDate || !examDate
     || !identificationMatch || !registrationMatch || !examDateMatch;
   const effectiveStatus = rawItem.status === 'EXTRACTED' && hasMissingOrMismatch ? 'INCOMPLETE' : rawItem.status;
@@ -99,6 +101,7 @@ function enrichItem(rawItem) {
     identificationMatch,
     dbRegistrationNumber,
     registrationNumber,
+    registrationFormatValid,
     registrationMatch,
     dbExamDate,
     examDate,
@@ -107,7 +110,7 @@ function enrichItem(rawItem) {
 }
 
 function registrationYear(value) {
-  const match = String(value || '').replace(/\s/g, '').toUpperCase().match(/^EKA?(\d{4})\d{4,}$/);
+  const match = String(value || '').replace(/\s/g, '').toUpperCase().match(/^EK(\d{4})\d{8}$/);
   return match ? Number(match[1]) : null;
 }
 
@@ -122,10 +125,10 @@ function saveBlob(response, fileName) {
   URL.revokeObjectURL(url);
 }
 
-function ComparisonValue({ value, matches, emptyLabel = '—' }) {
+function ComparisonValue({ value, matches, invalid = false, emptyLabel = '—' }) {
   const hasValue = Boolean(value);
-  const tone = !hasValue
-    ? { color: '#dc2626', background: '#fef2f2', border: '#fecaca', label: 'Dato no leído' }
+  const tone = !hasValue || invalid
+    ? { color: '#dc2626', background: '#fef2f2', border: '#fecaca', label: invalid ? 'Código EK inválido: debe tener 14 caracteres' : 'Dato no leído' }
     : matches
       ? { color: '#15803d', background: '#f0fdf4', border: '#bbf7d0', label: 'Coincide con la base de datos' }
       : { color: '#b45309', background: '#fffbeb', border: '#fde68a', label: 'Requiere revisión' };
@@ -149,7 +152,7 @@ function ComparisonValue({ value, matches, emptyLabel = '—' }) {
           border: `1px solid ${tone.border}`
         }}
       >
-        {hasValue && matches ? (
+        {hasValue && matches && !invalid ? (
           <CheckCircleRoundedIcon sx={{ fontSize: 15 }} />
         ) : (
           <WarningAmberRoundedIcon sx={{ fontSize: 15 }} />
@@ -182,7 +185,8 @@ export default function ConsultaDocumentosMasiva() {
   const pdfIdentificationInvalid = Boolean(!normalizedPdfIdentification || (expectedDbIdentification && normalizedPdfIdentification !== expectedDbIdentification));
 
   const expectedExamYear = registrationYear(registrationNumber);
-  const registrationFormatInvalid = Boolean(registrationNumber && !expectedExamYear);
+  const registrationFormatInvalid = Boolean(registrationNumber
+    && !/^EK\d{12}$/.test(registrationNumber.replace(/\s/g, '').toUpperCase()));
   const numericDay = Number(examDay);
   const numericMonth = Number(examMonth);
   const maxExamDay = expectedExamYear && numericMonth
@@ -494,6 +498,7 @@ export default function ConsultaDocumentosMasiva() {
                             <ComparisonValue
                               value={item.registrationNumber}
                               matches={item.registrationMatch}
+                              invalid={Boolean(item.registrationNumber && !item.registrationFormatValid)}
                               emptyLabel="No leído"
                             />
                           ) : '—'}
@@ -586,7 +591,7 @@ export default function ConsultaDocumentosMasiva() {
                   </Stack>
                   <Stack direction="row" justifyContent="space-between">
                     <Typography sx={{ fontSize: 12, color: '#64748b' }}>EK PDF:</Typography>
-                    <Typography sx={{ fontSize: 12, fontWeight: 800, color: reviewItem?.registrationMatch ? '#16a34a' : '#d97706' }}>
+                    <Typography sx={{ fontSize: 12, fontWeight: 800, color: !reviewItem?.registrationFormatValid ? '#dc2626' : reviewItem?.registrationMatch ? '#16a34a' : '#d97706' }}>
                       {reviewItem?.registrationNumber || 'No leído'}
                     </Typography>
                   </Stack>
@@ -627,7 +632,7 @@ export default function ConsultaDocumentosMasiva() {
                 onChange={(event) => setRegistrationNumber(event.target.value.toUpperCase())}
                 error={registrationFormatInvalid}
                 helperText={registrationFormatInvalid
-                  ? 'Use un código EK válido; sus cuatro primeros dígitos indican el año.'
+                    ? 'El código debe tener exactamente 14 caracteres: EK y 12 dígitos.'
                   : expectedExamYear
                     ? `Año esperado: ${expectedExamYear} · EK BD: ${reviewItem?.dbRegistrationNumber || 'Sin dato'}`
                     : 'Ejemplo: EK202431498237'}
