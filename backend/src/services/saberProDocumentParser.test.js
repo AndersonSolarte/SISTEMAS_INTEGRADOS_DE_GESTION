@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isValidRegistrationNumber, parseEvaluatedData } = require('./saberProDocumentParser');
+const { isValidRegistrationNumber, parseEvaluatedData, toIsoDate } = require('./saberProDocumentParser');
 
 const hints = {
   identification: '1004235273',
@@ -52,4 +52,20 @@ FECHA DE PRESENTACION DEL EXAMEN 30/09/2025
   });
   assert.equal(parsed.readComplete, false);
   assert.match(parsed.missingFields.join(' '), /exactamente 14 caracteres/i);
+});
+
+test('prioriza la fecha del examen y recupera el separador perdido por OCR', () => {
+  assert.equal(toIsoDate('3110/2021'), '2021-10-31');
+
+  const parsed = parseEvaluatedData(`
+Nombre Completo: Identificación: Número de registro: Aplicación del examen: Publicación de resultados:
+Yurany Nayiby Villa Torres C.C. 1085318009 EK202122401362 3110/2021 19/02/2022
+`, {
+    identification: '1085318009',
+    registrationNumber: 'EK202122401362'
+  });
+
+  assert.equal(parsed.registrationNumber, 'EK202122401362');
+  assert.equal(parsed.examDate, '2021-10-31');
+  assert.equal(parsed.dateYearMismatch, false);
 });

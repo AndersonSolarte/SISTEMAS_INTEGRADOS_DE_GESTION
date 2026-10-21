@@ -136,7 +136,7 @@ function rowsByIdentification(rows) {
 }
 
 function selectPdf(rows) {
-  return rows.find((row) => {
+  const available = rows.filter((row) => {
     try {
       normalizeRemotePath(row.document_path);
       return true;
@@ -144,6 +144,7 @@ function selectPdf(rows) {
       return false;
     }
   });
+  return available.find((row) => isValidRegistrationNumber(row.registration_number)) || available[0];
 }
 
 function institutionalReference(document) {

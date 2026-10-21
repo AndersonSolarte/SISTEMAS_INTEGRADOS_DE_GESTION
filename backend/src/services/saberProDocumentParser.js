@@ -16,6 +16,8 @@ function toIsoDate(value) {
     .toUpperCase().replace(/\s+/g, ' ').trim();
   const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const compactMatch = normalized.match(/^(\d{2})(\d{2})(\d{4})$/);
+  const missingDaySeparatorMatch = normalized.match(/^(\d{2})(\d{2})[\/-](\d{4})$/);
+  const missingYearSeparatorMatch = normalized.match(/^(\d{2})[\/-](\d{2})(\d{4})$/);
   let day;
   let month;
   let year;
@@ -23,6 +25,10 @@ function toIsoDate(value) {
     [, year, month, day] = isoMatch;
   } else if (compactMatch) {
     [, day, month, year] = compactMatch;
+  } else if (missingDaySeparatorMatch) {
+    [, day, month, year] = missingDaySeparatorMatch;
+  } else if (missingYearSeparatorMatch) {
+    [, day, month, year] = missingYearSeparatorMatch;
   } else {
     [, day, month, year] = normalized.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/) || [];
   }
@@ -157,7 +163,21 @@ function parseEvaluatedData(rawText, hints = {}) {
   const compactDateText = firstMatch(text, [
     /fecha\s+de\s+presentaci\S+[\s\S]{0,140}?certificado[\s\S]{0,120}?(\d{8})(?!\d)/iu
   ]);
-  const dateValidation = validateRegistrationDate(registrationNumber, dateText || compactDateText);
+  // Los reportes incluyen fecha del examen y fecha de publicación. OCR puede
+  // perder un separador en la primera (p. ej. 3110/2021). Entre todas las
+  // fechas leídas se prioriza la que pertenece al año codificado en el EK.
+  const expectedRegistrationYear = registrationYear(registrationNumber);
+  const numericDateCandidates = text.match(
+    /(?<!\d)(?:\d{1,2}[\/-]\d{1,2}[\/-]\d{4}|\d{4}[\/-]\d{4}|\d{2}[\/-]\d{6}|\d{8})(?!\d)/gu
+  ) || [];
+  const yearMatchingDate = numericDateCandidates.find(
+    (value) => toIsoDate(value)?.startsWith(`${expectedRegistrationYear}-`)
+  );
+  const labeledDate = toIsoDate(dateText);
+  const selectedDateText = labeledDate?.startsWith(`${expectedRegistrationYear}-`)
+    ? dateText
+    : yearMatchingDate || dateText || compactDateText;
+  const dateValidation = validateRegistrationDate(registrationNumber, selectedDateText);
   const parsedExamDate = dateValidation.examDate;
   const expectedYear = dateValidation.expectedYear;
   const dateYearMismatch = Boolean(parsedExamDate && expectedYear && !dateValidation.valid);
