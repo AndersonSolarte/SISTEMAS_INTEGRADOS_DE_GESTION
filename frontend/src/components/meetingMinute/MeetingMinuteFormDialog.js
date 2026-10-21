@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import {
   Add, ArrowBack, ArrowForward, CalendarMonth, Close, ContentCopy, DeleteOutline, Download, EditNote, Email, PersonSearch,
-  FolderOpen, HelpOutline, NotificationsActive, QrCode2, Refresh, Restore, Save, Send, ViewSidebar, Visibility
+  FolderOpen, HelpOutline, NotificationsActive, QrCode2, Refresh, Save, Send, ViewSidebar, Visibility
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import meetingMinuteService from '../../services/meetingMinuteService';
@@ -421,7 +421,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     if (busy) setLoadingMyMinutes(true);
     try {
       const response = await meetingMinuteService.listMine();
-      setMyMinutes(response.data || []);
+      setMyMinutes((response.data || []).filter((minute) => !minute.deleted_at));
       setRetentionDays(Number(response.meta?.retention_days) || 30);
     } catch (_) {
       setMyMinutes([]);
@@ -432,18 +432,6 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const openMyMinutes = async () => {
     setMyMinutesOpen(true);
     await loadMyMinutes({ busy: true });
-  };
-  const restoreMyMinute = async (minute) => {
-    setLoadingMyMinutes(true);
-    try {
-      const response = await meetingMinuteService.restoreMinute(minute.id);
-      enqueueSnackbar(response.message || 'Acta restaurada correctamente.', { variant: 'success' });
-      await Promise.all([loadMinutes(), loadMyMinutes()]);
-    } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'No fue posible restaurar el acta.', { variant: 'error' });
-    } finally {
-      setLoadingMyMinutes(false);
-    }
   };
   const loadMeetingPlaces = async () => {
     setLoadingMeetingPlaces(true);
@@ -2669,7 +2657,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 const total = (minute.participants || []).length;
                 const days = minute.retention?.days_remaining;
                 return (
-                  <TableRow key={minute.id} hover sx={{ opacity: minute.deleted_at ? .82 : 1 }}>
+                  <TableRow key={minute.id} hover>
                     <TableCell sx={{ minWidth: 240 }}>
                       <Typography fontWeight={850} fontSize={13.5}>{minute.content?.titulo || 'Acta sin título'}</Typography>
                       <Typography variant="caption" color="text.secondary">{minute.code}</Typography>
@@ -2686,31 +2674,25 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                       </Box>
                     </TableCell>
                     <TableCell align="right">
-                      {minute.deleted_at ? (
-                        <Button size="small" variant="outlined" startIcon={<Restore />} disabled={loadingMyMinutes} onClick={() => restoreMyMinute(minute)} sx={{ textTransform: 'none', fontWeight: 800 }}>
-                          Restaurar
+                      <Stack direction="row" justifyContent="flex-end" gap={1}>
+                        <Button size="small" variant="contained" startIcon={<FolderOpen />} onClick={() => { setMyMinutesOpen(false); openMinute(minute.id); }} sx={{ textTransform: 'none', fontWeight: 800 }}>
+                          Abrir
                         </Button>
-                      ) : (
-                        <Stack direction="row" justifyContent="flex-end" gap={1}>
-                          <Button size="small" variant="contained" startIcon={<FolderOpen />} onClick={() => { setMyMinutesOpen(false); openMinute(minute.id); }} sx={{ textTransform: 'none', fontWeight: 800 }}>
-                            Abrir
-                          </Button>
-                          {canDeleteMinute(minute) && (
-                            <Tooltip title="Eliminar acta">
-                              <Button
-                                size="small"
-                                color="error"
-                                variant="outlined"
-                                startIcon={<DeleteOutline />}
-                                onClick={() => setMinuteToDelete(minute)}
-                                sx={{ textTransform: 'none', fontWeight: 850 }}
-                              >
-                                Eliminar
-                              </Button>
-                            </Tooltip>
-                          )}
-                        </Stack>
-                      )}
+                        {canDeleteMinute(minute) && (
+                          <Tooltip title="Eliminar acta">
+                            <Button
+                              size="small"
+                              color="error"
+                              variant="outlined"
+                              startIcon={<DeleteOutline />}
+                              onClick={() => setMinuteToDelete(minute)}
+                              sx={{ textTransform: 'none', fontWeight: 850 }}
+                            >
+                              Eliminar
+                            </Button>
+                          </Tooltip>
+                        )}
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 );

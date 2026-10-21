@@ -483,7 +483,7 @@ const resolveSigningAccess = async (token) => {
     });
     if (invitedParticipant) {
       const invitedMinute = await DigitalMeetingMinute.findOne({
-        where: { id: invitedParticipant.minute_id, status: { [Op.in]: ['signing', 'signed', 'distributed'] } },
+        where: { id: invitedParticipant.minute_id, deleted_at: null, status: { [Op.in]: ['signing', 'signed', 'distributed'] } },
         include: [
           { model: DigitalMeetingParticipant, as: 'participants' },
           { model: Documento, as: 'documento', required: false }
@@ -498,6 +498,7 @@ const resolveSigningAccess = async (token) => {
     const tokenHash = hash(t);
     const activeMinutes = await DigitalMeetingMinute.findAll({
       where: {
+        deleted_at: null,
         status: { [Op.in]: ['signing', 'signed', 'distributed'] },
         [Op.or]: [
           { token_expires_at: null },
@@ -854,7 +855,8 @@ const listMyMinutes = wrap(async (req, res) => {
     where: {
       [Op.and]: [
         { [Op.or]: orConditions },
-        { created_at: activeRetentionWhere() }
+        { created_at: activeRetentionWhere() },
+        { deleted_at: null }
       ]
     },
     include: [
@@ -862,7 +864,7 @@ const listMyMinutes = wrap(async (req, res) => {
       { model: Documento, as: 'documento', required: false },
       { model: User, as: 'creator', attributes: ['id', 'nombre', 'username', 'email'] }
     ],
-    order: [['deleted_at', 'DESC'], ['updated_at', 'DESC']],
+    order: [['updated_at', 'DESC']],
     limit: 300
   });
 
