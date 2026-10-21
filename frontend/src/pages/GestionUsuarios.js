@@ -288,8 +288,7 @@ function GestionUsuarios() {
 
   const PLAN_ACCION_DASHBOARD_OPTIONS = [
     { key: 'plan_accion_estadistica', label: 'Estadística Plan de Acción' },
-    { key: 'plan_accion_gestion', label: 'Gestión de Planes de Acción' },
-    { key: 'plan_accion_nuevo', label: 'Crear Planes de Acción (nueva plataforma)' },
+    { key: 'plan_accion_gestion', label: 'Gestión de Planes de Acción (Plataforma PED)' },
     { key: 'pei_configurar', label: 'PEI · Configurar planeación' },
     { key: 'pei_formular', label: 'PEI · Formular planes' },
     { key: 'pei_revision_tecnica', label: 'PEI · Revisión técnica' },
