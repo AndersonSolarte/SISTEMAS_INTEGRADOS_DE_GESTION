@@ -13,6 +13,8 @@ import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import FindInPageRoundedIcon from '@mui/icons-material/FindInPageRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
 import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import api from '../../services/api';
 
 const BASE_URL = '/planeacion/gestion-informacion/saber-pro/consulta/documentos-masivos';
@@ -122,24 +124,39 @@ function saveBlob(response, fileName) {
 
 function ComparisonValue({ value, matches, emptyLabel = '—' }) {
   const hasValue = Boolean(value);
+  const tone = !hasValue
+    ? { color: '#dc2626', background: '#fef2f2', border: '#fecaca', label: 'Dato no leído' }
+    : matches
+      ? { color: '#15803d', background: '#f0fdf4', border: '#bbf7d0', label: 'Coincide con la base de datos' }
+      : { color: '#b45309', background: '#fffbeb', border: '#fde68a', label: 'Requiere revisión' };
   return (
-    <Box
-      component="span"
-      sx={{
-        display: 'inline-block',
-        px: 0.9,
-        py: 0.25,
-        borderRadius: 1,
-        fontSize: 12,
-        fontWeight: 700,
-        whiteSpace: 'nowrap',
-        bgcolor: !hasValue ? '#fef2f2' : matches ? '#f0fdf4' : '#fffbeb',
-        color: !hasValue ? '#dc2626' : matches ? '#15803d' : '#b45309',
-        border: `1px solid ${!hasValue ? '#fecaca' : matches ? '#bbf7d0' : '#fde68a'}`
-      }}
-    >
-      {value || emptyLabel}
-    </Box>
+    <Tooltip title={tone.label} arrow>
+      <Box
+        component="span"
+        aria-label={tone.label}
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 0.5,
+          px: 0.9,
+          py: 0.25,
+          borderRadius: 1,
+          fontSize: 12,
+          fontWeight: 700,
+          whiteSpace: 'nowrap',
+          bgcolor: tone.background,
+          color: tone.color,
+          border: `1px solid ${tone.border}`
+        }}
+      >
+        {hasValue && matches ? (
+          <CheckCircleRoundedIcon sx={{ fontSize: 15 }} />
+        ) : (
+          <WarningAmberRoundedIcon sx={{ fontSize: 15 }} />
+        )}
+        {value || emptyLabel}
+      </Box>
+    </Tooltip>
   );
 }
 
