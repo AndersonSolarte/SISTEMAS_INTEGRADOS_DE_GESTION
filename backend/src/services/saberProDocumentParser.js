@@ -75,8 +75,32 @@ function validateRegistrationDate(registrationNumber, value) {
 
 function textContainsIdentification(text, identification) {
   if (!/^\d{5,20}$/.test(identification)) return false;
-  return String(text || '').split(/\n/).some((line) =>
-    line.replace(/\D/g, '').includes(identification));
+  const source = String(text || '');
+  const separatedDigits = identification.split('').join('[\\s.\\-_|:]*');
+  if (new RegExp(separatedDigits).test(source)) return true;
+
+  // En certificados escaneados en columnas, Tesseract suele confundir 0/O,
+  // 1/I o 5/S. Solo aplicamos esta tolerancia cerca del rótulo del documento
+  // y siempre contra la identificación esperada de la BD institucional.
+  const searchable = source
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+  const labelPattern = /(?:NUMERO\s+DE\s+(?:DOCUMENTO|IDENTIFICACION)|IDENTIFICACION|CEDULA)/g;
+  const digitAlternatives = {
+    0: '[0OQD]', 1: '[1IL|]', 2: '[2Z]', 3: '3', 4: '4',
+    5: '[5S]', 6: '[6G]', 7: '7', 8: '[8B]', 9: '9'
+  };
+  const tolerantExpected = identification
+    .split('')
+    .map((digit) => digitAlternatives[digit])
+    .join('[\\s.\\-_|:]*');
+  const tolerantPattern = new RegExp(tolerantExpected);
+  let labelMatch;
+  while ((labelMatch = labelPattern.exec(searchable)) !== null) {
+    const nearbyText = searchable.slice(labelMatch.index, labelMatch.index + 260);
+    if (tolerantPattern.test(nearbyText)) return true;
+  }
+  return false;
 }
 
 function toDisplayDate(value) {
