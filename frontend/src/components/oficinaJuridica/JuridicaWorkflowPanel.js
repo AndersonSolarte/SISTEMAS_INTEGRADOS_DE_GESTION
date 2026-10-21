@@ -32,6 +32,7 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import HourglassTopRoundedIcon from '@mui/icons-material/HourglassTopRounded';
 import InboxRoundedIcon from '@mui/icons-material/InboxRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import MarkEmailUnreadRoundedIcon from '@mui/icons-material/MarkEmailUnreadRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import OutboxRoundedIcon from '@mui/icons-material/OutboxRounded';
@@ -598,6 +599,7 @@ export default function JuridicaWorkflowPanel() {
 
   // Transición de estado
   const [transition, setTransition] = useState({ estado: '', comentario: '', radicado: '', despacho: '', resultado: '' });
+  const [forbidden, setForbidden] = useState(false);
 
   const importRef = useRef();
   const attachmentRef = useRef();
@@ -605,6 +607,7 @@ export default function JuridicaWorkflowPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    setForbidden(false);
     try {
       const [p, list, summary, usersRes] = await Promise.all([
         oficinaJuridicaService.getProfile(),
@@ -621,7 +624,11 @@ export default function JuridicaWorkflowPanel() {
         setTab(0);
       }
     } catch (e) {
-      setError(e.response?.data?.message || 'No fue posible cargar la gestión jurídica.');
+      const errMsg = e.response?.data?.message || 'No fue posible cargar la gestión jurídica.';
+      if (e.response?.status === 403 || String(errMsg).toLowerCase().includes('acceso restringido')) {
+        setForbidden(true);
+      }
+      setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -1202,6 +1209,63 @@ export default function JuridicaWorkflowPanel() {
 
     return { alert, totalDays, elapsedDays, percentage };
   }, [selected]);
+
+  if (forbidden) {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '65vh', p: 3 }}>
+        <Paper
+          elevation={0}
+          sx={{
+            p: 5,
+            borderRadius: 4,
+            border: '1.5px dashed #fca5a5',
+            bgcolor: '#fff5f5',
+            textAlign: 'center',
+            maxWidth: 580,
+            boxShadow: '0 10px 30px rgba(220, 38, 38, 0.08)'
+          }}
+        >
+          <Box
+            sx={{
+              width: 72,
+              height: 72,
+              borderRadius: '50%',
+              bgcolor: '#fee2e2',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              mx: 'auto',
+              mb: 2.5
+            }}
+          >
+            <LockOutlinedIcon sx={{ fontSize: 38, color: '#dc2626' }} />
+          </Box>
+          <Typography variant="h5" fontWeight={900} color="#991b1b" gutterBottom>
+            Acceso restringido
+          </Typography>
+          <Typography variant="body1" color="#7f1d1d" sx={{ mb: 3, lineHeight: 1.6 }}>
+            {error || 'No cuentas con permisos activos en el sistema para ingresar al módulo de Oficina Jurídica.'}
+          </Typography>
+          <Button
+            variant="contained"
+            onClick={() => { window.location.href = '/dashboard'; }}
+            sx={{
+              borderRadius: 999,
+              px: 4,
+              py: 1.2,
+              bgcolor: '#dc2626',
+              '&:hover': { bgcolor: '#b91c1c' },
+              textTransform: 'none',
+              fontWeight: 800,
+              fontSize: '0.95rem'
+            }}
+          >
+            Volver al Inicio
+          </Button>
+        </Paper>
+      </Box>
+    );
+  }
 
   return (
     <Stack spacing={2.2}>

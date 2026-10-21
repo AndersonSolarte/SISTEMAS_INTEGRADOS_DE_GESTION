@@ -24,7 +24,7 @@ export default function OficinaJuridicaLandingPage({ user: propUser, onBack }) {
     const permissions = [
       ...normalizePermissions(user.allowedModules), ...normalizePermissions(user.modulePermissions),
       ...normalizePermissions(user.permissions?.modules), ...normalizePermissions(user.modules),
-      ...normalizePermissions(user.menuPermissions), ...normalizePermissions(user.permisosModulos)
+      ...normalizePermissions(user.permisosModulos)
     ];
     return permissions.includes('oficina_juridica') || permissions.some((p) => p.startsWith('oficina_juridica.'));
   }, [user]);
@@ -37,6 +37,23 @@ export default function OficinaJuridicaLandingPage({ user: propUser, onBack }) {
           <LockOutlinedIcon sx={{ fontSize: 48, color: '#dc2626', mb: 1.5 }} />
           <Typography variant="h5" fontWeight={900} color="#991b1b">Acceso restringido</Typography>
           <Alert severity="warning" sx={{ maxWidth: 720, mx: 'auto', mt: 2, textAlign: 'left' }}>Un administrador debe habilitar el permiso “Oficina Jurídica” en Gestión de Usuarios.</Alert>
+          <Box sx={{ mt: 3 }}>
+            <Button
+              variant="contained"
+              onClick={onBack || (() => { window.location.href = '/dashboard'; })}
+              sx={{
+                borderRadius: 999,
+                px: 3.5,
+                py: 1,
+                bgcolor: '#dc2626',
+                '&:hover': { bgcolor: '#b91c1c' },
+                textTransform: 'none',
+                fontWeight: 800
+              }}
+            >
+              {onBack ? 'Volver a tableros estadísticos' : 'Volver al Inicio'}
+            </Button>
+          </Box>
         </Paper>
       </Stack>
     </Fade>
