@@ -364,11 +364,16 @@ function mapItem(item) {
   const dbExamDate = row.db_exam_date || null;
   const examDate = row.exam_date || null;
   const registrationFormatValid = isValidRegistrationNumber(registrationNumber);
+  const manuallyValidated = row.status === 'CORRECTED';
 
-  const identificationMatch = Boolean(dbIdentification && pdfIdentification && dbIdentification === pdfIdentification);
-  const registrationMatch = Boolean(registrationFormatValid
+  const identificationMatchesDb = Boolean(dbIdentification && pdfIdentification && dbIdentification === pdfIdentification);
+  const registrationMatchesDb = Boolean(registrationFormatValid
     && dbRegistrationNumber && registrationNumber && dbRegistrationNumber === registrationNumber);
-  const examDateMatch = Boolean(dbExamDate && examDate && dbExamDate === examDate);
+  const examDateMatchesDb = Boolean(dbExamDate && examDate && dbExamDate === examDate);
+  const manuallyValidDate = validateRegistrationDate(registrationNumber, examDate).valid;
+  const identificationMatch = identificationMatchesDb;
+  const registrationMatch = registrationMatchesDb || Boolean(manuallyValidated && registrationFormatValid);
+  const examDateMatch = examDateMatchesDb || Boolean(manuallyValidated && manuallyValidDate);
   const hasMissingOrMismatch = !identificationMatch || !registrationMatch || !examDateMatch;
   const effectiveStatus = row.status === 'EXTRACTED' && hasMissingOrMismatch ? 'INCOMPLETE' : row.status;
 
@@ -379,14 +384,18 @@ function mapItem(item) {
     dbIdentification,
     pdfIdentification,
     identificationMatch,
+    identificationMatchesDb,
     status: effectiveStatus,
     dbRegistrationNumber,
     registrationNumber,
     registrationFormatValid,
     registrationMatch,
+    registrationMatchesDb,
     dbExamDate,
     examDate,
     examDateMatch,
+    examDateMatchesDb,
+    manuallyValidated,
     hasDocument: Boolean(row.document_path),
     message: row.message,
     correctedBy: row.corrected_by,

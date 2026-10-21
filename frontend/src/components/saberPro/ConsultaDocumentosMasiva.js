@@ -80,11 +80,17 @@ function enrichItem(rawItem) {
     ? rawItem.dbExamDate
     : parsedDbDate;
   const examDate = rawItem.examDate || null;
+  const manuallyValidated = rawItem.status === 'CORRECTED' || Boolean(rawItem.correctedAt);
 
-  const identificationMatch = Boolean(dbIdentification && pdfIdentification && dbIdentification === pdfIdentification);
-  const registrationMatch = Boolean(registrationFormatValid
+  const identificationMatchesDb = Boolean(dbIdentification && pdfIdentification && dbIdentification === pdfIdentification);
+  const registrationMatchesDb = Boolean(registrationFormatValid
     && dbRegistrationNumber && registrationNumber && dbRegistrationNumber === registrationNumber);
-  const examDateMatch = Boolean(dbExamDate && examDate && dbExamDate === examDate);
+  const examDateMatchesDb = Boolean(dbExamDate && examDate && dbExamDate === examDate);
+  const expectedYear = registrationYear(registrationNumber);
+  const manuallyValidDate = Boolean(examDate && expectedYear && Number(examDate.slice(0, 4)) === expectedYear);
+  const identificationMatch = identificationMatchesDb;
+  const registrationMatch = registrationMatchesDb || Boolean(manuallyValidated && registrationFormatValid);
+  const examDateMatch = examDateMatchesDb || Boolean(manuallyValidated && manuallyValidDate);
 
   const hasMissingOrMismatch = !dbIdentification || !pdfIdentification
     || !dbRegistrationNumber || !registrationNumber || !registrationFormatValid
@@ -99,13 +105,17 @@ function enrichItem(rawItem) {
     dbIdentification,
     pdfIdentification,
     identificationMatch,
+    identificationMatchesDb,
     dbRegistrationNumber,
     registrationNumber,
     registrationFormatValid,
     registrationMatch,
+    registrationMatchesDb,
     dbExamDate,
     examDate,
-    examDateMatch
+    examDateMatch,
+    examDateMatchesDb,
+    manuallyValidated
   };
 }
 
@@ -125,12 +135,12 @@ function saveBlob(response, fileName) {
   URL.revokeObjectURL(url);
 }
 
-function ComparisonValue({ value, matches, invalid = false, emptyLabel = '—' }) {
+function ComparisonValue({ value, matches, invalid = false, manuallyValidated = false, emptyLabel = '—' }) {
   const hasValue = Boolean(value);
   const tone = !hasValue || invalid
     ? { color: '#dc2626', background: '#fef2f2', border: '#fecaca', label: invalid ? 'Código EK inválido: debe tener 14 caracteres' : 'Dato no leído' }
     : matches
-      ? { color: '#15803d', background: '#f0fdf4', border: '#bbf7d0', label: 'Coincide con la base de datos' }
+      ? { color: '#15803d', background: '#f0fdf4', border: '#bbf7d0', label: manuallyValidated ? 'Validado manualmente en el PDF' : 'Coincide con la base de datos' }
       : { color: '#b45309', background: '#fffbeb', border: '#fde68a', label: 'Requiere revisión' };
   return (
     <Tooltip title={tone.label} arrow>
@@ -478,6 +488,7 @@ export default function ConsultaDocumentosMasiva() {
                             <ComparisonValue
                               value={item.pdfIdentification}
                               matches={item.identificationMatch}
+                              manuallyValidated={item.manuallyValidated}
                               emptyLabel="No leído"
                             />
                           ) : '—'}
@@ -499,6 +510,7 @@ export default function ConsultaDocumentosMasiva() {
                               value={item.registrationNumber}
                               matches={item.registrationMatch}
                               invalid={Boolean(item.registrationNumber && !item.registrationFormatValid)}
+                              manuallyValidated={item.manuallyValidated}
                               emptyLabel="No leído"
                             />
                           ) : '—'}
@@ -511,6 +523,7 @@ export default function ConsultaDocumentosMasiva() {
                             <ComparisonValue
                               value={displayDate(item.examDate)}
                               matches={item.examDateMatch}
+                              manuallyValidated={item.manuallyValidated}
                               emptyLabel="No leída"
                             />
                           ) : '—'}
@@ -610,10 +623,12 @@ export default function ConsultaDocumentosMasiva() {
                 </Stack>
               </Paper>
 
-              <Alert severity={pdfIdentificationInvalid ? 'error' : 'info'}>
+              <Alert severity={pdfIdentificationInvalid ? 'error' : reviewItem?.manuallyValidated ? 'success' : 'info'}>
                 {pdfIdentificationInvalid
                   ? `El documento del PDF debe coincidir con Doc. BD (${expectedDbIdentification}).`
-                  : 'Verifique visualmente el PDF y confirme o corrija el documento, código EK y fecha.'}
+                  : reviewItem?.manuallyValidated
+                    ? 'Validación manual guardada. Los datos confirmados en el PDF se muestran en verde.'
+                    : 'Verifique visualmente el PDF y confirme o corrija el documento, código EK y fecha.'}
               </Alert>
 
               <TextField
