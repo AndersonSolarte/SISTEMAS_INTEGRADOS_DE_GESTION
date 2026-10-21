@@ -6,7 +6,7 @@ function normalizeText(value) {
     .replace(/\u00a0/g, ' ');
 }
 
-function toIsoDate(value) {
+function toIsoDate(value, expectedYear = null) {
   if (!value) return null;
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
@@ -15,6 +15,7 @@ function toIsoDate(value) {
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toUpperCase().replace(/\s+/g, ' ').trim();
   const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const shortYearMatch = normalized.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2})$/);
   const compactMatch = normalized.match(/^(\d{2})(\d{2})(\d{4})$/);
   const missingDaySeparatorMatch = normalized.match(/^(\d{2})(\d{2})[\/-](\d{4})$/);
   const missingYearSeparatorMatch = normalized.match(/^(\d{2})[\/-](\d{2})(\d{4})$/);
@@ -23,6 +24,14 @@ function toIsoDate(value) {
   let year;
   if (isoMatch) {
     [, year, month, day] = isoMatch;
+  } else if (shortYearMatch) {
+    const normalizedExpectedYear = Number(expectedYear);
+    const shortYear = shortYearMatch[3];
+    if (!Number.isInteger(normalizedExpectedYear)
+      || String(normalizedExpectedYear).length !== 4
+      || String(normalizedExpectedYear).slice(-2) !== shortYear) return null;
+    [, day, month] = shortYearMatch;
+    year = String(normalizedExpectedYear);
   } else if (compactMatch) {
     [, day, month, year] = compactMatch;
   } else if (missingDaySeparatorMatch) {
@@ -103,8 +112,8 @@ function differsByAtMostOneEdit(leftValue, rightValue) {
 }
 
 function validateRegistrationDate(registrationNumber, value) {
-  const examDate = toIsoDate(value);
   const expectedYear = registrationYear(registrationNumber);
+  const examDate = toIsoDate(value, expectedYear);
   const actualYear = examDate ? Number(examDate.slice(0, 4)) : null;
   return {
     examDate,
@@ -196,16 +205,16 @@ function parseEvaluatedData(rawText, hints = {}) {
   const identificationMismatch = Boolean(!identificationMatches);
 
   const dateText = firstMatch(text, [
-    /fecha\s+de\s+presentaci[oó]n\s+del\s+examen\s+y\s+expedici[oó]n\s+del\s+certificado\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/iu,
-    /aplicaci[oó]n\s+del\s+examen\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/iu,
-    /fecha\s+de\s+presentaci[oó]n\s+del\s+examen\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/iu,
+    /fecha\s+de\s+presentaci[oó]n\s+del\s+examen\s+y\s+expedici[oó]n\s+del\s+certificado\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-](?:\d{4}|\d{2}))/iu,
+    /aplicaci[oó]n\s+del\s+examen\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-](?:\d{4}|\d{2}))/iu,
+    /fecha\s+de\s+presentaci[oó]n\s+del\s+examen\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-](?:\d{4}|\d{2}))/iu,
     /fecha\s+de\s+aplicaci[oó]n\s*:?\s*(\d{1,2}\s+(?:de\s+)?[a-záéíóúñ]+\s+(?:de\s+)?\d{4})/iu,
     /aplicaci[oó]n\s+del\s+examen\s*:?\s*(\d{1,2}\s+(?:de\s+)?[a-záéíóúñ]+\s+(?:de\s+)?\d{4})/iu,
     /fecha\s+de\s+presentaci[oó]n(?:\s+del\s+examen)?\s*:?\s*(\d{1,2}\s+(?:de\s+)?[a-záéíóúñ]+\s+(?:de\s+)?\d{4})/iu,
     /fecha\s+de(?:l)?\s+examen\s*:?\s*([a-záéíóúñ]+\s+\d{1,2}\s+(?:de\s+)?\d{4})/iu,
     /fecha\s+de(?:l)?\s+examen\s*:?\s*(\d{1,2}\s+(?:de\s+)?[a-záéíóúñ]+\s+(?:de\s+)?\d{4})/iu,
-    /fecha\s+de(?:l)?\s+examen\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/iu,
-    /(?<!\d)(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})(?!\d)/u
+    /fecha\s+de(?:l)?\s+examen\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-](?:\d{4}|\d{2}))/iu,
+    /(?<!\d)(\d{1,2}[\/-]\d{1,2}[\/-](?:\d{4}|\d{2}))(?!\d)/u
   ]);
 
   const compactDateText = firstMatch(text, [
@@ -216,12 +225,12 @@ function parseEvaluatedData(rawText, hints = {}) {
   // fechas leídas se prioriza la que pertenece al año codificado en el EK.
   const expectedRegistrationYear = registrationYear(registrationNumber);
   const numericDateCandidates = text.match(
-    /(?<!\d)(?:\d{1,2}[\/-]\d{1,2}[\/-]\d{4}|\d{4}[\/-]\d{4}|\d{2}[\/-]\d{6}|\d{8})(?!\d)/gu
+    /(?<!\d)(?:\d{1,2}[\/-]\d{1,2}[\/-](?:\d{4}|\d{2})|\d{4}[\/-]\d{4}|\d{2}[\/-]\d{6}|\d{8})(?!\d)/gu
   ) || [];
   const yearMatchingDate = numericDateCandidates.find(
-    (value) => toIsoDate(value)?.startsWith(`${expectedRegistrationYear}-`)
+    (value) => toIsoDate(value, expectedRegistrationYear)?.startsWith(`${expectedRegistrationYear}-`)
   );
-  const labeledDate = toIsoDate(dateText);
+  const labeledDate = toIsoDate(dateText, expectedRegistrationYear);
   const selectedDateText = labeledDate?.startsWith(`${expectedRegistrationYear}-`)
     ? dateText
     : yearMatchingDate || dateText || compactDateText;
