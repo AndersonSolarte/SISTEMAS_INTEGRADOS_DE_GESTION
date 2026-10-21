@@ -24,7 +24,9 @@ SaberProDocumentImportItem.belongsTo(SaberProDocumentImport, {
   as: 'import'
 });
 
-let activeImportId = null;
+// Los trabajos viven en el backend y no dependen de que el navegador siga abierto.
+// Se usa un conjunto porque distintos usuarios pueden procesar en paralelo.
+const activeImportIds = new Set();
 let schemaEnsured = false;
 
 const STATUS_EXPORT_LABELS = {
@@ -43,6 +45,12 @@ async function ensureImportSchema() {
   await SaberProDocumentImport.sync();
   await SaberProDocumentImportItem.sync();
   await sequelize.query(`
+    ALTER TABLE saber_pro_document_imports
+      ADD COLUMN IF NOT EXISTS created_by INTEGER;
+    CREATE INDEX IF NOT EXISTS idx_saber_pro_document_imports_created_by
+      ON saber_pro_document_imports (created_by);
+    CREATE INDEX IF NOT EXISTS idx_saber_pro_document_imports_created_by_status
+      ON saber_pro_document_imports (created_by, status);
     ALTER TABLE saber_pro_document_import_items
       ADD COLUMN IF NOT EXISTS pdf_identification VARCHAR(30),
       ADD COLUMN IF NOT EXISTS db_identification VARCHAR(30),
@@ -57,6 +65,36 @@ function apiError(message, status = 500, code = 'SABER_PRO_DOCUMENT_IMPORT_ERROR
   error.status = status;
   error.code = code;
   return error;
+}
+
+function requireUserId(userId) {
+  const normalized = Number(userId);
+  if (!Number.isSafeInteger(normalized) || normalized <= 0) {
+    throw apiError('La sesión del usuario no es válida.', 401, 'USER_SESSION_REQUIRED');
+  }
+  return normalized;
+}
+
+async function findOwnedImport(importId, userId, options = {}) {
+  const ownerId = requireUserId(userId);
+  return SaberProDocumentImport.findOne({
+    ...options,
+    where: { ...(options.where || {}), id: importId, created_by: ownerId }
+  });
+}
+
+async function findOwnedItem(itemId, userId) {
+  const ownerId = requireUserId(userId);
+  return SaberProDocumentImportItem.findOne({
+    where: { id: itemId },
+    include: [{
+      model: SaberProDocumentImport,
+      as: 'import',
+      required: true,
+      attributes: ['id', 'created_by'],
+      where: { created_by: ownerId }
+    }]
+  });
 }
 
 function normalizeHeader(value) {
@@ -244,9 +282,13 @@ async function extractItem(item, institutionalRows) {
 
 async function processImport(importId) {
   await ensureImportSchema();
-  activeImportId = String(importId);
+  const activeKey = String(importId);
+  activeImportIds.add(activeKey);
   const importRecord = await SaberProDocumentImport.findByPk(importId);
-  if (!importRecord) return;
+  if (!importRecord) {
+    activeImportIds.delete(activeKey);
+    return;
+  }
   try {
     const pending = await SaberProDocumentImportItem.findAll({
       where: { import_id: importId, status: 'PENDING' },
@@ -269,14 +311,16 @@ async function processImport(importId) {
     await importRecord.update({ status: 'FAILED', finished_at: new Date() }).catch(() => {});
     console.error('[saberProDocumentImport]', error?.message || error);
   } finally {
-    activeImportId = null;
+    activeImportIds.delete(activeKey);
   }
 }
 
 function startImport(importId) {
-  activeImportId = String(importId);
+  const activeKey = String(importId);
+  if (activeImportIds.has(activeKey)) return;
+  activeImportIds.add(activeKey);
   setImmediate(() => processImport(importId).catch((error) => {
-    activeImportId = null;
+    activeImportIds.delete(activeKey);
     console.error('[saberProDocumentImport]', error?.message || error);
   }));
 }
@@ -403,16 +447,17 @@ function mapItem(item) {
   };
 }
 
-async function getImport(importId) {
+async function getImport(importId, userId) {
   await ensureImportSchema();
-  let record = await SaberProDocumentImport.findByPk(importId, {
+  const ownerId = requireUserId(userId);
+  let record = await findOwnedImport(importId, ownerId, {
     include: [{ model: SaberProDocumentImportItem, as: 'items' }],
     order: [[{ model: SaberProDocumentImportItem, as: 'items' }, 'row_number', 'ASC']]
   });
   if (!record) return null;
   const synced = await syncProcessedItemsWithInstitutionalDb(record.id, record.items || []);
   if (synced) {
-    record = await SaberProDocumentImport.findByPk(importId, {
+    record = await findOwnedImport(importId, ownerId, {
       include: [{ model: SaberProDocumentImportItem, as: 'items' }],
       order: [[{ model: SaberProDocumentImportItem, as: 'items' }, 'row_number', 'ASC']]
     });
@@ -435,17 +480,22 @@ async function getImport(importId) {
   };
 }
 
-async function getLatestImport() {
+async function getLatestImport(userId) {
   await ensureImportSchema();
-  const latest = await SaberProDocumentImport.findOne({ order: [['created_at', 'DESC']] });
-  return latest ? getImport(latest.id) : null;
+  const ownerId = requireUserId(userId);
+  const latest = await SaberProDocumentImport.findOne({
+    where: { created_by: ownerId },
+    order: [['created_at', 'DESC']]
+  });
+  return latest ? getImport(latest.id, ownerId) : null;
 }
 
 async function createImport(file, userId) {
   await ensureImportSchema();
+  const ownerId = requireUserId(userId);
   if (!file) throw apiError('Seleccione un archivo Excel o CSV.', 400, 'FILE_REQUIRED');
-  if (activeImportId || await SaberProDocumentImport.count({ where: { status: 'PROCESSING' } })) {
-    throw apiError('Ya existe una consulta documental en procesamiento.', 409, 'IMPORT_IN_PROGRESS');
+  if (await SaberProDocumentImport.count({ where: { status: 'PROCESSING', created_by: ownerId } })) {
+    throw apiError('Usted ya tiene una consulta documental en procesamiento.', 409, 'IMPORT_IN_PROGRESS');
   }
   const items = parseWorkbook(file.buffer);
   const record = await SaberProDocumentImport.create({
@@ -453,20 +503,23 @@ async function createImport(file, userId) {
     total_items: items.length,
     processed_items: items.filter((item) => item.status === 'INVALID').length,
     error_items: items.filter((item) => item.status === 'INVALID').length,
-    created_by: userId
+    created_by: ownerId
   });
   await SaberProDocumentImportItem.bulkCreate(items.map((item) => ({ ...item, import_id: record.id })));
   startImport(record.id);
-  return getImport(record.id);
+  return getImport(record.id, ownerId);
 }
 
-async function retryImport(importId) {
+async function retryImport(importId, userId) {
   await ensureImportSchema();
-  if (activeImportId) {
-    throw apiError('Ya existe una consulta documental en procesamiento.', 409, 'IMPORT_IN_PROGRESS');
-  }
-  const record = await SaberProDocumentImport.findByPk(importId);
+  const ownerId = requireUserId(userId);
+  const record = await findOwnedImport(importId, ownerId);
   if (!record) throw apiError('La consulta no existe.', 404, 'IMPORT_NOT_FOUND');
+  if (activeImportIds.has(String(importId)) || await SaberProDocumentImport.count({
+    where: { status: 'PROCESSING', created_by: ownerId, id: { [Op.ne]: importId } }
+  })) {
+    throw apiError('Usted ya tiene una consulta documental en procesamiento.', 409, 'IMPORT_IN_PROGRESS');
+  }
   const retryable = await SaberProDocumentImportItem.count({
     where: { import_id: importId, status: { [Op.in]: ['PENDING', 'INCOMPLETE', 'ERROR'] } }
   });
@@ -479,12 +532,12 @@ async function retryImport(importId) {
   await record.update({ status: 'PROCESSING', finished_at: null });
   await refreshCounters(importId);
   startImport(importId);
-  return getImport(importId);
+  return getImport(importId, ownerId);
 }
 
 async function correctItem(itemId, values, userId) {
   await ensureImportSchema();
-  const item = await SaberProDocumentImportItem.findByPk(itemId);
+  const item = await findOwnedItem(itemId, userId);
   if (!item) throw apiError('La fila no existe.', 404, 'ITEM_NOT_FOUND');
   if (!['INCOMPLETE', 'ERROR', 'CORRECTED', 'EXTRACTED'].includes(item.status)) {
     throw apiError('Solo se pueden revisar filas con PDF asociado.', 409, 'ITEM_NOT_REVIEWABLE');
@@ -552,9 +605,9 @@ async function correctItem(itemId, values, userId) {
   return mapItem(item);
 }
 
-async function getItemPdf(itemId) {
+async function getItemPdf(itemId, userId) {
   await ensureImportSchema();
-  const item = await SaberProDocumentImportItem.findByPk(itemId);
+  const item = await findOwnedItem(itemId, userId);
   if (!item) throw apiError('La fila no existe.', 404, 'ITEM_NOT_FOUND');
   if (!item.document_path) throw apiError('La fila no tiene un PDF institucional asociado.', 404, 'PDF_NOT_FOUND');
   return fetchPdfBuffer(item.document_path);
@@ -569,16 +622,17 @@ async function createTemplateWorkbook() {
   return workbook.xlsx.writeBuffer();
 }
 
-async function createResultWorkbook(importId) {
+async function createResultWorkbook(importId, userId) {
   await ensureImportSchema();
-  let record = await SaberProDocumentImport.findByPk(importId, {
+  const ownerId = requireUserId(userId);
+  let record = await findOwnedImport(importId, ownerId, {
     include: [{ model: SaberProDocumentImportItem, as: 'items' }],
     order: [[{ model: SaberProDocumentImportItem, as: 'items' }, 'row_number', 'ASC']]
   });
   if (!record) throw apiError('La consulta no existe.', 404, 'IMPORT_NOT_FOUND');
   const synced = await syncProcessedItemsWithInstitutionalDb(record.id, record.items || []);
   if (synced) {
-    record = await SaberProDocumentImport.findByPk(importId, {
+    record = await findOwnedImport(importId, ownerId, {
       include: [{ model: SaberProDocumentImportItem, as: 'items' }],
       order: [[{ model: SaberProDocumentImportItem, as: 'items' }, 'row_number', 'ASC']]
     });
@@ -630,15 +684,29 @@ async function createResultWorkbook(importId) {
   return workbook.xlsx.writeBuffer();
 }
 
-async function clearImports() {
-  const processing = await SaberProDocumentImport.count({ where: { status: 'PROCESSING' } });
-  if (activeImportId || processing) {
+async function clearImports(userId) {
+  await ensureImportSchema();
+  const ownerId = requireUserId(userId);
+  const ownedImports = await SaberProDocumentImport.findAll({
+    where: { created_by: ownerId },
+    attributes: ['id', 'status'],
+    raw: true
+  });
+  const ownedIds = ownedImports.map((record) => record.id);
+  const processing = ownedImports.some((record) => record.status === 'PROCESSING'
+    || activeImportIds.has(String(record.id)));
+  if (processing) {
     throw apiError('Espere a que termine el procesamiento antes de limpiar la consulta.',
       409, 'IMPORT_IN_PROGRESS');
   }
+  if (!ownedIds.length) return { deletedImports: 0, deletedItems: 0 };
   return sequelize.transaction(async (transaction) => {
-    const deletedItems = await SaberProDocumentImportItem.destroy({ where: {}, transaction });
-    const deletedImports = await SaberProDocumentImport.destroy({ where: {}, transaction });
+    const deletedItems = await SaberProDocumentImportItem.destroy({
+      where: { import_id: { [Op.in]: ownedIds } }, transaction
+    });
+    const deletedImports = await SaberProDocumentImport.destroy({
+      where: { id: { [Op.in]: ownedIds }, created_by: ownerId }, transaction
+    });
     return { deletedImports, deletedItems };
   });
 }
@@ -698,11 +766,11 @@ async function initialize() {
   await ensureImportSchema();
   await invalidateStoredDateYearMismatches();
   await queueLatestUnverifiedIdentifications();
-  const interrupted = await SaberProDocumentImport.findOne({
+  const interrupted = await SaberProDocumentImport.findAll({
     where: { status: 'PROCESSING' },
     order: [['created_at', 'ASC']]
   });
-  if (interrupted) startImport(interrupted.id);
+  for (const record of interrupted) startImport(record.id);
 }
 
 module.exports = {

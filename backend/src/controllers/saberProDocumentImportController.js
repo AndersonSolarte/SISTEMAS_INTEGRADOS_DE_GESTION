@@ -18,9 +18,9 @@ async function createImport(req, res) {
   }
 }
 
-async function latestImport(_req, res) {
+async function latestImport(req, res) {
   try {
-    return res.json({ success: true, data: await service.getLatestImport() });
+    return res.json({ success: true, data: await service.getLatestImport(req.user?.id) });
   } catch (error) {
     return handleError(res, error);
   }
@@ -28,7 +28,7 @@ async function latestImport(_req, res) {
 
 async function getImport(req, res) {
   try {
-    const result = await service.getImport(req.params.id);
+    const result = await service.getImport(req.params.id, req.user?.id);
     if (!result) return res.status(404).json({ success: false, message: 'La consulta no existe.' });
     return res.json({ success: true, data: result });
   } catch (error) {
@@ -38,15 +38,15 @@ async function getImport(req, res) {
 
 async function retryImport(req, res) {
   try {
-    return res.status(202).json({ success: true, data: await service.retryImport(req.params.id) });
+    return res.status(202).json({ success: true, data: await service.retryImport(req.params.id, req.user?.id) });
   } catch (error) {
     return handleError(res, error);
   }
 }
 
-async function clearImports(_req, res) {
+async function clearImports(req, res) {
   try {
-    const result = await service.clearImports();
+    const result = await service.clearImports(req.user?.id);
     return res.json({
       success: true,
       data: result,
@@ -68,7 +68,7 @@ async function correctItem(req, res) {
 
 async function viewPdf(req, res) {
   try {
-    const buffer = await service.getItemPdf(req.params.itemId);
+    const buffer = await service.getItemPdf(req.params.itemId, req.user?.id);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="documento-${req.params.itemId}.pdf"`);
     res.setHeader('Content-Length', buffer.length);
@@ -92,7 +92,7 @@ async function downloadTemplate(_req, res) {
 
 async function exportImport(req, res) {
   try {
-    const buffer = await service.createResultWorkbook(req.params.id);
+    const buffer = await service.createResultWorkbook(req.params.id, req.user?.id);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="consulta_documental_${req.params.id}.xlsx"`);
     return res.send(Buffer.from(buffer));

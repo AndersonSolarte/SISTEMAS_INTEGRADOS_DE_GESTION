@@ -21,7 +21,9 @@ const SaberProDocumentImport = sequelize.define('SaberProDocumentImport', {
   updatedAt: 'updated_at',
   indexes: [
     { fields: ['status'] },
-    { fields: ['created_at'] }
+    { fields: ['created_at'] },
+    { fields: ['created_by'] },
+    { fields: ['created_by', 'status'] }
   ]
 });
 
