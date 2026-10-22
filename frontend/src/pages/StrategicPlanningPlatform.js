@@ -1568,7 +1568,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   <TableHead>
                     <TableRow sx={{ bgcolor: '#244f91' }}>
                       <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Fila</TableCell>
-                      <TableCell sx={{ bgcolor: '#1d4ed8', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #1e40af' }}>Dependencia</TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Dependencia</TableCell>
                       <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Cédula</TableCell>
                       <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Responsable encontrado</TableCell>
                       <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Unidad en SIAC</TableCell>
@@ -1679,7 +1679,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                 <Table size="small" stickyHeader>
                   <TableHead>
                     <TableRow sx={{ bgcolor: '#244f91' }}>
-                      <TableCell sx={{ bgcolor: '#1d4ed8', color: '#ffffff', fontWeight: 950, fontSize: 12, letterSpacing: '.05em', textTransform: 'uppercase', py: 1.4, borderBottom: '2px solid #1e40af' }}>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 12, letterSpacing: '.05em', textTransform: 'uppercase', py: 1.4, borderBottom: '2px solid #173b73' }}>
                         Dependencia
                       </TableCell>
                       <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 12, letterSpacing: '.05em', textTransform: 'uppercase', py: 1.4, borderBottom: '2px solid #173b73' }}>
