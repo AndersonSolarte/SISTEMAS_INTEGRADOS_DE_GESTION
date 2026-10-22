@@ -1068,7 +1068,7 @@ const bulkCreateActionPlans = wrap(async (req, res) => {
   const assignments = await StrategicResponsibility.findAll({
     where: { term_id: term.id, action_plan_id: null, responsibility_type: 'reference_leader', status: 'active' },
     include: [
-      { model: StrategicCatalogItem, as: 'catalogItem' },
+      { model: StrategicCatalogItem, as: 'organizationalUnit' },
       { model: User, as: 'responsibleUser', where: { estado: 'activo' } }
     ]
   });
@@ -1093,7 +1093,7 @@ const bulkCreateActionPlans = wrap(async (req, res) => {
 
   await sequelize.transaction(async (transaction) => {
     for (const assignment of pendingAssignments) {
-      const unit = assignment.catalogItem;
+      const unit = assignment.organizationalUnit;
       const responsible = assignment.responsibleUser;
       if (!unit || !responsible) continue;
 
