@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Autocomplete, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions,
+  Alert, Autocomplete, Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions,
   Checkbox, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, IconButton, LinearProgress, MenuItem, Paper, Stack, Switch,
   InputAdornment, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
 import {
   AccessTimeOutlined, Add, Analytics, ArrowBack, ArrowDownward, ArrowUpward, AssessmentOutlined, AssignmentOutlined, CalendarTodayOutlined, Close, MoreTime, CheckCircleOutline, CloudSync, CorporateFare,
-  DeleteOutline, Description, Download, EditOutlined, FolderOutlined, GridView, LockOutlined, OpenInNew, Payments, Search,
+  DeleteOutline, Description, Download, EditOutlined, FolderOutlined, GridView, LockOutlined, OpenInNew, Payments, PlaylistAddCheckOutlined, Search,
   SettingsOutlined, SwapHoriz, TableRows, Timeline, UploadFile, ViewWeekOutlined
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
@@ -198,7 +198,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const actionTerms = [...terms]
     .filter((term) => term.status !== 'inactive' && term.status !== 'archived' && isTermInPlanRange(term))
     .sort((a, b) => a.year - b.year);
-  const selectedActionTerm = actionTerms.find((term) => String(term.id) === String(selectedActionTermId)) || actionTerms.find((term) => term.status === 'active') || actionTerms[0];
+  const selectedActionTerm = actionTerms.find((term) => String(term.id) === String(selectedActionTermId)) || null;
   const selectedYearPlans = visiblePlans.filter((item) => String(item.term_id || item.term?.id) === String(selectedActionTerm?.id));
   const normalizedDependencySearch = dependencySearch.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   const selectedTermAssignments = termDependencies.filter((item) => String(item.term_id) === String(selectedActionTerm?.id));
@@ -1337,8 +1337,16 @@ export default function StrategicPlanningPlatform({ onBack }) {
           </Box>}
         </Paper>
 
+                {/* GUÍA INICIAL CUANDO AÚN NO SELECCIONA AÑO */}
+        {!selectedActionTerm && (
+          <Alert severity="info" sx={{ mt: 2, borderRadius: 3, fontWeight: 700 }}>
+            Haga clic en una de las tarjetas de vigencia (año) arriba para iniciar la configuración paso a paso.
+          </Alert>
+        )}
+
         {/* PASO 2: PROGRAMACIÓN DEL TIEMPO (PLAZO GENERAL DE FORMULACIÓN) */}
         {selectedActionTerm && (() => {
+          const hasCustomSchedule = Boolean(selectedActionTerm.metadata?.formulation_ends_on);
           const generalStartsOn = selectedActionTerm.metadata?.formulation_starts_on || `${selectedActionTerm.year}-01-01`;
           const generalEndsOn = selectedActionTerm.metadata?.formulation_ends_on || `${selectedActionTerm.year}-03-31`;
           const todayIso = new Date().toISOString().slice(0, 10);
@@ -1354,8 +1362,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
                 mt: 2,
                 p: { xs: 1.75, md: 2.25 },
                 borderRadius: 3.5,
-                borderColor: isTermExpired ? '#fed7aa' : '#bbf7d0',
-                bgcolor: isTermExpired ? '#fffbeb' : '#f0fdf4',
+                borderColor: !hasCustomSchedule ? '#f59e0b' : isTermExpired ? '#fed7aa' : '#bbf7d0',
+                bgcolor: !hasCustomSchedule ? '#fffbeb' : isTermExpired ? '#fffbeb' : '#f0fdf4',
                 boxShadow: '0 4px 15px rgba(0,0,0,.03)'
               }}
             >
@@ -1368,8 +1376,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       height: 44,
                       flex: '0 0 44px',
                       borderRadius: 2.5,
-                      bgcolor: isTermExpired ? '#fef3c7' : '#dcfce7',
-                      color: isTermExpired ? '#d97706' : '#16a34a',
+                      bgcolor: !hasCustomSchedule ? '#fef3c7' : isTermExpired ? '#fef3c7' : '#dcfce7',
+                      color: !hasCustomSchedule ? '#d97706' : isTermExpired ? '#d97706' : '#16a34a',
                       display: 'grid',
                       placeItems: 'center'
                     }}
@@ -1381,7 +1389,15 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       <Typography fontWeight={950} sx={{ fontSize: 15, color: '#0f172a' }}>
                         Plazo General de Formulación · Vigencia {selectedActionTerm.year}
                       </Typography>
-                      {isTermOpen && (
+                      {!hasCustomSchedule && (
+                        <Chip
+                          size="small"
+                          color="warning"
+                          label="Programación pendiente o por defecto"
+                          sx={{ fontWeight: 800, fontSize: 11 }}
+                        />
+                      )}
+                      {hasCustomSchedule && isTermOpen && (
                         <Chip
                           size="small"
                           icon={<CheckCircleOutline sx={{ fontSize: '14px !important', color: '#15803d !important' }} />}
@@ -1389,7 +1405,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                           sx={{ bgcolor: '#dcfce7', color: '#15803d', fontWeight: 800, fontSize: 11, pl: 0.5 }}
                         />
                       )}
-                      {isTermExpired && (
+                      {hasCustomSchedule && isTermExpired && (
                         <Chip
                           size="small"
                           icon={<LockOutlined sx={{ fontSize: '13px !important', color: '#b45309 !important' }} />}
@@ -1397,7 +1413,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                           sx={{ bgcolor: '#fef3c7', color: '#b45309', fontWeight: 800, fontSize: 11, pl: 0.5 }}
                         />
                       )}
-                      {isTermNotStarted && (
+                      {hasCustomSchedule && isTermNotStarted && (
                         <Chip
                           size="small"
                           icon={<AccessTimeOutlined sx={{ fontSize: '13px !important', color: '#475569 !important' }} />}
@@ -1427,15 +1443,126 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     flexShrink: 0
                   }}
                 >
-                  Programar / Ajustar Plazo General
+                  {hasCustomSchedule ? 'Ajustar Plazo General' : 'Configurar Plazo de Formulación'}
                 </Button>
               </Stack>
             </Paper>
           );
         })()}
 
-        {/* PASO 3: REPOSITORIO DIGITAL Y SINCRONIZACIÓN EN GOOGLE DRIVE */}
+        {/* PASO 3: GENERACIÓN DE PLANES DE ACCIÓN PARA LA VIGENCIA */}
         {selectedActionTerm && (() => {
+          const hasCustomSchedule = Boolean(selectedActionTerm.metadata?.formulation_ends_on);
+          const hasPlans = selectedYearPlans.length > 0;
+          const totalUnitsCount = selectedActionUnits.length;
+
+          if (!hasCustomSchedule) {
+            return (
+              <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 3.5, borderColor: '#e2e8f0', bgcolor: '#f8fafc', opacity: 0.8 }}>
+                <Stack direction="row" alignItems="center" spacing={1.5}>
+                  <Box sx={{ width: 30, height: 30, borderRadius: '50%', bgcolor: '#94a3b8', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>3</Box>
+                  <Typography fontWeight={900} color="text.secondary">Paso 3: Generación de Planes de Acción</Typography>
+                </Stack>
+                <Alert severity="warning" sx={{ mt: 1.5, borderRadius: 2.5 }}>
+                  Para desbloquear el Paso 3 y generar los planes de acción, primero confirme el <strong>Plazo de Formulación</strong> en el Paso 2 superior.
+                </Alert>
+              </Paper>
+            );
+          }
+
+          return (
+            <Paper
+              variant="outlined"
+              sx={{
+                mt: 2,
+                p: { xs: 1.75, md: 2.25 },
+                borderRadius: 3.5,
+                borderColor: hasPlans ? '#86efac' : '#f59e0b',
+                background: hasPlans
+                  ? 'linear-gradient(110deg,#f0fdf4 0%,#f8fafc 100%)'
+                  : 'linear-gradient(110deg,#fffbeb 0%,#fefce8 100%)'
+              }}
+            >
+              <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
+                <Stack direction="row" alignItems="center" gap={1.5}>
+                  <Box sx={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', bgcolor: '#d97706', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>3</Box>
+                  <Box sx={{ width: 44, height: 44, flex: '0 0 44px', borderRadius: 2.5, bgcolor: hasPlans ? '#dcfce7' : '#fef3c7', color: hasPlans ? '#16a34a' : '#d97706', display: 'grid', placeItems: 'center' }}>
+                    <PlaylistAddCheckOutlined sx={{ fontSize: 24 }} />
+                  </Box>
+                  <Box>
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                      <Typography fontWeight={950} fontSize={15} color="#0f172a">
+                        Generación de Planes de Acción · Vigencia {selectedActionTerm.year}
+                      </Typography>
+                      {hasPlans ? (
+                        <Chip
+                          size="small"
+                          color="success"
+                          icon={<CheckCircleOutline sx={{ fontSize: '14px !important' }} />}
+                          label={`${selectedYearPlans.length} de ${totalUnitsCount} planes generados`}
+                          sx={{ fontWeight: 850, fontSize: 11 }}
+                        />
+                      ) : (
+                        <Chip
+                          size="small"
+                          color="warning"
+                          label="Planes no generados aún"
+                          sx={{ fontWeight: 850, fontSize: 11 }}
+                        />
+                      )}
+                    </Stack>
+                    <Typography variant="body2" color="#64748b" sx={{ mt: 0.25, fontSize: 12.5 }}>
+                      {hasPlans
+                        ? 'Los planes de acción para las dependencias están generados y listos para sincronización en Drive y formulación de metas.'
+                        : `Genere automáticamente los planes de acción para las ${totalUnitsCount} dependencias asignadas a esta vigencia.`}
+                    </Typography>
+                  </Box>
+                </Stack>
+
+                <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems="center" flexWrap="wrap">
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
+                    onClick={handleBulkCreateActionPlans}
+                    sx={{ height: 42, borderRadius: 2.25, textTransform: 'none', fontWeight: 900, px: 2.5 }}
+                  >
+                    {bulkActionLoading ? 'Generando…' : hasPlans ? 'Completar planes faltantes' : `Generar los ${totalUnitsCount} planes de acción`}
+                  </Button>
+                  {hasPlans && (
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
+                      onClick={() => { setBulkDeleteCandidate(selectedActionTerm); setBulkDeleteConfirmText(''); }}
+                      sx={{ height: 42, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
+                    >
+                      Limpiar vigencia ({selectedYearPlans.length})
+                    </Button>
+                  )}
+                </Stack>
+              </Stack>
+            </Paper>
+          );
+        })()}
+
+        {/* PASO 4: REPOSITORIO DIGITAL Y SINCRONIZACIÓN EN GOOGLE DRIVE */}
+        {selectedActionTerm && (() => {
+          const hasPlans = selectedYearPlans.length > 0;
+          if (!hasPlans) {
+            return (
+              <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 3.5, borderColor: '#e2e8f0', bgcolor: '#f8fafc', opacity: 0.7 }}>
+                <Stack direction="row" alignItems="center" spacing={1.5}>
+                  <Box sx={{ width: 30, height: 30, borderRadius: '50%', bgcolor: '#94a3b8', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>4</Box>
+                  <Typography fontWeight={900} color="text.secondary">Paso 4: Repositorio Digital y Sincronización en Google Drive</Typography>
+                </Stack>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Este paso se habilitará automáticamente al generar los planes de acción en el Paso 3.
+                </Typography>
+              </Paper>
+            );
+          }
+
           const driveSync = selectedActionTerm.metadata?.drive_sync;
           const isDriveSynced = Boolean(driveSync?.synced_at || repositoryResult);
           const driveFolderUrl = driveSync?.folder_url || repositoryResult?.folder_url;
@@ -1455,7 +1582,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
             >
               <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
                 <Stack direction="row" alignItems="center" gap={1.5}>
-                  <Box sx={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', bgcolor: '#7c3aed', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>3</Box>
+                  <Box sx={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', bgcolor: '#7c3aed', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>4</Box>
                   <Box sx={{ width: 44, height: 44, flex: '0 0 44px', borderRadius: 2.5, bgcolor: isDriveSynced ? '#dcfce7' : '#eff6ff', color: isDriveSynced ? '#16a34a' : '#2563eb', display: 'grid', placeItems: 'center' }}>
                     <FolderOutlined sx={{ fontSize: 24 }} />
                   </Box>
@@ -1504,26 +1631,6 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     </Button>
                   )}
                   <Button
-                    variant="outlined"
-                    color="primary"
-                    disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
-                    onClick={handleBulkCreateActionPlans}
-                    sx={{ height: 42, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
-                  >
-                    {bulkActionLoading ? 'Generando…' : 'Generar todos los planes'}
-                  </Button>
-                  {selectedYearPlans.length > 0 && (
-                    <Button
-                      variant="outlined"
-                      color="error"
-                      disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
-                      onClick={() => { setBulkDeleteCandidate(selectedActionTerm); setBulkDeleteConfirmText(''); }}
-                      sx={{ height: 42, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
-                    >
-                      Limpiar vigencia ({selectedYearPlans.length})
-                    </Button>
-                  )}
-                  <Button
                     variant="contained"
                     startIcon={repositorySyncing ? <CircularProgress size={18} color="inherit" /> : <CloudSync />}
                     disabled={repositorySyncing || !selectedActionUnits.length}
@@ -1568,131 +1675,54 @@ export default function StrategicPlanningPlatform({ onBack }) {
           );
         })()}
 
-        {/* PASO 4: FORMULACIÓN Y GESTIÓN POR DEPENDENCIAS */}
-        {selectedActionTerm && <Paper variant="outlined" sx={{ mt: 2, borderRadius: 3.5, overflow: 'hidden', borderColor: '#dbe3ee' }}>
-          <Box sx={{ px: { xs: 1.75, md: 2.5 }, py: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-            <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ lg: 'center' }} gap={1.5}>
-              <Stack direction="row" alignItems="center" spacing={1.5}>
-                <Box sx={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', bgcolor: '#0284c7', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>4</Box>
-                <Typography variant="h6" fontWeight={950}>Planes de Acción por Dependencia ({visibleActionUnits.length})</Typography>
-              </Stack>
-              <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} gap={1} sx={{ width: { xs: '100%', lg: 'auto' } }}>
-                <TextField
-                  size="small"
-                  value={dependencySearch}
-                  onChange={(event) => setDependencySearch(event.target.value)}
-                  placeholder="Buscar por dependencia, cédula, nombre, cargo, correo o estado…"
-                  InputProps={{ startAdornment: <InputAdornment position="start"><Search fontSize="small" sx={{ color: '#64748b' }} /></InputAdornment> }}
-                  sx={{ width: { xs: '100%', sm: 470 }, bgcolor: '#fff', '& .MuiOutlinedInput-root': { borderRadius: 2.25 } }}
-                />
-                <Paper variant="outlined" sx={{ display: 'flex', p: 0.4, borderRadius: 2.25, bgcolor: '#eef3f8', borderColor: '#d6e0ea', flexShrink: 0 }}>
-                  <Button size="small" startIcon={<GridView />} onClick={() => setDependencyView('cards')} variant={dependencyView === 'cards' ? 'contained' : 'text'} sx={{ minWidth: 105, borderRadius: 1.75, textTransform: 'none', fontWeight: 850, boxShadow: dependencyView === 'cards' ? '0 3px 9px rgba(37,99,235,.18)' : 'none' }}>Tarjetas</Button>
-                  <Button size="small" startIcon={<TableRows />} onClick={() => setDependencyView('table')} variant={dependencyView === 'table' ? 'contained' : 'text'} sx={{ minWidth: 95, borderRadius: 1.75, textTransform: 'none', fontWeight: 850, boxShadow: dependencyView === 'table' ? '0 3px 9px rgba(37,99,235,.18)' : 'none' }}>Tabla</Button>
-                </Paper>
-              </Stack>
-            </Stack>
-          </Box>
-          {dependencyView === 'cards' ? <Box sx={{ p: { xs: 1.5, md: 2 }, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))', xl: 'repeat(3,minmax(0,1fr))' }, gap: 1.25, maxHeight: 650, overflowY: 'auto' }}>
-            {visibleActionUnits.map((unit) => {
-              const actionPlan = selectedYearPlans.find((item) => String(item.catalog_item_id || item.organizationalUnit?.id) === String(unit.id));
-              const suggestedLeader = unit.annualAssignment?.responsible;
-              return <Paper
-                key={unit.id}
-                elevation={0}
-                onClick={() => {
-                  if (actionPlan) {
-                    setEditorPlanId(actionPlan.id);
-                  } else if (selectedActionTerm.status !== 'closed') {
-                    openActionPlanCreation(selectedActionTerm, unit);
-                  }
-                }}
-                sx={{
-                  p: 1.75,
-                  borderRadius: 2.75,
-                  border: '1.5px solid',
-                  borderColor: actionPlan ? '#bbf7d0' : '#e2e8f0',
-                  bgcolor: actionPlan ? '#f7fef9' : '#fff',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  minHeight: 188,
-                  cursor: 'pointer',
-                  position: 'relative',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                  '&:hover': {
-                    borderColor: actionPlan ? '#16a34a' : '#2563eb',
-                    boxShadow: actionPlan ? '0 10px 24px -4px rgba(22, 163, 74, 0.18)' : '0 10px 24px -4px rgba(37, 99, 235, 0.16)',
-                    transform: 'translateY(-2px)',
-                    bgcolor: actionPlan ? '#f0fdf4' : '#f8fafc'
-                  }
-                }}
-              >
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-                  <Box sx={{ width: 36, height: 36, flex: '0 0 36px', borderRadius: 2, bgcolor: actionPlan ? '#eff6ff' : '#f8fafc', color: actionPlan ? '#1e40af' : '#64748b', border: '1px solid', borderColor: actionPlan ? '#bfdbfe' : '#e2e8f0', display: 'grid', placeItems: 'center' }}>
-                    <CorporateFare sx={{ fontSize: 20 }} />
-                  </Box>
-                  <Stack direction="row" alignItems="center" gap={0.3}>
-                    {actionPlan && (
-                      <>
-                        <Tooltip title="Editar datos del plan">
-                          <IconButton
-                            size="small"
-                            onClick={(e) => { e.stopPropagation(); setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year }); }}
-                            sx={{ width: 28, height: 28, color: '#64748b', '&:hover': { bgcolor: '#eff6ff', color: '#2563eb' } }}
-                          >
-                            <EditOutlined sx={{ fontSize: 17 }} />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Eliminar plan y retirar dependencia">
-                          <IconButton
-                            size="small"
-                            onClick={(e) => { e.stopPropagation(); setDeleteActionPlanCandidate(actionPlan); }}
-                            sx={{ width: 28, height: 28, color: '#ef4444', '&:hover': { bgcolor: '#fef2f2', color: '#dc2626' } }}
-                          >
-                            <DeleteOutline sx={{ fontSize: 17 }} />
-                          </IconButton>
-                        </Tooltip>
-                      </>
-                    )}
-                    <Chip size="small" color={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.color || 'success') : 'default'} variant={actionPlan ? 'filled' : 'outlined'} label={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.label || 'Plan creado') : 'Pendiente'} sx={{ fontWeight: 850 }} />
+        {/* PASO 5: FORMULACIÓN Y GESTIÓN POR DEPENDENCIAS */}
+        {selectedActionTerm && (() => {
+          const hasPlans = selectedYearPlans.length > 0;
+          if (!hasPlans) {
+            return (
+              <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 3.5, borderColor: '#e2e8f0', bgcolor: '#f8fafc', opacity: 0.7 }}>
+                <Stack direction="row" alignItems="center" spacing={1.5}>
+                  <Box sx={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', bgcolor: '#94a3b8', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>5</Box>
+                  <Typography fontWeight={900} color="text.secondary">Paso 5: Planes de Acción por Dependencia</Typography>
+                </Stack>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Las dependencias se mostrarán aquí una vez que genere los planes de acción en el Paso 3.
+                </Typography>
+              </Paper>
+            );
+          }
+
+          return (
+            <Paper variant="outlined" sx={{ mt: 2, borderRadius: 3.5, overflow: 'hidden', borderColor: '#dbe3ee' }}>
+              <Box sx={{ px: { xs: 1.75, md: 2.5 }, py: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ lg: 'center' }} gap={1.5}>
+                  <Stack direction="row" alignItems="center" spacing={1.5}>
+                    <Box sx={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', bgcolor: '#0284c7', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>5</Box>
+                    <Typography variant="h6" fontWeight={950}>Planes de Acción por Dependencia ({visibleActionUnits.length})</Typography>
+                  </Stack>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} gap={1} sx={{ width: { xs: '100%', lg: 'auto' } }}>
+                    <TextField
+                      size="small"
+                      value={dependencySearch}
+                      onChange={(event) => setDependencySearch(event.target.value)}
+                      placeholder="Buscar por dependencia, cédula, nombre, cargo, correo o estado…"
+                      InputProps={{ startAdornment: <InputAdornment position="start"><Search fontSize="small" sx={{ color: '#64748b' }} /></InputAdornment> }}
+                      sx={{ width: { xs: '100%', sm: 470 }, bgcolor: '#fff', '& .MuiOutlinedInput-root': { borderRadius: 2.25 } }}
+                    />
+                    <Paper variant="outlined" sx={{ display: 'flex', p: 0.4, borderRadius: 2.25, bgcolor: '#eef3f8', borderColor: '#d6e0ea', flexShrink: 0 }}>
+                      <Button size="small" startIcon={<GridView />} onClick={() => setDependencyView('cards')} variant={dependencyView === 'cards' ? 'contained' : 'text'} sx={{ minWidth: 105, borderRadius: 1.75, textTransform: 'none', fontWeight: 850, boxShadow: dependencyView === 'cards' ? '0 3px 9px rgba(37,99,235,.18)' : 'none' }}>Tarjetas</Button>
+                      <Button size="small" startIcon={<TableRows />} onClick={() => setDependencyView('table')} variant={dependencyView === 'table' ? 'contained' : 'text'} sx={{ minWidth: 95, borderRadius: 1.75, textTransform: 'none', fontWeight: 850, boxShadow: dependencyView === 'table' ? '0 3px 9px rgba(37,99,235,.18)' : 'none' }}>Tabla</Button>
+                    </Paper>
                   </Stack>
                 </Stack>
-                <Typography fontWeight={950} mt={1.2} lineHeight={1.3}>{unit.name}</Typography><Typography variant="caption" color="text.secondary">{unit.code}</Typography>
-                <Box sx={{ flex: 1, mt: 1 }}>{actionPlan ? <><Typography variant="caption" color="text.secondary">{actionPlan.code} · {actionPlan.items?.length || 0} registros</Typography><Typography variant="caption" display="block" color="text.secondary" noWrap>{actionPlan.responsibleUser?.nombre || 'Sin líder asignado'}</Typography></> : <Typography variant="caption" color="text.secondary">{suggestedLeader ? `Responsable: ${suggestedLeader.name}` : 'Configure primero el responsable de esta vigencia.'}</Typography>}</Box>
-                {actionPlan ? (
-                  <Stack direction="row" gap={0.75} mt={1.25}>
-                    <Button fullWidth size="small" variant="contained" onClick={(e) => { e.stopPropagation(); setEditorPlanId(actionPlan.id); }} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>
-                    <Button size="small" variant="outlined" title="Cambiar responsable" onClick={(e) => { e.stopPropagation(); setTransfer({ plan: actionPlan, user_id: '', reason: '' }); }} sx={{ minWidth: 42, borderRadius: 2 }}><SwapHoriz fontSize="small" /></Button>
-                  </Stack>
-                ) : (
-                  <Button fullWidth size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={(e) => { e.stopPropagation(); openActionPlanCreation(selectedActionTerm, unit); }} sx={{ mt: 1.25, borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear Plan de Acción'}</Button>
-                )}
-              </Paper>;
-            })}
-          </Box> : <Box sx={{ bgcolor: '#f6f9fd' }}>
-            <Box sx={{ height: 4, background: 'linear-gradient(90deg,#204698,#2563eb 58%,#593cf0)' }} />
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 2.25, py: 1.15, bgcolor: '#fff', borderBottom: '1px solid #dbe5f0' }}>
-              <Typography variant="body2" color="#52657b"><strong>{visibleActionUnits.length}</strong> dependencias encontradas</Typography>
-              <Typography variant="caption" color="#718096">Vigencia {selectedActionTerm.year}</Typography>
-            </Stack>
-            <TableContainer sx={{ maxHeight: 650 }}>
-            <Table stickyHeader size="small" sx={{ minWidth: 1600, tableLayout: 'fixed', '& td, & th': { borderRight: '1px solid #e1e9f2' }, '& td:last-of-type, & th:last-of-type': { borderRight: 0 } }}>
-              <TableHead>
-                <TableRow>
-                  {[
-                    ['Dependencia', 250], ['Código', 95], ['Responsable', 235], ['Cédula', 135], ['Cargo', 220],
-                    ['Correo', 245], ['Estado', 130], ['Registros', 90], ['Acción', 270]
-                  ].map(([heading, width]) => <TableCell key={heading} align={['Registros', 'Acción'].includes(heading) ? 'center' : 'left'} sx={{ width, bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.055em', textTransform: 'uppercase', whiteSpace: 'nowrap', py: 1.45, borderBottom: '1px solid #173b73', borderRightColor: 'rgba(255,255,255,.16) !important' }}>{heading}</TableCell>)}
-                </TableRow>
-              </TableHead>
-              <TableBody>
+              </Box>
+              {dependencyView === 'cards' ? <Box sx={{ p: { xs: 1.5, md: 2 }, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))', xl: 'repeat(3,minmax(0,1fr))' }, gap: 1.25, maxHeight: 650, overflowY: 'auto' }}>
                 {visibleActionUnits.map((unit) => {
                   const actionPlan = selectedYearPlans.find((item) => String(item.catalog_item_id || item.organizationalUnit?.id) === String(unit.id));
-                  const responsible = unit.annualAssignment?.responsible || {};
-                  const responsibleName = responsible.name || actionPlan?.responsibleUser?.nombre || 'Sin responsable';
-                  const initials = responsibleName === 'Sin responsable' ? '—' : responsibleName.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
-                  return <TableRow
+                  const suggestedLeader = unit.annualAssignment?.responsible;
+                  return <Paper
                     key={unit.id}
-                    hover
+                    elevation={0}
                     onClick={() => {
                       if (actionPlan) {
                         setEditorPlanId(actionPlan.id);
@@ -1700,24 +1730,170 @@ export default function StrategicPlanningPlatform({ onBack }) {
                         openActionPlanCreation(selectedActionTerm, unit);
                       }
                     }}
-                    sx={{ cursor: 'pointer', bgcolor: '#ffffff', '&:nth-of-type(even)': { bgcolor: '#f9fbfe' }, '&:hover': { bgcolor: '#eef6ff !important' }, '& td': { py: 1.45, borderBottom: '1px solid #dfe7f0', verticalAlign: 'middle' } }}
+                    sx={{
+                      p: 1.75,
+                      borderRadius: 2.75,
+                      border: '1.5px solid',
+                      borderColor: actionPlan ? '#bbf7d0' : '#e2e8f0',
+                      bgcolor: actionPlan ? '#f7fef9' : '#fff',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      minHeight: 188,
+                      cursor: 'pointer',
+                      position: 'relative',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      '&:hover': {
+                        borderColor: actionPlan ? '#16a34a' : '#2563eb',
+                        boxShadow: actionPlan ? '0 10px 24px -4px rgba(22, 163, 74, 0.18)' : '0 10px 24px -4px rgba(37, 99, 235, 0.16)',
+                        transform: 'translateY(-2px)',
+                        bgcolor: actionPlan ? '#f0fdf4' : '#f8fafc'
+                      }
+                    }}
                   >
-                    <TableCell><Stack direction="row" alignItems="center" gap={1.15}><Box sx={{ width: 32, height: 32, flex: '0 0 32px', borderRadius: 1.75, display: 'grid', placeItems: 'center', bgcolor: actionPlan ? '#eff6ff' : '#f8fafc', color: actionPlan ? '#1e40af' : '#64748b', border: '1px solid', borderColor: actionPlan ? '#bfdbfe' : '#e2e8f0' }}><CorporateFare sx={{ fontSize: 18 }} /></Box><Box minWidth={0}><Typography fontWeight={900} fontSize={13.5} lineHeight={1.25} title={unit.name}>{unit.name}</Typography><Typography variant="caption" color="text.secondary" noWrap display="block" title={responsible.dependency || ''}>{responsible.dependency || 'Unidad institucional'}</Typography></Box></Stack></TableCell>
-                    <TableCell><Chip size="small" label={unit.code || '—'} sx={{ height: 25, bgcolor: '#edf3fa', color: '#425b78', fontWeight: 900, borderRadius: 1.5 }} /></TableCell>
-                    <TableCell><Stack direction="row" alignItems="center" gap={1}><Box sx={{ width: 31, height: 31, flex: '0 0 31px', borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: '#e9edff', color: '#455db5', fontWeight: 950, fontSize: 10.5 }}>{initials}</Box><Typography fontWeight={850} fontSize={12.8} lineHeight={1.3}>{responsibleName}</Typography></Stack></TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 750, color: '#42566f' }}>{responsible.document || '—'}</TableCell>
-                    <TableCell><Typography fontSize={12.8} lineHeight={1.35}>{responsible.position || actionPlan?.responsibleUser?.cargo || '—'}</Typography></TableCell>
-                    <TableCell><Typography component={responsible.email || actionPlan?.responsibleUser?.email ? 'a' : 'span'} href={(responsible.email || actionPlan?.responsibleUser?.email) ? `mailto:${responsible.email || actionPlan?.responsibleUser?.email}` : undefined} onClick={(e) => e.stopPropagation()} fontSize={12.5} color="#315f9d" sx={{ textDecoration: 'none', '&:hover': { textDecoration: 'underline' }, wordBreak: 'break-word' }}>{responsible.email || actionPlan?.responsibleUser?.email || '—'}</Typography></TableCell>
-                    <TableCell><Chip size="small" color={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.color || 'success') : 'default'} variant={actionPlan ? 'filled' : 'outlined'} label={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.label || 'Plan creado') : 'Pendiente'} sx={{ fontWeight: 850 }} /></TableCell>
-                    <TableCell align="center"><Box sx={{ width: 32, height: 32, mx: 'auto', borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: actionPlan?.items?.length ? '#e8f2ff' : '#f1f5f9', color: actionPlan?.items?.length ? '#245ab5' : '#64748b', fontWeight: 950 }}>{actionPlan?.items?.length || 0}</Box></TableCell>
-                    <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>{actionPlan ? <Stack direction="row" justifyContent="center" alignItems="center" gap={0.5}><Button size="small" variant="contained" onClick={(e) => { e.stopPropagation(); setEditorPlanId(actionPlan.id); }} sx={{ minWidth: 85, height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>{['owner_validation', 'formulation', 'adjustments'].includes(actionPlan.status) && <Button size="small" variant="contained" color="success" onClick={async (e) => { e.stopPropagation(); try { await strategicPlanningService.transition(actionPlan.id, { action: 'activate', comment: 'Plan ejecutado directamente desde la plataforma institucional' }); enqueueSnackbar(`Plan ${actionPlan.code} pasado a Ejecución Oficial.`, { variant: 'success' }); await load(); } catch (err) { enqueueSnackbar(err?.response?.data?.message || 'No fue posible activar el plan.', { variant: 'error' }); } }} sx={{ height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}>Ejecutar</Button>}<Button size="small" variant="outlined" title="Editar datos del plan" onClick={(e) => { e.stopPropagation(); setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year }); }} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0 }}><EditOutlined fontSize="small" /></Button><Button size="small" variant="outlined" title="Cambiar responsable" onClick={(e) => { e.stopPropagation(); setTransfer({ plan: actionPlan, user_id: '', reason: '' }); }} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0 }}><SwapHoriz fontSize="small" /></Button><Button size="small" variant="outlined" color="error" title="Eliminar plan" onClick={(e) => { e.stopPropagation(); setDeleteActionPlanCandidate(actionPlan); }} sx={{ minWidth: 34, width: 34, height: 34, borderRadius: 1.75, p: 0, borderColor: '#fca5a5', color: '#dc2626', '&:hover': { bgcolor: '#fef2f2', borderColor: '#ef4444' } }}><DeleteOutline fontSize="small" /></Button></Stack> : <Button size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={(e) => { e.stopPropagation(); openActionPlanCreation(selectedActionTerm, unit); }} sx={{ minWidth: 150, height: 34, borderRadius: 1.75, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear plan'}</Button>}</TableCell>
-                  </TableRow>;
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                      <Box sx={{ width: 36, height: 36, flex: '0 0 36px', borderRadius: 2, bgcolor: actionPlan ? '#eff6ff' : '#f8fafc', color: actionPlan ? '#1e40af' : '#64748b', border: '1px solid', borderColor: actionPlan ? '#bfdbfe' : '#e2e8f0', display: 'grid', placeItems: 'center' }}>
+                        <CorporateFare sx={{ fontSize: 20 }} />
+                      </Box>
+                      <Stack direction="row" alignItems="center" gap={0.3}>
+                        {actionPlan && (
+                          <>
+                            <Tooltip title="Editar datos del plan">
+                              <IconButton
+                                size="small"
+                                onClick={(e) => { e.stopPropagation(); setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year }); }}
+                                sx={{ width: 28, height: 28, color: '#64748b', '&:hover': { bgcolor: '#eff6ff', color: '#2563eb' } }}
+                              >
+                                <EditOutlined sx={{ fontSize: 17 }} />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Eliminar plan y retirar dependencia">
+                              <IconButton
+                                size="small"
+                                onClick={(e) => { e.stopPropagation(); setDeleteActionPlanCandidate(actionPlan); }}
+                                sx={{ width: 28, height: 28, color: '#ef4444', '&:hover': { bgcolor: '#fef2f2', color: '#dc2626' } }}
+                              >
+                                <DeleteOutline sx={{ fontSize: 17 }} />
+                              </IconButton>
+                            </Tooltip>
+                          </>
+                        )}
+                        <Chip size="small" color={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.color || 'success') : 'default'} variant={actionPlan ? 'filled' : 'outlined'} label={actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status]?.label || 'Plan creado') : 'Pendiente'} sx={{ fontWeight: 850 }} />
+                      </Stack>
+                    </Stack>
+                    <Typography fontWeight={950} mt={1.2} lineHeight={1.3}>{unit.name}</Typography><Typography variant="caption" color="text.secondary">{unit.code}</Typography>
+                    <Box sx={{ flex: 1, mt: 1 }}>{actionPlan ? <><Typography variant="caption" color="text.secondary">{actionPlan.code} · {actionPlan.items?.length || 0} registros</Typography><Typography variant="caption" display="block" color="text.secondary" noWrap>{actionPlan.responsibleUser?.nombre || 'Sin líder asignado'}</Typography></> : <Typography variant="caption" color="text.secondary">{suggestedLeader ? `Responsable: ${suggestedLeader.name}` : 'Configure primero el responsable de esta vigencia.'}</Typography>}</Box>
+                    {actionPlan ? (
+                      <Stack direction="row" gap={0.75} mt={1.25}>
+                        <Button fullWidth size="small" variant="contained" onClick={(e) => { e.stopPropagation(); setEditorPlanId(actionPlan.id); }} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>
+                        <Button size="small" variant="outlined" title="Cambiar responsable" onClick={(e) => { e.stopPropagation(); setTransfer({ plan: actionPlan, user_id: '', reason: '' }); }} sx={{ minWidth: 42, borderRadius: 2 }}><SwapHoriz fontSize="small" /></Button>
+                      </Stack>
+                    ) : (
+                      <Button fullWidth size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={(e) => { e.stopPropagation(); openActionPlanCreation(selectedActionTerm, unit); }} sx={{ mt: 1.25, borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear Plan de Acción'}</Button>
+                    )}
+                  </Paper>;
                 })}
-              </TableBody>
-            </Table>
-          </TableContainer></Box>}
-          {!visibleActionUnits.length && <Box sx={{ p: 4, textAlign: 'center' }}><Typography fontWeight={900}>{selectedActionUnits.length ? 'No se encontraron dependencias' : `Aún no hay dependencias ni planes en ${selectedActionTerm.year}`}</Typography><Typography variant="body2" color="text.secondary">{selectedActionUnits.length ? 'Cambie el texto de búsqueda.' : 'Configure las dependencias que participarán en esta vigencia.'}</Typography>{!selectedActionUnits.length && <Button sx={{ mt: 1.5 }} variant="outlined" onClick={() => { setSelectedReferenceTermId(selectedActionTerm.id); setSpace('references'); }}>Configurar dependencias</Button>}</Box>}
-        </Paper>}
+              </Box> : <Box sx={{ bgcolor: '#f6f9fd' }}>
+                <Box sx={{ height: 4, background: 'linear-gradient(90deg,#204698,#2563eb 58%,#593cf0)' }} />
+                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 2.25, py: 1.15, bgcolor: '#fff', borderBottom: '1px solid #dbe5f0' }}>
+                  <Typography variant="body2" color="#52657b"><strong>{visibleActionUnits.length}</strong> dependencias encontradas</Typography>
+                  <Typography variant="caption" color="#718096">Vigencia {selectedActionTerm.year}</Typography>
+                </Stack>
+                <TableContainer sx={{ maxHeight: 650 }}>
+                <Table stickyHeader size="small" sx={{ minWidth: 1600, tableLayout: 'fixed', '& td, & th': { borderRight: '1px solid #e1e9f2' }, '& td:last-of-type, & th:last-of-type': { borderRight: 0 } }}>
+                  <TableHead>
+                    <TableRow>
+                      {[
+                        ['Dependencia', 250], ['Código', 95], ['Responsable', 235], ['Cédula', 135], ['Cargo', 220],
+                        ['Correo', 245], ['Estado', 130], ['Registros', 90], ['Acción', 270]
+                      ].map(([heading, width]) => <TableCell key={heading} align={['Registros', 'Acción'].includes(heading) ? 'center' : 'left'} sx={{ width, bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.055em', textTransform: 'uppercase', whiteSpace: 'nowrap', py: 1.45, borderBottom: '1px solid #173b73', borderRightColor: 'rgba(255,255,255,.16) !important' }}>{heading}</TableCell>)}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {visibleActionUnits.map((unit) => {
+                      const actionPlan = selectedYearPlans.find((item) => String(item.catalog_item_id || item.organizationalUnit?.id) === String(unit.id));
+                      const responsible = unit.annualAssignment?.responsible || {};
+                      const responsibleName = responsible.name || actionPlan?.responsibleUser?.nombre || 'Sin responsable';
+                      const initials = responsibleName === 'Sin responsable' ? '—' : responsibleName.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+                      const statusMeta = actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status] || { label: actionPlan.status, color: 'default' }) : { label: 'Sin formular', color: 'default' };
+
+                      return (
+                        <TableRow key={unit.id} hover sx={{ bgcolor: '#fff', '&:hover': { bgcolor: '#f0f6ff !important' }, transition: 'background-color .15s' }}>
+                          <TableCell sx={{ py: 1.25, verticalAlign: 'middle' }}>
+                            <Stack direction="row" alignItems="center" spacing={1.25}>
+                              <Box sx={{ width: 34, height: 34, flexShrink: 0, borderRadius: 2, bgcolor: actionPlan ? '#eff6ff' : '#f8fafc', color: actionPlan ? '#1e40af' : '#64748b', border: '1px solid', borderColor: actionPlan ? '#bfdbfe' : '#e2e8f0', display: 'grid', placeItems: 'center' }}>
+                                <CorporateFare sx={{ fontSize: 18 }} />
+                              </Box>
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography fontWeight={900} fontSize={13} lineHeight={1.25} noWrap title={unit.name}>{unit.name}</Typography>
+                                <Typography variant="caption" color="text.secondary" fontSize={11} display="block">{unit.catalog_type || 'Dependencia'}</Typography>
+                              </Box>
+                            </Stack>
+                          </TableCell>
+                          <TableCell sx={{ py: 1.25, verticalAlign: 'middle' }}>
+                            <Chip size="small" label={unit.code || '—'} variant="outlined" sx={{ fontWeight: 800, fontSize: 11, borderColor: '#cbd5e1', bgcolor: '#f8fafc' }} />
+                          </TableCell>
+                          <TableCell sx={{ py: 1.25, verticalAlign: 'middle' }}>
+                            <Stack direction="row" alignItems="center" spacing={1.1} sx={{ minWidth: 0 }}>
+                              <Avatar sx={{ width: 28, height: 28, fontSize: 11, fontWeight: 900, bgcolor: actionPlan ? '#1e40af' : '#94a3b8', flexShrink: 0 }}>{initials}</Avatar>
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography fontWeight={850} fontSize={12.5} lineHeight={1.2} noWrap title={responsibleName}>{responsibleName}</Typography>
+                                {responsible.email && <Typography variant="caption" color="text.secondary" fontSize={11} noWrap display="block">{responsible.email}</Typography>}
+                              </Box>
+                            </Stack>
+                          </TableCell>
+                          <TableCell sx={{ py: 1.25, verticalAlign: 'middle' }}>
+                            <Typography fontSize={12} color={responsible.document ? 'text.primary' : 'text.secondary'} fontFamily="monospace" fontWeight={700}>{responsible.document || '—'}</Typography>
+                          </TableCell>
+                          <TableCell sx={{ py: 1.25, verticalAlign: 'middle' }}>
+                            <Typography fontSize={12} noWrap title={responsible.position || '—'}>{responsible.position || '—'}</Typography>
+                          </TableCell>
+                          <TableCell sx={{ py: 1.25, verticalAlign: 'middle' }}>
+                            <Typography fontSize={12} color="primary.main" noWrap title={responsible.email || '—'}>{responsible.email || '—'}</Typography>
+                          </TableCell>
+                          <TableCell sx={{ py: 1.25, verticalAlign: 'middle' }}>
+                            <Chip size="small" color={statusMeta.color} label={statusMeta.label} sx={{ fontWeight: 850, fontSize: 11 }} />
+                          </TableCell>
+                          <TableCell align="center" sx={{ py: 1.25, verticalAlign: 'middle' }}>
+                            <Typography fontWeight={900} fontSize={13} color={actionPlan?.items?.length ? 'primary.main' : 'text.secondary'}>{actionPlan?.items?.length || 0}</Typography>
+                          </TableCell>
+                          <TableCell align="center" sx={{ py: 1.25, verticalAlign: 'middle' }}>
+                            <Stack direction="row" spacing={0.75} justifyContent="center" alignItems="center">
+                              {actionPlan ? (
+                                <>
+                                  <Button size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ textTransform: 'none', fontWeight: 900, borderRadius: 2, px: 1.75, bgcolor: '#1e40af', '&:hover': { bgcolor: '#1d4ed8' } }}>Abrir plan</Button>
+                                  <Tooltip title="Cambiar responsable">
+                                    <IconButton size="small" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 2, '&:hover': { bgcolor: '#eff6ff', color: '#1e40af' } }}>
+                                      <SwapHoriz fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Editar código o datos básicos">
+                                    <IconButton size="small" onClick={() => setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year })} sx={{ color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 2, '&:hover': { bgcolor: '#eff6ff', color: '#1e40af' } }}>
+                                      <EditOutlined fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Eliminar plan y retirar dependencia">
+                                    <IconButton size="small" onClick={() => setDeleteActionPlanCandidate(actionPlan)} sx={{ color: '#ef4444', border: '1px solid #fecaca', borderRadius: 2, '&:hover': { bgcolor: '#fef2f2', color: '#dc2626' } }}>
+                                      <DeleteOutline fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </>
+                              ) : (
+                                <Button size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ textTransform: 'none', fontWeight: 900, borderRadius: 2, px: 1.5, borderColor: '#cbd5e1' }}>
+                                  Crear Plan
+                                </Button>
+                              )}
+                            </Stack>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer></Box>}
+              {!visibleActionUnits.length && <Box sx={{ p: 4, textAlign: 'center' }}><Typography fontWeight={900}>{selectedActionUnits.length ? 'No se encontraron dependencias' : `Aún no hay dependencias ni planes en ${selectedActionTerm.year}`}</Typography><Typography variant="body2" color="text.secondary">{selectedActionUnits.length ? 'Cambie el texto de búsqueda.' : 'Configure las dependencias que participarán en esta vigencia.'}</Typography>{!selectedActionUnits.length && <Button sx={{ mt: 1.5 }} variant="outlined" onClick={() => { setSelectedReferenceTermId(selectedActionTerm.id); setSpace('references'); }}>Configurar dependencias</Button>}</Box>}
+            </Paper>
+          );
+        })()}
         <StepNavigation onBack={() => setSpace('references')} onNext={() => setSpace('monitoring')} nextLabel="Continuar a informes" />
       </Box>}
 
