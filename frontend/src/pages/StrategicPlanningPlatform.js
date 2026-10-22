@@ -1717,25 +1717,166 @@ export default function StrategicPlanningPlatform({ onBack }) {
             </Stack>
             <Chip variant="outlined" color="primary" label={`${actionTerms.length} vigencias`} sx={{ fontWeight: 850 }} />
           </Stack>
-          {!actionTerms.length ? <Alert severity="warning">Este PED no tiene años configurados.</Alert> : <Box sx={{ display: { xs: 'flex', md: 'grid' }, gridTemplateColumns: { md: 'repeat(auto-fit,minmax(175px,1fr))' }, gap: 1.25, overflowX: { xs: 'auto', md: 'visible' }, pb: { xs: 1, md: 0 } }}>
-            {actionTerms.map((term) => {
-              const yearDependencies = termDependencies.filter((item) => String(item.term_id) === String(term.id));
-              const yearPlans = visiblePlans.filter((item) => String(item.term_id || item.term?.id) === String(term.id));
-              const createdUnitIds = new Set(yearPlans.map((item) => String(item.catalog_item_id || item.organizationalUnit?.id || '')).filter(Boolean));
-              const expectedUnitIds = new Set([
-                ...yearDependencies.map((item) => String(item.catalog_item_id || item.dependency?.id || '')).filter(Boolean),
-                ...createdUnitIds
-              ]);
-              const createdPlansCount = createdUnitIds.size;
-              const expectedPlansCount = expectedUnitIds.size;
-              const selected = String(term.id) === String(selectedActionTerm?.id);
-              const percentage = expectedPlansCount ? Math.min(100, (createdPlansCount / expectedPlansCount) * 100) : 0;
-              return <Paper key={term.id} component="button" type="button" onClick={() => { setSelectedActionTermId(term.id); setDependencySearch(''); setRepositoryResult(null); }} elevation={0} sx={{ appearance: 'none', font: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: { xs: 190, md: 0 }, p: 1.6, borderRadius: 2.75, border: '1.5px solid', borderColor: selected ? '#2563eb' : '#dce3ed', bgcolor: selected ? '#eff6ff' : '#fff', boxShadow: selected ? '0 8px 20px rgba(37,99,235,.15)' : 'none', transition: 'all .2s', '&:hover': { borderColor: '#60a5fa', transform: 'translateY(-2px)' } }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start"><Box><Typography variant="caption" color={selected ? 'primary' : 'text.secondary'} fontWeight={900}>VIGENCIA</Typography><Typography sx={{ fontSize: 26, lineHeight: 1.1, fontWeight: 950 }}>{term.year}</Typography></Box><Box sx={{ width: 34, height: 34, borderRadius: 2, bgcolor: selected ? '#2563eb' : '#f1f5f9', color: selected ? '#fff' : '#64748b', display: 'grid', placeItems: 'center' }}><CalendarTodayOutlined sx={{ fontSize: 17 }} /></Box></Stack>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" mt={1.5} mb={0.7}><Typography variant="caption" fontWeight={850}>{createdPlansCount} de {expectedPlansCount} planes</Typography><Chip size="small" color={term.status === 'active' ? 'success' : 'default'} label={TERM_STATUS_LABEL[term.status] || term.status} sx={{ height: 21, fontSize: 11 }} /></Stack><LinearProgress variant="determinate" value={percentage} sx={{ height: 6, borderRadius: 10, bgcolor: '#e2e8f0' }} />
-              </Paper>;
-            })}
-          </Box>}
+          {!actionTerms.length ? <Alert severity="warning">Este PED no tiene años configurados.</Alert> : (
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: {
+                  xs: 'repeat(2, 1fr)',
+                  sm: 'repeat(3, 1fr)',
+                  md: 'repeat(4, 1fr)',
+                  lg: `repeat(${Math.min(actionTerms.length, 7)}, minmax(0, 1fr))`
+                },
+                gap: 1.5,
+                overflowX: { xs: 'auto', md: 'visible' },
+                pb: { xs: 1, md: 0 }
+              }}
+            >
+              {actionTerms.map((term) => {
+                const yearDependencies = termDependencies.filter((item) => String(item.term_id) === String(term.id));
+                const yearPlans = visiblePlans.filter((item) => String(item.term_id || item.term?.id) === String(term.id));
+                const createdUnitIds = new Set(yearPlans.map((item) => String(item.catalog_item_id || item.organizationalUnit?.id || '')).filter(Boolean));
+                const expectedUnitIds = new Set([
+                  ...yearDependencies.map((item) => String(item.catalog_item_id || item.dependency?.id || '')).filter(Boolean),
+                  ...createdUnitIds
+                ]);
+                const createdPlansCount = createdUnitIds.size;
+                const expectedPlansCount = expectedUnitIds.size;
+                const selected = String(term.id) === String(selectedActionTerm?.id);
+                const percentage = expectedPlansCount ? Math.min(100, (createdPlansCount / expectedPlansCount) * 100) : 0;
+
+                return (
+                  <Paper
+                    key={term.id}
+                    component="button"
+                    type="button"
+                    onClick={() => { setSelectedActionTermId(term.id); setDependencySearch(''); setRepositoryResult(null); }}
+                    elevation={0}
+                    sx={{
+                      appearance: 'none',
+                      font: 'inherit',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      minWidth: { xs: 150, md: 0 },
+                      p: 1.75,
+                      borderRadius: 3,
+                      border: '1.5px solid',
+                      borderColor: selected ? '#1d4ed8' : '#e2e8f0',
+                      background: selected
+                        ? 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)'
+                        : '#ffffff',
+                      color: selected ? '#ffffff' : '#0f172a',
+                      boxShadow: selected
+                        ? '0 10px 24px -4px rgba(29, 78, 216, 0.35), 0 4px 8px -2px rgba(29, 78, 216, 0.2)'
+                        : '0 2px 6px rgba(0,0,0,0.02)',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      '&:hover': {
+                        transform: 'translateY(-3px)',
+                        borderColor: selected ? '#1d4ed8' : '#3b82f6',
+                        boxShadow: selected
+                          ? '0 12px 26px rgba(29, 78, 216, 0.42)'
+                          : '0 8px 18px rgba(0,0,0,0.06)'
+                      }
+                    }}
+                  >
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={0.5}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 800,
+                          fontSize: 10,
+                          letterSpacing: '0.6px',
+                          textTransform: 'uppercase',
+                          color: selected ? 'rgba(255,255,255,0.85)' : '#64748b'
+                        }}
+                      >
+                        Vigencia
+                      </Typography>
+                      <Box
+                        sx={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: 2,
+                          bgcolor: selected ? 'rgba(255,255,255,0.2)' : '#f1f5f9',
+                          color: selected ? '#ffffff' : '#64748b',
+                          display: 'grid',
+                          placeItems: 'center'
+                        }}
+                      >
+                        <CalendarTodayOutlined sx={{ fontSize: 16 }} />
+                      </Box>
+                    </Stack>
+
+                    <Typography
+                      fontWeight={950}
+                      fontSize={{ xs: 20, sm: 22 }}
+                      sx={{
+                        lineHeight: 1.1,
+                        color: selected ? '#ffffff' : '#0f172a',
+                        letterSpacing: '-0.5px'
+                      }}
+                    >
+                      {term.year}
+                    </Typography>
+
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" mt={1.25} mb={0.75} spacing={0.5}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 850,
+                          fontSize: 11,
+                          color: selected ? 'rgba(255,255,255,0.92)' : '#475569',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {createdPlansCount} de {expectedPlansCount} planes
+                      </Typography>
+                      <Chip
+                        size="small"
+                        label={TERM_STATUS_LABEL[term.status] || term.status}
+                        sx={{
+                          height: 20,
+                          fontSize: 10,
+                          fontWeight: 850,
+                          px: 0.5,
+                          bgcolor: selected
+                            ? term.status === 'active'
+                              ? '#22c55e'
+                              : 'rgba(255,255,255,0.22)'
+                            : term.status === 'active'
+                            ? '#dcfce7'
+                            : '#f1f5f9',
+                          color: selected
+                            ? '#ffffff'
+                            : term.status === 'active'
+                            ? '#15803d'
+                            : '#64748b',
+                          border: selected ? 'none' : '1px solid',
+                          borderColor: selected ? 'transparent' : term.status === 'active' ? '#bbf7d0' : '#e2e8f0'
+                        }}
+                      />
+                    </Stack>
+
+                    <LinearProgress
+                      variant="determinate"
+                      value={percentage}
+                      sx={{
+                        height: 5,
+                        borderRadius: 10,
+                        bgcolor: selected ? 'rgba(255,255,255,0.25)' : '#e2e8f0',
+                        '& .MuiLinearProgress-bar': {
+                          bgcolor: selected ? '#86efac' : '#2563eb',
+                          borderRadius: 10
+                        }
+                      }}
+                    />
+                  </Paper>
+                );
+              })}
+            </Box>
+          )}
         </Paper>
 
                 {/* GUÍA INICIAL CUANDO AÚN NO SELECCIONA AÑO */}
