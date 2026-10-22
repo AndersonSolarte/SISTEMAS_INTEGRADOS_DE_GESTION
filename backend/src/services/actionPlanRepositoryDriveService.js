@@ -493,11 +493,7 @@ const syncActionPlanRepositoryTerm = async (termId) => {
         const meetingDate = meeting.starts_at && !Number.isNaN(new Date(meeting.starts_at).getTime())
           ? new Date(meeting.starts_at).toISOString().slice(0, 10)
           : String(minute.finalized_at || minute.created_at || '').slice(0, 10);
-        const minuteLabel = compactFileName(
-          `ACTA_${meetingDate || term.year}_${actionPlan.organizationalUnit?.name || actionPlan.code}.pdf`,
-          `ACTA_${meetingDate || term.year}_${actionPlan.code}`,
-          96
-        );
+        const minuteLabel = `ACTA_${meetingDate || term.year}.pdf`;
         const driveFileId = await upsertFile(drive, {
           parentId: minutesFolder, name: minuteLabel,
           key: `action-repository:minute:${minute.id}`, mimeType: 'application/pdf', buffer,

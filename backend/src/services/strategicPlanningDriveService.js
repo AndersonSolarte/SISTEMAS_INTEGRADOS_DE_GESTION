@@ -129,14 +129,13 @@ const syncMinute = async (minuteId, forceRegenerate = true) => {
   const meetingDate = meeting.starts_at && !Number.isNaN(new Date(meeting.starts_at).getTime())
     ? new Date(meeting.starts_at).toISOString().slice(0, 10)
     : String(minute.finalized_at || minute.created_at || '').slice(0, 10);
-  const titleClean = safeName(meeting.title || 'Concertacion', 60);
-  const planCodeClean = safeName(actionPlan?.code || 'PA', 30);
-  const minuteFileName = `ACTA_${meetingDate}_${planCodeClean}_${titleClean}.pdf`;
+  const minuteFileName = `ACTA_${meetingDate || 'REUNION'}.pdf`;
 
   const requestBody = {
     name: safeName(minuteFileName, 160),
     appProperties: {
       siacPeiMinuteId: String(minute.id),
+      siacActionRepositoryKey: `action-repository:minute:${minute.id}`,
       contentHash: minute.content_hash,
       version: String(minute.version),
       meetingDate: meetingDate,
