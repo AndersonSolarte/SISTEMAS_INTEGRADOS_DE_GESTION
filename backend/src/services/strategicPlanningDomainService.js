@@ -135,22 +135,30 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
   return result;
 });
 
-const findActionPlans = async ({ year, termId, status, catalogItemId } = {}) => {
-  await reconcileLegacyActionPlans();
+const findActionPlans = async ({ year, termId, status, catalogItemId, includeItems = false, reconcileLegacy = false } = {}) => {
+  if (reconcileLegacy) {
+    await reconcileLegacyActionPlans();
+  }
   const termWhere = {};
   if (year) termWhere.year = Number(year);
   const where = { deleted_at: null };
   if (termId) where.term_id = termId;
   if (status) where.status = status;
   if (catalogItemId) where.catalog_item_id = catalogItemId;
+
+  const includes = [
+    { model: StrategicTerm, as: 'term', where: termWhere, include: [{ model: StrategicPlan, as: 'strategicPlan' }] },
+    { model: StrategicCatalogItem, as: 'organizationalUnit' },
+    { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo'], required: false }
+  ];
+
+  if (includeItems) {
+    includes.push({ model: StrategicActionItem, as: 'items', where: { deleted_at: null }, required: false });
+  }
+
   return StrategicActionPlan.findAll({
     where,
-    include: [
-      { model: StrategicTerm, as: 'term', where: termWhere, include: [{ model: StrategicPlan, as: 'strategicPlan' }] },
-      { model: StrategicCatalogItem, as: 'organizationalUnit' },
-      { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo'], required: false },
-      { model: StrategicActionItem, as: 'items', where: { deleted_at: null }, required: false }
-    ],
+    include: includes,
     order: [['created_at', 'DESC']]
   });
 };

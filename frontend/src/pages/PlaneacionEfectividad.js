@@ -1853,7 +1853,9 @@ function PlaneacionEfectividad() {
   }, [cargarDashboardPlanAccion]);
 
   useEffect(() => {
-    cargarDashboardPlanAccion({ silent: true });
+    if (section === 'estadistica') {
+      cargarDashboardPlanAccion({ silent: true });
+    }
   }, [section, cargarDashboardPlanAccion]);
 
   const activeFilters = filtersByTab[tab] || filtersByTab.estadistica;

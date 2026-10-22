@@ -494,7 +494,11 @@ const leaderOptions = wrap(async (req, res) => {
 });
 
 const termDependencies = wrap(async (req, res) => {
-  const rows = await listTermDependencies({ planId: req.params.planId, termId: req.query.termId || null });
+  const rows = await listTermDependencies({
+    planId: req.params.planId,
+    termId: req.query.termId || null,
+    repair: req.query.repair === 'true'
+  });
   ok(res, rows);
 });
 
@@ -802,7 +806,12 @@ const getMyActionPlans = wrap(async (req, res) => {
   ok(res, result);
 });
 
-const listActionPlans = wrap(async (req, res) => ok(res, await findActionPlans(req.query)));
+const listActionPlans = wrap(async (req, res) => {
+  const includeItems = req.query.includeItems === 'true';
+  const reconcileLegacy = req.query.reconcileLegacy === 'true';
+  const plans = await findActionPlans({ ...req.query, includeItems, reconcileLegacy });
+  ok(res, plans);
+});
 
 const getActionPlan = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id, {
@@ -2648,7 +2657,7 @@ const syncPlanDriveExcel = wrap(async (req, res) => {
 });
 
 const analytics = wrap(async (req, res) => {
-  const plans = await findActionPlans(req.query); const planIds = plans.map((p) => p.id); const items = plans.flatMap((p) => p.items || []);
+  const plans = await findActionPlans({ ...req.query, includeItems: true }); const planIds = plans.map((p) => p.id); const items = plans.flatMap((p) => p.items || []);
   const budget = planIds.length ? await StrategicBudgetMovement.findAll({ include: [{ model: StrategicActionItem, as: 'actionItem', required: false }], where: req.query.termId ? { term_id: req.query.termId } : {} }).catch(() => []) : [];
   const evidences = items.length ? await StrategicEvidence.findAll({ where: { action_item_id: { [Op.in]: items.map((i) => i.id) }, deleted_at: null } }) : [];
   ok(res, { plans: plans.length, activities: items.length, physical_progress: items.length ? items.reduce((s, i) => s + Number(i.current_progress || 0), 0) / items.length : 0, evidence: { total: evidences.length, pending: evidences.filter((e) => e.sync_status !== 'synced').length }, budget: budget.reduce((acc, row) => ({ ...acc, [row.movement_type]: Number(acc[row.movement_type] || 0) + Number(row.amount || 0) }), {}) });

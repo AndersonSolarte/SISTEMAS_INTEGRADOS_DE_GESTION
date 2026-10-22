@@ -31,8 +31,10 @@ const serializeAssignment = (row) => ({
   } : null
 });
 
-const listTermDependencies = async ({ planId, termId }) => {
-  await ensureAnnualDependenciesForActionPlans({ planId });
+const listTermDependencies = async ({ planId, termId, repair = false }) => {
+  if (repair) {
+    await ensureAnnualDependenciesForActionPlans({ planId });
+  }
   const where = { action_plan_id: null, responsibility_type: 'reference_leader', status: 'active' };
   if (termId) {
     const term = await StrategicTerm.findOne({ where: { id: termId, ...(planId ? { strategic_plan_id: planId } : {}) }, attributes: ['id'], raw: true });
