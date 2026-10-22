@@ -1288,9 +1288,9 @@ export default function StrategicPlanningPlatform({ onBack }) {
         <Paper
           variant="outlined"
           sx={{
-            p: { xs: 2, sm: 2.25 },
-            mb: 2.5,
-            borderRadius: 3.5,
+            p: { xs: 1.25, sm: 1.5 },
+            mb: 1.5,
+            borderRadius: 2,
             bgcolor: '#ffffff',
             borderColor: '#e2e8f0',
             boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
@@ -1348,8 +1348,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     font: 'inherit',
                     textAlign: 'left',
                     cursor: 'pointer',
-                    p: 1.75,
-                    borderRadius: 3,
+                    p: 1.2,
+                    borderRadius: 1.75,
                     border: '1.5px solid',
                     borderColor: selected ? '#2563eb' : isConfigured ? '#cbd5e1' : '#e2e8f0',
                     background: selected
@@ -1709,13 +1709,13 @@ export default function StrategicPlanningPlatform({ onBack }) {
         <SectionHeader title="Planes de Acción por vigencia" />
 
         {/* PASO 1: SELECCIONE EL AÑO DE EJECUCIÓN (VIGENCIA) */}
-        <Paper variant="outlined" sx={{ p: { xs: 1.75, md: 2.25 }, borderRadius: 3.5, borderColor: '#dbe3ee', bgcolor: '#fff' }}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={2}>
-            <Stack direction="row" alignItems="center" spacing={1.5}>
-              <Box sx={{ width: 30, height: 30, borderRadius: '50%', bgcolor: '#2563eb', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>1</Box>
-              <Typography variant="h6" fontWeight={950}>Seleccione el año de ejecución (Vigencia)</Typography>
+        <Paper variant="outlined" sx={{ p: { xs: 1.25, md: 1.5 }, borderRadius: 2, borderColor: '#dbe3ee', bgcolor: '#fff' }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={1.25}>
+            <Stack direction="row" alignItems="center" spacing={1.25}>
+              <Box sx={{ width: 26, height: 26, borderRadius: 1.5, bgcolor: '#2563eb', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 900 }}>1</Box>
+              <Typography variant="subtitle1" fontWeight={950}>Seleccione el año de ejecución (Vigencia)</Typography>
             </Stack>
-            <Chip variant="outlined" color="primary" label={`${actionTerms.length} vigencias`} sx={{ fontWeight: 850 }} />
+            <Chip size="small" variant="outlined" color="primary" label={`${actionTerms.length} vigencias`} sx={{ fontWeight: 850, height: 22 }} />
           </Stack>
           {!actionTerms.length ? <Alert severity="warning">Este PED no tiene años configurados.</Alert> : (
             <Box
@@ -1757,9 +1757,9 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       font: 'inherit',
                       textAlign: 'left',
                       cursor: 'pointer',
-                      minWidth: { xs: 150, md: 0 },
-                      p: 1.5,
-                      borderRadius: 3,
+                      minWidth: { xs: 140, md: 0 },
+                      p: 1.2,
+                      borderRadius: 1.75,
                       border: '1.5px solid',
                       borderColor: selected ? '#1d4ed8' : '#e2e8f0',
                       background: selected
