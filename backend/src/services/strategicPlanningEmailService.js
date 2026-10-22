@@ -17,8 +17,8 @@ const normalizeRecipient = (value) => {
 };
 
 const getSandboxRecipient = () => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  if (isProduction && String(process.env.ALLOW_PRODUCTION_SANDBOX || 'false').toLowerCase() !== 'true') return null;
+  // En producción NUNCA se usa sandbox: los correos siempre van a los destinatarios reales.
+  if (process.env.NODE_ENV === 'production') return null;
   const recipient = String(process.env.EMAIL_SANDBOX_RECIPIENT || '').trim();
   return recipient ? normalizeRecipient(recipient) : null;
 };

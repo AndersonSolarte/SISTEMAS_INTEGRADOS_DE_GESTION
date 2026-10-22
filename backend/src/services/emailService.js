@@ -298,8 +298,8 @@ const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml, senderHtml })
 };
 
 const getSandboxRecipient = () => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  if (isProduction && String(process.env.ALLOW_PRODUCTION_SANDBOX || 'false').toLowerCase() !== 'true') {
+  // En producción NUNCA se usa sandbox: los correos siempre van a los destinatarios reales.
+  if (process.env.NODE_ENV === 'production') {
     return null;
   }
   const raw = process.env.EMAIL_SANDBOX_RECIPIENT;
