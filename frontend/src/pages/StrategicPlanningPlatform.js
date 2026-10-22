@@ -1519,13 +1519,13 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   </Box>
                 </Stack>
 
-                <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems="center" flexWrap="wrap">
+                <Stack direction="row" gap={1} alignItems="center" flexWrap="nowrap" sx={{ flexShrink: 0 }}>
                   <Button
                     variant="contained"
                     color="primary"
                     disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
                     onClick={handleBulkCreateActionPlans}
-                    sx={{ height: 42, borderRadius: 2.25, textTransform: 'none', fontWeight: 900, px: 2.5 }}
+                    sx={{ height: 40, borderRadius: 2.25, textTransform: 'none', fontWeight: 900, px: 2, whiteSpace: 'nowrap' }}
                   >
                     {bulkActionLoading ? 'Generando…' : hasPlans ? 'Completar planes faltantes' : `Generar los ${totalUnitsCount} planes de acción`}
                   </Button>
@@ -1535,7 +1535,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       color="error"
                       disabled={bulkActionLoading || selectedActionTerm.status === 'closed'}
                       onClick={() => { setBulkDeleteCandidate(selectedActionTerm); setBulkDeleteConfirmText(''); }}
-                      sx={{ height: 42, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
+                      sx={{ height: 40, borderRadius: 2.25, textTransform: 'none', fontWeight: 900, px: 1.75, whiteSpace: 'nowrap' }}
                     >
                       Limpiar vigencia ({selectedYearPlans.length})
                     </Button>
@@ -1616,7 +1616,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   </Box>
                 </Stack>
 
-                <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems="center" flexWrap="wrap">
+                <Stack direction="row" gap={1} alignItems="center" flexWrap="nowrap" sx={{ flexShrink: 0 }}>
                   {driveFolderUrl && (
                     <Button
                       variant="outlined"
@@ -1625,7 +1625,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       href={driveFolderUrl}
                       target="_blank"
                       rel="noreferrer"
-                      sx={{ height: 42, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}
+                      sx={{ height: 40, borderRadius: 2.25, textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}
                     >
                       Abrir Drive {selectedActionTerm.year}
                     </Button>
@@ -1636,11 +1636,12 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     disabled={repositorySyncing || !selectedActionUnits.length}
                     onClick={syncActionRepository}
                     sx={{
-                      minWidth: 200,
-                      height: 42,
+                      height: 40,
                       borderRadius: 2.25,
                       textTransform: 'none',
                       fontWeight: 900,
+                      px: 2,
+                      whiteSpace: 'nowrap',
                       bgcolor: isDriveSynced ? '#0f766e' : '#2563eb',
                       '&:hover': { bgcolor: isDriveSynced ? '#115e59' : '#1d4ed8' }
                     }}
