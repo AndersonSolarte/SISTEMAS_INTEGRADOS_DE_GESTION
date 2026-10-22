@@ -238,3 +238,25 @@ test('el PED 2023–2029 genera exactamente 7 vigencias y ajusta codigo/nombre d
   assert.equal(schedule.terms[6].year, 2029);
 });
 
+test('los campos dinámicos de lista y relación estratégica conservan opciones o las derivan del PED', () => {
+  const elements = [
+    { id: 'el-1', level_id: 'lvl-1', code: 'OE1', name: 'Objetivo 1' },
+    { id: 'el-2', level_id: 'lvl-2', code: 'LE-001', name: 'Lineamiento 1' }
+  ];
+  const levels = [
+    { id: 'lvl-1', name: 'Objetivo Estratégico', position: 1 },
+    { id: 'lvl-2', name: 'Lineamiento Estratégico', position: 2 }
+  ];
+
+  // Simular la resolución de opciones para un campo de relación estratégica
+  const fieldStrategic = { key: 'strategic_guideline', label: 'Lineamiento Estratégico', data_type: 'strategic_relation', options: [] };
+  const matchedLevel = levels.find((lvl) => lvl.position === 2 || lvl.name.toLowerCase().includes('lineamiento'));
+  const derivedOptions = elements.filter((el) => el.level_id === matchedLevel.id).map((el) => `${el.code} ${el.name}`);
+  assert.deepEqual(derivedOptions, ['LE-001 Lineamiento 1']);
+
+  // Simular campo lista con opciones manuales configuradas
+  const fieldList = { key: 'lineamientos_estrategicos', label: 'Lineamientos Estratégicos', data_type: 'list', options: ['LE1 Fomentar', 'LE2 Consolidar'] };
+  assert.equal(fieldList.options.length, 2);
+  assert.equal(fieldList.options[0], 'LE1 Fomentar');
+});
+

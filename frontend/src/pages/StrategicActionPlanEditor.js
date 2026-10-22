@@ -643,7 +643,29 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const schemaFields = (Array.isArray(formSchema?.fields) ? formSchema.fields : []).filter((f) => f && f.active !== false);
   const pedFields = (activePed?.fieldDefinitions || platformPlan?.fieldDefinitions || []).filter((f) => f && f.active !== false);
-  const rawFields = (schemaFields.length > 0 ? schemaFields : pedFields).sort((a, b) => (a.position || 0) - (b.position || 0));
+
+  const mergedFieldsMap = new Map();
+  // 1. Agregar campos del esquema guardado
+  schemaFields.forEach((f) => mergedFieldsMap.set(f.key, { ...f }));
+  // 2. Complementar o actualizar con los campos configurados en el PED (que contienen los últimos cambios y opciones del administrador)
+  pedFields.forEach((f) => {
+    const existing = mergedFieldsMap.get(f.key);
+    if (!existing) {
+      mergedFieldsMap.set(f.key, { ...f });
+    } else {
+      const pedOptions = Array.isArray(f.options) && f.options.length > 0 ? f.options : null;
+      mergedFieldsMap.set(f.key, {
+        ...existing,
+        ...f,
+        // Usar opciones del PED si están definidas, de lo contrario mantener las existentes
+        options: pedOptions || existing.options || [],
+        validation_rules: { ...(existing.validation_rules || {}), ...(f.validation_rules || {}) }
+      });
+    }
+  });
+
+  const rawFields = (mergedFieldsMap.size > 0 ? Array.from(mergedFieldsMap.values()) : (schemaFields.length > 0 ? schemaFields : pedFields))
+    .sort((a, b) => (a.position || 0) - (b.position || 0));
   const formElements = formSchema?.elements || structure;
   const formCatalogs = (formSchema?.catalogs && formSchema.catalogs.length > 0)
     ? formSchema.catalogs
@@ -742,6 +764,30 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         .map((option) => option.trim())
         .filter(Boolean)
         .map((option) => ({ value: option, label: option }));
+
+    // Si es tipo relación con la estructura del PED (o si es un campo de Objetivo / Lineamiento sin opciones manuales),
+    // obtener automáticamente los elementos de la estructura del PED
+    if ((field.data_type === 'strategic_relation' || !options.length) && Array.isArray(formElements) && formElements.length > 0) {
+      const normKey = (field.key || '').toLowerCase();
+      const normLabel = (field.label || '').toLowerCase();
+      const matchedLevel = levels.find((lvl) => {
+        if (field.validation_rules?.selected_level_id && String(lvl.id) === String(field.validation_rules.selected_level_id)) return true;
+        const normLvlName = (lvl.name || '').toLowerCase();
+        if (normKey.includes('objective') || normLabel.includes('objetivo')) return normLvlName.includes('objetivo') || lvl.position === 1;
+        if (normKey.includes('guideline') || normKey.includes('lineamiento') || normLabel.includes('lineamiento')) return normLvlName.includes('lineamiento') || lvl.position === 2;
+        return normLvlName === normLabel;
+      });
+      if (matchedLevel) {
+        const matchingElements = formElements.filter((el) => String(el.level_id) === String(matchedLevel.id) && el.active !== false);
+        if (matchingElements.length > 0) {
+          options = matchingElements.map((el) => {
+            const text = el.code ? `${el.code} ${el.name}` : el.name;
+            return { value: text, label: text };
+          });
+        }
+      }
+    }
+
     if (field.key === 'indicator_type' && !options.length) options = ['Gestión','Resultado','Producto','Impacto'].map((value) => ({ value, label: value }));
     
     // Si aún no hay opciones y es corresponsables o responsables, buscar en cualquier lista de dependencias disponible
@@ -753,7 +799,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
 
     const multiple = field.data_type === 'catalog_multi';
-    const select = ['list', 'catalog', 'catalog_multi'].includes(field.data_type) || field.key === 'indicator_type';
+    const select = ['list', 'catalog', 'catalog_multi', 'strategic_relation'].includes(field.data_type) || field.key === 'indicator_type' || (options.length > 0 && !['long_text', 'file', 'date', 'number', 'percentage', 'currency'].includes(field.data_type));
     const rawValue = fieldValue(field);
     let currentValue;
     if (multiple) {

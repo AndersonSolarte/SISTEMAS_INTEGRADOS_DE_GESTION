@@ -843,30 +843,33 @@ const getActionPlan = wrap(async (req, res) => {
     if (replacement) error.data = { replacement_plan_id: replacement.id, replacement_code: replacement.code };
     throw error;
   }
-  let activeSchema = actionPlan.metadata?.form_schema;
-  const hasOrgUnits = Array.isArray(activeSchema?.catalogs) && activeSchema.catalogs.some((c) => c.catalog_type === 'organizational_unit');
-  const hasFields = Array.isArray(activeSchema?.fields) && activeSchema.fields.length > 0;
-  if (!activeSchema || !hasOrgUnits || !hasFields) {
-    const freshSchema = await captureActionPlanSchema(actionPlan.term.strategic_plan_id);
-    activeSchema = {
-      ...(activeSchema || freshSchema),
-      catalogs: freshSchema.catalogs,
-      levels: activeSchema?.levels?.length ? activeSchema.levels : freshSchema.levels,
-      elements: activeSchema?.elements?.length ? activeSchema.elements : freshSchema.elements,
-      fields: freshSchema.fields?.length ? freshSchema.fields : (activeSchema?.fields || [])
-    };
-    actionPlan.metadata = { ...(actionPlan.metadata || {}), form_schema: activeSchema };
-    await actionPlan.update({ metadata: actionPlan.metadata });
-  } else if (Array.isArray(activeSchema?.fields)) {
-    activeSchema.fields = activeSchema.fields.map((f) => {
-      if (['responsible', 'responsable_de_ejecucion', 'co_responsibles'].includes(f.key) && !f.validation_rules?.catalog_type) {
-        return { ...f, validation_rules: { ...(f.validation_rules || {}), catalog_type: 'organizational_unit' } };
-      }
-      return f;
-    });
-  }
+  const freshSchema = await captureActionPlanSchema(actionPlan.term.strategic_plan_id);
+  const existingFields = Array.isArray(actionPlan.metadata?.form_schema?.fields)
+    ? actionPlan.metadata.form_schema.fields
+    : [];
+  const freshKeys = new Set(freshSchema.fields.map((f) => f.key));
+  const legacyFields = existingFields.filter((f) => !freshKeys.has(f.key));
+  const mergedFields = [...freshSchema.fields, ...legacyFields].map((f) => {
+    if (['responsible', 'responsable_de_ejecucion', 'co_responsibles'].includes(f.key) && !f.validation_rules?.catalog_type) {
+      return { ...f, validation_rules: { ...(f.validation_rules || {}), catalog_type: 'organizational_unit' } };
+    }
+    return f;
+  });
+
+  const activeSchema = {
+    strategic_plan_id: actionPlan.term.strategic_plan_id,
+    configuration_version: freshSchema.configuration_version,
+    captured_at: freshSchema.captured_at,
+    fields: mergedFields,
+    catalogs: freshSchema.catalogs,
+    levels: freshSchema.levels,
+    elements: freshSchema.elements
+  };
+
+  actionPlan.metadata = { ...(actionPlan.metadata || {}), form_schema: activeSchema };
+  await actionPlan.update({ metadata: actionPlan.metadata });
   actionPlan.setDataValue('form_schema', activeSchema);
-  actionPlan.setDataValue('schema_is_snapshot', Boolean(actionPlan.metadata?.form_schema));
+  actionPlan.setDataValue('schema_is_snapshot', true);
   for (const meeting of actionPlan.meetings || []) {
     for (const minute of meeting.minuteVersions || []) {
       for (const signature of minute.signatures || []) {
