@@ -253,6 +253,20 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const institutionalListsReady = actionTerms.length > 0 && actionTerms.every((term) => configuredTermIds.has(String(term.id)));
   const selectedReferenceTerm = actionTerms.find((term) => String(term.id) === String(selectedReferenceTermId)) || actionTerms[0];
   const selectedReferenceAssignments = termDependencies.filter((item) => String(item.term_id) === String(selectedReferenceTerm?.id));
+  const normalizedReferenceSearch = (referenceSearch || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const filteredReferenceAssignments = selectedReferenceAssignments.filter((assignment) => {
+    if (!normalizedReferenceSearch) return true;
+    const searchable = [
+      assignment.dependency?.name,
+      assignment.dependency?.code,
+      assignment.responsible?.name,
+      assignment.responsible?.document,
+      assignment.responsible?.dependency,
+      assignment.responsible?.position,
+      assignment.responsible?.email
+    ].filter(Boolean).join(' ').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    return searchable.includes(normalizedReferenceSearch);
+  });
   const annualLeaderDocument = String(termDependencyForm.document || '').replace(/\D/g, '');
   const selectedAnnualLeader = annualLeaderDocument ? leaders.find((item) => String(item.document || '').replace(/\D/g, '') === annualLeaderDocument) : null;
   const activeFieldDefinitions = (plan?.fieldDefinitions || []).filter((field) => field.active !== false);
@@ -1268,137 +1282,313 @@ export default function StrategicPlanningPlatform({ onBack }) {
       </Box>}
 
       {pedWorkspaceOpen && space === 'references' && <Box>
-        <SectionHeader step="3" title="Configure las dependencias de cada año" description="Cada vigencia puede tener una cantidad diferente de dependencias y responsables." />
+        <SectionHeader step="3" title="Dependencias por vigencia" description="Seleccione un año a la izquierda para gestionar sus dependencias y responsables." />
 
-        <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 }, mb: 2, borderRadius: 3.5 }}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={1.5}><Box><Typography variant="h6" fontWeight={950}>1. Elija la vigencia</Typography><Typography variant="body2" color="text.secondary">Los cambios se aplicarán solamente al año seleccionado.</Typography></Box><Chip variant="outlined" color="primary" label={`${configuredTermIds.size} de ${actionTerms.length} configuradas`} /></Stack>
-          <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto', pb: 0.5 }}>
-            {actionTerms.map((term) => {
-              const count = termDependencies.filter((item) => String(item.term_id) === String(term.id)).length;
-              const selected = String(selectedReferenceTerm?.id) === String(term.id);
-              return <Button key={term.id} variant={selected ? 'contained' : 'outlined'} onClick={() => { setSelectedReferenceTermId(term.id); setTermDependencyPreview(null); setTermDependencyForm({ dependency: '', document: '' }); }} sx={{ minWidth: 142, py: 1.15, borderRadius: 2.5, textTransform: 'none', fontWeight: 900 }}><Stack><Typography fontWeight={950}>{term.year}</Typography><Typography variant="caption" sx={{ opacity: .85 }}>{count} {count === 1 ? 'dependencia' : 'dependencias'}</Typography></Stack></Button>;
-            })}
-          </Box>
-        </Paper>
-
-        {selectedReferenceTerm && <>
-          <Paper elevation={0} sx={{ p: { xs: 2, md: 2.5 }, mb: 2, borderRadius: 3.5, border: '1px solid #bfdbfe', bgcolor: '#f8fbff' }}>
-            <Stack direction={{ xs: 'column', lg: 'row' }} gap={2.5} alignItems={{ lg: 'flex-start' }}>
-              <Box sx={{ flex: 1 }}><Typography variant="h6" fontWeight={950}>2. Agregue una dependencia a {selectedReferenceTerm.year}</Typography><Typography variant="body2" color="text.secondary" mb={2}>Digite la cédula y SIAC completará los datos del responsable.</Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(240px,1fr) minmax(210px,.65fr) auto' }, gap: 1.25, alignItems: 'start' }}>
-                  <TextField size="small" label="Nombre de la dependencia" placeholder="Ejemplo: Rectoría" value={termDependencyForm.dependency} onChange={(event) => setTermDependencyForm({ ...termDependencyForm, dependency: event.target.value })} />
-                  <TextField size="small" label="Cédula del responsable" inputProps={{ inputMode: 'numeric' }} value={termDependencyForm.document} onChange={(event) => setTermDependencyForm({ ...termDependencyForm, document: event.target.value.replace(/\D/g, '') })} helperText={annualLeaderDocument && !selectedAnnualLeader ? 'No encontrada en usuarios activos' : 'Consulta automática en SIAC'} error={Boolean(annualLeaderDocument && !selectedAnnualLeader)} />
-                  <Button variant="contained" startIcon={<Add />} disabled={saving || !selectedAnnualLeader || !termDependencyForm.dependency.trim()} onClick={addAnnualDependency} sx={{ minHeight: 40, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}>Agregar</Button>
-                </Box>
-                {selectedAnnualLeader && <Alert severity="success" sx={{ mt: 1.5 }}><strong>{selectedAnnualLeader.name}</strong> · {selectedAnnualLeader.position || 'Cargo no registrado'} · {selectedAnnualLeader.email || 'Correo no registrado'}<br /><Typography component="span" variant="caption">Unidad registrada en SIAC: {selectedAnnualLeader.dependency || 'Sin dato'}</Typography></Alert>}
-              </Box>
-              <Box sx={{ width: { xs: '100%', lg: 360 }, borderLeft: { lg: '1px solid #dbeafe' }, pl: { lg: 2.5 } }}><Typography fontWeight={950}>Carga masiva por Excel</Typography><Typography variant="body2" color="text.secondary" mb={1.5}>La plantilla solo pide dependencia y cédula. Al confirmar reemplaza la lista de {selectedReferenceTerm.year}, sin cambiar otros años.</Typography><Stack direction={{ xs: 'column', sm: 'row', lg: 'column' }} gap={1}><Button variant="outlined" startIcon={<Download />} onClick={downloadAnnualDependencies}>Descargar Excel de {selectedReferenceTerm.year}</Button><Button component="label" variant="contained" startIcon={<UploadFile />}>Subir y revisar Excel<input hidden type="file" accept=".xlsx" onChange={(event) => { previewAnnualDependencies(event.target.files?.[0]); event.target.value = ''; }} /></Button></Stack></Box>
-            </Stack>
-          </Paper>
-
-          {termDependencyPreview && <Paper variant="outlined" sx={{ mb: 2, borderRadius: 3.5, overflow: 'hidden', borderColor: termDependencyPreview.summary?.errors ? '#fecaca' : '#bbf7d0' }}><Box sx={{ p: 2, bgcolor: termDependencyPreview.summary?.errors ? '#fef2f2' : '#f0fdf4' }}><Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1}><Box><Typography fontWeight={950}>3. Revise antes de confirmar</Typography><Typography variant="body2" color="text.secondary">{termDependencyPreview.summary?.matched} responsables encontrados · {termDependencyPreview.summary?.errors} errores</Typography></Box><Button variant="contained" color="success" disabled={saving || Boolean(termDependencyPreview.summary?.errors)} onClick={confirmAnnualDependencies}>Confirmar lista de {selectedReferenceTerm.year}</Button></Stack></Box><TableContainer sx={{ maxHeight: 330 }}><Table size="small" stickyHeader><TableHead><TableRow><TableCell>Fila</TableCell><TableCell>Dependencia</TableCell><TableCell>Cédula</TableCell><TableCell>Responsable encontrado</TableCell><TableCell>Unidad en SIAC</TableCell><TableCell>Cargo</TableCell><TableCell>Correo</TableCell><TableCell>Validación</TableCell></TableRow></TableHead><TableBody>{(termDependencyPreview.parsed_data?.rows || []).map((row) => <TableRow key={row.row_number}><TableCell>{row.row_number}</TableCell><TableCell>{row.dependency}</TableCell><TableCell>{row.document}</TableCell><TableCell>{row.responsible?.nombre || '—'}</TableCell><TableCell>{row.responsible?.dependencia || '—'}</TableCell><TableCell>{row.responsible?.cargo || '—'}</TableCell><TableCell>{row.responsible?.email || '—'}</TableCell><TableCell><Chip size="small" color={row.errors?.length ? 'error' : 'success'} label={row.errors?.length ? row.errors.join(' ') : 'Correcto'} /></TableCell></TableRow>)}</TableBody></Table></TableContainer></Paper>}
-
-          <Paper variant="outlined" sx={{ borderRadius: 3.5, overflow: 'hidden' }}>
-            <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1.5} sx={{ p: 2, borderBottom: '1px solid #e2e8f0', bgcolor: '#fff' }}>
-              <Box sx={{ flexShrink: 0 }}>
-                <Typography variant="h6" fontWeight={950}>Dependencias de {selectedReferenceTerm.year}</Typography>
-                <Typography variant="body2" color="text.secondary">Estas son las únicas que aparecerán al crear Planes de Acción para este año.</Typography>
-              </Box>
-              <Stack direction="row" alignItems="center" spacing={1.25} sx={{ width: { xs: '100%', md: 'auto' }, flex: { md: 1 }, maxWidth: { md: 460 }, mx: { md: 2 } }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  placeholder="Buscar por dependencia, responsable, cédula, cargo..."
-                  value={referenceSearch}
-                  onChange={(e) => setReferenceSearch(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <Search fontSize="small" sx={{ color: '#64748b' }} />
-                      </InputAdornment>
-                    ),
-                    endAdornment: referenceSearch ? (
-                      <InputAdornment position="end">
-                        <IconButton size="small" onClick={() => setReferenceSearch('')} edge="end" sx={{ color: '#94a3b8' }}>
-                          <Close fontSize="small" />
-                        </IconButton>
-                      </InputAdornment>
-                    ) : null
-                  }}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 2.5,
-                      bgcolor: '#f8fafc',
-                      transition: 'all 0.2s',
-                      '&:hover': { bgcolor: '#fff', borderColor: '#93c5fd' },
-                      '&.Mui-focused': { bgcolor: '#fff' }
-                    }
-                  }}
-                />
+        <Grid container spacing={2.5}>
+          {/* COLUMNA IZQUIERDA: LISTA DE AÑOS */}
+          <Grid item xs={12} md={3.5} lg={3}>
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, bgcolor: '#fff', position: { md: 'sticky' }, top: { md: 24 } }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
+                <Typography variant="subtitle1" fontWeight={950} color="#0f172a">Vigencias</Typography>
+                <Chip size="small" variant="outlined" color="primary" label={`${configuredTermIds.size} de ${actionTerms.length}`} sx={{ fontWeight: 800, fontSize: 11 }} />
               </Stack>
-              <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
-                {referenceSearch && (
-                  <Chip
-                    size="small"
-                    label={`${filteredReferenceAssignments.length} de ${selectedReferenceAssignments.length}`}
-                    color="primary"
-                    variant="outlined"
-                    sx={{ fontWeight: 800 }}
-                  />
+              <Box sx={{ display: 'flex', flexDirection: { xs: 'row', md: 'column' }, gap: 1, overflowX: { xs: 'auto', md: 'visible' }, pb: { xs: 1, md: 0 } }}>
+                {actionTerms.map((term) => {
+                  const count = termDependencies.filter((item) => String(item.term_id) === String(term.id)).length;
+                  const selected = String(selectedReferenceTerm?.id) === String(term.id);
+                  return (
+                    <Paper
+                      key={term.id}
+                      component="button"
+                      type="button"
+                      onClick={() => {
+                        setSelectedReferenceTermId(term.id);
+                        setTermDependencyPreview(null);
+                        setTermDependencyForm({ dependency: '', document: '' });
+                        setReferenceSearch('');
+                      }}
+                      elevation={0}
+                      sx={{
+                        appearance: 'none',
+                        font: 'inherit',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        p: 1.5,
+                        borderRadius: 2.25,
+                        border: '1.5px solid',
+                        borderColor: selected ? '#2563eb' : '#e2e8f0',
+                        bgcolor: selected ? '#eff6ff' : '#fff',
+                        boxShadow: selected ? '0 4px 12px rgba(37,99,235,0.12)' : 'none',
+                        transition: 'all 0.18s ease-in-out',
+                        minWidth: { xs: 140, md: 'auto' },
+                        '&:hover': {
+                          borderColor: selected ? '#2563eb' : '#94a3b8',
+                          bgcolor: selected ? '#eff6ff' : '#f8fafc'
+                        }
+                      }}
+                    >
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Typography fontWeight={950} color={selected ? '#1d4ed8' : '#0f172a'} fontSize={15}>
+                          {term.year}
+                        </Typography>
+                        <Chip
+                          size="small"
+                          label={`${count} ${count === 1 ? 'dep' : 'deps'}`}
+                          sx={{
+                            height: 20,
+                            fontSize: 11,
+                            fontWeight: 800,
+                            bgcolor: selected ? '#dbeafe' : '#f1f5f9',
+                            color: selected ? '#1e40af' : '#64748b'
+                          }}
+                        />
+                      </Stack>
+                    </Paper>
+                  );
+                })}
+              </Box>
+            </Paper>
+          </Grid>
+
+          {/* COLUMNA DERECHA: GESTIÓN Y TABLA DE DEPENDENCIAS */}
+          <Grid item xs={12} md={8.5} lg={9}>
+            {selectedReferenceTerm && <>
+              {/* Tarjeta de acciones rápidas: manual y masiva */}
+              <Paper elevation={0} sx={{ p: { xs: 1.75, sm: 2 }, mb: 2, borderRadius: 3, border: '1px solid #dbeafe', bgcolor: '#f8fafc' }}>
+                <Stack direction={{ xs: 'column', lg: 'row' }} gap={2} alignItems={{ lg: 'center' }} justifyContent="space-between">
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="subtitle2" fontWeight={900} color="#1e3a5f" mb={1}>
+                      Agregar dependencia a {selectedReferenceTerm.year}
+                    </Typography>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="flex-start">
+                      <TextField
+                        size="small"
+                        fullWidth
+                        label="Nombre de la dependencia"
+                        placeholder="Ejemplo: Rectoría"
+                        value={termDependencyForm.dependency}
+                        onChange={(event) => setTermDependencyForm({ ...termDependencyForm, dependency: event.target.value })}
+                      />
+                      <TextField
+                        size="small"
+                        sx={{ minWidth: { sm: 190 } }}
+                        label="Cédula responsable"
+                        inputProps={{ inputMode: 'numeric' }}
+                        value={termDependencyForm.document}
+                        onChange={(event) => setTermDependencyForm({ ...termDependencyForm, document: event.target.value.replace(/\D/g, '') })}
+                        error={Boolean(annualLeaderDocument && !selectedAnnualLeader)}
+                        helperText={annualLeaderDocument && !selectedAnnualLeader ? 'No encontrada' : undefined}
+                      />
+                      <Button
+                        variant="contained"
+                        startIcon={<Add />}
+                        disabled={saving || !selectedAnnualLeader || !termDependencyForm.dependency.trim()}
+                        onClick={addAnnualDependency}
+                        sx={{ minHeight: 40, px: 2.25, borderRadius: 2, textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}
+                      >
+                        Agregar
+                      </Button>
+                    </Stack>
+                    {selectedAnnualLeader && (
+                      <Typography variant="caption" sx={{ color: '#15803d', fontWeight: 700, mt: 0.5, display: 'block' }}>
+                        ✔ {selectedAnnualLeader.name} · {selectedAnnualLeader.position || 'Sin cargo'} ({selectedAnnualLeader.email || 'Sin correo'})
+                      </Typography>
+                    )}
+                  </Box>
+
+                  <Box sx={{ flexShrink: 0, pt: { xs: 1.5, lg: 0 }, borderTop: { xs: '1px solid #e2e8f0', lg: 'none' }, borderLeft: { lg: '1px solid #e2e8f0' }, pl: { lg: 2 } }}>
+                    <Typography variant="caption" fontWeight={850} color="#64748b" display="block" mb={0.75}>
+                      Carga masiva Excel ({selectedReferenceTerm.year})
+                    </Typography>
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<Download />}
+                        onClick={downloadAnnualDependencies}
+                        sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12, py: 0.75 }}
+                      >
+                        Plantilla
+                      </Button>
+                      <Button
+                        size="small"
+                        component="label"
+                        variant="contained"
+                        color="secondary"
+                        startIcon={<UploadFile />}
+                        sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12, py: 0.75 }}
+                      >
+                        Subir Excel
+                        <input hidden type="file" accept=".xlsx" onChange={(event) => { previewAnnualDependencies(event.target.files?.[0]); event.target.value = ''; }} />
+                      </Button>
+                    </Stack>
+                  </Box>
+                </Stack>
+              </Paper>
+
+              {/* Vista previa importación Excel */}
+              {termDependencyPreview && (
+                <Paper variant="outlined" sx={{ mb: 2, borderRadius: 3, overflow: 'hidden', borderColor: termDependencyPreview.summary?.errors ? '#fecaca' : '#bbf7d0' }}>
+                  <Box sx={{ p: 1.75, bgcolor: termDependencyPreview.summary?.errors ? '#fef2f2' : '#f0fdf4' }}>
+                    <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1}>
+                      <Box>
+                        <Typography fontWeight={950}>Revise antes de confirmar</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {termDependencyPreview.summary?.matched} vinculados · {termDependencyPreview.summary?.errors} errores
+                        </Typography>
+                      </Box>
+                      <Button
+                        variant="contained"
+                        color="success"
+                        disabled={saving || Boolean(termDependencyPreview.summary?.errors)}
+                        onClick={confirmAnnualDependencies}
+                        sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 850 }}
+                      >
+                        Confirmar lista {selectedReferenceTerm.year}
+                      </Button>
+                    </Stack>
+                  </Box>
+                  <TableContainer sx={{ maxHeight: 300 }}>
+                    <Table size="small" stickyHeader>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Fila</TableCell>
+                          <TableCell>Dependencia</TableCell>
+                          <TableCell>Cédula</TableCell>
+                          <TableCell>Responsable encontrado</TableCell>
+                          <TableCell>Unidad en SIAC</TableCell>
+                          <TableCell>Cargo</TableCell>
+                          <TableCell>Correo</TableCell>
+                          <TableCell>Validación</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {(termDependencyPreview.parsed_data?.rows || []).map((row) => (
+                          <TableRow key={row.row_number}>
+                            <TableCell>{row.row_number}</TableCell>
+                            <TableCell>{row.dependency}</TableCell>
+                            <TableCell>{row.document}</TableCell>
+                            <TableCell>{row.responsible?.nombre || '—'}</TableCell>
+                            <TableCell>{row.responsible?.dependencia || '—'}</TableCell>
+                            <TableCell>{row.responsible?.cargo || '—'}</TableCell>
+                            <TableCell>{row.responsible?.email || '—'}</TableCell>
+                            <TableCell>
+                              <Chip size="small" color={row.errors?.length ? 'error' : 'success'} label={row.errors?.length ? row.errors.join(' ') : 'Correcto'} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Paper>
+              )}
+
+              {/* Tabla de dependencias con barra de búsqueda */}
+              <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} sx={{ p: 1.75, borderBottom: '1px solid #e2e8f0', bgcolor: '#fff' }}>
+                  <Box sx={{ flexShrink: 0 }}>
+                    <Typography variant="subtitle1" fontWeight={950}>
+                      Dependencias de {selectedReferenceTerm.year}
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ flex: 1, maxWidth: { sm: 380 }, width: '100%' }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      placeholder="Buscar por dependencia, responsable, cédula..."
+                      value={referenceSearch}
+                      onChange={(e) => setReferenceSearch(e.target.value)}
+                      InputProps={{
+                        startAdornment: <InputAdornment position="start"><Search fontSize="small" sx={{ color: '#64748b' }} /></InputAdornment>,
+                        endAdornment: referenceSearch ? (
+                          <InputAdornment position="end">
+                            <IconButton size="small" onClick={() => setReferenceSearch('')} edge="end" sx={{ color: '#94a3b8' }}>
+                              <Close fontSize="small" />
+                            </IconButton>
+                          </InputAdornment>
+                        ) : null
+                      }}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2,
+                          bgcolor: '#f8fafc',
+                          fontSize: 13,
+                          '&:hover': { bgcolor: '#fff', borderColor: '#93c5fd' },
+                          '&.Mui-focused': { bgcolor: '#fff' }
+                        }
+                      }}
+                    />
+                  </Box>
+
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
+                    {referenceSearch && (
+                      <Chip
+                        size="small"
+                        label={`${filteredReferenceAssignments.length} de ${selectedReferenceAssignments.length}`}
+                        color="primary"
+                        variant="outlined"
+                        sx={{ fontWeight: 800 }}
+                      />
+                    )}
+                    <Chip
+                      size="small"
+                      color={selectedReferenceAssignments.length ? 'success' : 'default'}
+                      label={`${selectedReferenceAssignments.length} configuradas`}
+                      sx={{ fontWeight: 800 }}
+                    />
+                  </Stack>
+                </Stack>
+
+                {!selectedReferenceAssignments.length ? (
+                  <Alert severity="info" sx={{ m: 2 }}>Todavía no hay dependencias en esta vigencia. Agréguelas arriba o cargue el Excel.</Alert>
+                ) : !filteredReferenceAssignments.length ? (
+                  <Box sx={{ p: 3, textAlign: 'center' }}>
+                    <Typography variant="body2" color="#475569" fontWeight={750}>
+                      No se encontraron dependencias que coincidan con "{referenceSearch}".
+                    </Typography>
+                    <Button size="small" onClick={() => setReferenceSearch('')} sx={{ mt: 0.5, textTransform: 'none', fontWeight: 800 }}>
+                      Limpiar búsqueda
+                    </Button>
+                  </Box>
+                ) : (
+                  <TableContainer sx={{ maxHeight: 520 }}>
+                    <Table size="small" stickyHeader>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 850 }}>Dependencia</TableCell>
+                          <TableCell sx={{ fontWeight: 850 }}>Responsable</TableCell>
+                          <TableCell sx={{ fontWeight: 850 }}>Cédula</TableCell>
+                          <TableCell sx={{ fontWeight: 850 }}>Unidad en SIAC</TableCell>
+                          <TableCell sx={{ fontWeight: 850 }}>Cargo</TableCell>
+                          <TableCell sx={{ fontWeight: 850 }}>Correo</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 850 }}>Acción</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {filteredReferenceAssignments.map((assignment) => (
+                          <TableRow key={assignment.id} hover>
+                            <TableCell><Typography fontWeight={850} fontSize={13}>{assignment.dependency?.name}</Typography></TableCell>
+                            <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.name}</TableCell>
+                            <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.document}</TableCell>
+                            <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.dependency || '—'}</TableCell>
+                            <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.position || '—'}</TableCell>
+                            <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.email || '—'}</TableCell>
+                            <TableCell align="right">
+                              <Button color="error" size="small" startIcon={<DeleteOutline />} onClick={() => removeAnnualDependency(assignment)} sx={{ textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                                Retirar
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 )}
-                <Chip
-                  color={selectedReferenceAssignments.length ? 'success' : 'warning'}
-                  label={`${selectedReferenceAssignments.length} configuradas`}
-                  sx={{ fontWeight: 900 }}
-                />
-              </Stack>
-            </Stack>
-
-            {!selectedReferenceAssignments.length ? (
-              <Alert severity="info" sx={{ m: 2 }}>Todavía no hay dependencias en esta vigencia. Agréguelas arriba o cargue el Excel.</Alert>
-            ) : !filteredReferenceAssignments.length ? (
-              <Box sx={{ p: 3, textAlign: 'center' }}>
-                <Typography variant="body2" color="#475569" fontWeight={750}>
-                  No se encontraron dependencias que coincidan con "{referenceSearch}".
-                </Typography>
-                <Button size="small" onClick={() => setReferenceSearch('')} sx={{ mt: 1, textTransform: 'none', fontWeight: 800 }}>
-                  Limpiar búsqueda
-                </Button>
-              </Box>
-            ) : (
-              <TableContainer>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Dependencia</TableCell>
-                      <TableCell>Responsable</TableCell>
-                      <TableCell>Cédula</TableCell>
-                      <TableCell>Unidad en SIAC</TableCell>
-                      <TableCell>Cargo</TableCell>
-                      <TableCell>Correo</TableCell>
-                      <TableCell align="right">Acción</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {filteredReferenceAssignments.map((assignment) => (
-                      <TableRow key={assignment.id} hover>
-                        <TableCell><Typography fontWeight={850}>{assignment.dependency?.name}</Typography></TableCell>
-                        <TableCell>{assignment.responsible?.name}</TableCell>
-                        <TableCell>{assignment.responsible?.document}</TableCell>
-                        <TableCell>{assignment.responsible?.dependency || '—'}</TableCell>
-                        <TableCell>{assignment.responsible?.position || '—'}</TableCell>
-                        <TableCell>{assignment.responsible?.email || '—'}</TableCell>
-                        <TableCell align="right">
-                          <Button color="error" size="small" startIcon={<DeleteOutline />} onClick={() => removeAnnualDependency(assignment)}>Retirar</Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            )}
-          </Paper>
-        </>}
+              </Paper>
+            </>}
+          </Grid>
+        </Grid>
         <StepNavigation onBack={() => setSpace('configuration')} onNext={() => setSpace('actions')} nextLabel="Continuar a Planes de Acción" />
       </Box>}
 
