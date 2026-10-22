@@ -181,16 +181,9 @@ function DashboardLayout() {
       }
       refrescarBadgeJuridica();
     };
-    const handleWindowFocus = () => {
-      if (typeof refreshProfile === 'function') {
-        refreshProfile();
-      }
-    };
     window.addEventListener('juridica:permissions-updated', handleJuridicaPermsUpdated);
-    window.addEventListener('focus', handleWindowFocus);
     return () => {
       window.removeEventListener('juridica:permissions-updated', handleJuridicaPermsUpdated);
-      window.removeEventListener('focus', handleWindowFocus);
     };
   }, [refreshProfile, refrescarBadgeJuridica]);
 

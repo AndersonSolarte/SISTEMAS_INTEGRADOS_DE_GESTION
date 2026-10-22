@@ -59,6 +59,7 @@ import CategoriaTabs from './CategoriaTabs';
 import CamposDuracionSalida, { TimeAutocomplete } from './CamposDuracionSalida';
 import DuracionSelector from './DuracionSelector';
 import SolicitudViaticosFields, { ViaticosQuestion } from './SolicitudViaticosFields';
+import { resolveFormSession } from './formSessionGuard';
 
 const INITIAL_FORM = {
   personal: { nombre: '', documento: '', correo: '' },
@@ -726,6 +727,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [selectedMovilidadActividadId, setSelectedMovilidadActividadId] = useState('');
   const [loadingMovilidadActividades, setLoadingMovilidadActividades] = useState(false);
   const [openCronogramaModal, setOpenCronogramaModal] = useState(false);
+  const formSessionOpenRef = useRef(false);
 
   const [incluyeEstudiantes, setIncluyeEstudiantes] = useState(false);
   const [estudiantesList, setEstudiantesList] = useState([]);
@@ -1078,7 +1080,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   ), [directFormUrl]);
 
   useEffect(() => {
-    if (!open) return;
+    // Una actualizacion externa nunca debe borrar el borrador mientras el
+    // formulario siga abierto. Solo se inicializa al pasar de cerrado a abierto.
+    const session = resolveFormSession(formSessionOpenRef.current, open);
+    formSessionOpenRef.current = session.nextSession;
+    if (!session.shouldInitialize) return;
+
     setActiveCategory('salud');
     setForm({
       ...INITIAL_FORM,
