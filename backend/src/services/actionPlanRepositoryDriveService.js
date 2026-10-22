@@ -132,15 +132,7 @@ const repositoryName = (value, max = 240) => String(value || 'SIN NOMBRE')
   .replace(/\s+/g, ' ').trim().replace(/[. ]+$/g, '').slice(0, max).replace(/[. ]+$/g, '') || 'SIN NOMBRE';
 
 const compactFolderName = (code, label, max = 240) => {
-  if (!code) {
-    return repositoryName(label || 'SIN NOMBRE', max);
-  }
-  const safeCode = repositoryName(code, 60).replace(/\s+/g, '-');
-  const safeLabel = repositoryName(label || code, max);
-  if (safeLabel.startsWith(safeCode)) {
-    return safeLabel.slice(0, max);
-  }
-  return `${safeCode}_${safeLabel}`.slice(0, max);
+  return repositoryName(label || code || 'SIN NOMBRE', max);
 };
 
 const compactFileName = (name, prefix, max = 78) => {

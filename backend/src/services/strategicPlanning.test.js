@@ -122,11 +122,11 @@ test('el repositorio divide cada vigencia en enero-julio y agosto-diciembre', ()
   assert.equal(periods[1].starts_on, '2027-08-01');
 });
 
-test('las rutas del repositorio usan nombres compactos aptos para copiar a disco', () => {
-  const folder = compactFolderName('ACT-001', 'Diseñar e implementar una estrategia institucional extremadamente extensa para todas las dependencias', 48);
+test('las rutas del repositorio usan nombres limpios para las carpetas', () => {
+  const folder = compactFolderName('ACT-001', 'Diseñar e implementar una estrategia institucional extremadamente extensa para todas las dependencias', 120);
   const file = compactFileName('Evidencia final consolidada con anexos y soportes documentales de toda la actividad institucional.xlsx', 'EV-12345678', 64);
-  assert.ok(folder.length <= 48);
-  assert.ok(folder.startsWith('ACT-001_'));
+  assert.ok(folder.length <= 120);
+  assert.equal(folder, 'Diseñar e implementar una estrategia institucional extremadamente extensa para todas las dependencias');
   assert.ok(file.length <= 64);
   assert.ok(file.endsWith('.xlsx'));
 });
