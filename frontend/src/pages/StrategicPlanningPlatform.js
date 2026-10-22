@@ -1282,313 +1282,426 @@ export default function StrategicPlanningPlatform({ onBack }) {
       </Box>}
 
       {pedWorkspaceOpen && space === 'references' && <Box>
-        <SectionHeader step="3" title="Dependencias por vigencia" description="Seleccione un año a la izquierda para gestionar sus dependencias y responsables." />
+        <SectionHeader step="3" title="Dependencias por vigencia" description="Seleccione el año que desea configurar para administrar sus dependencias y responsables." />
 
-        <Grid container spacing={2.5}>
-          {/* COLUMNA IZQUIERDA: LISTA DE AÑOS */}
-          <Grid item xs={12} md={3.5} lg={3}>
-            <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, bgcolor: '#fff', position: { md: 'sticky' }, top: { md: 24 } }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
-                <Typography variant="subtitle1" fontWeight={950} color="#0f172a">Vigencias</Typography>
-                <Chip size="small" variant="outlined" color="primary" label={`${configuredTermIds.size} de ${actionTerms.length}`} sx={{ fontWeight: 800, fontSize: 11 }} />
-              </Stack>
-              <Box sx={{ display: 'flex', flexDirection: { xs: 'row', md: 'column' }, gap: 1, overflowX: { xs: 'auto', md: 'visible' }, pb: { xs: 1, md: 0 } }}>
-                {actionTerms.map((term) => {
-                  const count = termDependencies.filter((item) => String(item.term_id) === String(term.id)).length;
-                  const selected = String(selectedReferenceTerm?.id) === String(term.id);
-                  return (
-                    <Paper
-                      key={term.id}
-                      component="button"
-                      type="button"
-                      onClick={() => {
-                        setSelectedReferenceTermId(term.id);
-                        setTermDependencyPreview(null);
-                        setTermDependencyForm({ dependency: '', document: '' });
-                        setReferenceSearch('');
-                      }}
-                      elevation={0}
-                      sx={{
-                        appearance: 'none',
-                        font: 'inherit',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                        p: 1.5,
-                        borderRadius: 2.25,
-                        border: '1.5px solid',
-                        borderColor: selected ? '#2563eb' : '#e2e8f0',
-                        bgcolor: selected ? '#eff6ff' : '#fff',
-                        boxShadow: selected ? '0 4px 12px rgba(37,99,235,0.12)' : 'none',
-                        transition: 'all 0.18s ease-in-out',
-                        minWidth: { xs: 140, md: 'auto' },
-                        '&:hover': {
-                          borderColor: selected ? '#2563eb' : '#94a3b8',
-                          bgcolor: selected ? '#eff6ff' : '#f8fafc'
-                        }
-                      }}
-                    >
-                      <Stack direction="row" justifyContent="space-between" alignItems="center">
-                        <Typography fontWeight={950} color={selected ? '#1d4ed8' : '#0f172a'} fontSize={15}>
-                          {term.year}
-                        </Typography>
-                        <Chip
-                          size="small"
-                          label={`${count} ${count === 1 ? 'dep' : 'deps'}`}
+        {/* 1. RIBBON HORIZONTAL DE TARJETAS DE VIGENCIAS */}
+        <Paper
+          variant="outlined"
+          sx={{
+            p: { xs: 2, sm: 2.25 },
+            mb: 2.5,
+            borderRadius: 3.5,
+            bgcolor: '#ffffff',
+            borderColor: '#e2e8f0',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
+          }}
+        >
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={2}>
+            <Box>
+              <Typography variant="subtitle1" fontWeight={950} color="#0f172a">
+                Vigencias del Plan Estratégico
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Haga clic sobre un año para revisar o asignar sus dependencias oficiales.
+              </Typography>
+            </Box>
+            <Chip
+              variant="outlined"
+              color="primary"
+              icon={<CheckCircleOutline sx={{ fontSize: 16 }} />}
+              label={`${configuredTermIds.size} de ${actionTerms.length} vigencias listas`}
+              sx={{ fontWeight: 850, px: 0.5, borderRadius: 2 }}
+            />
+          </Stack>
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: 'repeat(2, 1fr)',
+                sm: 'repeat(3, 1fr)',
+                md: 'repeat(4, 1fr)',
+                lg: `repeat(${Math.min(actionTerms.length, 7)}, minmax(0, 1fr))`
+              },
+              gap: 1.5
+            }}
+          >
+            {actionTerms.map((term) => {
+              const count = termDependencies.filter((item) => String(item.term_id) === String(term.id)).length;
+              const selected = String(selectedReferenceTerm?.id) === String(term.id);
+              const isConfigured = count > 0;
+
+              return (
+                <Paper
+                  key={term.id}
+                  component="button"
+                  type="button"
+                  onClick={() => {
+                    setSelectedReferenceTermId(term.id);
+                    setTermDependencyPreview(null);
+                    setTermDependencyForm({ dependency: '', document: '' });
+                    setReferenceSearch('');
+                  }}
+                  elevation={0}
+                  sx={{
+                    appearance: 'none',
+                    font: 'inherit',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    p: 1.75,
+                    borderRadius: 3,
+                    border: '1.5px solid',
+                    borderColor: selected ? '#2563eb' : isConfigured ? '#cbd5e1' : '#e2e8f0',
+                    background: selected
+                      ? 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)'
+                      : isConfigured
+                      ? '#ffffff'
+                      : '#f8fafc',
+                    color: selected ? '#ffffff' : '#0f172a',
+                    boxShadow: selected
+                      ? '0 8px 22px rgba(37,99,235,0.25)'
+                      : '0 2px 6px rgba(0,0,0,0.02)',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    '&:hover': {
+                      transform: 'translateY(-3px)',
+                      borderColor: selected ? '#1d4ed8' : '#3b82f6',
+                      boxShadow: selected
+                        ? '0 12px 26px rgba(37,99,235,0.32)'
+                        : '0 8px 18px rgba(0,0,0,0.06)'
+                    }
+                  }}
+                >
+                  <Stack spacing={0.75}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 800,
+                          fontSize: 10,
+                          letterSpacing: '0.6px',
+                          textTransform: 'uppercase',
+                          color: selected ? 'rgba(255,255,255,0.85)' : '#64748b'
+                        }}
+                      >
+                        Vigencia
+                      </Typography>
+                      {isConfigured ? (
+                        <Box
                           sx={{
-                            height: 20,
-                            fontSize: 11,
-                            fontWeight: 800,
-                            bgcolor: selected ? '#dbeafe' : '#f1f5f9',
-                            color: selected ? '#1e40af' : '#64748b'
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: selected ? '#86efac' : '#22c55e'
                           }}
                         />
-                      </Stack>
-                    </Paper>
-                  );
-                })}
-              </Box>
-            </Paper>
-          </Grid>
-
-          {/* COLUMNA DERECHA: GESTIÓN Y TABLA DE DEPENDENCIAS */}
-          <Grid item xs={12} md={8.5} lg={9}>
-            {selectedReferenceTerm && <>
-              {/* Tarjeta de acciones rápidas: manual y masiva */}
-              <Paper elevation={0} sx={{ p: { xs: 1.75, sm: 2 }, mb: 2, borderRadius: 3, border: '1px solid #dbeafe', bgcolor: '#f8fafc' }}>
-                <Stack direction={{ xs: 'column', lg: 'row' }} gap={2} alignItems={{ lg: 'center' }} justifyContent="space-between">
-                  <Box sx={{ flex: 1 }}>
-                    <Typography variant="subtitle2" fontWeight={900} color="#1e3a5f" mb={1}>
-                      Agregar dependencia a {selectedReferenceTerm.year}
-                    </Typography>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="flex-start">
-                      <TextField
-                        size="small"
-                        fullWidth
-                        label="Nombre de la dependencia"
-                        placeholder="Ejemplo: Rectoría"
-                        value={termDependencyForm.dependency}
-                        onChange={(event) => setTermDependencyForm({ ...termDependencyForm, dependency: event.target.value })}
-                      />
-                      <TextField
-                        size="small"
-                        sx={{ minWidth: { sm: 190 } }}
-                        label="Cédula responsable"
-                        inputProps={{ inputMode: 'numeric' }}
-                        value={termDependencyForm.document}
-                        onChange={(event) => setTermDependencyForm({ ...termDependencyForm, document: event.target.value.replace(/\D/g, '') })}
-                        error={Boolean(annualLeaderDocument && !selectedAnnualLeader)}
-                        helperText={annualLeaderDocument && !selectedAnnualLeader ? 'No encontrada' : undefined}
-                      />
-                      <Button
-                        variant="contained"
-                        startIcon={<Add />}
-                        disabled={saving || !selectedAnnualLeader || !termDependencyForm.dependency.trim()}
-                        onClick={addAnnualDependency}
-                        sx={{ minHeight: 40, px: 2.25, borderRadius: 2, textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}
-                      >
-                        Agregar
-                      </Button>
+                      ) : (
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: selected ? 'rgba(255,255,255,0.4)' : '#cbd5e1'
+                          }}
+                        />
+                      )}
                     </Stack>
-                    {selectedAnnualLeader && (
-                      <Typography variant="caption" sx={{ color: '#15803d', fontWeight: 700, mt: 0.5, display: 'block' }}>
-                        ✔ {selectedAnnualLeader.name} · {selectedAnnualLeader.position || 'Sin cargo'} ({selectedAnnualLeader.email || 'Sin correo'})
-                      </Typography>
-                    )}
-                  </Box>
 
-                  <Box sx={{ flexShrink: 0, pt: { xs: 1.5, lg: 0 }, borderTop: { xs: '1px solid #e2e8f0', lg: 'none' }, borderLeft: { lg: '1px solid #e2e8f0' }, pl: { lg: 2 } }}>
-                    <Typography variant="caption" fontWeight={850} color="#64748b" display="block" mb={0.75}>
-                      Carga masiva Excel ({selectedReferenceTerm.year})
-                    </Typography>
-                    <Stack direction="row" spacing={1}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<Download />}
-                        onClick={downloadAnnualDependencies}
-                        sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12, py: 0.75 }}
-                      >
-                        Plantilla
-                      </Button>
-                      <Button
-                        size="small"
-                        component="label"
-                        variant="contained"
-                        color="secondary"
-                        startIcon={<UploadFile />}
-                        sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12, py: 0.75 }}
-                      >
-                        Subir Excel
-                        <input hidden type="file" accept=".xlsx" onChange={(event) => { previewAnnualDependencies(event.target.files?.[0]); event.target.value = ''; }} />
-                      </Button>
-                    </Stack>
-                  </Box>
-                </Stack>
-              </Paper>
-
-              {/* Vista previa importación Excel */}
-              {termDependencyPreview && (
-                <Paper variant="outlined" sx={{ mb: 2, borderRadius: 3, overflow: 'hidden', borderColor: termDependencyPreview.summary?.errors ? '#fecaca' : '#bbf7d0' }}>
-                  <Box sx={{ p: 1.75, bgcolor: termDependencyPreview.summary?.errors ? '#fef2f2' : '#f0fdf4' }}>
-                    <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1}>
-                      <Box>
-                        <Typography fontWeight={950}>Revise antes de confirmar</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {termDependencyPreview.summary?.matched} vinculados · {termDependencyPreview.summary?.errors} errores
-                        </Typography>
-                      </Box>
-                      <Button
-                        variant="contained"
-                        color="success"
-                        disabled={saving || Boolean(termDependencyPreview.summary?.errors)}
-                        onClick={confirmAnnualDependencies}
-                        sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 850 }}
-                      >
-                        Confirmar lista {selectedReferenceTerm.year}
-                      </Button>
-                    </Stack>
-                  </Box>
-                  <TableContainer sx={{ maxHeight: 300 }}>
-                    <Table size="small" stickyHeader>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Fila</TableCell>
-                          <TableCell>Dependencia</TableCell>
-                          <TableCell>Cédula</TableCell>
-                          <TableCell>Responsable encontrado</TableCell>
-                          <TableCell>Unidad en SIAC</TableCell>
-                          <TableCell>Cargo</TableCell>
-                          <TableCell>Correo</TableCell>
-                          <TableCell>Validación</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {(termDependencyPreview.parsed_data?.rows || []).map((row) => (
-                          <TableRow key={row.row_number}>
-                            <TableCell>{row.row_number}</TableCell>
-                            <TableCell>{row.dependency}</TableCell>
-                            <TableCell>{row.document}</TableCell>
-                            <TableCell>{row.responsible?.nombre || '—'}</TableCell>
-                            <TableCell>{row.responsible?.dependencia || '—'}</TableCell>
-                            <TableCell>{row.responsible?.cargo || '—'}</TableCell>
-                            <TableCell>{row.responsible?.email || '—'}</TableCell>
-                            <TableCell>
-                              <Chip size="small" color={row.errors?.length ? 'error' : 'success'} label={row.errors?.length ? row.errors.join(' ') : 'Correcto'} />
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Paper>
-              )}
-
-              {/* Tabla de dependencias con barra de búsqueda */}
-              <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}>
-                <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} sx={{ p: 1.75, borderBottom: '1px solid #e2e8f0', bgcolor: '#fff' }}>
-                  <Box sx={{ flexShrink: 0 }}>
-                    <Typography variant="subtitle1" fontWeight={950}>
-                      Dependencias de {selectedReferenceTerm.year}
-                    </Typography>
-                  </Box>
-
-                  <Box sx={{ flex: 1, maxWidth: { sm: 380 }, width: '100%' }}>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      placeholder="Buscar por dependencia, responsable, cédula..."
-                      value={referenceSearch}
-                      onChange={(e) => setReferenceSearch(e.target.value)}
-                      InputProps={{
-                        startAdornment: <InputAdornment position="start"><Search fontSize="small" sx={{ color: '#64748b' }} /></InputAdornment>,
-                        endAdornment: referenceSearch ? (
-                          <InputAdornment position="end">
-                            <IconButton size="small" onClick={() => setReferenceSearch('')} edge="end" sx={{ color: '#94a3b8' }}>
-                              <Close fontSize="small" />
-                            </IconButton>
-                          </InputAdornment>
-                        ) : null
-                      }}
+                    <Typography
+                      fontWeight={950}
+                      fontSize={{ xs: 20, sm: 22 }}
                       sx={{
-                        '& .MuiOutlinedInput-root': {
-                          borderRadius: 2,
-                          bgcolor: '#f8fafc',
-                          fontSize: 13,
-                          '&:hover': { bgcolor: '#fff', borderColor: '#93c5fd' },
-                          '&.Mui-focused': { bgcolor: '#fff' }
-                        }
+                        lineHeight: 1.1,
+                        color: selected ? '#ffffff' : '#0f172a',
+                        letterSpacing: '-0.5px'
                       }}
-                    />
-                  </Box>
-
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
-                    {referenceSearch && (
-                      <Chip
-                        size="small"
-                        label={`${filteredReferenceAssignments.length} de ${selectedReferenceAssignments.length}`}
-                        color="primary"
-                        variant="outlined"
-                        sx={{ fontWeight: 800 }}
-                      />
-                    )}
-                    <Chip
-                      size="small"
-                      color={selectedReferenceAssignments.length ? 'success' : 'default'}
-                      label={`${selectedReferenceAssignments.length} configuradas`}
-                      sx={{ fontWeight: 800 }}
-                    />
-                  </Stack>
-                </Stack>
-
-                {!selectedReferenceAssignments.length ? (
-                  <Alert severity="info" sx={{ m: 2 }}>Todavía no hay dependencias en esta vigencia. Agréguelas arriba o cargue el Excel.</Alert>
-                ) : !filteredReferenceAssignments.length ? (
-                  <Box sx={{ p: 3, textAlign: 'center' }}>
-                    <Typography variant="body2" color="#475569" fontWeight={750}>
-                      No se encontraron dependencias que coincidan con "{referenceSearch}".
+                    >
+                      {term.year}
                     </Typography>
-                    <Button size="small" onClick={() => setReferenceSearch('')} sx={{ mt: 0.5, textTransform: 'none', fontWeight: 800 }}>
-                      Limpiar búsqueda
-                    </Button>
-                  </Box>
-                ) : (
-                  <TableContainer sx={{ maxHeight: 520 }}>
-                    <Table size="small" stickyHeader>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell sx={{ fontWeight: 850 }}>Dependencia</TableCell>
-                          <TableCell sx={{ fontWeight: 850 }}>Responsable</TableCell>
-                          <TableCell sx={{ fontWeight: 850 }}>Cédula</TableCell>
-                          <TableCell sx={{ fontWeight: 850 }}>Unidad en SIAC</TableCell>
-                          <TableCell sx={{ fontWeight: 850 }}>Cargo</TableCell>
-                          <TableCell sx={{ fontWeight: 850 }}>Correo</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 850 }}>Acción</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {filteredReferenceAssignments.map((assignment) => (
-                          <TableRow key={assignment.id} hover>
-                            <TableCell><Typography fontWeight={850} fontSize={13}>{assignment.dependency?.name}</Typography></TableCell>
-                            <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.name}</TableCell>
-                            <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.document}</TableCell>
-                            <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.dependency || '—'}</TableCell>
-                            <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.position || '—'}</TableCell>
-                            <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.email || '—'}</TableCell>
-                            <TableCell align="right">
-                              <Button color="error" size="small" startIcon={<DeleteOutline />} onClick={() => removeAnnualDependency(assignment)} sx={{ textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
-                                Retirar
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
+
+                    <Box
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        px: 1,
+                        py: 0.35,
+                        borderRadius: 1.5,
+                        width: 'fit-content',
+                        bgcolor: selected
+                          ? 'rgba(255,255,255,0.2)'
+                          : isConfigured
+                          ? '#f0fdf4'
+                          : '#f1f5f9',
+                        color: selected
+                          ? '#ffffff'
+                          : isConfigured
+                          ? '#15803d'
+                          : '#64748b',
+                        fontSize: 11,
+                        fontWeight: 850
+                      }}
+                    >
+                      {count} {count === 1 ? 'dependencia' : 'dependencias'}
+                    </Box>
+                  </Stack>
+                </Paper>
+              );
+            })}
+          </Box>
+        </Paper>
+
+        {/* 2. ACCIONES Y TABLA DE DEPENDENCIAS DE LA VIGENCIA SELECCIONADA */}
+        {selectedReferenceTerm && <>
+          {/* Tarjeta de acciones rápidas: manual y masiva */}
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 2, sm: 2.25 },
+              mb: 2.5,
+              borderRadius: 3.5,
+              border: '1.5px solid #dbeafe',
+              bgcolor: '#f8fafc',
+              boxShadow: '0 2px 10px rgba(37,99,235,0.03)'
+            }}
+          >
+            <Stack direction={{ xs: 'column', lg: 'row' }} gap={2.5} alignItems={{ lg: 'center' }} justifyContent="space-between">
+              {/* Agregar manual */}
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle2" fontWeight={950} color="#1e3a5f" mb={1.25} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Add sx={{ fontSize: 18, color: '#2563eb' }} />
+                  Agregar dependencia individual ({selectedReferenceTerm.year})
+                </Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems="flex-start">
+                  <TextField
+                    size="small"
+                    fullWidth
+                    label="Nombre de la dependencia"
+                    placeholder="Ejemplo: Dirección de Planeación"
+                    value={termDependencyForm.dependency}
+                    onChange={(e) => setTermDependencyForm({ ...termDependencyForm, dependency: e.target.value })}
+                    sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff', borderRadius: 2.25 } }}
+                  />
+                  <TextField
+                    size="small"
+                    label="Cédula del responsable"
+                    inputProps={{ inputMode: 'numeric' }}
+                    value={termDependencyForm.document}
+                    onChange={(e) => setTermDependencyForm({ ...termDependencyForm, document: e.target.value.replace(/\D/g, '') })}
+                    error={Boolean(annualLeaderDocument && !selectedAnnualLeader)}
+                    helperText={annualLeaderDocument && !selectedAnnualLeader ? 'No encontrada en SIAC' : undefined}
+                    sx={{ minWidth: { sm: 220 }, '& .MuiOutlinedInput-root': { bgcolor: '#fff', borderRadius: 2.25 } }}
+                  />
+                  <Button
+                    variant="contained"
+                    startIcon={<Add />}
+                    disabled={saving || !selectedAnnualLeader || !termDependencyForm.dependency.trim()}
+                    onClick={addAnnualDependency}
+                    sx={{ minHeight: 40, px: 2.5, borderRadius: 2.25, textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}
+                  >
+                    Agregar
+                  </Button>
+                </Stack>
+                {selectedAnnualLeader && (
+                  <Typography variant="caption" sx={{ color: '#15803d', fontWeight: 800, mt: 0.75, display: 'block' }}>
+                    ✔ Responsable: {selectedAnnualLeader.name} · {selectedAnnualLeader.position || 'Sin cargo'} ({selectedAnnualLeader.email || 'Sin correo'})
+                  </Typography>
                 )}
-              </Paper>
-            </>}
-          </Grid>
-        </Grid>
+              </Box>
+
+              {/* Carga masiva por Excel */}
+              <Box sx={{ flexShrink: 0, pt: { xs: 1.5, lg: 0 }, borderTop: { xs: '1px solid #e2e8f0', lg: 'none' }, borderLeft: { lg: '1px solid #e2e8f0' }, pl: { lg: 2.5 } }}>
+                <Typography variant="caption" fontWeight={900} color="#64748b" display="block" mb={1} sx={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Carga masiva Excel
+                </Typography>
+                <Stack direction="row" spacing={1.25}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<Download />}
+                    onClick={downloadAnnualDependencies}
+                    sx={{ borderRadius: 2.25, textTransform: 'none', fontWeight: 850, fontSize: 13, py: 0.85, px: 1.75, bgcolor: '#fff' }}
+                  >
+                    Descargar plantilla
+                  </Button>
+                  <Button
+                    size="small"
+                    component="label"
+                    variant="contained"
+                    color="secondary"
+                    startIcon={<UploadFile />}
+                    sx={{ borderRadius: 2.25, textTransform: 'none', fontWeight: 850, fontSize: 13, py: 0.85, px: 1.75 }}
+                  >
+                    Subir Excel
+                    <input hidden type="file" accept=".xlsx" onChange={(event) => { previewAnnualDependencies(event.target.files?.[0]); event.target.value = ''; }} />
+                  </Button>
+                </Stack>
+              </Box>
+            </Stack>
+          </Paper>
+
+          {/* Vista previa importación Excel */}
+          {termDependencyPreview && (
+            <Paper variant="outlined" sx={{ mb: 2.5, borderRadius: 3.5, overflow: 'hidden', borderColor: termDependencyPreview.summary?.errors ? '#fecaca' : '#bbf7d0' }}>
+              <Box sx={{ p: 1.75, bgcolor: termDependencyPreview.summary?.errors ? '#fef2f2' : '#f0fdf4' }}>
+                <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1}>
+                  <Box>
+                    <Typography fontWeight={950}>Revise antes de confirmar</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {termDependencyPreview.summary?.matched} vinculados · {termDependencyPreview.summary?.errors} errores
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    disabled={saving || Boolean(termDependencyPreview.summary?.errors)}
+                    onClick={confirmAnnualDependencies}
+                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 850 }}
+                  >
+                    Confirmar lista {selectedReferenceTerm.year}
+                  </Button>
+                </Stack>
+              </Box>
+              <TableContainer sx={{ maxHeight: 300 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Fila</TableCell>
+                      <TableCell>Dependencia</TableCell>
+                      <TableCell>Cédula</TableCell>
+                      <TableCell>Responsable encontrado</TableCell>
+                      <TableCell>Unidad en SIAC</TableCell>
+                      <TableCell>Cargo</TableCell>
+                      <TableCell>Correo</TableCell>
+                      <TableCell>Validación</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {(termDependencyPreview.parsed_data?.rows || []).map((row) => (
+                      <TableRow key={row.row_number}>
+                        <TableCell>{row.row_number}</TableCell>
+                        <TableCell>{row.dependency}</TableCell>
+                        <TableCell>{row.document}</TableCell>
+                        <TableCell>{row.responsible?.nombre || '—'}</TableCell>
+                        <TableCell>{row.responsible?.dependencia || '—'}</TableCell>
+                        <TableCell>{row.responsible?.cargo || '—'}</TableCell>
+                        <TableCell>{row.responsible?.email || '—'}</TableCell>
+                        <TableCell>
+                          <Chip size="small" color={row.errors?.length ? 'error' : 'success'} label={row.errors?.length ? row.errors.join(' ') : 'Correcto'} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+          )}
+
+          {/* Tabla de dependencias con barra de búsqueda */}
+          <Paper variant="outlined" sx={{ borderRadius: 3.5, overflow: 'hidden', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} sx={{ p: 2, borderBottom: '1px solid #e2e8f0', bgcolor: '#fff' }}>
+              <Box sx={{ flexShrink: 0 }}>
+                <Typography variant="subtitle1" fontWeight={950}>
+                  Dependencias de {selectedReferenceTerm.year}
+                </Typography>
+              </Box>
+
+              <Box sx={{ flex: 1, maxWidth: { sm: 420 }, width: '100%' }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Buscar por dependencia, responsable, cédula..."
+                  value={referenceSearch}
+                  onChange={(e) => setReferenceSearch(e.target.value)}
+                  InputProps={{
+                    startAdornment: <InputAdornment position="start"><Search fontSize="small" sx={{ color: '#64748b' }} /></InputAdornment>,
+                    endAdornment: referenceSearch ? (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => setReferenceSearch('')} edge="end" sx={{ color: '#94a3b8' }}>
+                          <Close fontSize="small" />
+                        </IconButton>
+                      </InputAdornment>
+                    ) : null
+                  }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2.25,
+                      bgcolor: '#f8fafc',
+                      fontSize: 13,
+                      '&:hover': { bgcolor: '#fff', borderColor: '#93c5fd' },
+                      '&.Mui-focused': { bgcolor: '#fff' }
+                    }
+                  }}
+                />
+              </Box>
+
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
+                {referenceSearch && (
+                  <Chip
+                    size="small"
+                    label={`${filteredReferenceAssignments.length} de ${selectedReferenceAssignments.length}`}
+                    color="primary"
+                    variant="outlined"
+                    sx={{ fontWeight: 800 }}
+                  />
+                )}
+                <Chip
+                  size="small"
+                  color={selectedReferenceAssignments.length ? 'success' : 'default'}
+                  label={`${selectedReferenceAssignments.length} configuradas`}
+                  sx={{ fontWeight: 800 }}
+                />
+              </Stack>
+            </Stack>
+
+            {!selectedReferenceAssignments.length ? (
+              <Alert severity="info" sx={{ m: 2 }}>Todavía no hay dependencias en esta vigencia. Agréguelas arriba o cargue el Excel.</Alert>
+            ) : !filteredReferenceAssignments.length ? (
+              <Box sx={{ p: 3, textAlign: 'center' }}>
+                <Typography variant="body2" color="#475569" fontWeight={750}>
+                  No se encontraron dependencias que coincidan con "{referenceSearch}".
+                </Typography>
+                <Button size="small" onClick={() => setReferenceSearch('')} sx={{ mt: 0.5, textTransform: 'none', fontWeight: 800 }}>
+                  Limpiar búsqueda
+                </Button>
+              </Box>
+            ) : (
+              <TableContainer sx={{ maxHeight: 520 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 850 }}>Dependencia</TableCell>
+                      <TableCell sx={{ fontWeight: 850 }}>Responsable</TableCell>
+                      <TableCell sx={{ fontWeight: 850 }}>Cédula</TableCell>
+                      <TableCell sx={{ fontWeight: 850 }}>Unidad en SIAC</TableCell>
+                      <TableCell sx={{ fontWeight: 850 }}>Cargo</TableCell>
+                      <TableCell sx={{ fontWeight: 850 }}>Correo</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 850 }}>Acción</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {filteredReferenceAssignments.map((assignment) => (
+                      <TableRow key={assignment.id} hover>
+                        <TableCell><Typography fontWeight={850} fontSize={13}>{assignment.dependency?.name}</Typography></TableCell>
+                        <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.name}</TableCell>
+                        <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.document}</TableCell>
+                        <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.dependency || '—'}</TableCell>
+                        <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.position || '—'}</TableCell>
+                        <TableCell sx={{ fontSize: 13 }}>{assignment.responsible?.email || '—'}</TableCell>
+                        <TableCell align="right">
+                          <Button color="error" size="small" startIcon={<DeleteOutline />} onClick={() => removeAnnualDependency(assignment)} sx={{ textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                            Retirar
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Paper>
+        </>}
         <StepNavigation onBack={() => setSpace('configuration')} onNext={() => setSpace('actions')} nextLabel="Continuar a Planes de Acción" />
       </Box>}
 
