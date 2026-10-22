@@ -742,7 +742,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
       const blob = await strategicPlanningService.downloadTermDependencyTemplate(selectedReferenceTerm.id);
       const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
       anchor.href = url; anchor.download = `DEPENDENCIAS_${selectedReferenceTerm.year}.xlsx`; anchor.click(); URL.revokeObjectURL(url);
-      enqueueSnackbar(`Plantilla de ${selectedReferenceTerm.year} descargada.`, { variant: 'success' });
+      enqueueSnackbar(`Excel de ${selectedReferenceTerm.year} exportado con dependencias y cédulas (listo para adjuntar en otra vigencia).`, { variant: 'success' });
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible descargar la plantilla.', { variant: 'error' }); }
   };
   const previewAnnualDependencies = async (file) => {
@@ -1654,11 +1654,39 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     sx={{ fontWeight: 800 }}
                   />
                 )}
+
+                <Tooltip title={selectedReferenceAssignments.length ? `Descargar Excel con las dependencias y cédulas de ${selectedReferenceTerm.year}, listo para adjuntar en otra vigencia.` : 'No hay dependencias para exportar'}>
+                  <span>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<Download sx={{ fontSize: 18 }} />}
+                      onClick={downloadAnnualDependencies}
+                      disabled={!selectedReferenceAssignments.length}
+                      sx={{
+                        textTransform: 'none',
+                        fontWeight: 850,
+                        fontSize: 12.5,
+                        borderRadius: 1.25,
+                        height: 34,
+                        px: 1.5,
+                        bgcolor: '#16a34a',
+                        color: '#ffffff',
+                        boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)',
+                        '&:hover': { bgcolor: '#15803d' },
+                        '&.Mui-disabled': { bgcolor: '#e2e8f0', color: '#94a3b8' }
+                      }}
+                    >
+                      Exportar Excel
+                    </Button>
+                  </span>
+                </Tooltip>
+
                 <Chip
                   size="small"
                   color={selectedReferenceAssignments.length ? 'success' : 'default'}
                   label={`${selectedReferenceAssignments.length} configuradas`}
-                  sx={{ fontWeight: 800 }}
+                  sx={{ fontWeight: 800, height: 26 }}
                 />
               </Stack>
             </Stack>
