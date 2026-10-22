@@ -829,9 +829,9 @@ export default function StrategicPlanningPlatform({ onBack }) {
         <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'flex-end' }} gap={1}><Box><Typography variant="overline" color="primary" fontWeight={900} letterSpacing={1}>PRIMERA ETAPA</Typography><Typography sx={{ fontSize: { xs: 25, md: 30 }, lineHeight: 1.15, fontWeight: 950 }}>Planes Estratégicos de Desarrollo</Typography><Typography color="text.secondary" mt={0.5}>Cree un periodo nuevo o abra uno existente para continuar.</Typography></Box><Chip variant="outlined" color="primary" label={`${strategicPlans.length} PED disponibles`} sx={{ fontWeight: 850 }} /></Stack>
 
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(300px,.8fr) minmax(0,1.7fr)' }, gap: { xs: 2, md: 2.5 }, alignItems: 'stretch' }}>
-          <Paper variant="outlined" sx={{ p: { xs: 2.25, md: 2.6 }, borderRadius: 3.5, borderColor: '#bfdbfe', bgcolor: '#fff', boxShadow: '0 12px 32px rgba(15,23,42,.06)', position: 'relative', overflow: 'hidden' }}><Box sx={{ position: 'absolute', inset: '0 auto 0 0', width: 5, bgcolor: '#2563eb' }} /><Stack height="100%" justifyContent="space-between" gap={2.5}><Box><Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.75}><Box sx={{ width: 46, height: 46, borderRadius: 2.5, bgcolor: '#eff6ff', color: '#2563eb', display: 'grid', placeItems: 'center' }}><Add sx={{ fontSize: 28 }} /></Box><Chip size="small" label="NUEVO" color="primary" variant="outlined" sx={{ fontWeight: 900 }} /></Stack><Typography variant="h5" fontWeight={950}>Crear un PED</Typography><Typography color="text.secondary" sx={{ mt: 0.75, lineHeight: 1.55 }}>Inicie un nuevo periodo institucional mediante una configuración guiada.</Typography><Stack spacing={0.75} mt={1.75}>{['Fecha y duración', 'Campos definidos por cada PED', 'Formulario y Excel dinámicos'].map((label) => <Stack key={label} direction="row" alignItems="center" gap={0.9}><CheckCircleOutline sx={{ color: '#2563eb', fontSize: 18 }} /><Typography variant="body2" fontWeight={750}>{label}</Typography></Stack>)}</Stack></Box><Button fullWidth variant="contained" startIcon={<Add />} onClick={() => { setEditingPlanId(null); setStrategicPlanForm(emptyStrategicPlanForm); setOpenStrategicPlan(true); }} sx={{ py: 1.15, borderRadius: 2.5, fontWeight: 950, textTransform: 'none' }}>Crear nuevo PED</Button></Stack></Paper>
+          <Paper variant="outlined" sx={{ p: { xs: 2.25, md: 2.6 }, borderRadius: 1.25, borderColor: '#bfdbfe', bgcolor: '#fff', boxShadow: '0 12px 32px rgba(15,23,42,.06)', position: 'relative', overflow: 'hidden' }}><Box sx={{ position: 'absolute', inset: '0 auto 0 0', width: 5, bgcolor: '#2563eb' }} /><Stack height="100%" justifyContent="space-between" gap={2.5}><Box><Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.75}><Box sx={{ width: 46, height: 46, borderRadius: 2.5, bgcolor: '#eff6ff', color: '#2563eb', display: 'grid', placeItems: 'center' }}><Add sx={{ fontSize: 28 }} /></Box><Chip size="small" label="NUEVO" color="primary" variant="outlined" sx={{ fontWeight: 900 }} /></Stack><Typography variant="h5" fontWeight={950}>Crear un PED</Typography><Typography color="text.secondary" sx={{ mt: 0.75, lineHeight: 1.55 }}>Inicie un nuevo periodo institucional mediante una configuración guiada.</Typography><Stack spacing={0.75} mt={1.75}>{['Fecha y duración', 'Campos definidos por cada PED', 'Formulario y Excel dinámicos'].map((label) => <Stack key={label} direction="row" alignItems="center" gap={0.9}><CheckCircleOutline sx={{ color: '#2563eb', fontSize: 18 }} /><Typography variant="body2" fontWeight={750}>{label}</Typography></Stack>)}</Stack></Box><Button fullWidth variant="contained" startIcon={<Add />} onClick={() => { setEditingPlanId(null); setStrategicPlanForm(emptyStrategicPlanForm); setOpenStrategicPlan(true); }} sx={{ py: 1.15, borderRadius: 2.5, fontWeight: 950, textTransform: 'none' }}>Crear nuevo PED</Button></Stack></Paper>
 
-          <Paper variant="outlined" sx={{ minWidth: 0, p: { xs: 2, md: 2.5 }, borderRadius: 3.5, borderColor: '#dfe7f3', bgcolor: '#fff', boxShadow: '0 12px 32px rgba(15,23,42,.045)' }}>
+          <Paper variant="outlined" sx={{ minWidth: 0, p: { xs: 2, md: 2.5 }, borderRadius: 1.25, borderColor: '#dfe7f3', bgcolor: '#fff', boxShadow: '0 12px 32px rgba(15,23,42,.045)' }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={2}>
               <Box><Typography variant="h5" fontWeight={950}>PED existentes</Typography><Typography variant="body2" color="text.secondary" mt={0.35}>Abra un periodo para continuar o elimine únicamente los borradores que ya no necesita.</Typography></Box>
               <Chip size="small" variant="outlined" label={`${strategicPlans.length} registrados`} sx={{ fontWeight: 850 }} />
@@ -1290,7 +1290,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
           sx={{
             p: { xs: 1.25, sm: 1.5 },
             mb: 1.5,
-            borderRadius: 2,
+            borderRadius: 1.25,
             bgcolor: '#ffffff',
             borderColor: '#e2e8f0',
             boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
@@ -1349,7 +1349,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     textAlign: 'left',
                     cursor: 'pointer',
                     p: 1.2,
-                    borderRadius: 1.75,
+                    borderRadius: 1,
                     border: '1.5px solid',
                     borderColor: selected ? '#2563eb' : isConfigured ? '#cbd5e1' : '#e2e8f0',
                     background: selected
@@ -1460,7 +1460,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
             sx={{
               p: { xs: 2, sm: 2.25 },
               mb: 2.5,
-              borderRadius: 3.5,
+              borderRadius: 1.25,
               border: '1.5px solid #dbeafe',
               bgcolor: '#f8fafc',
               boxShadow: '0 2px 10px rgba(37,99,235,0.03)'
@@ -1543,7 +1543,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
 
           {/* Vista previa importación Excel */}
           {termDependencyPreview && (
-            <Paper variant="outlined" sx={{ mb: 2.5, borderRadius: 3.5, overflow: 'hidden', borderColor: termDependencyPreview.summary?.errors ? '#fecaca' : '#bbf7d0' }}>
+            <Paper variant="outlined" sx={{ mb: 2.5, borderRadius: 1.25, overflow: 'hidden', borderColor: termDependencyPreview.summary?.errors ? '#fecaca' : '#bbf7d0' }}>
               <Box sx={{ p: 1.75, bgcolor: termDependencyPreview.summary?.errors ? '#fef2f2' : '#f0fdf4' }}>
                 <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1}>
                   <Box>
@@ -1557,7 +1557,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     color="success"
                     disabled={saving || Boolean(termDependencyPreview.summary?.errors)}
                     onClick={confirmAnnualDependencies}
-                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 850 }}
+                    sx={{ borderRadius: 1.25, textTransform: 'none', fontWeight: 850 }}
                   >
                     Confirmar lista {selectedReferenceTerm.year}
                   </Button>
@@ -1566,15 +1566,15 @@ export default function StrategicPlanningPlatform({ onBack }) {
               <TableContainer sx={{ maxHeight: 300 }}>
                 <Table size="small" stickyHeader>
                   <TableHead>
-                    <TableRow>
-                      <TableCell>Fila</TableCell>
-                      <TableCell>Dependencia</TableCell>
-                      <TableCell>Cédula</TableCell>
-                      <TableCell>Responsable encontrado</TableCell>
-                      <TableCell>Unidad en SIAC</TableCell>
-                      <TableCell>Cargo</TableCell>
-                      <TableCell>Correo</TableCell>
-                      <TableCell>Validación</TableCell>
+                    <TableRow sx={{ bgcolor: '#244f91' }}>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Fila</TableCell>
+                      <TableCell sx={{ bgcolor: '#1d4ed8', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #1e40af' }}>Dependencia</TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Cédula</TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Responsable encontrado</TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Unidad en SIAC</TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Cargo</TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Correo</TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', py: 1.25, borderBottom: '2px solid #173b73' }}>Validación</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -1599,7 +1599,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
           )}
 
           {/* Tabla de dependencias con barra de búsqueda */}
-          <Paper variant="outlined" sx={{ borderRadius: 3.5, overflow: 'hidden', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
+          <Paper variant="outlined" sx={{ borderRadius: 1.25, overflow: 'hidden', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} sx={{ p: 2, borderBottom: '1px solid #e2e8f0', bgcolor: '#fff' }}>
               <Box sx={{ flexShrink: 0 }}>
                 <Typography variant="subtitle1" fontWeight={950}>
@@ -1607,15 +1607,18 @@ export default function StrategicPlanningPlatform({ onBack }) {
                 </Typography>
               </Box>
 
-              <Box sx={{ flex: 1, maxWidth: { sm: 420 }, width: '100%' }}>
+              <Box sx={{ flex: 1, maxWidth: { sm: 600, md: 740 }, width: '100%' }}>
                 <TextField
                   fullWidth
-                  size="small"
-                  placeholder="Buscar por dependencia, responsable, cédula..."
+                  placeholder="Buscar por dependencia, nombre de responsable, cédula, cargo o correo..."
                   value={referenceSearch}
                   onChange={(e) => setReferenceSearch(e.target.value)}
                   InputProps={{
-                    startAdornment: <InputAdornment position="start"><Search fontSize="small" sx={{ color: '#64748b' }} /></InputAdornment>,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Search sx={{ color: '#2563eb', fontSize: 22 }} />
+                      </InputAdornment>
+                    ),
                     endAdornment: referenceSearch ? (
                       <InputAdornment position="end">
                         <IconButton size="small" onClick={() => setReferenceSearch('')} edge="end" sx={{ color: '#94a3b8' }}>
@@ -1626,11 +1629,16 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
-                      borderRadius: 2.25,
+                      height: 44,
+                      borderRadius: 1.25,
                       bgcolor: '#f8fafc',
-                      fontSize: 13,
-                      '&:hover': { bgcolor: '#fff', borderColor: '#93c5fd' },
-                      '&.Mui-focused': { bgcolor: '#fff' }
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      border: '1.5px solid #cbd5e1',
+                      transition: 'all 0.15s ease-in-out',
+                      '&:hover': { bgcolor: '#ffffff', borderColor: '#2563eb' },
+                      '&.Mui-focused': { bgcolor: '#ffffff', borderColor: '#2563eb', boxShadow: '0 0 0 3px rgba(37,99,235,0.15)' },
+                      '& input': { py: 1.25 }
                     }
                   }}
                 />
@@ -1670,14 +1678,28 @@ export default function StrategicPlanningPlatform({ onBack }) {
               <TableContainer sx={{ maxHeight: 520 }}>
                 <Table size="small" stickyHeader>
                   <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ fontWeight: 850 }}>Dependencia</TableCell>
-                      <TableCell sx={{ fontWeight: 850 }}>Responsable</TableCell>
-                      <TableCell sx={{ fontWeight: 850 }}>Cédula</TableCell>
-                      <TableCell sx={{ fontWeight: 850 }}>Unidad en SIAC</TableCell>
-                      <TableCell sx={{ fontWeight: 850 }}>Cargo</TableCell>
-                      <TableCell sx={{ fontWeight: 850 }}>Correo</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 850 }}>Acción</TableCell>
+                    <TableRow sx={{ bgcolor: '#244f91' }}>
+                      <TableCell sx={{ bgcolor: '#1d4ed8', color: '#ffffff', fontWeight: 950, fontSize: 12, letterSpacing: '.05em', textTransform: 'uppercase', py: 1.4, borderBottom: '2px solid #1e40af' }}>
+                        Dependencia
+                      </TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 12, letterSpacing: '.05em', textTransform: 'uppercase', py: 1.4, borderBottom: '2px solid #173b73' }}>
+                        Responsable
+                      </TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 12, letterSpacing: '.05em', textTransform: 'uppercase', py: 1.4, borderBottom: '2px solid #173b73' }}>
+                        Cédula
+                      </TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 12, letterSpacing: '.05em', textTransform: 'uppercase', py: 1.4, borderBottom: '2px solid #173b73' }}>
+                        Unidad en SIAC
+                      </TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 12, letterSpacing: '.05em', textTransform: 'uppercase', py: 1.4, borderBottom: '2px solid #173b73' }}>
+                        Cargo
+                      </TableCell>
+                      <TableCell sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 12, letterSpacing: '.05em', textTransform: 'uppercase', py: 1.4, borderBottom: '2px solid #173b73' }}>
+                        Correo
+                      </TableCell>
+                      <TableCell align="right" sx={{ bgcolor: '#244f91', color: '#ffffff', fontWeight: 950, fontSize: 12, letterSpacing: '.05em', textTransform: 'uppercase', py: 1.4, borderBottom: '2px solid #173b73' }}>
+                        Acción
+                      </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -1709,7 +1731,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
         <SectionHeader title="Planes de Acción por vigencia" />
 
         {/* PASO 1: SELECCIONE EL AÑO DE EJECUCIÓN (VIGENCIA) */}
-        <Paper variant="outlined" sx={{ p: { xs: 1.25, md: 1.5 }, borderRadius: 2, borderColor: '#dbe3ee', bgcolor: '#fff' }}>
+        <Paper variant="outlined" sx={{ p: { xs: 1.25, md: 1.5 }, borderRadius: 1.25, borderColor: '#dbe3ee', bgcolor: '#fff' }}>
           <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={1.25}>
             <Stack direction="row" alignItems="center" spacing={1.25}>
               <Box sx={{ width: 26, height: 26, borderRadius: 1.5, bgcolor: '#2563eb', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 900 }}>1</Box>
@@ -1759,7 +1781,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       cursor: 'pointer',
                       minWidth: { xs: 140, md: 0 },
                       p: 1.2,
-                      borderRadius: 1.75,
+                      borderRadius: 1,
                       border: '1.5px solid',
                       borderColor: selected ? '#1d4ed8' : '#e2e8f0',
                       background: selected
@@ -1901,7 +1923,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               sx={{
                 mt: 2,
                 p: { xs: 1.75, md: 2.25 },
-                borderRadius: 3.5,
+                borderRadius: 1.25,
                 borderColor: !hasCustomSchedule ? '#f59e0b' : isTermExpired ? '#fed7aa' : '#bbf7d0',
                 bgcolor: !hasCustomSchedule ? '#fffbeb' : isTermExpired ? '#fffbeb' : '#f0fdf4',
                 boxShadow: '0 4px 15px rgba(0,0,0,.03)'
@@ -1998,7 +2020,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
 
           if (!hasCustomSchedule) {
             return (
-              <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 3.5, borderColor: '#e2e8f0', bgcolor: '#f8fafc', opacity: 0.8 }}>
+              <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 1.25, borderColor: '#e2e8f0', bgcolor: '#f8fafc', opacity: 0.8 }}>
                 <Stack direction="row" alignItems="center" spacing={1.5}>
                   <Box sx={{ width: 30, height: 30, borderRadius: '50%', bgcolor: '#94a3b8', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>3</Box>
                   <Typography fontWeight={900} color="text.secondary">Paso 3: Generación de Planes de Acción</Typography>
@@ -2016,7 +2038,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               sx={{
                 mt: 2,
                 p: { xs: 1.75, md: 2.25 },
-                borderRadius: 3.5,
+                borderRadius: 1.25,
                 borderColor: hasPlans ? '#86efac' : '#f59e0b',
                 background: hasPlans
                   ? 'linear-gradient(110deg,#f0fdf4 0%,#f8fafc 100%)'
@@ -2091,7 +2113,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
           const hasPlans = selectedYearPlans.length > 0;
           if (!hasPlans) {
             return (
-              <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 3.5, borderColor: '#e2e8f0', bgcolor: '#f8fafc', opacity: 0.7 }}>
+              <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 1.25, borderColor: '#e2e8f0', bgcolor: '#f8fafc', opacity: 0.7 }}>
                 <Stack direction="row" alignItems="center" spacing={1.5}>
                   <Box sx={{ width: 30, height: 30, borderRadius: '50%', bgcolor: '#94a3b8', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>4</Box>
                   <Typography fontWeight={900} color="text.secondary">Paso 4: Repositorio Digital y Sincronización en Google Drive</Typography>
@@ -2113,7 +2135,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               sx={{
                 mt: 2,
                 p: { xs: 1.75, md: 2.25 },
-                borderRadius: 3.5,
+                borderRadius: 1.25,
                 borderColor: isDriveSynced ? '#86efac' : '#bfdbfe',
                 background: isDriveSynced
                   ? 'linear-gradient(110deg,#f0fdf4 0%,#f8fafc 100%)'
@@ -2205,7 +2227,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
           const hasPlans = selectedYearPlans.length > 0;
           if (!hasPlans) {
             return (
-              <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 3.5, borderColor: '#e2e8f0', bgcolor: '#f8fafc', opacity: 0.7 }}>
+              <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 1.25, borderColor: '#e2e8f0', bgcolor: '#f8fafc', opacity: 0.7 }}>
                 <Stack direction="row" alignItems="center" spacing={1.5}>
                   <Box sx={{ width: 30, height: 30, flexShrink: 0, borderRadius: '50%', bgcolor: '#94a3b8', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 900 }}>5</Box>
                   <Typography fontWeight={900} color="text.secondary">Paso 5: Planes de Acción por Dependencia</Typography>
@@ -2218,7 +2240,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
           }
 
           return (
-            <Paper variant="outlined" sx={{ mt: 2, borderRadius: 3.5, overflow: 'hidden', borderColor: '#dbe3ee' }}>
+            <Paper variant="outlined" sx={{ mt: 2, borderRadius: 1.25, overflow: 'hidden', borderColor: '#dbe3ee' }}>
               <Box sx={{ px: { xs: 1.75, md: 2.5 }, py: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                 <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ lg: 'center' }} gap={1.5}>
                   <Stack direction="row" alignItems="center" spacing={1.5}>
@@ -2235,8 +2257,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       sx={{ width: { xs: '100%', sm: 470 }, bgcolor: '#fff', '& .MuiOutlinedInput-root': { borderRadius: 2.25 } }}
                     />
                     <Paper variant="outlined" sx={{ display: 'flex', p: 0.4, borderRadius: 2.25, bgcolor: '#eef3f8', borderColor: '#d6e0ea', flexShrink: 0 }}>
-                      <Button size="small" startIcon={<GridView />} onClick={() => setDependencyView('cards')} variant={dependencyView === 'cards' ? 'contained' : 'text'} sx={{ minWidth: 105, borderRadius: 1.75, textTransform: 'none', fontWeight: 850, boxShadow: dependencyView === 'cards' ? '0 3px 9px rgba(37,99,235,.18)' : 'none' }}>Tarjetas</Button>
-                      <Button size="small" startIcon={<TableRows />} onClick={() => setDependencyView('table')} variant={dependencyView === 'table' ? 'contained' : 'text'} sx={{ minWidth: 95, borderRadius: 1.75, textTransform: 'none', fontWeight: 850, boxShadow: dependencyView === 'table' ? '0 3px 9px rgba(37,99,235,.18)' : 'none' }}>Tabla</Button>
+                      <Button size="small" startIcon={<GridView />} onClick={() => setDependencyView('cards')} variant={dependencyView === 'cards' ? 'contained' : 'text'} sx={{ minWidth: 105, borderRadius: 1, textTransform: 'none', fontWeight: 850, boxShadow: dependencyView === 'cards' ? '0 3px 9px rgba(37,99,235,.18)' : 'none' }}>Tarjetas</Button>
+                      <Button size="small" startIcon={<TableRows />} onClick={() => setDependencyView('table')} variant={dependencyView === 'table' ? 'contained' : 'text'} sx={{ minWidth: 95, borderRadius: 1, textTransform: 'none', fontWeight: 850, boxShadow: dependencyView === 'table' ? '0 3px 9px rgba(37,99,235,.18)' : 'none' }}>Tabla</Button>
                     </Paper>
                   </Stack>
                 </Stack>
@@ -2276,7 +2298,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     }}
                   >
                     <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-                      <Box sx={{ width: 36, height: 36, flex: '0 0 36px', borderRadius: 2, bgcolor: actionPlan ? '#eff6ff' : '#f8fafc', color: actionPlan ? '#1e40af' : '#64748b', border: '1px solid', borderColor: actionPlan ? '#bfdbfe' : '#e2e8f0', display: 'grid', placeItems: 'center' }}>
+                      <Box sx={{ width: 36, height: 36, flex: '0 0 36px', borderRadius: 1.25, bgcolor: actionPlan ? '#eff6ff' : '#f8fafc', color: actionPlan ? '#1e40af' : '#64748b', border: '1px solid', borderColor: actionPlan ? '#bfdbfe' : '#e2e8f0', display: 'grid', placeItems: 'center' }}>
                         <CorporateFare sx={{ fontSize: 20 }} />
                       </Box>
                       <Stack direction="row" alignItems="center" gap={0.3}>
@@ -2309,11 +2331,11 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     <Box sx={{ flex: 1, mt: 1 }}>{actionPlan ? <><Typography variant="caption" color="text.secondary">{actionPlan.code} · {actionPlan.items?.length || 0} registros</Typography><Typography variant="caption" display="block" color="text.secondary" noWrap>{actionPlan.responsibleUser?.nombre || 'Sin líder asignado'}</Typography></> : <Typography variant="caption" color="text.secondary">{suggestedLeader ? `Responsable: ${suggestedLeader.name}` : 'Configure primero el responsable de esta vigencia.'}</Typography>}</Box>
                     {actionPlan ? (
                       <Stack direction="row" gap={0.75} mt={1.25}>
-                        <Button fullWidth size="small" variant="contained" onClick={(e) => { e.stopPropagation(); setEditorPlanId(actionPlan.id); }} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>
+                        <Button fullWidth size="small" variant="contained" onClick={(e) => { e.stopPropagation(); setEditorPlanId(actionPlan.id); }} sx={{ borderRadius: 1.25, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>
                         <Button size="small" variant="outlined" title="Cambiar responsable" onClick={(e) => { e.stopPropagation(); setTransfer({ plan: actionPlan, user_id: '', reason: '' }); }} sx={{ minWidth: 42, borderRadius: 2 }}><SwapHoriz fontSize="small" /></Button>
                       </Stack>
                     ) : (
-                      <Button fullWidth size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={(e) => { e.stopPropagation(); openActionPlanCreation(selectedActionTerm, unit); }} sx={{ mt: 1.25, borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear Plan de Acción'}</Button>
+                      <Button fullWidth size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={(e) => { e.stopPropagation(); openActionPlanCreation(selectedActionTerm, unit); }} sx={{ mt: 1.25, borderRadius: 1.25, textTransform: 'none', fontWeight: 900 }}>{selectedActionTerm.status === 'closed' ? 'Vigencia cerrada' : 'Crear Plan de Acción'}</Button>
                     )}
                   </Paper>;
                 })}
@@ -2345,7 +2367,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                         <TableRow key={unit.id} hover sx={{ bgcolor: '#fff', '&:hover': { bgcolor: '#f0f6ff !important' }, transition: 'background-color .15s' }}>
                           <TableCell sx={{ py: 1.25, verticalAlign: 'middle' }}>
                             <Stack direction="row" alignItems="center" spacing={1.25}>
-                              <Box sx={{ width: 34, height: 34, flexShrink: 0, borderRadius: 2, bgcolor: actionPlan ? '#eff6ff' : '#f8fafc', color: actionPlan ? '#1e40af' : '#64748b', border: '1px solid', borderColor: actionPlan ? '#bfdbfe' : '#e2e8f0', display: 'grid', placeItems: 'center' }}>
+                              <Box sx={{ width: 34, height: 34, flexShrink: 0, borderRadius: 1.25, bgcolor: actionPlan ? '#eff6ff' : '#f8fafc', color: actionPlan ? '#1e40af' : '#64748b', border: '1px solid', borderColor: actionPlan ? '#bfdbfe' : '#e2e8f0', display: 'grid', placeItems: 'center' }}>
                                 <CorporateFare sx={{ fontSize: 18 }} />
                               </Box>
                               <Box sx={{ minWidth: 0 }}>
@@ -2385,25 +2407,25 @@ export default function StrategicPlanningPlatform({ onBack }) {
                             <Stack direction="row" spacing={0.75} justifyContent="center" alignItems="center">
                               {actionPlan ? (
                                 <>
-                                  <Button size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ textTransform: 'none', fontWeight: 900, borderRadius: 2, px: 1.75, bgcolor: '#1e40af', '&:hover': { bgcolor: '#1d4ed8' } }}>Abrir plan</Button>
+                                  <Button size="small" variant="contained" onClick={() => setEditorPlanId(actionPlan.id)} sx={{ textTransform: 'none', fontWeight: 900, borderRadius: 1.25, px: 1.75, bgcolor: '#1e40af', '&:hover': { bgcolor: '#1d4ed8' } }}>Abrir plan</Button>
                                   <Tooltip title="Cambiar responsable">
-                                    <IconButton size="small" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 2, '&:hover': { bgcolor: '#eff6ff', color: '#1e40af' } }}>
+                                    <IconButton size="small" onClick={() => setTransfer({ plan: actionPlan, user_id: '', reason: '' })} sx={{ color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 1.25, '&:hover': { bgcolor: '#eff6ff', color: '#1e40af' } }}>
                                       <SwapHoriz fontSize="small" />
                                     </IconButton>
                                   </Tooltip>
                                   <Tooltip title="Editar código o datos básicos">
-                                    <IconButton size="small" onClick={() => setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year })} sx={{ color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 2, '&:hover': { bgcolor: '#eff6ff', color: '#1e40af' } }}>
+                                    <IconButton size="small" onClick={() => setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year })} sx={{ color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 1.25, '&:hover': { bgcolor: '#eff6ff', color: '#1e40af' } }}>
                                       <EditOutlined fontSize="small" />
                                     </IconButton>
                                   </Tooltip>
                                   <Tooltip title="Eliminar plan y retirar dependencia">
-                                    <IconButton size="small" onClick={() => setDeleteActionPlanCandidate(actionPlan)} sx={{ color: '#ef4444', border: '1px solid #fecaca', borderRadius: 2, '&:hover': { bgcolor: '#fef2f2', color: '#dc2626' } }}>
+                                    <IconButton size="small" onClick={() => setDeleteActionPlanCandidate(actionPlan)} sx={{ color: '#ef4444', border: '1px solid #fecaca', borderRadius: 1.25, '&:hover': { bgcolor: '#fef2f2', color: '#dc2626' } }}>
                                       <DeleteOutline fontSize="small" />
                                     </IconButton>
                                   </Tooltip>
                                 </>
                               ) : (
-                                <Button size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ textTransform: 'none', fontWeight: 900, borderRadius: 2, px: 1.5, borderColor: '#cbd5e1' }}>
+                                <Button size="small" variant="outlined" startIcon={<Add />} disabled={selectedActionTerm.status === 'closed'} onClick={() => openActionPlanCreation(selectedActionTerm, unit)} sx={{ textTransform: 'none', fontWeight: 900, borderRadius: 1.25, px: 1.5, borderColor: '#cbd5e1' }}>
                                   Crear Plan
                                 </Button>
                               )}
@@ -2546,7 +2568,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                                         enqueueSnackbar(err?.response?.data?.message || 'No fue posible ejecutar el plan.', { variant: 'error' });
                                       }
                                     }}
-                                    sx={{ textTransform: 'none', fontWeight: 900, borderRadius: 2, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
+                                    sx={{ textTransform: 'none', fontWeight: 900, borderRadius: 1.25, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
                                   >
                                     Ejecutar Plan
                                   </Button>
@@ -2591,7 +2613,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
       </Dialog>
 
       {/* DIÁLOGO: VISTA PREVIA Y CONFIRMACIÓN DE COLUMNAS LEÍDAS DEL EXCEL */}
-      <Dialog open={Boolean(fieldSchemaPreview)} onClose={() => !saving && setFieldSchemaPreview(null)} fullWidth maxWidth="lg" PaperProps={{ sx: { borderRadius: 3.5, maxHeight: '92vh' } }}>
+      <Dialog open={Boolean(fieldSchemaPreview)} onClose={() => !saving && setFieldSchemaPreview(null)} fullWidth maxWidth="lg" PaperProps={{ sx: { borderRadius: 1.25, maxHeight: '92vh' } }}>
         <DialogTitle sx={{ px: { xs: 2, md: 3 }, pt: 2.5, pb: 1 }}>
           <Typography variant="h5" fontWeight={950}>Columnas detectadas en el archivo Excel</Typography>
           <Typography variant="body2" color="text.secondary" mt={0.5}>
@@ -2813,7 +2835,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                 const count = (sYear && eYear && eYear >= sYear) ? (eYear - sYear + 1) : 0;
                 if (!count) return null;
                 return (
-                  <Paper variant="outlined" sx={{ mt: 1.5, px: 2, py: 1.25, borderRadius: 2, bgcolor: '#f0fdf4', borderColor: '#bbf7d0' }}>
+                  <Paper variant="outlined" sx={{ mt: 1.5, px: 2, py: 1.25, borderRadius: 1.25, bgcolor: '#f0fdf4', borderColor: '#bbf7d0' }}>
                     <Typography variant="body2" color="#166534" fontWeight={850}>
                       {count} {count === 1 ? 'vigencia' : 'vigencias'} ({sYear} a {eYear}) · Código y nombre ajustados automáticamente.
                     </Typography>
@@ -2841,7 +2863,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
         onClose={() => !saving && setDependencyToRemove(null)}
         fullWidth
         maxWidth="xs"
-        PaperProps={{ sx: { borderRadius: 3.5, overflow: 'hidden', boxShadow: '0 24px 70px rgba(15,23,42,.24)' } }}
+        PaperProps={{ sx: { borderRadius: 1.25, overflow: 'hidden', boxShadow: '0 24px 70px rgba(15,23,42,.24)' } }}
       >
         <DialogContent sx={{ p: { xs: 2.5, sm: 3.25 } }}>
           <Stack alignItems="center" textAlign="center" spacing={1.5}>
@@ -2861,8 +2883,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3.25, pb: 3, pt: 0, gap: 1 }}>
-          <Button fullWidth variant="outlined" disabled={saving} onClick={() => setDependencyToRemove(null)} sx={{ minHeight: 44, borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>Volver</Button>
-          <Button fullWidth variant="contained" color="error" disabled={saving} onClick={confirmRemoveAnnualDependency} sx={{ minHeight: 44, borderRadius: 2, textTransform: 'none', fontWeight: 900, boxShadow: 'none' }}>{saving ? 'Retirando…' : 'Sí, retirar'}</Button>
+          <Button fullWidth variant="outlined" disabled={saving} onClick={() => setDependencyToRemove(null)} sx={{ minHeight: 44, borderRadius: 1.25, textTransform: 'none', fontWeight: 900 }}>Volver</Button>
+          <Button fullWidth variant="contained" color="error" disabled={saving} onClick={confirmRemoveAnnualDependency} sx={{ minHeight: 44, borderRadius: 1.25, textTransform: 'none', fontWeight: 900, boxShadow: 'none' }}>{saving ? 'Retirando…' : 'Sí, retirar'}</Button>
         </DialogActions>
       </Dialog>
 
@@ -2895,7 +2917,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
         onClose={() => !saving && setDeleteActionPlanCandidate(null)}
         fullWidth
         maxWidth="xs"
-        PaperProps={{ sx: { borderRadius: 3.5, overflow: 'hidden', boxShadow: '0 24px 70px rgba(15,23,42,.24)' } }}
+        PaperProps={{ sx: { borderRadius: 1.25, overflow: 'hidden', boxShadow: '0 24px 70px rgba(15,23,42,.24)' } }}
       >
         <DialogContent sx={{ p: { xs: 2.5, sm: 3.25 } }}>
           <Stack alignItems="center" textAlign="center" spacing={1.5}>
@@ -2920,10 +2942,10 @@ export default function StrategicPlanningPlatform({ onBack }) {
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3.25, pb: 3, pt: 0, gap: 1 }}>
-          <Button fullWidth variant="outlined" disabled={saving} onClick={() => setDeleteActionPlanCandidate(null)} sx={{ minHeight: 44, borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>
+          <Button fullWidth variant="outlined" disabled={saving} onClick={() => setDeleteActionPlanCandidate(null)} sx={{ minHeight: 44, borderRadius: 1.25, textTransform: 'none', fontWeight: 900 }}>
             Cancelar
           </Button>
-          <Button fullWidth variant="contained" color="error" disabled={saving} onClick={confirmDeleteActionPlan} sx={{ minHeight: 44, borderRadius: 2, textTransform: 'none', fontWeight: 900, boxShadow: 'none' }}>
+          <Button fullWidth variant="contained" color="error" disabled={saving} onClick={confirmDeleteActionPlan} sx={{ minHeight: 44, borderRadius: 1.25, textTransform: 'none', fontWeight: 900, boxShadow: 'none' }}>
             {saving ? 'Eliminando…' : 'Sí, eliminar plan y retirar dependencia'}
           </Button>
         </DialogActions>
@@ -2935,7 +2957,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
         onClose={() => !bulkActionLoading && setBulkDeleteCandidate(null)}
         fullWidth
         maxWidth="sm"
-        PaperProps={{ sx: { borderRadius: 3.5, overflow: 'hidden' } }}
+        PaperProps={{ sx: { borderRadius: 1.25, overflow: 'hidden' } }}
       >
         <DialogTitle sx={{ px: 3, pt: 2.75, pb: 1 }}>
           <Typography variant="h5" fontWeight={950} color="#dc2626">Limpiar vigencia {bulkDeleteCandidate?.year}</Typography>
@@ -3059,7 +3081,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               sx={{
                 width: 42,
                 height: 42,
-                borderRadius: 2,
+                borderRadius: 1.25,
                 bgcolor: '#eff6ff',
                 color: '#2563eb',
                 border: '1px solid #dbeafe',
@@ -3084,7 +3106,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
             onClick={() => !generalTimelineModal.saving && setGeneralTimelineModal({ open: false, term: null, starts_on: '', ends_on: '', saving: false })}
             sx={{
               color: '#94a3b8',
-              borderRadius: 1.75,
+              borderRadius: 1,
               '&:hover': { bgcolor: '#f1f5f9', color: '#334155' }
             }}
           >
@@ -3134,7 +3156,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   variant="outlined"
                   onClick={() => handleAddDaysToGeneralTimeline(7)}
                   sx={{
-                    borderRadius: 1.75,
+                    borderRadius: 1,
                     textTransform: 'none',
                     fontWeight: 700,
                     fontSize: 12,
@@ -3153,7 +3175,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   variant="outlined"
                   onClick={() => handleAddDaysToGeneralTimeline(15)}
                   sx={{
-                    borderRadius: 1.75,
+                    borderRadius: 1,
                     textTransform: 'none',
                     fontWeight: 700,
                     fontSize: 12,
@@ -3172,7 +3194,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   variant="outlined"
                   onClick={() => handleAddDaysToGeneralTimeline(30)}
                   sx={{
-                    borderRadius: 1.75,
+                    borderRadius: 1,
                     textTransform: 'none',
                     fontWeight: 700,
                     fontSize: 12,
@@ -3191,7 +3213,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   variant="outlined"
                   onClick={handleSetEndOfMonthGeneralTimeline}
                   sx={{
-                    borderRadius: 1.75,
+                    borderRadius: 1,
                     textTransform: 'none',
                     fontWeight: 700,
                     fontSize: 12,
@@ -3224,7 +3246,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     onChange={(e) => setGeneralTimelineModal((prev) => ({ ...prev, starts_on: e.target.value }))}
                     sx={{
                       '& .MuiOutlinedInput-root': {
-                        borderRadius: 2,
+                        borderRadius: 1.25,
                         bgcolor: '#ffffff',
                         fontSize: 13.5
                       }
@@ -3249,7 +3271,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     onChange={(e) => setGeneralTimelineModal((prev) => ({ ...prev, ends_on: e.target.value }))}
                     sx={{
                       '& .MuiOutlinedInput-root': {
-                        borderRadius: 2,
+                        borderRadius: 1.25,
                         bgcolor: '#ffffff',
                         fontWeight: 800,
                         fontSize: 13.5
@@ -3283,7 +3305,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               fontWeight: 700,
               fontSize: 13,
               color: '#64748b',
-              borderRadius: 1.75,
+              borderRadius: 1,
               px: 2,
               '&:hover': { bgcolor: '#f1f5f9', color: '#1e293b' }
             }}
@@ -3296,7 +3318,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
             disabled={generalTimelineModal.saving || !generalTimelineModal.ends_on}
             startIcon={generalTimelineModal.saving ? <CircularProgress size={16} color="inherit" /> : <CheckCircleOutline sx={{ fontSize: 18 }} />}
             sx={{
-              borderRadius: 2,
+              borderRadius: 1.25,
               textTransform: 'none',
               fontWeight: 800,
               fontSize: 13,
