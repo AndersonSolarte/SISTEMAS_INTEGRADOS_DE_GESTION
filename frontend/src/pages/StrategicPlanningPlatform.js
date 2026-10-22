@@ -1656,22 +1656,6 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   Configure por lo menos una dependencia para esta vigencia antes de sincronizar.
                 </Typography>
               )}
-
-              {repositoryResult && (
-                <Alert
-                  severity={repositoryResult.files_deferred ? 'info' : 'success'}
-                  sx={{ mt: 1.75, borderRadius: 2.25 }}
-                  action={
-                    repositoryResult.folder_url ? (
-                      <Button color="inherit" size="small" href={repositoryResult.folder_url} target="_blank" rel="noreferrer" sx={{ fontWeight: 900 }}>
-                        Abrir en Drive
-                      </Button>
-                    ) : null
-                  }
-                >
-                  <strong>Estructura de carpetas en Google Drive lista:</strong> {repositoryResult.ped_folder_name ? `${repositoryResult.ped_folder_name} → ` : ''}Planes de Acción {repositoryResult.year}. {repositoryResult.dependencies ?? repositoryResult.plans} dependencias preparadas ({repositoryResult.plans} con plan y {repositoryResult.pending_plans ?? 0} pendientes). Las actas y formatos institucionales se alojarán directamente en estas carpetas.
-                </Alert>
-              )}
             </Paper>
           );
         })()}
