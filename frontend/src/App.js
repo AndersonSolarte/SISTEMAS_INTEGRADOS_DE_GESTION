@@ -26,6 +26,7 @@ import LegalizacionViaticos from './pages/LegalizacionViaticos';
 import VerificacionReporte from './pages/VerificacionReporte';
 import StrategicMinuteSigning from './pages/StrategicMinuteSigning';
 import MeetingMinuteSigning from './pages/MeetingMinuteSigning';
+import MeetingAttendanceConfirmation from './pages/MeetingAttendanceConfirmation';
 import CronogramaMovilidadModule from './components/cronogramaMovilidad/CronogramaMovilidadModule';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
 import AppSnackbar from './components/AppSnackbar';
@@ -99,6 +100,7 @@ function App() {
                 <Route path="/verificar/:id" element={<VerificacionReporte />} />
                 <Route path="/firmar-acta/:token" element={<StrategicMinuteSigning />} />
                 <Route path="/firmar-acta-reunion/:token" element={<MeetingMinuteSigning />} />
+                <Route path="/confirmar-asistencia-acta/:token" element={<MeetingAttendanceConfirmation />} />
 
                 {/* Rutas protegidas */}
                 <Route path="/dashboard" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>

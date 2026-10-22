@@ -13,7 +13,7 @@ import ReporteSalidaFormDialog from '../components/reporteSalida/ReporteSalidaFo
 import { isReporteSalidaDocument } from '../config/reporteSalida';
 import reporteSalidaService from '../services/reporteSalidaService';
 import MeetingMinuteFormDialog from '../components/meetingMinute/MeetingMinuteFormDialog';
-import { isMeetingMinuteDocument } from '../config/meetingMinute';
+import { isMeetingMinuteDocument, resolveMeetingMinuteFormatCode } from '../config/meetingMinute';
 import meetingMinuteService from '../services/meetingMinuteService';
 import { FaFileWord, FaFileExcel, FaFilePowerpoint, FaFilePdf } from 'react-icons/fa';
 import { BsFileEarmarkText } from 'react-icons/bs';
@@ -600,7 +600,7 @@ const hasDocumentalManagementPermission = useMemo(() => {
   const [reporteSalidaDoc, setReporteSalidaDoc] = useState(null);
   const [reporteSalidaFeature, setReporteSalidaFeature] = useState({ enabled: false, canToggle: false, loading: false });
   const [meetingMinuteDoc, setMeetingMinuteDoc] = useState(null);
-  const [meetingMinuteFeature, setMeetingMinuteFeature] = useState({ enabled: false, canToggle: false, loading: false });
+  const [meetingMinuteFeature, setMeetingMinuteFeature] = useState({ enabled: false, formats: {}, canToggle: false, loading: false });
   const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [syncingSheet, setSyncingSheet] = useState(false);
   const [openClearDialog, setOpenClearDialog] = useState(false);
@@ -734,7 +734,12 @@ const hasDocumentalManagementPermission = useMemo(() => {
   const loadMeetingMinuteFeature = useCallback(async () => {
     try {
       const response = await meetingMinuteService.getConfig();
-      setMeetingMinuteFeature({ enabled: Boolean(response?.data?.enabled), canToggle: Boolean(response?.data?.canToggle), loading: false });
+      setMeetingMinuteFeature({
+        enabled: Boolean(response?.data?.enabled),
+        formats: response?.data?.formats_enabled || { 'COM-ID-FR-002': Boolean(response?.data?.enabled) },
+        canToggle: Boolean(response?.data?.canToggle),
+        loading: false
+      });
     } catch (_) {
       setMeetingMinuteFeature((previous) => ({ ...previous, loading: false }));
     }
@@ -1138,11 +1143,16 @@ const hasDocumentalManagementPermission = useMemo(() => {
     }
   };
 
-  const toggleMeetingMinuteFeature = async (nextEnabled) => {
+  const toggleMeetingMinuteFeature = async (nextEnabled, formatCode = 'COM-ID-FR-002') => {
     setMeetingMinuteFeature((previous) => ({ ...previous, loading: true }));
     try {
-      const response = await meetingMinuteService.updateConfig(nextEnabled);
-      setMeetingMinuteFeature({ enabled: Boolean(response?.data?.enabled), canToggle: Boolean(response?.data?.canToggle), loading: false });
+      const response = await meetingMinuteService.updateConfig(nextEnabled, formatCode);
+      setMeetingMinuteFeature({
+        enabled: Boolean(response?.data?.enabled),
+        formats: response?.data?.formats_enabled || {},
+        canToggle: Boolean(response?.data?.canToggle),
+        loading: false
+      });
       enqueueSnackbar(response?.message || (nextEnabled ? 'Formulario de actas activado' : 'Formulario de actas desactivado'), { variant: 'success' });
     } catch (error) {
       setMeetingMinuteFeature((previous) => ({ ...previous, loading: false }));
@@ -1417,8 +1427,18 @@ const hasDocumentalManagementPermission = useMemo(() => {
   const isFiltering = loading;
   const displayDocumentos = useMemo(() => {
     if (!filters.formatos_digitales) return documentos;
-    return documentos.filter((doc) => isReporteSalidaDocument(doc) || isMeetingMinuteDocument(doc));
-  }, [documentos, filters.formatos_digitales]);
+    return documentos.filter((doc) => {
+      if (isReporteSalidaDocument(doc)) {
+        return reporteSalidaFeature.canToggle || reporteSalidaFeature.enabled;
+      }
+      if (isMeetingMinuteDocument(doc)) {
+        const fmtCode = resolveMeetingMinuteFormatCode(doc);
+        const isEnabled = Boolean(meetingMinuteFeature.formats?.[fmtCode]);
+        return meetingMinuteFeature.canToggle || isEnabled;
+      }
+      return false;
+    });
+  }, [documentos, filters.formatos_digitales, meetingMinuteFeature.canToggle, meetingMinuteFeature.formats, reporteSalidaFeature.canToggle, reporteSalidaFeature.enabled]);
 
   useEffect(() => {
     const keepValidSelections = (selected, options) => {
@@ -2087,24 +2107,28 @@ const hasDocumentalManagementPermission = useMemo(() => {
                                       </span>
                                     </Tooltip>
                                   )}
-                                  {isMeetingMinuteDocument(doc) && meetingMinuteFeature.canToggle && (
-                                    <Tooltip title={meetingMinuteFeature.enabled ? 'Desactivar formulario de actas de reunión' : 'Activar formulario de actas de reunión'} arrow>
-                                      <span>
-                                        <Switch
-                                          size="small"
-                                          checked={meetingMinuteFeature.enabled}
-                                          disabled={meetingMinuteFeature.loading}
-                                          onChange={(event) => toggleMeetingMinuteFeature(event.target.checked)}
-                                          sx={{
-                                            '& .MuiSwitch-switchBase.Mui-checked': { color: '#2458a6' },
-                                            '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#2458a6' }
-                                          }}
-                                        />
-                                      </span>
-                                    </Tooltip>
-                                  )}
-                                  {meetingMinuteFeature.enabled && isMeetingMinuteDocument(doc) && (
-                                    <Tooltip title="Redactar acta de reunión" arrow>
+                                  {isMeetingMinuteDocument(doc) && meetingMinuteFeature.canToggle && (() => {
+                                    const docFormatCode = resolveMeetingMinuteFormatCode(doc);
+                                    const docFormatEnabled = Boolean(meetingMinuteFeature.formats?.[docFormatCode]);
+                                    return (
+                                      <Tooltip title={`${docFormatEnabled ? 'Desactivar' : 'Activar'} formulario digitalizado ${docFormatCode}`} arrow>
+                                        <span>
+                                          <Switch
+                                            size="small"
+                                            checked={docFormatEnabled}
+                                            disabled={meetingMinuteFeature.loading}
+                                            onChange={(event) => toggleMeetingMinuteFeature(event.target.checked, docFormatCode)}
+                                            sx={{
+                                              '& .MuiSwitch-switchBase.Mui-checked': { color: '#2458a6' },
+                                              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#2458a6' }
+                                            }}
+                                          />
+                                        </span>
+                                      </Tooltip>
+                                    );
+                                  })()}
+                                  {isMeetingMinuteDocument(doc) && meetingMinuteFeature.formats?.[resolveMeetingMinuteFormatCode(doc)] && (
+                                    <Tooltip title={resolveMeetingMinuteFormatCode(doc) === 'COM-GD-FR-012' ? 'Redactar acta de Consejo o Comité' : 'Redactar acta de reunión'} arrow>
                                       <span>
                                         <IconButton
                                           size="small"

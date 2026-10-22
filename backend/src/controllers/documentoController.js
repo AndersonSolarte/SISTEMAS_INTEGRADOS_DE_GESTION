@@ -410,7 +410,7 @@ const getDocumentos = async (req, res) => {
 
     if (String(formatos_digitales) === 'true') {
       // Catálogo de formatos con diligenciamiento nativo dentro de SIAC.
-      const digitalCodes = ['THM-DP-FR-002', 'COM-ID-FR-002', 'COM-IF-FR-002'];
+      const digitalCodes = ['THM-DP-FR-002', 'COM-ID-FR-002', 'COM-IF-FR-002', 'COM-GD-FR-012'];
       andConditions.push({ codigo: { [Op.in]: digitalCodes } });
     }
 

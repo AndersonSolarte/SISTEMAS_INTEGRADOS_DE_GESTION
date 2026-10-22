@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Autocomplete, Badge, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, IconButton, Menu, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer,
+  Alert, Autocomplete, Badge, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  DialogTitle, FormControlLabel, IconButton, Menu, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
 import {
@@ -13,7 +13,28 @@ import meetingMinuteService from '../../services/meetingMinuteService';
 import logoFormatos from '../../assets/logo_formatos.jpg';
 import RichTextEditor, { sanitizeRichHtml } from './RichTextEditor';
 import MeetingCalendarScheduler from './MeetingCalendarScheduler';
+import CouncilMinutePreview from './CouncilMinutePreview';
+import {
+  MEETING_MINUTE_FORMAT_LIST,
+  getMeetingMinuteFormatMeta,
+  resolveMeetingMinuteFormatCode
+} from '../../config/meetingMinute';
 import formatPersonName from '../../utils/formatPersonName';
+
+const COUNCIL_SUGGESTIONS = [
+  'CONSEJO ACADÉMICO',
+  'CONSEJO DIRECTIVO',
+  'CONSEJO DE FACULTAD DE INGENIERÍA',
+  'CONSEJO DE FACULTAD DE CIENCIAS ADMINISTRATIVAS Y CONTABLES',
+  'CONSEJO DE FACULTAD DE CIENCIAS SOCIALES Y HUMANAS',
+  'CONSEJO DE FACULTAD DE EDUCACIÓN',
+  'CONSEJO DE FACULTAD DE ARQUITECTURA Y BELLAS ARTES',
+  'COMITÉ CURRICULAR',
+  'COMITÉ DE INVESTIGACIÓN',
+  'COMITÉ DE AUTOEVALUACIÓN Y ACREDITACIÓN',
+  'COMITÉ DE CONVIVENCIA LABORAL',
+  'COMITÉ DE BIENESTAR INSTITUCIONAL'
+];
 
 const localDate = (date = new Date()) => {
   const year = date.getFullYear();
@@ -69,11 +90,47 @@ const filterMeetingPlaces = (options, { inputValue }) => {
     return words.every((word) => normalized.includes(word));
   });
 };
-const emptyForm = (user = {}) => ({
-  id: '', code: '', status: 'draft', created_by: user.id || '', revision_required: false, titulo: '', responsables: '', dependencia: '',
-  responsable_document: '', responsable_role: '', responsables_data: [],
-  lugar: '', fecha: today(), hora_inicio: currentLocalTime(), hora_fin: '10:00',
-  objetivo: '', desarrollo: '', conclusiones: '', participants: []
+const creatorResponsable = (user = {}) => ({
+  user_id: user.id || null,
+  document: user.username || user.documento || user.cedula || user.document || '',
+  name: formatPersonName(user.nombre || user.name || user.full_name || 'Responsable del acta'),
+  email: user.email || '',
+  organization: user.dependencia || user.organization || '',
+  role_title: user.cargo || user.role_title || '',
+  is_primary: true
+});
+const emptyForm = (user = {}, formatCode = 'COM-ID-FR-002') => ({
+  id: '',
+  code: '',
+  status: 'draft',
+  format_code: formatCode || 'COM-ID-FR-002',
+  created_by: user.id || '',
+  revision_required: false,
+  titulo: '',
+  nombre_consejo: '',
+  numero_acta: '01',
+  quorum_minimo: '',
+  ciudad: 'San Juan de Pasto',
+  fecha_texto: '',
+  responsables: formatCode === 'COM-GD-FR-012' ? creatorResponsable(user).name : '',
+  dependencia: '',
+  responsable_document: formatCode === 'COM-GD-FR-012' ? creatorResponsable(user).document : '',
+  responsable_role: formatCode === 'COM-GD-FR-012' ? creatorResponsable(user).role_title : '',
+  responsables_data: formatCode === 'COM-GD-FR-012' ? [creatorResponsable(user)] : [],
+  lugar: '',
+  fecha: today(),
+  hora_inicio: currentLocalTime(),
+  hora_fin: '10:00',
+  objetivo: '',
+  orden_del_dia: '',
+  desarrollo: '',
+  conclusiones: '',
+  compromisos: '',
+  anexo: '',
+  participantes_meta: [],
+  invitados_sin_firma_data: [],
+  ausentes_data: [],
+  participants: []
 });
 
 const formatResponsablesText = (list = []) => {
@@ -137,6 +194,10 @@ const syncParticipantsWithResponsables = (currentParticipants = [], newResponsab
       email: existing?.email || r.email || '',
       organization: existing?.organization || r.organization || '',
       role_title: existing?.role_title || r.role_title || (idx === 0 ? 'Responsable Principal' : 'Co-responsable'),
+      member_kind: existing?.member_kind || (existing?.attendance_type === 'invitado' ? 'invitado' : 'miembro'),
+      attendance_type: existing?.attendance_type || 'asistente',
+      requires_signature: existing?.requires_signature ?? true,
+      cargo_acta: existing?.cargo_acta || existing?.role_title || r.role_title || '',
       status: existing?.status || 'invited'
     };
   });
@@ -276,9 +337,12 @@ const MeetingPreview = ({ document, form, signatures = [], previewType = 'origin
 
 export default function MeetingMinuteFormDialog({ open, document, user, onClose }) {
   const { enqueueSnackbar, closeSnackbar } = useSnackbar();
-  const [form, setForm] = useState(() => emptyForm(user));
+  const [activeFormatCode, setActiveFormatCode] = useState(() => resolveMeetingMinuteFormatCode(document));
+  const [formatDocuments, setFormatDocuments] = useState({});
+  const [myMinutesFormatFilter, setMyMinutesFormatFilter] = useState('ALL');
+  const [form, setForm] = useState(() => emptyForm(user, resolveMeetingMinuteFormatCode(document)));
   const [responsablesList, setResponsablesList] = useState([]);
-  const [minutes, setMinutes] = useState([]);
+  const [, setMinutes] = useState([]);
   const [myMinutes, setMyMinutes] = useState([]);
   const [retentionDays, setRetentionDays] = useState(30);
   const [myMinutesOpen, setMyMinutesOpen] = useState(false);
@@ -289,7 +353,19 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [responsibleOptions, setResponsibleOptions] = useState([]);
   const [responsibleSearchOpen, setResponsibleSearchOpen] = useState(false);
   const [searchingResponsible, setSearchingResponsible] = useState(false);
-  const [externalDraft, setExternalDraft] = useState({ document: '', name: '', email: '', organization: '', role_title: '' });
+  const [externalDraft, setExternalDraft] = useState({
+    document: '',
+    name: '',
+    email: '',
+    organization: '',
+    role_title: '',
+    member_kind: 'miembro',
+    is_co_responsible: false,
+    attendance_type: resolveMeetingMinuteFormatCode(document) === 'COM-GD-FR-012' ? 'invitado' : 'asistente'
+  });
+  // Formatos habilitados por el administrador. Mientras carga se asume
+  // únicamente el formato con el que se abrió el módulo.
+  const [enabledFormats, setEnabledFormats] = useState(null);
   const [externalStudentResult, setExternalStudentResult] = useState(null);
   const [lookingUpExternalStudent, setLookingUpExternalStudent] = useState(false);
   const [participantSearchOptions, setParticipantSearchOptions] = useState([]);
@@ -307,6 +383,28 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [fieldErrors, setFieldErrors] = useState({});
   const [meetingPlaceOptions, setMeetingPlaceOptions] = useState(MEETING_PLACES);
   const [loadingMeetingPlaces, setLoadingMeetingPlaces] = useState(false);
+  const [loadingCouncilNumber, setLoadingCouncilNumber] = useState(false);
+  const isCouncilFormat = activeFormatCode === 'COM-GD-FR-012';
+  const availableFormats = useMemo(() => (
+    enabledFormats
+      ? MEETING_MINUTE_FORMAT_LIST.filter((fmt) => enabledFormats[fmt.code])
+      : MEETING_MINUTE_FORMAT_LIST.filter((fmt) => fmt.code === resolveMeetingMinuteFormatCode(document))
+  ), [enabledFormats, document]);
+  const isFormatAvailable = (code) => availableFormats.some((fmt) => fmt.code === code);
+  const visibleMyMinutes = useMemo(
+    () => myMinutes.filter((minute) => availableFormats.some((fmt) => fmt.code === resolveMeetingMinuteFormatCode(minute))),
+    [myMinutes, availableFormats]
+  );
+  const activeFormatMeta = useMemo(() => getMeetingMinuteFormatMeta(activeFormatCode), [activeFormatCode]);
+  const activeDocument = useMemo(() => {
+    if (document && resolveMeetingMinuteFormatCode(document) === activeFormatCode) {
+      return document;
+    }
+    if (formatDocuments[activeFormatCode]) {
+      return formatDocuments[activeFormatCode];
+    }
+    return activeFormatMeta.defaultDocument;
+  }, [document, activeFormatCode, formatDocuments, activeFormatMeta]);
   // El sondeo remoto nunca debe reemplazar cambios que el usuario todavia no ha guardado.
   const hasUnsavedChangesRef = useRef(false);
   const localChangeVersionRef = useRef(0);
@@ -318,13 +416,40 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const guideAnimationRef = useRef(null);
   const removedParticipantKeysRef = useRef(new Set());
   const expiryAlertShownRef = useRef(false);
+  const initializedDialogContextRef = useRef('');
   const locked = form.status !== 'draft';
-  const allSigned = Boolean(form.participants.length) && form.participants.every((participant) => participant.status === 'signed');
-  const pendingCount = useMemo(() => (form.participants || []).filter((p) => p.status !== 'signed').length, [form.participants]);
+  const signingParticipants = useMemo(
+    () => (form.participants || []).filter((participant) => (
+      !isCouncilFormat
+      || (participant.attendance_type !== 'ausente' && participant.requires_signature !== false)
+    )),
+    [form.participants, isCouncilFormat]
+  );
+  const allSigned = Boolean(signingParticipants.length) && signingParticipants.every((participant) => participant.status === 'signed');
+  const pendingCount = useMemo(() => signingParticipants.filter((participant) => participant.status !== 'signed').length, [signingParticipants]);
   const expiringMinutes = useMemo(() => myMinutes.filter((minute) => {
     const days = Number(minute.retention?.days_remaining);
     return Number.isFinite(days) && days >= 0 && days <= 7;
   }), [myMinutes]);
+  const councilAttendanceSummary = useMemo(() => {
+    const asistentes = form.participants.filter((item) => item.member_kind !== 'invitado').length;
+    const invitados = form.participants.filter((item) => item.member_kind === 'invitado').length
+      + (form.invitados_sin_firma_data || []).filter((item) => item.member_kind === 'invitado').length;
+    const pendientes = (form.invitados_sin_firma_data || []).filter((item) => item.member_kind !== 'invitado').length;
+    const ausentes = (form.ausentes_data || []).filter((item) => item.member_kind !== 'invitado').length;
+    const convocados = asistentes + pendientes + ausentes;
+    const minimo = convocados ? Math.floor(convocados / 2) + 1 : 0;
+    return {
+      asistentes,
+      invitados,
+      pendientes,
+      ausentes,
+      convocados,
+      minimo,
+      porcentaje: convocados ? Math.round((asistentes / convocados) * 100) : 0,
+      hayQuorum: convocados > 0 && asistentes >= minimo
+    };
+  }, [form.participants, form.invitados_sin_firma_data, form.ausentes_data]);
 
   const userDoc = String(user?.username || user?.documento || user?.cedula || user?.document || '').trim().toLowerCase();
   const userEmail = String(user?.email || '').trim().toLowerCase();
@@ -390,29 +515,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     return false;
   };
 
-  const handleRestoreAll = async () => {
-    setLoading(true);
-    try {
-      const response = await meetingMinuteService.restoreAll();
-      enqueueSnackbar(response.message || 'Actas restauradas.', { variant: 'success' });
-      await Promise.all([loadMinutes(), loadMyMinutes()]);
-    } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'No fue posible restaurar las actas.', { variant: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const horario = useMemo(() => `${form.hora_inicio || ''} - ${form.hora_fin || ''}`, [form.hora_inicio, form.hora_fin]);
-  const additionalParticipants = useMemo(() => {
-    const respDocs = new Set((responsablesList || []).map((r) => String(r.document || '').trim().toLowerCase()).filter(Boolean));
-    const respEmails = new Set((responsablesList || []).map((r) => String(r.email || '').trim().toLowerCase()).filter(Boolean));
-    return (form.participants || []).filter((p) => {
-      const pDoc = String(p.document || '').trim().toLowerCase();
-      const pEmail = String(p.email || '').trim().toLowerCase();
-      return !(pDoc && respDocs.has(pDoc)) && !(pEmail && respEmails.has(pEmail));
-    });
-  }, [form.participants, responsablesList]);
 
   const loadMinutes = async () => {
     try { const response = await meetingMinuteService.list(); setMinutes(response.data || []); } catch (_) { setMinutes([]); }
@@ -432,6 +536,17 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const openMyMinutes = async () => {
     setMyMinutesOpen(true);
     await loadMyMinutes({ busy: true });
+  };
+  const loadFormatDocuments = async () => {
+    try {
+      const response = await meetingMinuteService.getConfig();
+      if (response?.data?.format_documents) {
+        setFormatDocuments(response.data.format_documents);
+      }
+      const states = response?.data?.formats_enabled
+        || { 'COM-ID-FR-002': Boolean(response?.data?.enabled), 'COM-GD-FR-012': false };
+      setEnabledFormats(states);
+    } catch (_) {}
   };
   const loadMeetingPlaces = async () => {
     setLoadingMeetingPlaces(true);
@@ -511,7 +626,17 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   }, [open, canManageParticipants, externalDraft.document, externalStudentResult?.found]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedDialogContextRef.current = '';
+      return;
+    }
+    const initialFormat = resolveMeetingMinuteFormatCode(document);
+    const dialogContextKey = `${document?.id || document?.codigo || initialFormat}:${initialFormat}`;
+    // El padre puede reconstruir el objeto `document` al refrescar el listado.
+    // Mientras el diálogo siga abierto ese cambio de referencia no debe borrar
+    // el formulario ni devolver al usuario al formato con el que ingresó.
+    if (initializedDialogContextRef.current === dialogContextKey) return;
+    initializedDialogContextRef.current = dialogContextKey;
     guideAnimationRef.current?.cancel?.();
     guideAnimationRef.current = null;
     if (guideSnackbarKeyRef.current) closeSnackbar(guideSnackbarKeyRef.current);
@@ -524,22 +649,48 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     removedParticipantKeysRef.current.clear();
     setSaveStatus('saved');
     setFieldErrors({});
-    setForm(emptyForm(user));
-    setResponsablesList([]);
+    setActiveFormatCode(initialFormat);
+    setMyMinutesFormatFilter('ALL');
+    const initialForm = emptyForm(user, initialFormat);
+    setForm(initialForm);
+    setResponsablesList(loadResponsablesFromMinute(initialForm));
     setSignatures([]);
     setQr(null);
     setResponsibleDocument('');
     setResponsibleCandidate(null);
     setExternalStudentResult(null);
-    setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
+    setExternalDraft({
+      document: '',
+      name: '',
+      email: '',
+      organization: '',
+      role_title: '',
+      member_kind: 'miembro',
+      is_co_responsible: false,
+      attendance_type: initialFormat === 'COM-GD-FR-012' ? 'invitado' : 'asistente'
+    });
     setParticipantSearchOptions([]);
     setParticipantSearchOpen(false);
     setMyMinutesOpen(false);
     expiryAlertShownRef.current = false;
+    loadFormatDocuments();
     loadMinutes();
     loadMyMinutes();
     loadMeetingPlaces();
-  }, [open, user, closeSnackbar]);
+  }, [open, document, user, closeSnackbar]);
+
+  // Si el administrador desactivó el formato activo, el módulo cambia al
+  // primer formato habilitado (o informa que ninguno está disponible).
+  useEffect(() => {
+    if (!open || !enabledFormats || form.id) return;
+    if (enabledFormats[activeFormatCode]) return;
+    const fallback = MEETING_MINUTE_FORMAT_LIST.find((fmt) => enabledFormats[fmt.code]);
+    if (fallback) {
+      setActiveFormatCode(fallback.code);
+      setForm(emptyForm(user, fallback.code));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, enabledFormats, activeFormatCode, form.id]);
 
   useEffect(() => {
     if (!open || expiryAlertShownRef.current || expiringMinutes.length === 0) return;
@@ -549,6 +700,29 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       { variant: 'warning', autoHideDuration: 9000 }
     );
   }, [open, expiringMinutes.length, enqueueSnackbar]);
+
+  useEffect(() => {
+    if (!open || !isCouncilFormat || form.id) return undefined;
+    const yearMatch = String(form.fecha || '').match(/^(\d{4})/);
+    const year = yearMatch ? Number.parseInt(yearMatch[1], 10) : new Date().getFullYear();
+    let active = true;
+    setLoadingCouncilNumber(true);
+    meetingMinuteService.getNextCouncilNumber(year)
+      .then((response) => {
+        if (!active || !response?.data?.numero_acta) return;
+        setForm((previous) => previous.id ? previous : {
+          ...previous,
+          numero_acta: response.data.numero_acta
+        });
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoadingCouncilNumber(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, isCouncilFormat, form.id, form.fecha]);
 
   const markUnsavedChanges = ({ participants = false } = {}) => {
     hasUnsavedChangesRef.current = true;
@@ -563,7 +737,29 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setFieldErrors((previous) => previous[key] ? { ...previous, [key]: false } : previous);
     setForm((previous) => ({ ...previous, [key]: value }));
   };
-  const openMinute = async (id) => {
+
+  const hydrateParticipantsWithMeta = (participants = [], metaList = []) => {
+    const safeMeta = Array.isArray(metaList) ? metaList : [];
+    return (participants || []).map((p) => {
+      const pDoc = String(p.document || '').trim().toLowerCase();
+      const pEmail = String(p.email || '').trim().toLowerCase();
+      const pName = String(p.name || '').trim().toLowerCase();
+      const meta = safeMeta.find((m) => (
+        (pDoc && m?.document && String(m.document).trim().toLowerCase() === pDoc)
+        || (pEmail && m?.email && String(m.email).trim().toLowerCase() === pEmail)
+        || (!pDoc && !pEmail && pName && String(m?.name || '').trim().toLowerCase() === pName)
+      )) || {};
+      return {
+        ...p,
+        member_kind: p.member_kind || meta.member_kind || (p.attendance_type === 'invitado' || meta.attendance_type === 'invitado' ? 'invitado' : 'miembro'),
+        attendance_type: p.attendance_type || meta.attendance_type || 'asistente',
+        requires_signature: p.requires_signature ?? meta.requires_signature ?? true,
+        cargo_acta: p.cargo_acta || meta.cargo_acta || p.role_title || ''
+      };
+    });
+  };
+
+  const openMinute = async (id, targetFormatOverride = null) => {
     setFieldErrors({});
     participantGuidanceShownRef.current = false;
     guideAnimationRef.current?.cancel?.();
@@ -572,14 +768,17 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     guideSnackbarKeyRef.current = null;
     setExternalStudentResult(null);
     if (!id) {
+      const nextFormat = targetFormatOverride || activeFormatCode || resolveMeetingMinuteFormatCode(document);
       hasUnsavedChangesRef.current = false;
       localChangeVersionRef.current = 0;
       failedAutoSaveVersionRef.current = null;
       participantsDirtyRef.current = false;
       removedParticipantKeysRef.current.clear();
       setSaveStatus('saved');
-      setForm(emptyForm(user));
-      setResponsablesList([]);
+      setActiveFormatCode(nextFormat);
+      const nextForm = emptyForm(user, nextFormat);
+      setForm(nextForm);
+      setResponsablesList(loadResponsablesFromMinute(nextForm));
       setSignatures([]);
       setQr(null);
       setResponsibleDocument('');
@@ -591,23 +790,32 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       const response = await meetingMinuteService.get(id);
       const row = response.data;
       const content = row.content || {};
+      const rowFormat = resolveMeetingMinuteFormatCode(row);
       const [start = '', end = ''] = String(content.horario || '').split('-').map((part) => part.trim());
       const loadedResponsables = loadResponsablesFromMinute(content);
+      const hydratedParticipants = hydrateParticipantsWithMeta(row.participants || [], content.participantes_meta);
       hasUnsavedChangesRef.current = false;
       localChangeVersionRef.current = 0;
       failedAutoSaveVersionRef.current = null;
       participantsDirtyRef.current = false;
       removedParticipantKeysRef.current.clear();
       setSaveStatus('saved');
+      setActiveFormatCode(rowFormat);
       setResponsablesList(loadedResponsables);
       const formattedText = content.responsables || formatResponsablesText(loadedResponsables);
       setForm({
         id: row.id,
         code: row.code,
         status: row.status,
+        format_code: rowFormat,
         created_by: row.created_by,
         revision_required: Boolean(content._revision?.requires_resignature),
         titulo: content.titulo || '',
+        nombre_consejo: content.nombre_consejo || content.dependencia || '',
+        numero_acta: content.numero_acta || '01',
+        quorum_minimo: content.quorum_minimo || '',
+        ciudad: content.ciudad || 'San Juan de Pasto',
+        fecha_texto: content.fecha_texto || '',
         responsables: formattedText,
         responsable_document: content.responsable_document || loadedResponsables[0]?.document || '',
         responsable_role: content.responsable_role || loadedResponsables[0]?.role_title || '',
@@ -618,9 +826,15 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         hora_inicio: start || '08:00',
         hora_fin: end || '10:00',
         objetivo: content.objetivo?.[0] || '',
+        orden_del_dia: content.orden_del_dia?.[0] || content.objetivo?.[0] || '',
         desarrollo: content.desarrollo?.[0] || '',
         conclusiones: content.conclusiones?.[0] || '',
-        participants: row.participants || []
+        compromisos: content.compromisos?.[0] || content.conclusiones?.[0] || '',
+        anexo: content.anexo || '',
+        participantes_meta: Array.isArray(content.participantes_meta) ? content.participantes_meta : [],
+        invitados_sin_firma_data: Array.isArray(content.invitados_sin_firma_data) ? content.invitados_sin_firma_data : [],
+        ausentes_data: Array.isArray(content.ausentes_data) ? content.ausentes_data : [],
+        participants: hydratedParticipants
       });
       setResponsibleDocument('');
       setResponsibleCandidate(null);
@@ -664,6 +878,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 const rowContent = row.content || {};
                 const loadedResp = loadResponsablesFromMinute(rowContent);
                 const hasUnsavedChanges = hasUnsavedChangesRef.current;
+                const hydrated = hydrateParticipantsWithMeta(row.participants || [], rowContent.participantes_meta);
                 if (layoutMode === 'preview' && !hasUnsavedChanges) {
                   const [start = '', end = ''] = String(rowContent.horario || '').split('-').map((p) => p.trim());
                   return {
@@ -671,6 +886,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     status: row.status,
                     revision_required: Boolean(rowContent._revision?.requires_resignature),
                     titulo: rowContent.titulo || '',
+                    nombre_consejo: rowContent.nombre_consejo || prev.nombre_consejo,
+                    numero_acta: rowContent.numero_acta || prev.numero_acta,
+                    quorum_minimo: rowContent.quorum_minimo || prev.quorum_minimo,
+                    ciudad: rowContent.ciudad || prev.ciudad,
                     responsables: rowContent.responsables || formatResponsablesText(loadedResp),
                     responsable_document: rowContent.responsable_document || loadedResp[0]?.document || '',
                     responsable_role: rowContent.responsable_role || loadedResp[0]?.role_title || '',
@@ -681,9 +900,15 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     hora_inicio: start || prev.hora_inicio,
                     hora_fin: end || prev.hora_fin,
                     objetivo: rowContent.objetivo?.[0] || prev.objetivo,
+                    orden_del_dia: rowContent.orden_del_dia?.[0] || rowContent.objetivo?.[0] || prev.orden_del_dia,
                     desarrollo: rowContent.desarrollo?.[0] || prev.desarrollo,
                     conclusiones: rowContent.conclusiones?.[0] || prev.conclusiones,
-                    participants: row.participants || []
+                    compromisos: rowContent.compromisos?.[0] || rowContent.conclusiones?.[0] || prev.compromisos,
+                    anexo: rowContent.anexo ?? prev.anexo,
+                    participantes_meta: Array.isArray(rowContent.participantes_meta) ? rowContent.participantes_meta : prev.participantes_meta,
+                    invitados_sin_firma_data: Array.isArray(rowContent.invitados_sin_firma_data) ? rowContent.invitados_sin_firma_data : prev.invitados_sin_firma_data,
+                    ausentes_data: Array.isArray(rowContent.ausentes_data) ? rowContent.ausentes_data : prev.ausentes_data,
+                    participants: hydrated
                   };
                 }
                 return {
@@ -691,10 +916,13 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   status: row.status,
                   revision_required: Boolean(rowContent._revision?.requires_resignature),
                   titulo: hasUnsavedChanges ? prev.titulo : (rowContent.titulo || ''),
+                  participantes_meta: hasUnsavedChanges ? prev.participantes_meta : (Array.isArray(rowContent.participantes_meta) ? rowContent.participantes_meta : prev.participantes_meta),
+                  invitados_sin_firma_data: hasUnsavedChanges ? prev.invitados_sin_firma_data : (Array.isArray(rowContent.invitados_sin_firma_data) ? rowContent.invitados_sin_firma_data : prev.invitados_sin_firma_data),
+                  ausentes_data: hasUnsavedChanges ? prev.ausentes_data : (Array.isArray(rowContent.ausentes_data) ? rowContent.ausentes_data : prev.ausentes_data),
                   // Si hay ediciones locales, el servidor aun no conoce participantes
                   // recien agregados o eliminados. Conservarlos evita que desaparezcan
                   // durante el sondeo de cinco segundos.
-                  participants: hasUnsavedChanges ? prev.participants : (row.participants || prev.participants)
+                  participants: hasUnsavedChanges ? prev.participants : (hydrated.length ? hydrated : prev.participants)
                 };
               });
             }
@@ -772,6 +1000,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       responsable_role: primaryResp?.role_title || '',
       responsables_data: updatedList,
       dependencia: (isPrimary || !prev.dependencia) ? (primaryResp?.organization || prev.dependencia) : prev.dependencia,
+      nombre_consejo: isCouncilFormat && (isPrimary || !prev.nombre_consejo) ? (prev.nombre_consejo || primaryResp?.organization || '') : prev.nombre_consejo,
       participants: updatedParticipants
     }));
 
@@ -800,6 +1029,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       responsable_role: primaryResp.role_title || '',
       responsables_data: updatedList,
       dependencia: primaryResp.organization || prev.dependencia,
+      nombre_consejo: isCouncilFormat && !prev.nombre_consejo ? (primaryResp.organization || prev.nombre_consejo) : prev.nombre_consejo,
       participants: updatedParticipants
     }));
     enqueueSnackbar(`${formatPersonName(primaryResp.name)} ahora es el Responsable Principal.`, { variant: 'info' });
@@ -837,27 +1067,209 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
 
   const addExternalParticipant = () => {
     const external = Object.fromEntries(Object.entries(externalDraft).map(([key, value]) => [key, String(value || '').trim()]));
-    if (!externalStudentResult || externalStudentResult.error) return enqueueSnackbar('Consulte primero la identificación para validar si pertenece a una persona institucional o estudiante.', { variant: 'warning' });
-    if (!external.document || !external.name || !external.email || !external.role_title) return enqueueSnackbar('Complete cédula, nombre, correo y cargo.', { variant: 'warning' });
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(external.email)) return enqueueSnackbar('Digite un correo válido.', { variant: 'warning' });
+    const isCouncilCoResponsible = isCouncilFormat
+      && external.member_kind !== 'invitado'
+      && Boolean(externalDraft.is_co_responsible);
+    if (!isCouncilFormat && (!externalStudentResult || externalStudentResult.error)) return enqueueSnackbar('Consulte primero la identificación para validar si pertenece a una persona institucional o estudiante.', { variant: 'warning' });
+    if (isCouncilFormat && (!external.name || !external.role_title || !external.email)) return enqueueSnackbar('Complete nombre, cargo y correo para confirmar la asistencia.', { variant: 'warning' });
+    if (isCouncilCoResponsible && externalStudentResult?.kind !== 'institutional') return enqueueSnackbar('El corresponsable debe seleccionarse de los usuarios institucionales para que pueda ingresar y editar el acta.', { variant: 'warning' });
+    if (!isCouncilFormat && (!external.document || !external.name || !external.email || !external.role_title)) return enqueueSnackbar('Complete cédula, nombre, correo y cargo.', { variant: 'warning' });
+    if (external.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(external.email)) return enqueueSnackbar('Digite un correo válido.', { variant: 'warning' });
     const normalizedDocument = external.document.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     const normalizedEmail = external.email.toLowerCase();
-    if (form.participants.some((participant) => (
-      String(participant.document || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === normalizedDocument
-      || String(participant.email || '').trim().toLowerCase() === normalizedEmail
+    const existingRoster = [
+      ...form.participants,
+      ...(form.invitados_sin_firma_data || []),
+      ...(form.ausentes_data || [])
+    ];
+    if (existingRoster.some((participant) => (
+      (normalizedDocument && String(participant.document || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === normalizedDocument)
+      || (normalizedEmail && String(participant.email || '').trim().toLowerCase() === normalizedEmail)
+      || (!normalizedDocument && !normalizedEmail && String(participant.name || participant.nombre || '').trim().toLowerCase() === external.name.toLowerCase())
     ))) return enqueueSnackbar('La persona ya está agregada.', { variant: 'info' });
-    const isInstitutional = externalStudentResult.kind === 'institutional';
-    setField('participants', [...form.participants, {
+    const isInstitutional = externalStudentResult?.kind === 'institutional';
+    if (isCouncilCoResponsible && responsablesList.some((responsible) => (
+      (normalizedDocument && String(responsible.document || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === normalizedDocument)
+      || (normalizedEmail && String(responsible.email || '').trim().toLowerCase() === normalizedEmail)
+    ))) return enqueueSnackbar('Esta persona ya es responsable o corresponsable del acta.', { variant: 'info' });
+    const newMember = {
       ...external,
       name: formatPersonName(external.name),
+      member_kind: isCouncilFormat && external.member_kind === 'invitado' ? 'invitado' : 'miembro',
+      attendance_type: isCouncilFormat ? 'pendiente' : 'asistente',
+      requires_signature: isCouncilFormat ? false : true,
+      cargo_acta: external.role_title || '',
       user_id: isInstitutional ? (externalStudentResult.institutionalId || null) : null,
       status: 'invited',
       external: !isInstitutional
-    }]);
-    setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
+    };
+    if (isCouncilFormat) {
+      const nextResponsables = isCouncilCoResponsible
+        ? [...responsablesList, {
+            user_id: newMember.user_id || null,
+            document: newMember.document || '',
+            name: newMember.name,
+            email: newMember.email || '',
+            organization: newMember.organization || '',
+            role_title: newMember.role_title || '',
+            is_primary: false
+          }]
+        : responsablesList;
+      const primary = nextResponsables.find((item) => item.is_primary) || nextResponsables[0];
+      markUnsavedChanges({ participants: true });
+      setResponsablesList(nextResponsables);
+      setForm((previous) => ({
+        ...previous,
+        invitados_sin_firma_data: [...(previous.invitados_sin_firma_data || []), newMember],
+        ...(isCouncilCoResponsible ? {
+          responsables: formatResponsablesText(nextResponsables),
+          responsable_document: primary?.document || '',
+          responsable_role: primary?.role_title || '',
+          responsables_data: nextResponsables
+        } : {})
+      }));
+      enqueueSnackbar(
+        isCouncilCoResponsible
+          ? `${newMember.name} fue agregado como corresponsable y miembro esperado.`
+          : `${newMember.name} fue agregado a la lista inicial.`,
+        { variant: 'success' }
+      );
+    } else {
+      setField('participants', [...form.participants, newMember]);
+    }
+    setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '', member_kind: 'miembro', is_co_responsible: false, attendance_type: isCouncilFormat ? 'invitado' : 'asistente' });
     setExternalStudentResult(null);
     setParticipantSearchOptions([]);
     setParticipantSearchOpen(false);
+  };
+
+  const updateParticipantCouncilMeta = (index, patch) => {
+    if (!canManageParticipants) return;
+    const nextList = form.participants.map((item, idx) => {
+      if (idx !== index) return item;
+      const merged = { ...item, ...patch };
+      if (patch.role_title !== undefined && patch.cargo_acta === undefined) {
+        merged.cargo_acta = patch.role_title;
+      }
+      return merged;
+    });
+    setField('participants', nextList);
+  };
+
+  const updateCouncilPopulation = (index, population) => {
+    if (population === 'asistente') {
+      updateParticipantCouncilMeta(index, { attendance_type: 'asistente' });
+      return;
+    }
+    const participant = form.participants[index];
+    if (!participant || participant.status === 'signed') {
+      enqueueSnackbar('Una persona que ya firmó no puede cambiar de estado de asistencia.', { variant: 'warning' });
+      return;
+    }
+    const participantDocument = String(participant.document || '').trim().toLowerCase();
+    const participantEmail = String(participant.email || '').trim().toLowerCase();
+    if (participantDocument) removedParticipantKeysRef.current.add(`doc:${participantDocument}`);
+    if (participantEmail) removedParticipantKeysRef.current.add(`email:${participantEmail}`);
+    if (participant.id) removedParticipantKeysRef.current.add(`id:${String(participant.id).toLowerCase()}`);
+    markUnsavedChanges({ participants: true });
+    setForm((previous) => ({
+      ...previous,
+      participants: previous.participants.filter((_, participantIndex) => participantIndex !== index),
+      [population === 'invitado' ? 'invitados_sin_firma_data' : 'ausentes_data']: [
+        ...(previous[population === 'invitado' ? 'invitados_sin_firma_data' : 'ausentes_data'] || []),
+        {
+          document: participant.document || '',
+          email: participant.email || '',
+          name: formatPersonName(participant.name),
+          role_title: participant.cargo_acta || participant.role_title || '',
+          cargo_acta: participant.cargo_acta || participant.role_title || '',
+          organization: participant.organization || '',
+          member_kind: participant.member_kind || 'miembro',
+          requires_signature: false
+        }
+      ]
+    }));
+    enqueueSnackbar(
+      `${formatPersonName(participant.name)} pasó a ${population === 'invitado' ? 'invitados pendientes' : 'ausentes'}.`,
+      { variant: 'info' }
+    );
+  };
+
+  const removeNonSigningCouncilMember = (tipo, index) => {
+    const sourceKey = tipo === 'invitado_sin_firma' ? 'invitados_sin_firma_data' : 'ausentes_data';
+    const member = (form[sourceKey] || [])[index];
+    if (!member) return;
+    const memberDocument = String(member.document || '').trim().toLowerCase();
+    const memberEmail = String(member.email || '').trim().toLowerCase();
+    const responsibleIndex = responsablesList.findIndex((responsible) => !responsible.is_primary && (
+      (memberDocument && String(responsible.document || '').trim().toLowerCase() === memberDocument)
+      || (memberEmail && String(responsible.email || '').trim().toLowerCase() === memberEmail)
+    ));
+    const nextResponsables = responsibleIndex >= 0
+      ? responsablesList.filter((_, responsiblePosition) => responsiblePosition !== responsibleIndex)
+      : responsablesList;
+    const primary = nextResponsables.find((item) => item.is_primary) || nextResponsables[0];
+    markUnsavedChanges({ participants: true });
+    setResponsablesList(nextResponsables);
+    setForm((previous) => ({
+      ...previous,
+      [sourceKey]: (previous[sourceKey] || []).filter((_, memberIndex) => memberIndex !== index),
+      ...(responsibleIndex >= 0 ? {
+        responsables: formatResponsablesText(nextResponsables),
+        responsable_document: primary?.document || '',
+        responsable_role: primary?.role_title || '',
+        responsables_data: nextResponsables
+      } : {})
+    }));
+  };
+
+  const updateNonSigningPopulation = (tipo, index, nextPopulation) => {
+    const sourceKey = tipo === 'invitado_sin_firma' ? 'invitados_sin_firma_data' : 'ausentes_data';
+    const member = (form[sourceKey] || [])[index];
+    if (!member) return;
+    if (nextPopulation === 'asistente') {
+      markUnsavedChanges({ participants: true });
+      setForm((previous) => ({
+        ...previous,
+        [sourceKey]: (previous[sourceKey] || []).filter((_, memberIndex) => memberIndex !== index),
+        participants: [
+          ...previous.participants,
+          {
+            ...member,
+            name: formatPersonName(member.name || member.nombre),
+            attendance_type: 'asistente',
+            requires_signature: member.requires_signature === true,
+            cargo_acta: member.cargo_acta || member.role_title || '',
+            status: member.status || 'invited'
+          }
+        ]
+      }));
+      enqueueSnackbar(`${formatPersonName(member.name || member.nombre)} fue registrado como asistente.`, { variant: 'success' });
+      return;
+    }
+    const targetKey = nextPopulation === 'invitado_sin_firma' ? 'invitados_sin_firma_data' : 'ausentes_data';
+    if (sourceKey === targetKey) return;
+    markUnsavedChanges();
+    setForm((previous) => {
+      const member = (previous[sourceKey] || [])[index];
+      if (!member) return previous;
+      return {
+        ...previous,
+        [sourceKey]: (previous[sourceKey] || []).filter((_, memberIndex) => memberIndex !== index),
+        [targetKey]: [...(previous[targetKey] || []), member]
+      };
+    });
+  };
+
+  const handleSelectFormat = async (nextFormatCode) => {
+    const normalizedNext = resolveMeetingMinuteFormatCode({ codigo: nextFormatCode });
+    if (normalizedNext === activeFormatCode && !form.id) return;
+    if (hasUnsavedChangesRef.current && hasSavableData() && canEdit) {
+      await save({ quiet: true, automatic: true });
+    }
+    await openMinute('', normalizedNext);
+    const meta = getMeetingMinuteFormatMeta(normalizedNext);
+    enqueueSnackbar(`Formato activo: ${meta.code} – ${meta.shortLabel}`, { variant: 'info' });
   };
 
   const selectInstitutionalParticipant = async (person) => {
@@ -1061,26 +1473,46 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     }
     if (pDoc) removedParticipantKeysRef.current.add(`doc:${pDoc}`);
     if (pEmail) removedParticipantKeysRef.current.add(`email:${pEmail}`);
+    if (p?.id) removedParticipantKeysRef.current.add(`id:${String(p.id).toLowerCase()}`);
     setField('participants', form.participants.filter((_, i) => i !== index));
   };
 
-  const payload = () => ({
-    id: form.id || undefined,
-    documento_id: document.id,
-    titulo: form.titulo,
-    responsables: form.responsables,
-    responsable_document: form.responsable_document,
-    responsable_role: form.responsable_role,
-    responsables_data: responsablesList,
-    dependencia: form.dependencia,
-    lugar: form.lugar,
-    fecha: form.fecha,
-    horario,
-    objetivo: form.objetivo,
-    desarrollo: form.desarrollo,
-    conclusiones: form.conclusiones,
-    participants: form.participants
-  });
+  const payload = () => {
+    const basePayload = {
+      id: form.id || undefined,
+      // Nunca reutilizar el id del documento de entrada cuando el usuario ya
+      // cambió de formato. Si el catálogo aún está cargando, el backend resuelve
+      // el documento correcto mediante `format_code`.
+      documento_id: activeDocument?.id || undefined,
+      format_code: activeFormatCode,
+      titulo: isCouncilFormat ? (form.titulo || form.nombre_consejo || '') : form.titulo,
+      responsables: form.responsables,
+      responsable_document: form.responsable_document,
+      responsable_role: form.responsable_role,
+      responsables_data: responsablesList,
+      dependencia: isCouncilFormat ? (form.nombre_consejo || form.dependencia || '') : form.dependencia,
+      lugar: form.lugar,
+      fecha: form.fecha,
+      horario,
+      objetivo: form.objetivo,
+      desarrollo: form.desarrollo,
+      conclusiones: form.conclusiones,
+      participants: form.participants
+    };
+
+    if (isCouncilFormat) {
+      basePayload.numero_acta = form.numero_acta || '';
+      // El quórum es siempre la mayoría simple de los miembros esperados.
+      // Los invitados no hacen parte de esta base de cálculo.
+      basePayload.quorum_minimo = String(councilAttendanceSummary.minimo || 0);
+      basePayload.nombre_consejo = form.nombre_consejo || '';
+      basePayload.orden_del_dia = form.orden_del_dia || '';
+      basePayload.ausentes_data = Array.isArray(form.ausentes_data) ? form.ausentes_data : [];
+      basePayload.invitados_sin_firma_data = Array.isArray(form.invitados_sin_firma_data) ? form.invitados_sin_firma_data : [];
+    }
+
+    return basePayload;
+  };
 
   const hasRichTextValue = (value) => Boolean(
     sanitizeRichHtml(value || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim()
@@ -1093,17 +1525,37 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     responsablesList.length ||
     String(form.titulo || '').trim() ||
     String(form.dependencia || '').trim() ||
+    String(form.numero_acta || '').trim() ||
+    String(form.nombre_consejo || '').trim() ||
     String(form.lugar || '').trim() ||
     String(form.fecha || '').trim() ||
     String(form.hora_inicio || '').trim() ||
     String(form.hora_fin || '').trim() ||
     hasRichTextValue(form.objetivo) ||
+    hasRichTextValue(form.orden_del_dia) ||
     hasRichTextValue(form.desarrollo) ||
     hasRichTextValue(form.conclusiones) ||
+    (Array.isArray(form.ausentes_data) && form.ausentes_data.length > 0) ||
+    (Array.isArray(form.invitados_sin_firma_data) && form.invitados_sin_firma_data.length > 0) ||
     form.participants.length
   );
 
   const validateRequiredFields = () => {
+    if (isCouncilFormat) {
+      return {
+        responsables: !responsablesList.length || !String(form.responsables || '').trim(),
+        numero_acta: !String(form.numero_acta || '').trim(),
+        nombre_consejo: !String(form.nombre_consejo || '').trim(),
+        lugar: !String(form.lugar || '').trim(),
+        fecha: !String(form.fecha || '').trim(),
+        hora_inicio: !String(form.hora_inicio || '').trim(),
+        hora_fin: !String(form.hora_fin || '').trim(),
+        objetivo: !hasRichTextValue(form.objetivo),
+        orden_del_dia: !hasRichTextValue(form.orden_del_dia),
+        desarrollo: !hasRichTextValue(form.desarrollo),
+        participants: signingParticipants.length < 1
+      };
+    }
     return {
       responsables: !responsablesList.length || !String(form.responsables || '').trim(),
       titulo: !String(form.titulo || '').trim(),
@@ -1121,7 +1573,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
 
   useEffect(() => {
     if (!open || locked) return;
-    if (form.participants.length < 2) {
+    if (signingParticipants.length < (isCouncilFormat ? 1 : 2)) {
       participantGuidanceShownRef.current = false;
       return;
     }
@@ -1132,28 +1584,42 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     if (guideSnackbarKeyRef.current) closeSnackbar(guideSnackbarKeyRef.current);
     guideSnackbarKeyRef.current = enqueueSnackbar(
       readyToSend
-        ? 'Ya cuenta con al menos dos participantes. Si no agregará más personas, el acta está lista para enviar a firmas.'
-        : 'Ya cuenta con el mínimo de dos participantes. Si no agregará más personas, continúe con los campos pendientes del acta.',
+        ? 'Ya seleccionó las personas que firmarán. El acta está lista para continuar con el envío.'
+        : 'Ya seleccionó el mínimo de firmantes. Continúe con los campos pendientes del acta.',
       { variant: readyToSend ? 'success' : 'info', autoHideDuration: 11000 }
     );
     // Se evalúa al cruzar el mínimo de participantes; los demás cambios no deben repetir el aviso.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, locked, form.participants.length]);
+  }, [open, locked, signingParticipants.length, isCouncilFormat]);
 
   const focusFirstInvalidField = (errors) => {
-    const order = [
-      ['responsables', 'responsible-document-field'],
-      ['titulo', 'meeting-titulo-field'],
-      ['dependencia', 'meeting-dependencia-field'],
-      ['lugar', 'meeting-lugar-field'],
-      ['fecha', 'meeting-fecha-field'],
-      ['hora_inicio', 'meeting-hora-inicio-field'],
-      ['hora_fin', 'meeting-hora-fin-field'],
-      ['objetivo', 'meeting-objetivo-field'],
-      ['desarrollo', 'meeting-desarrollo-field'],
-      ['conclusiones', 'meeting-conclusiones-field'],
-      ['participants', 'meeting-participants-section']
-    ];
+    const order = isCouncilFormat
+      ? [
+          ['responsables', 'responsible-document-field'],
+          ['numero_acta', 'council-numero-acta-field'],
+          ['nombre_consejo', 'council-nombre-field'],
+          ['lugar', 'meeting-lugar-field'],
+          ['fecha', 'meeting-fecha-field'],
+          ['hora_inicio', 'meeting-hora-inicio-field'],
+          ['hora_fin', 'meeting-hora-fin-field'],
+          ['objetivo', 'meeting-objetivo-field'],
+          ['orden_del_dia', 'council-orden-dia-field'],
+          ['desarrollo', 'meeting-desarrollo-field'],
+          ['participants', 'meeting-participants-section']
+        ]
+      : [
+          ['responsables', 'responsible-document-field'],
+          ['titulo', 'meeting-titulo-field'],
+          ['dependencia', 'meeting-dependencia-field'],
+          ['lugar', 'meeting-lugar-field'],
+          ['fecha', 'meeting-fecha-field'],
+          ['hora_inicio', 'meeting-hora-inicio-field'],
+          ['hora_fin', 'meeting-hora-fin-field'],
+          ['objetivo', 'meeting-objetivo-field'],
+          ['desarrollo', 'meeting-desarrollo-field'],
+          ['conclusiones', 'meeting-conclusiones-field'],
+          ['participants', 'meeting-participants-section']
+        ];
     const targetId = order.find(([key]) => errors[key])?.[1];
     if (!targetId) return;
     if (layoutMode === 'preview') setLayoutMode('form');
@@ -1221,11 +1687,16 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       setForm((previous) => ({
         ...previous,
         id: row.id,
+        code: row.code || previous.code,
+        numero_acta: row.content?.numero_acta || previous.numero_acta,
+        quorum_minimo: row.content?.quorum_minimo || previous.quorum_minimo,
         status: row.status,
         created_by: row.created_by || previous.created_by,
         revision_required: Boolean(row.content?._revision?.requires_resignature),
         // Una respuesta antigua no puede borrar cambios hechos mientras se guardaba.
-        participants: noNewerLocalChanges ? (row.participants || previous.participants) : previous.participants
+        participants: noNewerLocalChanges
+          ? hydrateParticipantsWithMeta(row.participants || previous.participants, row.content?.participants_meta || [])
+          : previous.participants
       }));
       await loadMinutes();
       if (!quiet) enqueueSnackbar(form.status === 'draft' ? 'Borrador del acta guardado.' : 'Cambios del acta guardados exitosamente.', { variant: 'success' });
@@ -1291,6 +1762,22 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       setLoading(false);
     }
   };
+  const sendAttendanceInvitations = async () => {
+    const row = await save({ quiet: true });
+    if (!row) return;
+    setLoading(true);
+    try {
+      const response = await meetingMinuteService.sendAttendanceInvitations(row.id, { public_base_url: window.location.origin });
+      await openMinute(row.id);
+      enqueueSnackbar(response.message || 'Confirmaciones de asistencia enviadas.', {
+        variant: response.data?.failed || response.data?.skipped_without_email ? 'warning' : 'success'
+      });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible enviar las confirmaciones de asistencia.', { variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
   const resendInvitations = async () => {
     if (!form.id) return;
     setLoading(true);
@@ -1350,7 +1837,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         participantsDirtyRef.current = false;
         removedParticipantKeysRef.current.clear();
         setSaveStatus('saved');
-        setForm(emptyForm(user));
+        setForm(emptyForm(user, activeFormatCode));
         setResponsablesList([]);
         setSignatures([]);
         setQr(null);
@@ -1375,16 +1862,17 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       const url = URL.createObjectURL(blob);
       const anchor = window.document.createElement('a');
       anchor.href = url;
-      const cleanTitle = (form.titulo || '')
+      const cleanTitle = (isCouncilFormat ? (form.nombre_consejo || form.titulo || '') : (form.titulo || ''))
         .replace(/[/\\?%*:|"<>]/g, '')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 60)
         .trim();
       const datePart = form.fecha || 'REUNION';
+      const numPart = isCouncilFormat && form.numero_acta ? ` - ACTA ${form.numero_acta}` : '';
       const titleSuffix = cleanTitle ? ` - ${cleanTitle}` : '';
       const copySuffix = isCopia ? ' - COPIA' : '';
-      anchor.download = `ACTA-${datePart}${titleSuffix}${copySuffix}.pdf`;
+      anchor.download = `ACTA-${datePart}${numPart}${titleSuffix}${copySuffix}.pdf`;
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -1403,19 +1891,33 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   };
 
   const guideErrors = validateRequiredFields();
-  const guideSteps = [
-    { key: 'responsables', label: 'Responsable Principal', target: 'responsible-document-field', instruction: 'Busque por nombre o cédula, seleccione la persona correcta y asígnela al acta.' },
-    { key: 'titulo', label: 'Título corto', target: 'meeting-titulo-field', instruction: 'Escriba un nombre breve que permita identificar y encontrar fácilmente esta acta.' },
-    { key: 'dependencia', label: 'Dependencia que cita', target: 'meeting-dependencia-field', instruction: 'Confirme o escriba la dependencia que está convocando la reunión.' },
-    { key: 'lugar', label: 'Lugar', target: 'meeting-lugar-field', instruction: 'Seleccione una ubicación sugerida o escriba el lugar donde se realizará la reunión.' },
-    { key: 'fecha', label: 'Fecha', target: 'meeting-fecha-field', instruction: 'Seleccione la fecha en que se realiza la reunión.' },
-    { key: 'hora_inicio', label: 'Hora de inicio', target: 'meeting-hora-inicio-field', instruction: 'Indique la hora real de inicio de la reunión.' },
-    { key: 'hora_fin', label: 'Hora de finalización', target: 'meeting-hora-fin-field', instruction: 'Indique la hora prevista o real de finalización.' },
-    { key: 'objetivo', label: 'Objetivo', target: 'meeting-objetivo-field', instruction: 'Describa de manera concreta el propósito de la reunión.' },
-    { key: 'desarrollo', label: 'Desarrollo', target: 'meeting-desarrollo-field', instruction: 'Registre los temas tratados y los aspectos relevantes de la reunión.' },
-    { key: 'conclusiones', label: 'Conclusiones y compromisos', target: 'meeting-conclusiones-field', instruction: 'Registre las decisiones, responsables o compromisos acordados.' },
-    { key: 'participants', label: 'Participantes', target: 'meeting-participants-section', instruction: 'Agregue como mínimo dos personas contando responsables y participantes convocados.' }
-  ];
+  const guideSteps = isCouncilFormat
+    ? [
+        { key: 'responsables', label: 'Responsable Principal', target: 'responsible-document-field', instruction: 'Busque por nombre o cédula, seleccione la persona responsable y asígnela al acta.' },
+        { key: 'numero_acta', label: 'Número de acta', target: 'council-numero-acta-field', instruction: 'El sistema asigna automáticamente el siguiente consecutivo del año de la fecha del acta.' },
+        { key: 'nombre_consejo', label: 'Consejo o Comité', target: 'council-nombre-field', instruction: 'Seleccione o escriba el nombre oficial del Consejo o Comité.' },
+        { key: 'lugar', label: 'Lugar', target: 'meeting-lugar-field', instruction: 'Seleccione una ubicación sugerida o escriba el lugar donde se realiza la sesión.' },
+        { key: 'fecha', label: 'Fecha', target: 'meeting-fecha-field', instruction: 'Seleccione la fecha en que se realiza la sesión.' },
+        { key: 'hora_inicio', label: 'Hora de inicio', target: 'meeting-hora-inicio-field', instruction: 'Indique la hora de inicio de la sesión.' },
+        { key: 'hora_fin', label: 'Hora de finalización', target: 'meeting-hora-fin-field', instruction: 'Indique la hora de finalización de la sesión.' },
+        { key: 'objetivo', label: 'Objetivo', target: 'meeting-objetivo-field', instruction: 'Describa de manera concreta el objetivo de la sesión.' },
+        { key: 'orden_del_dia', label: 'Orden del día', target: 'council-orden-dia-field', instruction: 'Registre los puntos del orden del día (Verificación de quórum, aprobación del acta anterior, etc.).' },
+        { key: 'desarrollo', label: 'Desarrollo de la reunión', target: 'meeting-desarrollo-field', instruction: 'Registre el desarrollo de cada punto del orden del día y las decisiones adoptadas.' },
+        { key: 'participants', label: 'Firmantes del acta', target: 'meeting-participants-section', instruction: 'Seleccione explícitamente en la tabla quiénes deben firmar el acta.' }
+      ]
+    : [
+        { key: 'responsables', label: 'Responsable Principal', target: 'responsible-document-field', instruction: 'Busque por nombre o cédula, seleccione la persona correcta y asígnela al acta.' },
+        { key: 'titulo', label: 'Título corto', target: 'meeting-titulo-field', instruction: 'Escriba un nombre breve que permita identificar y encontrar fácilmente esta acta.' },
+        { key: 'dependencia', label: 'Dependencia que cita', target: 'meeting-dependencia-field', instruction: 'Confirme o escriba la dependencia que está convocando la reunión.' },
+        { key: 'lugar', label: 'Lugar', target: 'meeting-lugar-field', instruction: 'Seleccione una ubicación sugerida o escriba el lugar donde se realizará la reunión.' },
+        { key: 'fecha', label: 'Fecha', target: 'meeting-fecha-field', instruction: 'Seleccione la fecha en que se realiza la reunión.' },
+        { key: 'hora_inicio', label: 'Hora de inicio', target: 'meeting-hora-inicio-field', instruction: 'Indique la hora real de inicio de la reunión.' },
+        { key: 'hora_fin', label: 'Hora de finalización', target: 'meeting-hora-fin-field', instruction: 'Indique la hora prevista o real de finalización.' },
+        { key: 'objetivo', label: 'Objetivo', target: 'meeting-objetivo-field', instruction: 'Describa de manera concreta el propósito de la reunión.' },
+        { key: 'desarrollo', label: 'Desarrollo', target: 'meeting-desarrollo-field', instruction: 'Registre los temas tratados y los aspectos relevantes de la reunión.' },
+        { key: 'conclusiones', label: 'Conclusiones y compromisos', target: 'meeting-conclusiones-field', instruction: 'Registre las decisiones, responsables o compromisos acordados.' },
+        { key: 'participants', label: 'Participantes', target: 'meeting-participants-section', instruction: 'Agregue como mínimo dos personas contando responsables y participantes convocados.' }
+      ];
   const missingGuideSteps = guideSteps.filter(({ key }) => guideErrors[key]);
   const nextGuideStep = missingGuideSteps[0] || null;
   const guideInfo = form.status === 'draft'
@@ -1477,8 +1979,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
           <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ md: 'center' }} gap={{ xs: 1, md: 2.5 }} sx={{ minWidth: 0 }}>
             <Box>
-              <Typography variant="h5" fontWeight={950}>Registro de Asistencia y Reunión</Typography>
-              <Typography sx={{ opacity: .9, fontSize: 13 }}>{document?.codigo || 'COM-ID-FR-002'}</Typography>
+              <Typography variant="h5" fontWeight={950}>{activeFormatMeta.shortLabel}</Typography>
+              <Typography sx={{ opacity: .9, fontSize: 13 }}>{activeDocument?.codigo || activeFormatMeta.code}</Typography>
             </Box>
             <Stack direction="row" alignItems="center" gap={1}>
               <Button
@@ -1596,6 +2098,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             }}
           >
             <Paper variant="outlined" sx={{
+              order: isCouncilFormat ? 0 : undefined,
               p: 2.25,
               borderRadius: 3,
               borderColor: '#94a3b8',
@@ -1605,9 +2108,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               '& .MuiOutlinedInput-root.Mui-error .MuiOutlinedInput-notchedOutline': { borderColor: '#dc2626', borderWidth: '2px' }
             }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} mb={2}>
-                <Typography fontWeight={900}>Actas de reunión</Typography>
+                <Box>
+                  <Typography fontWeight={900}>Formatos de actas sistematizados</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Seleccione el formato a diligenciar. Todas las actas guardadas se consultan en <strong>Mis actas</strong>.
+                  </Typography>
+                </Box>
                 <Stack direction="row" alignItems="center" gap={1}>
-                  <Button variant="outlined" onClick={() => openMinute('')} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button>
+                  <Button variant="outlined" onClick={() => openMinute('', activeFormatCode)} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button>
                   <Tooltip title={layoutMode === 'split' ? 'Expandir formulario a pantalla completa' : 'Restaurar vista dividida (50/50)'}>
                     <IconButton
                       size="small"
@@ -1634,75 +2142,47 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   fullWidth
                   select
                   size="small"
-                  label="Abrir un acta guardada"
-                  value={form.id}
-                  onChange={(event) => openMinute(event.target.value)}
+                  label="Tipo de formato de acta"
+                  value={isFormatAvailable(activeFormatCode) ? activeFormatCode : (availableFormats[0]?.code || '')}
+                  onChange={(event) => handleSelectFormat(event.target.value)}
+                  disabled={availableFormats.length === 0}
+                  helperText={availableFormats.length === 0 ? 'No hay formatos de acta habilitados por el administrador.' : undefined}
                   SelectProps={{
                     renderValue: (selected) => {
-                      if (!selected) return 'Nueva acta';
-                      const min = minutes.find((m) => m.id === selected);
-                      if (!min) return 'Nueva acta';
-                      const statusLabel = { draft: 'Borrador', signing: 'En firmas', signed: 'Firmada', distributed: 'Enviada' }[min.status] || min.status;
-                      const shortTitle = String(min.content?.titulo || '').trim();
-                      return `${shortTitle ? `${shortTitle} · ` : ''}${min.code} · ${min.content?.fecha || 'Sin fecha'} · ${statusLabel}`;
+                      if (!selected) return 'Sin formatos disponibles';
+                      const meta = getMeetingMinuteFormatMeta(selected);
+                      return `${meta.code} – ${meta.shortLabel}`;
                     }
                   }}
                 >
-                  <MenuItem value="">
-                    <em>+ Nueva acta</em>
-                  </MenuItem>
-                  {minutes.map((minute) => {
-                    const canDelete = canDeleteMinute(minute);
-                    const creatorLabel = minute.creator?.nombre
-                      ? ` · Creada por: ${formatPersonName(minute.creator.nombre)}`
-                      : '';
-                    const statusLabel = { draft: 'Borrador', signing: 'En firmas', signed: 'Firmada', distributed: 'Enviada' }[minute.status] || minute.status;
-                    const shortTitle = String(minute.content?.titulo || '').trim();
-                    return (
+                  {availableFormats.length === 0 ? (
+                    <MenuItem value="" disabled>
+                      <em>No hay formatos habilitados</em>
+                    </MenuItem>
+                  ) : (
+                    availableFormats.map((fmt) => (
                       <MenuItem
-                        key={minute.id}
-                        value={minute.id}
-                        sx={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          gap: 1,
-                          py: 0.85,
-                          pr: 1
-                        }}
+                        key={fmt.code}
+                        value={fmt.code}
+                        sx={{ py: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
                       >
-                        <Box component="span" sx={{ overflow: 'hidden', flex: 1, minWidth: 0 }}>
-                          {shortTitle && (
-                            <Typography component="span" display="block" fontSize={13} fontWeight={850} noWrap>
-                              {shortTitle}
-                            </Typography>
-                          )}
-                          <Typography component="span" display="block" variant="caption" color={shortTitle ? 'text.secondary' : 'text.primary'} noWrap>
-                            {minute.code} · {minute.content?.fecha || 'Sin fecha'} · {statusLabel}{creatorLabel}
+                        <Stack direction="row" alignItems="center" gap={1} width="100%">
+                          <Chip
+                            size="small"
+                            label={fmt.code}
+                            color={fmt.code === 'COM-GD-FR-012' ? 'secondary' : 'primary'}
+                            sx={{ fontWeight: 900, height: 22, fontSize: 11 }}
+                          />
+                          <Typography fontSize={13.5} fontWeight={900}>
+                            {fmt.shortLabel}
                           </Typography>
-                        </Box>
-                        {canDelete && (
-                          <Tooltip title={`Eliminar acta ${minute.code}`}>
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setMinuteToDelete(minute);
-                              }}
-                              sx={{
-                                color: '#ef4444',
-                                p: 0.5,
-                                borderRadius: 1.5,
-                                '&:hover': { bgcolor: '#fee2e2', color: '#dc2626' }
-                              }}
-                            >
-                              <DeleteOutline fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        )}
+                        </Stack>
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.25 }}>
+                          Versión {fmt.version} · Vigente desde {fmt.vigencia}
+                        </Typography>
                       </MenuItem>
-                    );
-                  })}
+                    ))
+                  )}
                 </TextField>
                 {form.id && canDeleteMinute(form) && (
                   <Tooltip title={`Eliminar acta actual (${form.code || 'abierta'})`}>
@@ -1722,24 +2202,25 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     </IconButton>
                   </Tooltip>
                 )}
-                {isAdminUser && (
-                  <Tooltip title="Restaurar todas las actas del sistema">
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      color="secondary"
-                      onClick={handleRestoreAll}
-                      disabled={loading}
-                      startIcon={<Refresh fontSize="small" />}
-                      sx={{ textTransform: 'none', fontSize: 12, borderRadius: 2, whiteSpace: 'nowrap' }}
-                    >
-                      Restaurar actas
-                    </Button>
-                  </Tooltip>
-                )}
+
               </Stack>
+              {form.id && (
+                <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} mt={1.25} sx={{ px: 1.25, py: 0.75, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #cbd5e1' }}>
+                  <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                    <Chip size="small" color={isCouncilFormat ? 'secondary' : 'primary'} label={activeFormatMeta.code} sx={{ fontWeight: 900, height: 21, fontSize: 11 }} />
+                    <Typography variant="caption" fontWeight={850} color="#0f172a">
+                      Editando: {form.code || 'Borrador guardado'} {form.numero_acta ? `· ACTA ${form.numero_acta}` : ''}
+                    </Typography>
+                    <Chip size="small" label={minuteStatus(form).label} color={minuteStatus(form).color} sx={{ height: 20, fontSize: 10.5, fontWeight: 800 }} />
+                  </Stack>
+                  <Button size="small" startIcon={<FolderOpen fontSize="small" />} onClick={openMyMinutes} sx={{ textTransform: 'none', fontWeight: 800, fontSize: 12 }}>
+                    Cambiar desde Mis actas
+                  </Button>
+                </Stack>
+              )}
             </Paper>
             <Paper variant="outlined" sx={{
+              order: isCouncilFormat ? 2 : undefined,
               p: 2.25,
               borderRadius: 3,
               borderColor: '#94a3b8',
@@ -1748,8 +2229,12 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { borderWidth: '2px' },
               '& .MuiOutlinedInput-root.Mui-error .MuiOutlinedInput-notchedOutline': { borderColor: '#dc2626', borderWidth: '2px' }
             }}>
-              <Typography fontWeight={900} mb={2}>1. Información de la reunión</Typography>
+              <Typography fontWeight={900} mb={2}>
+                {isCouncilFormat ? '2. Información del Consejo o Comité y contenido del acta' : '1. Información de la reunión'}
+              </Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1.5 }}>
+                {!isCouncilFormat && (
+                  <>
                 <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ gridColumn: '1 / -1' }}>
                   <Autocomplete
                     freeSolo
@@ -1966,19 +2451,69 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     </Stack>
                   )}
                 </Box>
+                  </>
+                )}
 
-                <TextField
-                  id="meeting-titulo-field"
-                  error={Boolean(fieldErrors.titulo)}
-                  disabled={!canEdit}
-                  fullWidth
-                  label="Título corto del acta *"
-                  value={form.titulo || ''}
-                  onChange={(e) => setField('titulo', e.target.value.slice(0, 120))}
-                  inputProps={{ maxLength: 120 }}
-                  sx={{ gridColumn: '1 / -1' }}
-                />
-                <TextField id="meeting-dependencia-field" error={Boolean(fieldErrors.dependencia)} disabled={!canEdit} fullWidth label="Dependencia que cita *" value={form.dependencia} onChange={(e) => setField('dependencia', e.target.value)} />
+                {isCouncilFormat ? (
+                  <>
+                    <TextField
+                      id="council-numero-acta-field"
+                      error={Boolean(fieldErrors.numero_acta)}
+                      disabled={!canEdit || loadingCouncilNumber}
+                      fullWidth
+                      label="ACTA N° (consecutivo anual automático) *"
+                      value={form.numero_acta || ''}
+                      helperText={loadingCouncilNumber ? 'Consultando el siguiente consecutivo...' : 'Se confirma al guardar y se reinicia cada año.'}
+                      InputProps={{ readOnly: true }}
+                    />
+                    <Autocomplete
+                      freeSolo
+                      disabled={!canEdit}
+                      options={COUNCIL_SUGGESTIONS}
+                      value={form.nombre_consejo || ''}
+                      onChange={(_, value) => setField('nombre_consejo', value || '')}
+                      onInputChange={(_, value, reason) => {
+                        if (reason === 'input' || reason === 'clear') setField('nombre_consejo', value);
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          id="council-nombre-field"
+                          error={Boolean(fieldErrors.nombre_consejo)}
+                          fullWidth
+                          label="Consejo o Comité *"
+                          placeholder="Ej. CONSEJO ACADÉMICO"
+                        />
+                      )}
+                    />
+                    <TextField
+                      id="meeting-titulo-field"
+                      disabled={!canEdit}
+                      fullWidth
+                      label="Referencia o asunto corto (opcional para identificar en Mis actas)"
+                      placeholder="Ej. Sesión ordinaria de evaluación curricular"
+                      value={form.titulo || ''}
+                      onChange={(e) => setField('titulo', e.target.value.slice(0, 120))}
+                      inputProps={{ maxLength: 120 }}
+                      sx={{ gridColumn: '1 / -1' }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <TextField
+                      id="meeting-titulo-field"
+                      error={Boolean(fieldErrors.titulo)}
+                      disabled={!canEdit}
+                      fullWidth
+                      label="Título corto del acta *"
+                      value={form.titulo || ''}
+                      onChange={(e) => setField('titulo', e.target.value.slice(0, 120))}
+                      inputProps={{ maxLength: 120 }}
+                      sx={{ gridColumn: '1 / -1' }}
+                    />
+                    <TextField id="meeting-dependencia-field" error={Boolean(fieldErrors.dependencia)} disabled={!canEdit} fullWidth label="Dependencia que cita *" value={form.dependencia} onChange={(e) => setField('dependencia', e.target.value)} />
+                  </>
+                )}
                 <Autocomplete
                   freeSolo
                   disabled={!canEdit}
@@ -1992,32 +2527,81 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   }}
                   loadingText="Cargando oficinas..."
                   noOptionsText="Escriba otro lugar"
+                  sx={{ gridColumn: isCouncilFormat ? '1 / -1' : 'auto' }}
                   renderInput={(params) => <TextField {...params} id="meeting-lugar-field" error={Boolean(fieldErrors.lugar)} fullWidth label="Lugar *" />}
                 />
                 <TextField id="meeting-fecha-field" error={Boolean(fieldErrors.fecha)} disabled={!canEdit} fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha *" value={form.fecha} onChange={(e) => setField('fecha', e.target.value)} />
                 <TextField id="meeting-hora-inicio-field" error={Boolean(fieldErrors.hora_inicio)} disabled={!canEdit} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de inicio *" value={form.hora_inicio} onChange={(e) => setField('hora_inicio', e.target.value)} />
                 <TextField id="meeting-hora-fin-field" error={Boolean(fieldErrors.hora_fin)} disabled={!canEdit} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de finalización *" value={form.hora_fin} onChange={(e) => setField('hora_fin', e.target.value)} />
                 <RichTextEditor id="meeting-objetivo-field" error={Boolean(fieldErrors.objetivo)} disabled={!canEdit} label="Objetivo *" value={form.objetivo} onChange={(value) => setField('objetivo', value)} minHeight={90} />
+                {isCouncilFormat && (
+                  <RichTextEditor
+                    id="council-orden-dia-field"
+                    error={Boolean(fieldErrors.orden_del_dia)}
+                    disabled={!canEdit}
+                    label="Orden del Día *"
+                    value={form.orden_del_dia}
+                    onChange={(value) => setField('orden_del_dia', value)}
+                    minHeight={130}
+                  />
+                )}
                 <RichTextEditor id="meeting-desarrollo-field" error={Boolean(fieldErrors.desarrollo)} disabled={!canEdit} label="Desarrollo de la reunión *" value={form.desarrollo} onChange={(value) => setField('desarrollo', value)} minHeight={150} />
-                <RichTextEditor id="meeting-conclusiones-field" error={Boolean(fieldErrors.conclusiones)} disabled={!canEdit} label="Conclusiones / Compromisos *" value={form.conclusiones} onChange={(value) => setField('conclusiones', value)} minHeight={120} />
+                <RichTextEditor
+                  id="meeting-conclusiones-field"
+                  error={Boolean(fieldErrors.conclusiones)}
+                  disabled={!canEdit}
+                  label={isCouncilFormat ? 'Compromisos / Observaciones adicionales (opcional)' : 'Conclusiones / Compromisos *'}
+                  value={form.conclusiones}
+                  onChange={(value) => setField('conclusiones', value)}
+                  minHeight={120}
+                />
               </Box>
             </Paper>
-            <Paper id="meeting-participants-section" variant="outlined" sx={{ p: 2.25, borderRadius: 3, borderWidth: fieldErrors.participants ? '2px' : '1.5px', borderColor: fieldErrors.participants ? '#dc2626' : '#94a3b8', boxShadow: fieldErrors.participants ? '0 0 0 2px rgba(220,38,38,0.12)' : 'none' }}>
+            <Paper id="meeting-participants-section" variant="outlined" sx={{ order: isCouncilFormat ? 1 : undefined, p: 2.25, borderRadius: 3, borderWidth: fieldErrors.participants ? '2px' : '1.5px', borderColor: fieldErrors.participants ? '#dc2626' : '#94a3b8', boxShadow: fieldErrors.participants ? '0 0 0 2px rgba(220,38,38,0.12)' : 'none' }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={1}>
-                <Typography fontWeight={900}>2. Participantes y firmas</Typography>
-                {form.participants.length >= 2 ? (
-                  <Chip size="small" color="success" label={`${form.participants.length} personas en la reunión (${additionalParticipants.length} convocados)`} sx={{ fontWeight: 850 }} />
+                <Typography fontWeight={900}>
+                  {isCouncilFormat ? '1. Lista inicial de asistentes e invitados' : '2. Participantes y firmas'}
+                </Typography>
+                {signingParticipants.length >= (isCouncilFormat ? 1 : 2) ? (
+                  <Chip size="small" color="success" label={`${signingParticipants.length} persona(s) seleccionada(s) para firmar`} sx={{ fontWeight: 850 }} />
                 ) : (
-                  <Chip size="small" color="warning" label="Al menos 2 participantes requeridos" sx={{ fontWeight: 850 }} />
+                  <Chip size="small" color="warning" label={isCouncilFormat ? 'Seleccione quién firma el acta' : 'Al menos 2 firmantes requeridos'} sx={{ fontWeight: 850 }} />
                 )}
               </Stack>
               {form.revision_required && <Alert severity="info" sx={{ my: 1.5, borderRadius: 2 }}>Los responsables y participantes quedaron fijados desde el primer envío a firmas. En esta revisión solo puede modificar el contenido del acta.</Alert>}
+              {isCouncilFormat && (
+                <Alert severity="info" sx={{ my: 1.25, borderRadius: 2.5 }}>
+                  <strong>Responsable principal:</strong>{' '}
+                  {formatPersonName((responsablesList.find((item) => item.is_primary) || responsablesList[0])?.name || user?.nombre || user?.name || 'Creador del acta')}.
+                  {' '}Quien crea el acta asume esta responsabilidad. Para solicitar revisión antes de las firmas, agregue una persona como <strong>CORRESPONSABLE / REVISOR</strong> en este mismo listado.
+                </Alert>
+              )}
+              {isCouncilFormat && (
+                <Stack sx={{ my: 1.5 }}>
+                  <Alert
+                    severity={councilAttendanceSummary.pendientes > 0 ? 'warning' : (councilAttendanceSummary.hayQuorum ? 'success' : 'error')}
+                    sx={{ flex: 1, borderRadius: 2.5, alignItems: 'center' }}
+                  >
+                    <Typography fontWeight={900} fontSize={13.5}>
+                      Control de quórum: {councilAttendanceSummary.asistentes} asistentes de {councilAttendanceSummary.convocados} convocados ({councilAttendanceSummary.porcentaje}%)
+                    </Typography>
+                    <Typography variant="caption" display="block">
+                      Miembros esperados: {councilAttendanceSummary.convocados} · Asistentes: {councilAttendanceSummary.asistentes} · Ausentes: {councilAttendanceSummary.ausentes} · Pendientes: {councilAttendanceSummary.pendientes}. Mínimo automático por mayoría simple: {councilAttendanceSummary.minimo || 0}.
+                      {councilAttendanceSummary.pendientes > 0
+                        ? ` Faltan ${councilAttendanceSummary.pendientes} miembro(s) por clasificar.`
+                        : councilAttendanceSummary.hayQuorum ? ' Hay quórum.' : ' No hay quórum.'}
+                    </Typography>
+                  </Alert>
+                </Stack>
+              )}
               {canManageParticipants && (
                 <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2.5, bgcolor: '#f8fbff' }}>
                   <Stack direction="row" alignItems="center" gap={1} mb={1}>
                     <PersonSearch color="primary" />
                     <Box>
-                      <Typography fontWeight={850}>Buscar participante</Typography>
+                      <Typography fontWeight={850}>
+                        {isCouncilFormat ? 'Agregar miembros esperados e invitados' : 'Buscar participante'}
+                      </Typography>
                     </Box>
                   </Stack>
 
@@ -2042,7 +2626,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                         if (!['input', 'clear'].includes(reason)) return;
                         const nextDocument = value.slice(0, 100);
                         setExternalDraft((old) => externalStudentResult?.found
-                          ? { document: nextDocument, name: '', email: '', organization: '', role_title: '' }
+                          ? { document: nextDocument, name: '', email: '', organization: '', role_title: '', member_kind: 'miembro', is_co_responsible: false, attendance_type: isCouncilFormat ? 'invitado' : 'asistente' }
                           : { ...old, document: nextDocument });
                         setExternalStudentResult(null);
                         if (reason === 'clear') {
@@ -2128,13 +2712,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                           if (!selectedKind) return;
                           if (selectedKind === 'institutional') {
                             const profile = externalStudentResult.institutionalProfile;
-                            setExternalDraft({
+                            setExternalDraft((old) => ({
+                              ...old,
                               document: profile.document || externalDraft.document,
                               name: profile.name || '',
                               email: profile.email || '',
                               organization: profile.organization || '',
                               role_title: profile.role_title || ''
-                            });
+                            }));
                             setExternalStudentResult((old) => ({
                               ...old,
                               kind: 'institutional',
@@ -2143,13 +2728,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                             return;
                           }
                           const profile = externalStudentResult.studentOptions[0];
-                          setExternalDraft({
+                          setExternalDraft((old) => ({
+                            ...old,
                             document: profile.document || externalDraft.document,
                             name: profile.name || '',
                             email: profile.email || '',
                             organization: profile.program || profile.organization || '',
                             role_title: 'Estudiante'
-                          });
+                          }));
                           setExternalStudentResult((old) => ({
                             ...old,
                             kind: 'student',
@@ -2245,20 +2831,60 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     </Alert>
                   )}
 
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: isCouncilFormat ? 'repeat(2,minmax(0,1fr))' : 'repeat(2,minmax(0,1fr))' }, gap: 1 }}>
                     <TextField size="small" label="Nombre completo" value={externalDraft.name} onChange={(e) => setExternalDraft((old) => ({ ...old, name: e.target.value }))} />
-                    <TextField size="small" type="email" label="Correo empresarial o personal" value={externalDraft.email} onChange={(e) => setExternalDraft((old) => ({ ...old, email: e.target.value }))} />
+                    {isCouncilFormat && <TextField size="small" type="email" label="Correo para confirmar asistencia" value={externalDraft.email} onChange={(e) => setExternalDraft((old) => ({ ...old, email: e.target.value }))} />}
                     <TextField
                       size="small"
-                      label="Cargo"
+                      label={isCouncilFormat ? 'Cargo / representación' : 'Cargo'}
                       value={externalDraft.role_title}
                       onChange={(e) => setExternalDraft((old) => ({ ...old, role_title: e.target.value }))}
                     />
-                    <TextField size="small" label="Empresa, entidad o programa (opcional)" value={externalDraft.organization} onChange={(e) => setExternalDraft((old) => ({ ...old, organization: e.target.value }))} />
+                    {isCouncilFormat ? (
+                      <TextField
+                        select
+                        size="small"
+                        label="Agregar como"
+                        value={externalDraft.member_kind || 'miembro'}
+                        onChange={(e) => setExternalDraft((old) => ({
+                          ...old,
+                          member_kind: e.target.value,
+                          is_co_responsible: e.target.value === 'invitado' ? false : old.is_co_responsible
+                        }))}
+                      >
+                        <MenuItem value="miembro">MIEMBRO ESPERADO</MenuItem>
+                        <MenuItem value="invitado">INVITADO</MenuItem>
+                      </TextField>
+                    ) : (
+                      <>
+                        <TextField size="small" type="email" label="Correo empresarial o personal" value={externalDraft.email} onChange={(e) => setExternalDraft((old) => ({ ...old, email: e.target.value }))} />
+                        <TextField size="small" label="Empresa, entidad o programa (opcional)" value={externalDraft.organization} onChange={(e) => setExternalDraft((old) => ({ ...old, organization: e.target.value }))} />
+                      </>
+                    )}
+                    {isCouncilFormat && (
+                      <FormControlLabel
+                        sx={{ gridColumn: '1 / -1', mx: 0, alignItems: 'flex-start' }}
+                        control={(
+                          <Checkbox
+                            checked={Boolean(externalDraft.is_co_responsible)}
+                            disabled={externalDraft.member_kind === 'invitado'}
+                            onChange={(event) => setExternalDraft((old) => ({ ...old, is_co_responsible: event.target.checked }))}
+                          />
+                        )}
+                        label={(
+                          <Box sx={{ pt: 0.75 }}>
+                            <Typography variant="body2" fontWeight={850}>Es corresponsable / revisor del acta</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Puede abrir y editar el acta colaborativamente, tomar notas y revisarla antes de enviarla a firmas. Esto no lo selecciona automáticamente como firmante.
+                            </Typography>
+                          </Box>
+                        )}
+                      />
+                    )}
                   </Box>
                   <Stack direction="row" justifyContent="flex-end" gap={1} mt={1.25}>
                     <Button onClick={() => {
-                      setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
+                      setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '', member_kind: 'miembro', is_co_responsible: false, attendance_type: isCouncilFormat ? 'invitado' : 'asistente' });
                       setExternalStudentResult(null);
                       setParticipantSearchOptions([]);
                       setParticipantSearchOpen(false);
@@ -2266,7 +2892,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     <Button
                       variant="contained"
                       startIcon={<Add />}
-                      disabled={!externalStudentResult || externalStudentResult.error}
+                      disabled={!isCouncilFormat && (!externalStudentResult || externalStudentResult.error)}
                       onClick={addExternalParticipant}
                     >
                       Agregar al acta
@@ -2274,6 +2900,110 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </Stack>
                 </Paper>
               )}
+              {isCouncilFormat ? (
+                <TableContainer component={Paper} variant="outlined" sx={{ mt: 2, borderRadius: 2.25 }}>
+                  <Table size="small" sx={{ minWidth: 760 }}>
+                    <TableHead>
+                      <TableRow sx={{ bgcolor: '#eaf2ff' }}>
+                        <TableCell sx={{ fontWeight: 900 }}>Nombres y apellidos</TableCell>
+                        <TableCell sx={{ fontWeight: 900, minWidth: 220 }}>Cargo / representación</TableCell>
+                        <TableCell sx={{ fontWeight: 900, width: 150 }}>Estado</TableCell>
+                        <TableCell sx={{ fontWeight: 900, width: 130 }}>¿Firma el acta?</TableCell>
+                        <TableCell sx={{ fontWeight: 900, width: 105 }}>Estado firma</TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 900, width: 70 }}>Acción</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {form.participants.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} align="center" sx={{ py: 2.5, color: 'text.secondary', fontStyle: 'italic' }}>
+                            Agregue primero los miembros esperados y después los invitados.
+                          </TableCell>
+                        </TableRow>
+                      ) : form.participants.map((participant, index) => {
+                        const pDoc = String(participant.document || '').toLowerCase();
+                        const pEmail = String(participant.email || '').toLowerCase();
+                        const respItem = responsablesList.find((responsible) => (
+                          (pDoc && String(responsible.document || '').toLowerCase() === pDoc)
+                          || (pEmail && String(responsible.email || '').toLowerCase() === pEmail)
+                        ));
+                        return (
+                          <TableRow key={participant.id || participant.user_id || `${participant.document}-${index}`} hover>
+                            <TableCell>
+                              <Typography variant="body2" fontWeight={850}>{formatPersonName(participant.name)}</Typography>
+                              <Chip size="small" variant="outlined" label={participant.member_kind === 'invitado' ? 'Invitado' : 'Miembro'} sx={{ mt: 0.4, height: 19, fontSize: 10 }} />
+                              {participant.requires_signature !== false && canManageParticipants && (
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  type="email"
+                                  label="Correo para firma"
+                                  value={participant.email || ''}
+                                  onChange={(event) => updateParticipantCouncilMeta(index, { email: event.target.value })}
+                                  sx={{ mt: 0.75 }}
+                                />
+                              )}
+                              {respItem?.is_primary && <Chip size="small" color="success" label="Responsable principal" sx={{ mt: 0.5, height: 19, fontSize: 10 }} />}
+                              {respItem && !respItem.is_primary && <Chip size="small" variant="outlined" color="primary" label="Corresponsable" sx={{ mt: 0.5, height: 19, fontSize: 10 }} />}
+                            </TableCell>
+                            <TableCell>
+                              {canManageParticipants ? (
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  value={participant.cargo_acta ?? participant.role_title ?? ''}
+                                  onChange={(event) => updateParticipantCouncilMeta(index, { cargo_acta: event.target.value, role_title: event.target.value })}
+                                />
+                              ) : (participant.cargo_acta || participant.role_title || '—')}
+                            </TableCell>
+                            <TableCell>
+                              <TextField
+                                select
+                                fullWidth
+                                size="small"
+                                disabled={!canManageParticipants || participant.status === 'signed'}
+                                value="asistente"
+                                onChange={(event) => updateCouncilPopulation(index, event.target.value)}
+                              >
+                                <MenuItem value="asistente">ASISTENTE</MenuItem>
+                                <MenuItem value="invitado">PENDIENTE</MenuItem>
+                                <MenuItem value="ausente">AUSENTE</MenuItem>
+                              </TextField>
+                            </TableCell>
+                            <TableCell>
+                              <ToggleButton
+                                value="requires-signature"
+                                size="small"
+                                color="primary"
+                                selected={participant.requires_signature !== false}
+                                disabled={!canManageParticipants || participant.status === 'signed'}
+                                onChange={() => updateParticipantCouncilMeta(index, { requires_signature: participant.requires_signature === false })}
+                                sx={{ fontWeight: 900, minWidth: 82 }}
+                              >
+                                {participant.requires_signature !== false ? 'SÍ FIRMA' : 'NO FIRMA'}
+                              </ToggleButton>
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                label={participant.requires_signature === false ? 'No aplica' : (participant.status === 'signed' ? 'Firmado' : 'Pendiente')}
+                                color={participant.requires_signature === false ? 'default' : (participant.status === 'signed' ? 'success' : 'warning')}
+                              />
+                            </TableCell>
+                            <TableCell align="center">
+                              {canManageParticipants && participant.status !== 'signed' && (
+                                <IconButton color="error" size="small" onClick={() => removeParticipant(index)}>
+                                  <DeleteOutline fontSize="small" />
+                                </IconButton>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              ) : (
               <Stack gap={1} mt={2}>
                 {form.participants.map((participant, index) => {
                   const pDoc = String(participant.document || '').toLowerCase();
@@ -2286,30 +3016,141 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   const isPrimary = Boolean(respItem?.is_primary);
 
                   return (
-                    <Box key={participant.id || participant.user_id || `${participant.document}-${index}`} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', p: 1.25, border: '1px solid #dbe5f0', borderRadius: 2, bgcolor: isPrimary ? '#f0fdf4' : isResp ? '#f8fafc' : '#ffffff' }}>
-                      <Box>
-                        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-                          <Typography variant="body2" fontWeight={850}>{formatPersonName(participant.name)}</Typography>
-                          {isPrimary && <Chip size="small" label="Responsable Principal" color="success" sx={{ height: 20, fontSize: 11, fontWeight: 800 }} />}
-                          {isResp && !isPrimary && <Chip size="small" label="Co-responsable" color="primary" variant="outlined" sx={{ height: 20, fontSize: 11, fontWeight: 750 }} />}
-                          {!participant.user_id && !isResp && <Chip size="small" label="Externo" variant="outlined" color="primary" sx={{ height: 20, fontSize: 11 }} />}
+                    <Box key={participant.id || participant.user_id || `${participant.document}-${index}`} sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 1.25, border: '1px solid #dbe5f0', borderRadius: 2, bgcolor: isPrimary ? '#f0fdf4' : isResp ? '#f8fafc' : '#ffffff' }}>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center' }}>
+                        <Box>
+                          <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                            <Typography variant="body2" fontWeight={850}>
+                              {formatPersonName(participant.name)}
+                            </Typography>
+                            {isPrimary && <Chip size="small" label="Responsable Principal" color="success" sx={{ height: 20, fontSize: 11, fontWeight: 800 }} />}
+                            {isResp && !isPrimary && <Chip size="small" label="Co-responsable" color="primary" variant="outlined" sx={{ height: 20, fontSize: 11, fontWeight: 750 }} />}
+                            {!participant.user_id && !isResp && <Chip size="small" label="Externo" variant="outlined" color="primary" sx={{ height: 20, fontSize: 11 }} />}
+                            {isCouncilFormat && (
+                              <Chip
+                                size="small"
+                                label={participant.attendance_type === 'invitado' ? 'INVITADO' : 'ASISTENTE'}
+                                color={participant.attendance_type === 'invitado' ? 'secondary' : 'info'}
+                                variant="outlined"
+                                sx={{ height: 20, fontSize: 10.5, fontWeight: 800 }}
+                              />
+                            )}
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">{participant.cargo_acta || participant.role_title} · {participant.email}</Typography>
+                        </Box>
+                        <Stack direction="row" alignItems="center" gap={0.5}>
+                          <Chip size="small" label={participant.status === 'signed' ? 'Firmado' : 'Pendiente'} color={participant.status === 'signed' ? 'success' : 'default'} />
+                          {canManageParticipants && participant.status !== 'signed' && (
+                            <IconButton color="error" size="small" onClick={() => removeParticipant(index)}>
+                              <DeleteOutline fontSize="small" />
+                            </IconButton>
+                          )}
                         </Stack>
-                        <Typography variant="caption" color="text.secondary">{participant.role_title} · {participant.email}</Typography>
                       </Box>
-                      <Stack direction="row" alignItems="center" gap={0.5}>
-                        <Chip size="small" label={participant.status === 'signed' ? 'Firmado' : 'Pendiente'} color={participant.status === 'signed' ? 'success' : 'default'} />
-                        {canManageParticipants && participant.status !== 'signed' && (
-                          <IconButton color="error" size="small" onClick={() => removeParticipant(index)}>
-                            <DeleteOutline fontSize="small" />
-                          </IconButton>
-                        )}
-                      </Stack>
                     </Box>
                   );
                 })}
               </Stack>
+              )}
+
+              {isCouncilFormat && (
+                <Paper variant="outlined" sx={{ p: 1.5, mt: 2, borderRadius: 2.5, bgcolor: '#fafafa', borderColor: '#cbd5e1' }}>
+                  <Typography fontWeight={850} fontSize={13.5} mb={0.5}>
+                    Estado de asistencia
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" mb={1.25}>
+                    Cambie cada miembro esperado a <strong>ASISTENTE</strong> o <strong>AUSENTE</strong>. Los invitados se mantienen separados y no cuentan para el quórum.
+                  </Typography>
+                  {canEdit && (
+                    <Button
+                      variant="contained"
+                      color="success"
+                      startIcon={<Email />}
+                      onClick={sendAttendanceInvitations}
+                      disabled={loading || autoSaving || !(form.invitados_sin_firma_data || []).length}
+                      sx={{ mb: 1.5, textTransform: 'none', fontWeight: 900 }}
+                    >
+                      Enviar confirmación de asistencia
+                    </Button>
+                  )}
+                  <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+                    <Table size="small" sx={{ minWidth: 650 }}>
+                      <TableHead>
+                        <TableRow sx={{ bgcolor: '#f1f5f9' }}>
+                          <TableCell sx={{ fontWeight: 900 }}>Nombres y apellidos</TableCell>
+                          <TableCell sx={{ fontWeight: 900 }}>Cargo / representación</TableCell>
+                          <TableCell sx={{ fontWeight: 900, width: 130 }}>Tipo</TableCell>
+                          <TableCell sx={{ fontWeight: 900, width: 180 }}>Estado</TableCell>
+                          <TableCell align="center" sx={{ fontWeight: 900, width: 70 }}>Acción</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {[
+                          ...(form.invitados_sin_firma_data || []).map((item, index) => ({ item, index, tipo: 'invitado_sin_firma' })),
+                          ...(form.ausentes_data || []).map((item, index) => ({ item, index, tipo: 'ausente' }))
+                        ].length === 0 ? (
+                          <TableRow><TableCell colSpan={5} align="center" sx={{ py: 2, color: 'text.secondary', fontStyle: 'italic' }}>Sin registros en estas poblaciones.</TableCell></TableRow>
+                        ) : [
+                          ...(form.invitados_sin_firma_data || []).map((item, index) => ({ item, index, tipo: 'invitado_sin_firma' })),
+                          ...(form.ausentes_data || []).map((item, index) => ({ item, index, tipo: 'ausente' }))
+                        ].map(({ item, index, tipo }) => (
+                          <TableRow key={`${tipo}-${item.document || item.email || item.name}-${index}`} hover>
+                            <TableCell sx={{ fontWeight: 800 }}>
+                              {formatPersonName(item.name || item.nombre)}
+                              {responsablesList.some((responsible) => !responsible.is_primary && (
+                                (item.document && String(responsible.document || '').trim().toLowerCase() === String(item.document).trim().toLowerCase())
+                                || (item.email && String(responsible.email || '').trim().toLowerCase() === String(item.email).trim().toLowerCase())
+                              )) && <Chip size="small" color="primary" variant="outlined" label="Corresponsable / revisor" sx={{ ml: 0.75, height: 19, fontSize: 10 }} />}
+                              {item.attendance_invitation_sent_at && <Chip size="small" color="success" variant="outlined" label="Correo enviado" sx={{ ml: 0.75, height: 19, fontSize: 10 }} />}
+                              {canEdit && (
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  type="email"
+                                  label="Correo de confirmación"
+                                  value={item.email || ''}
+                                  onChange={(event) => {
+                                    const key = tipo === 'invitado_sin_firma' ? 'invitados_sin_firma_data' : 'ausentes_data';
+                                    setField(key, (form[key] || []).map((member, memberIndex) => memberIndex === index ? { ...member, email: event.target.value } : member));
+                                  }}
+                                  sx={{ mt: 0.75 }}
+                                />
+                              )}
+                            </TableCell>
+                            <TableCell>{item.cargo_acta || item.role_title || 'Sin cargo'}</TableCell>
+                            <TableCell>
+                              <Chip size="small" variant="outlined" label={item.member_kind === 'invitado' ? 'INVITADO' : 'MIEMBRO'} />
+                            </TableCell>
+                            <TableCell>
+                              <TextField
+                                select
+                                fullWidth
+                                size="small"
+                                disabled={!canEdit}
+                                value={tipo}
+                                onChange={(event) => updateNonSigningPopulation(tipo, index, event.target.value)}
+                              >
+                                <MenuItem value="invitado_sin_firma">{item.member_kind === 'invitado' ? 'INVITADO' : 'PENDIENTE'}</MenuItem>
+                                <MenuItem value="asistente">ASISTENTE</MenuItem>
+                                {item.member_kind !== 'invitado' && <MenuItem value="ausente">AUSENTE</MenuItem>}
+                              </TextField>
+                            </TableCell>
+                            <TableCell align="center">
+                              {canEdit && (
+                                <IconButton size="small" color="error" onClick={() => removeNonSigningCouncilMember(tipo, index)}>
+                                  <DeleteOutline fontSize="small" />
+                                </IconButton>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Paper>
+              )}
             </Paper>
-            <Box id="meeting-calendar-section">
+            <Box id="meeting-calendar-section" sx={{ order: isCouncilFormat ? 3 : undefined }}>
               {canManageCalendar ? (
                 <MeetingCalendarScheduler
                 minuteId={form.id}
@@ -2530,7 +3371,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                       Editar acta
                     </Button>
                   )}
-                  <Tooltip title="Validar el acta completa, habilitar firmas y enviar las invitaciones">
+                  <Tooltip title="Enviar la solicitud únicamente a las personas seleccionadas con SÍ FIRMA">
                     <Box component="span" sx={{ display: 'flex', width: '100%' }}>
                       <Button
                         id="meeting-publish-button"
@@ -2541,7 +3382,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                         variant="contained"
                         sx={{ fontWeight: 850 }}
                       >
-                        Habilitar y enviar invitaciones
+                        Enviar a firma
                       </Button>
                     </Box>
                   </Tooltip>
@@ -2577,7 +3418,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 scrollbarColor: '#475569 #e2e8f0'
               }}
             >
-              <MeetingPreview document={document} form={form} signatures={signatures} previewType={previewType} />
+              {isCouncilFormat ? (
+                <CouncilMinutePreview document={activeDocument} form={form} signatures={signatures} previewType={previewType} />
+              ) : (
+                <MeetingPreview document={activeDocument} form={form} signatures={signatures} previewType={previewType} />
+              )}
             </Box>
           </Paper>
         </Box>
@@ -2627,7 +3472,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
           <Box>
             <Typography variant="h6" fontWeight={950}>Mis actas</Typography>
-            <Typography variant="body2" color="text.secondary">Solo actas creadas por ti o en las que eres responsable/corresponsable. A los {retentionDays} días salen de esta vista y permanecen en el archivo histórico.</Typography>
+            <Typography variant="body2" color="text.secondary">Solo actas creadas por ti o en las que eres responsable/corresponsable. Al abrir un registro se carga automáticamente el formato al que pertenece.</Typography>
           </Box>
           <IconButton onClick={() => setMyMinutesOpen(false)} disabled={loadingMyMinutes}><Close /></IconButton>
         </Stack>
@@ -2638,10 +3483,33 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             Tienes {expiringMinutes.length} {expiringMinutes.length === 1 ? 'acta próxima a archivarse' : 'actas próximas a archivarse'} al completar {retentionDays} días desde su creación.
           </Alert>
         )}
+        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" mb={1.5}>
+          <Chip
+            label={`Todos los formatos (${visibleMyMinutes.length})`}
+            color={myMinutesFormatFilter === 'ALL' ? 'primary' : 'default'}
+            variant={myMinutesFormatFilter === 'ALL' ? 'filled' : 'outlined'}
+            onClick={() => setMyMinutesFormatFilter('ALL')}
+            sx={{ fontWeight: 850 }}
+          />
+          {availableFormats.map((fmt) => {
+            const count = visibleMyMinutes.filter((m) => resolveMeetingMinuteFormatCode(m) === fmt.code).length;
+            return (
+              <Chip
+                key={fmt.code}
+                label={`${fmt.code} · ${fmt.shortLabel} (${count})`}
+                color={myMinutesFormatFilter === fmt.code ? (fmt.code === 'COM-GD-FR-012' ? 'secondary' : 'primary') : 'default'}
+                variant={myMinutesFormatFilter === fmt.code ? 'filled' : 'outlined'}
+                onClick={() => setMyMinutesFormatFilter(fmt.code)}
+                sx={{ fontWeight: 850 }}
+              />
+            );
+          })}
+        </Stack>
         <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2.5, maxHeight: '62vh' }}>
           <Table stickyHeader size="small" aria-label="Listado de mis actas">
             <TableHead>
               <TableRow>
+                <TableCell sx={{ fontWeight: 900 }}>Formato</TableCell>
                 <TableCell sx={{ fontWeight: 900 }}>Acta</TableCell>
                 <TableCell sx={{ fontWeight: 900 }}>Fecha</TableCell>
                 <TableCell sx={{ fontWeight: 900 }}>Estado</TableCell>
@@ -2651,57 +3519,91 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               </TableRow>
             </TableHead>
             <TableBody>
-              {myMinutes.map((minute) => {
-                const status = minuteStatus(minute);
-                const signed = (minute.participants || []).filter((participant) => participant.status === 'signed').length;
-                const total = (minute.participants || []).length;
-                const days = minute.retention?.days_remaining;
-                return (
-                  <TableRow key={minute.id} hover>
-                    <TableCell sx={{ minWidth: 240 }}>
-                      <Typography fontWeight={850} fontSize={13.5}>{minute.content?.titulo || 'Acta sin título'}</Typography>
-                      <Typography variant="caption" color="text.secondary">{minute.code}</Typography>
-                    </TableCell>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(minute.content?.fecha) || 'Sin fecha'}</TableCell>
-                    <TableCell><Chip size="small" label={status.label} color={status.color} sx={{ fontWeight: 800 }} /></TableCell>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{total ? `${signed} de ${total}` : 'Sin participantes'}</TableCell>
-                    <TableCell sx={{ minWidth: 150 }}>
-                      <Box>
-                        <Typography fontWeight={900} fontSize={13} color={Number(days) <= 7 ? 'error.main' : 'warning.dark'}>
-                          {Number(days) === 0 ? 'Se archiva hoy' : `${days} ${Number(days) === 1 ? 'día restante' : 'días restantes'}`}
+              {visibleMyMinutes
+                .filter((minute) => myMinutesFormatFilter === 'ALL' || resolveMeetingMinuteFormatCode(minute) === myMinutesFormatFilter)
+                .map((minute) => {
+                  const status = minuteStatus(minute);
+                  const signed = (minute.participants || []).filter((participant) => participant.status === 'signed').length;
+                  const total = (minute.participants || []).length;
+                  const days = minute.retention?.days_remaining;
+                  const minuteFmtCode = resolveMeetingMinuteFormatCode(minute);
+                  const minuteFmtMeta = getMeetingMinuteFormatMeta(minuteFmtCode);
+                  const isCouncilRecord = minuteFmtCode === 'COM-GD-FR-012';
+                  const displayTitle = isCouncilRecord
+                    ? [
+                        minute.content?.numero_acta ? `ACTA ${minute.content.numero_acta}` : '',
+                        minute.content?.nombre_consejo || minute.content?.titulo || 'Acta de Consejo o Comité'
+                      ].filter(Boolean).join(' · ')
+                    : (minute.content?.titulo || 'Acta sin título');
+                  return (
+                    <TableRow key={minute.id} hover>
+                      <TableCell sx={{ minWidth: 165 }}>
+                        <Chip
+                          size="small"
+                          label={minuteFmtMeta.code}
+                          color={isCouncilRecord ? 'secondary' : 'primary'}
+                          sx={{ fontWeight: 900, height: 22, fontSize: 11, mb: 0.35 }}
+                        />
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ lineHeight: 1.2 }}>
+                          {minuteFmtMeta.shortLabel}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">Se archiva: {formatDate(minute.retention?.expires_at)}</Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" justifyContent="flex-end" gap={1}>
-                        <Button size="small" variant="contained" startIcon={<FolderOpen />} onClick={() => { setMyMinutesOpen(false); openMinute(minute.id); }} sx={{ textTransform: 'none', fontWeight: 800 }}>
-                          Abrir
-                        </Button>
-                        {canDeleteMinute(minute) && (
-                          <Tooltip title="Eliminar acta">
-                            <Button
-                              size="small"
-                              color="error"
-                              variant="outlined"
-                              startIcon={<DeleteOutline />}
-                              onClick={() => setMinuteToDelete(minute)}
-                              sx={{ textTransform: 'none', fontWeight: 850 }}
-                            >
-                              Eliminar
-                            </Button>
-                          </Tooltip>
-                        )}
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {!loadingMyMinutes && myMinutes.length === 0 && (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5, color: 'text.secondary' }}>Todavía no tienes actas registradas.</TableCell></TableRow>
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 230 }}>
+                        <Typography fontWeight={850} fontSize={13.5}>{displayTitle}</Typography>
+                        <Typography variant="caption" color="text.secondary">{minute.code}</Typography>
+                      </TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(minute.content?.fecha) || 'Sin fecha'}</TableCell>
+                      <TableCell><Chip size="small" label={status.label} color={status.color} sx={{ fontWeight: 800 }} /></TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{total ? `${signed} de ${total}` : 'Sin participantes'}</TableCell>
+                      <TableCell sx={{ minWidth: 150 }}>
+                        <Box>
+                          <Typography fontWeight={900} fontSize={13} color={Number(days) <= 7 ? 'error.main' : 'warning.dark'}>
+                            {Number(days) === 0 ? 'Se archiva hoy' : `${days} ${Number(days) === 1 ? 'día restante' : 'días restantes'}`}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">Se archiva: {formatDate(minute.retention?.expires_at)}</Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Stack direction="row" justifyContent="flex-end" gap={1}>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<FolderOpen />}
+                            onClick={async () => {
+                              setMyMinutesOpen(false);
+                              if (hasUnsavedChangesRef.current && hasSavableData() && canEdit) {
+                                await save({ quiet: true, automatic: true });
+                              }
+                              await openMinute(minute.id, minuteFmtCode);
+                            }}
+                            sx={{ textTransform: 'none', fontWeight: 800 }}
+                          >
+                            Abrir
+                          </Button>
+                          {canDeleteMinute(minute) && (
+                            <Tooltip title="Eliminar acta">
+                              <Button
+                                size="small"
+                                color="error"
+                                variant="outlined"
+                                startIcon={<DeleteOutline />}
+                                onClick={() => setMinuteToDelete(minute)}
+                                sx={{ textTransform: 'none', fontWeight: 850 }}
+                              >
+                                Eliminar
+                              </Button>
+                            </Tooltip>
+                          )}
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              {!loadingMyMinutes && visibleMyMinutes.filter((minute) => myMinutesFormatFilter === 'ALL' || resolveMeetingMinuteFormatCode(minute) === myMinutesFormatFilter).length === 0 && (
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>Todavía no tienes actas registradas en este filtro.</TableCell></TableRow>
               )}
               {loadingMyMinutes && (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}><CircularProgress size={28} /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5 }}><CircularProgress size={28} /></TableCell></TableRow>
               )}
             </TableBody>
           </Table>

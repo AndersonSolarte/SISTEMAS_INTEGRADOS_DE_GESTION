@@ -8,6 +8,8 @@ import { Article, CheckCircle, Draw, ErrorOutline, ExpandMore, Lock, PersonSearc
 import meetingMinuteService from '../services/meetingMinuteService';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
+import CouncilMinutePreview from '../components/meetingMinute/CouncilMinutePreview';
+import { resolveMeetingMinuteFormatCode } from '../config/meetingMinute';
 import GoogleIdentityVerification from '../components/security/GoogleIdentityVerification';
 import formatPersonName from '../utils/formatPersonName';
 
@@ -36,6 +38,54 @@ export function PublicActaPreview({ minute }) {
   if (!minute) return null;
   const content = minute.content || {};
   const participants = minute.preview_participants || [];
+  const formatCode = resolveMeetingMinuteFormatCode(minute);
+  if (formatCode === 'COM-GD-FR-012') {
+    const horarioParts = String(content.horario || '').split('-').map((item) => item.trim());
+    const metaList = Array.isArray(content.participants_meta) ? content.participants_meta : [];
+    const hydratedParticipants = participants.map((p) => {
+      const pDoc = String(p.document || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      const pEmail = String(p.email || '').trim().toLowerCase();
+      const matched = metaList.find((m) => (
+        (pDoc && String(m.document || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === pDoc)
+        || (pEmail && String(m.email || '').trim().toLowerCase() === pEmail)
+      ));
+      return {
+        ...p,
+        attendance_type: matched?.attendance_type || p.attendance_type || 'asistente',
+        cargo_acta: matched?.cargo_acta || p.cargo_acta || p.role_title || ''
+      };
+    });
+    const councilForm = {
+      id: minute.id,
+      code: minute.code || '',
+      status: minute.status || 'signing',
+      numero_acta: content.numero_acta || '',
+      nombre_consejo: content.nombre_consejo || content.dependencia || '',
+      lugar: content.lugar || '',
+      fecha: content.fecha || '',
+      hora_inicio: horarioParts[0] || '',
+      hora_fin: horarioParts[1] || '',
+      objetivo: Array.isArray(content.objetivo) ? content.objetivo.join('\n') : (content.objetivo || ''),
+      orden_del_dia: Array.isArray(content.orden_del_dia) ? content.orden_del_dia.join('\n') : (content.orden_del_dia || ''),
+      desarrollo: Array.isArray(content.desarrollo) ? content.desarrollo.join('\n') : (content.desarrollo || ''),
+      conclusiones: Array.isArray(content.conclusiones) ? content.conclusiones.join('\n') : (content.conclusiones || ''),
+      ausentes_data: Array.isArray(content.ausentes_data) ? content.ausentes_data : [],
+      invitados_sin_firma_data: Array.isArray(content.invitados_sin_firma_data) ? content.invitados_sin_firma_data : [],
+      participants: hydratedParticipants
+    };
+    return (
+      <Box sx={{ mb: 3 }}>
+        <Typography fontWeight={900} mb={0.5}>Acta que va a firmar</Typography>
+        <Typography variant="body2" color="text.secondary" mb={1.5}>Revise el contenido completo antes de confirmar su firma.</Typography>
+        <CouncilMinutePreview
+          document={{ codigo: 'COM-GD-FR-012', version: minute.version || '2' }}
+          form={councilForm}
+          signatures={[]}
+          previewType="copia"
+        />
+      </Box>
+    );
+  }
   const cell = { px: 1, py: 0.75, borderBottom: '1px solid #111', fontSize: 12 };
   const responsablesArray = (Array.isArray(content.responsables_data) && content.responsables_data.length > 0)
     ? content.responsables_data

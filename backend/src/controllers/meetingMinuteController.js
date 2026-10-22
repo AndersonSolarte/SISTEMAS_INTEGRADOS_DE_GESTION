@@ -11,10 +11,20 @@ const {
   PoblacionalMatriculado, PoblacionalCaracterizacion
 } = require('../models');
 const {
-  getMeetingMinuteFeatureState, isMeetingMinuteDocument, setMeetingMinuteFeatureState
+  MEETING_MINUTE_FORMATS,
+  getMeetingMinuteFeatureState,
+  getMeetingMinuteFormatMeta,
+  getMeetingMinuteFormatStates,
+  isMeetingMinuteDocument,
+  isMeetingMinuteFormatEnabled,
+  resolveMeetingMinuteFormatCode,
+  setMeetingMinuteFeatureState,
+  setMeetingMinuteFormatState
 } = require('../config/meetingMinuteConfig');
 const { generateActaBuffer } = require('../services/actaExportService');
 const { generateMeetingMinutePdf } = require('../services/meetingMinutePdfService');
+const { generateCouncilActaBuffer } = require('../services/councilMinuteExportService');
+const { generateCouncilMinutePdf } = require('../services/councilMinutePdfService');
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 const {
   PRIVACY_POLICY_NOTICE, PRIVACY_POLICY_URL, PRIVACY_POLICY_VERSION
@@ -395,12 +405,13 @@ const sendParticipantInvitations = async ({ minute, baseUrl }) => {
   }
   const reviewBuffer = await buildSignedMinutePdfBuffer(minute, { hideSignatures: true });
   const reviewAttachment = { filename: `${minute.code}-PARA-REVISION.pdf`, content: reviewBuffer, contentType: 'application/pdf' };
-  const pendingParticipants = (minute.participants || []).filter((item) => item.status !== 'signed');
+  const signingParticipants = (minute.participants || []).filter((item) => participantRequiresSignature(item, minute));
+  const pendingParticipants = signingParticipants.filter((item) => item.status !== 'signed');
   const summary = {
     sent: 0,
     failed: 0,
     pending: pendingParticipants.length,
-    skipped_signed: (minute.participants || []).length - pendingParticipants.length
+    skipped_signed: signingParticipants.length - pendingParticipants.length
   };
   const rootId = minuteRootMessageId(minute.code);
   const responsible = await resolveMinutePrimaryResponsible(minute);
@@ -543,47 +554,152 @@ const includeRelations = [
   { model: Documento, as: 'documento', required: false }
 ];
 
-const resolveMinuteHeader = (minute) => ({
-  ...(minute?.content?.header || {}),
-  codigo: minute?.documento?.codigo || minute?.content?.header?.codigo || 'COM-ID-FR-002',
-  version: minute?.documento?.version || minute?.content?.header?.version || '1',
-  fecha: formatDate(minute?.documento?.fecha_creacion || minute?.content?.header?.fecha)
-});
+const resolveMinuteHeader = (minute) => {
+  const formatMeta = getMeetingMinuteFormatMeta(minute);
+  return {
+    ...(minute?.content?.header || {}),
+    codigo: minute?.documento?.codigo || minute?.content?.header?.codigo || formatMeta.code,
+    version: minute?.documento?.version || minute?.content?.header?.version || formatMeta.version || '1',
+    fecha: formatDate(minute?.documento?.fecha_creacion || minute?.content?.header?.fecha || formatMeta.dateLabel)
+  };
+};
+
+const findParticipantCouncilMeta = (participant = {}, metaList = []) => {
+  if (!Array.isArray(metaList) || !metaList.length) return {};
+  const pDoc = clean(participant.document, 100).toLowerCase();
+  const pEmail = clean(participant.email, 254).toLowerCase();
+  const pName = clean(participant.name, 240).toLowerCase();
+  return metaList.find((item) => {
+    const mDoc = clean(item?.document, 100).toLowerCase();
+    const mEmail = clean(item?.email, 254).toLowerCase();
+    const mName = clean(item?.name, 240).toLowerCase();
+    return (pDoc && mDoc && pDoc === mDoc)
+      || (pEmail && mEmail && pEmail === mEmail)
+      || (!pDoc && !pEmail && pName && mName && pName === mName);
+  }) || {};
+};
+
+const participantMatchesCouncilMember = (participant = {}, member = {}) => {
+  const participantDocument = clean(participant.document, 100).toLowerCase();
+  const participantEmail = clean(participant.email, 254).toLowerCase();
+  const participantName = clean(participant.name, 240).toLowerCase();
+  const memberDocument = clean(member.document, 100).toLowerCase();
+  const memberEmail = clean(member.email, 254).toLowerCase();
+  const memberName = clean(member.name || member.nombre, 240).toLowerCase();
+  return (participantDocument && memberDocument && participantDocument === memberDocument)
+    || (participantEmail && memberEmail && participantEmail === memberEmail)
+    || (!participantDocument && !participantEmail && participantName && memberName && participantName === memberName);
+};
+
+const participantIsCouncilAbsent = (participant = {}, minute = {}) => (
+  Array.isArray(minute.content?.ausentes_data)
+  && minute.content.ausentes_data.some((member) => participantMatchesCouncilMember(participant, member))
+);
+
+const participantRequiresSignature = (participant = {}, minute = {}) => {
+  if (resolveMeetingMinuteFormatCode(minute) !== 'COM-GD-FR-012') return true;
+  if (participantIsCouncilAbsent(participant, minute)) return false;
+  const meta = findParticipantCouncilMeta(participant, minute.content?.participantes_meta);
+  return meta.requires_signature !== false;
+};
 
 const buildSignedMinutePayload = (minute, options = {}) => {
+  const formatCode = resolveMeetingMinuteFormatCode(minute);
+  const isCouncil = formatCode === 'COM-GD-FR-012';
   const signatures = new Map((minute.signatures || []).map((signature) => [String(signature.participant_id), signature]));
+  const participantsMeta = Array.isArray(minute.content?.participantes_meta) ? minute.content.participantes_meta : [];
   return {
     ...minute.content,
-    fecha: formatDate(minute.content?.fecha),
+    format_code: formatCode,
+    fecha: isCouncil ? (minute.content?.fecha || '') : formatDate(minute.content?.fecha),
     header: resolveMinuteHeader(minute),
-    participantes: (minute.participants || []).map((participant) => {
+    participantes: (minute.participants || [])
+      .filter((participant) => !isCouncil || !participantIsCouncilAbsent(participant, minute))
+      .map((participant) => {
       const signature = signatures.get(String(participant.id));
       const hasSignature = Boolean(signature?.signature_storage_key && fs.existsSync(signature.signature_storage_key));
       const signatureData = hasSignature && !options.hideSignatures
         ? `data:${/\.jpe?g$/i.test(signature.signature_storage_key) ? 'image/jpeg' : 'image/png'};base64,${fs.readFileSync(signature.signature_storage_key).toString('base64')}`
         : '';
       const isSigned = participant.status === 'signed';
+      const councilMeta = isCouncil ? findParticipantCouncilMeta(participant, participantsMeta) : {};
+      const councilCargo = clean(councilMeta.cargo_acta || participant.role_title || participant.organization, 220);
       return {
         nombre: formatPersonName(participant.name),
-        cargo: participantRoleLabel(participant),
+        cargo: isCouncil ? councilCargo : participantRoleLabel(participant),
+        attendance_type: isCouncil ? clean(councilMeta.attendance_type || 'asistente', 40) : 'asistente',
+        member_kind: isCouncil && councilMeta.member_kind === 'invitado' ? 'invitado' : 'miembro',
+        requires_signature: isCouncil ? councilMeta.requires_signature !== false : true,
         status: participant.status,
         firma: isSigned ? 'ORIGINAL FIRMADO' : 'Pendiente · QR',
         firma_data_url: signatureData
       };
-    })
+      })
   };
 };
-const buildSignedMinuteBuffer = async (minute, options = {}) => generateActaBuffer(buildSignedMinutePayload(minute, options));
-const buildSignedMinutePdfBuffer = async (minute, options = {}) => generateMeetingMinutePdf(buildSignedMinutePayload(minute, options), options);
+
+const buildSignedMinuteBuffer = async (minute, options = {}) => {
+  const payload = buildSignedMinutePayload(minute, options);
+  if (payload.format_code === 'COM-GD-FR-012') {
+    return generateCouncilActaBuffer(payload);
+  }
+  return generateActaBuffer(payload);
+};
+
+const buildSignedMinutePdfBuffer = async (minute, options = {}) => {
+  const payload = buildSignedMinutePayload(minute, options);
+  if (payload.format_code === 'COM-GD-FR-012') {
+    return generateCouncilMinutePdf(payload, options);
+  }
+  return generateMeetingMinutePdf(payload, options);
+};
+
+const loadFormatDocumentsCatalog = async () => {
+  const docs = await Documento.findAll({
+    where: { codigo: { [Op.in]: ['COM-ID-FR-002', 'COM-IF-FR-002', 'COM-GD-FR-012'] } },
+    attributes: ['id', 'codigo', 'titulo', 'version', 'fecha_creacion', 'autor'],
+    order: [['id', 'DESC']]
+  });
+  const catalog = {};
+  for (const doc of docs) {
+    const formatCode = resolveMeetingMinuteFormatCode(doc);
+    if (!catalog[formatCode]) {
+      catalog[formatCode] = doc.toJSON();
+    }
+  }
+  return catalog;
+};
 
 const getConfig = wrap(async (req, res) => {
-  res.json({ success: true, data: { enabled: await getMeetingMinuteFeatureState(), canToggle: isAdmin(req.user) } });
+  const [formatStates, formatDocuments] = await Promise.all([
+    getMeetingMinuteFormatStates(),
+    loadFormatDocumentsCatalog().catch(() => ({}))
+  ]);
+  res.json({
+    success: true,
+    data: {
+      enabled: formatStates['COM-ID-FR-002'],
+      formats_enabled: formatStates,
+      canToggle: isAdmin(req.user),
+      formats: Object.values(MEETING_MINUTE_FORMATS),
+      format_documents: formatDocuments
+    }
+  });
 });
 
 const updateConfig = wrap(async (req, res) => {
   if (!isAdmin(req.user)) throw Object.assign(new Error('Solo el administrador puede activar o desactivar este formulario.'), { statusCode: 403 });
-  const enabled = await setMeetingMinuteFeatureState(Boolean(req.body?.enabled), req.user.id);
-  res.json({ success: true, message: enabled ? 'Formulario de actas de reunión activado.' : 'Formulario de actas de reunión desactivado.', data: { enabled, canToggle: true } });
+  const formatCode = resolveMeetingMinuteFormatCode(req.body?.format_code || 'COM-ID-FR-002');
+  const enabledValue = Boolean(req.body?.enabled);
+  const formatStates = req.body?.format_code
+    ? await setMeetingMinuteFormatState(formatCode, enabledValue, req.user.id)
+    : { ...(await getMeetingMinuteFormatStates()), 'COM-ID-FR-002': await setMeetingMinuteFeatureState(enabledValue, req.user.id) };
+  const meta = getMeetingMinuteFormatMeta(formatCode);
+  res.json({
+    success: true,
+    message: `${meta.code} – ${meta.shortLabel}: formulario ${enabledValue ? 'activado' : 'desactivado'}.`,
+    data: { enabled: formatStates['COM-ID-FR-002'], formats_enabled: formatStates, canToggle: true }
+  });
 });
 
 const lookupParticipant = wrap(async (req, res) => {
@@ -1166,33 +1282,267 @@ const restoreAllMinutes = wrap(async (req, res) => {
   });
 });
 
-const normalizeContent = (body, document, existingContent = {}) => ({
-  header: { codigo: document.codigo || 'COM-ID-FR-002', version: document.version || '1', fecha: formatDate(document.fecha_creacion) },
-  titulo: clean(body.titulo, 120),
-  responsables: clean(body.responsables, 1500),
-  responsable_document: clean(body.responsable_document, 100),
-  responsable_role: clean(body.responsable_role, 220),
-  responsables_data: Array.isArray(body.responsables_data) ? body.responsables_data : null,
-  dependencia: clean(body.dependencia, 500),
-  lugar: clean(body.lugar, 500),
-  fecha: clean(body.fecha, 50),
-  horario: clean(body.horario, 100),
-  objetivo: [sanitizeRichText(body.objetivo)],
-  desarrollo: [sanitizeRichText(body.desarrollo)],
-  conclusiones: [sanitizeRichText(body.conclusiones)],
-  _public_token: body._public_token || existingContent?._public_token || null,
-  _token_history: Array.isArray(existingContent?._token_history) ? existingContent._token_history : [],
-  _revision: existingContent?._revision || null
+const sanitizeCouncilMemberList = (list = []) => {
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((item) => ({
+      id: clean(item?.id, 80) || undefined,
+      user_id: Number.isFinite(Number(item?.user_id)) ? Number(item.user_id) : undefined,
+      document: clean(item?.document, 100),
+      nombre: formatPersonName(clean(item?.nombre || item?.name, 240)),
+      cargo: clean(item?.cargo || item?.role_title, 220),
+      organization: clean(item?.organization || item?.dependencia, 240),
+      email: clean(item?.email, 254).toLowerCase(),
+      member_kind: item?.member_kind === 'invitado' || item?.attendance_type === 'invitado' ? 'invitado' : 'miembro',
+      requires_signature: item?.requires_signature === true,
+      attendance_invitation_id: clean(item?.attendance_invitation_id, 80) || undefined,
+      attendance_invitation_sent_at: clean(item?.attendance_invitation_sent_at, 80) || undefined
+    }))
+    .filter((item) => item.nombre || item.cargo || item.document);
+};
+
+const mergeCouncilAttendanceInvitationState = (requested = [], existing = []) => {
+  if (!Array.isArray(requested)) return [];
+  const safeExisting = Array.isArray(existing) ? existing : [];
+  return requested.map((item) => {
+    const document = clean(item?.document, 100).toLowerCase();
+    const email = clean(item?.email, 254).toLowerCase();
+    const name = clean(item?.name || item?.nombre, 240).toLowerCase();
+    const previous = safeExisting.find((candidate) => (
+      (document && clean(candidate?.document, 100).toLowerCase() === document)
+      || (email && clean(candidate?.email, 254).toLowerCase() === email)
+      || (!document && !email && name && clean(candidate?.name || candidate?.nombre, 240).toLowerCase() === name)
+    ));
+    return previous ? {
+      ...item,
+      attendance_invitation_id: item?.attendance_invitation_id || previous.attendance_invitation_id,
+      attendance_invitation_sent_at: item?.attendance_invitation_sent_at || previous.attendance_invitation_sent_at
+    } : item;
+  });
+};
+
+const sanitizeParticipantsCouncilMeta = (metaList = [], participantsList = []) => {
+  const source = Array.isArray(metaList) && metaList.length ? metaList : participantsList;
+  if (!Array.isArray(source)) return [];
+  return source
+    .map((item) => ({
+      document: clean(item?.document, 100).toLowerCase(),
+      email: clean(item?.email, 254).toLowerCase(),
+      name: formatPersonName(clean(item?.name || item?.nombre, 240)),
+      attendance_type: ['asistente', 'invitado'].includes(String(item?.attendance_type || '').toLowerCase().trim())
+        ? String(item.attendance_type).toLowerCase().trim()
+        : 'asistente',
+      cargo_acta: clean(item?.cargo_acta || item?.role_title || item?.cargo, 220),
+      member_kind: item?.member_kind === 'invitado' || item?.attendance_type === 'invitado' ? 'invitado' : 'miembro',
+      requires_signature: item?.requires_signature !== false
+    }))
+    .filter((item) => item.document || item.email || item.name);
+};
+
+const normalizeContent = (body, document, existingContent = {}) => {
+  const formatCode = resolveMeetingMinuteFormatCode(document || body?.format_code || existingContent?.format_code);
+  const isCouncil = formatCode === 'COM-GD-FR-012';
+  const baseHeader = {
+    codigo: document.codigo || formatCode || 'COM-ID-FR-002',
+    version: document.version || '1',
+    fecha: formatDate(document.fecha_creacion)
+  };
+
+  if (!isCouncil) {
+    return {
+      format_code: 'COM-ID-FR-002',
+      header: baseHeader,
+      titulo: clean(body.titulo, 120),
+      responsables: clean(body.responsables, 1500),
+      responsable_document: clean(body.responsable_document, 100),
+      responsable_role: clean(body.responsable_role, 220),
+      responsables_data: Array.isArray(body.responsables_data) ? body.responsables_data : null,
+      dependencia: clean(body.dependencia, 500),
+      lugar: clean(body.lugar, 500),
+      fecha: clean(body.fecha, 50),
+      horario: clean(body.horario, 100),
+      objetivo: [sanitizeRichText(body.objetivo)],
+      desarrollo: [sanitizeRichText(body.desarrollo)],
+      conclusiones: [sanitizeRichText(body.conclusiones)],
+      _public_token: body._public_token || existingContent?._public_token || null,
+      _token_history: Array.isArray(existingContent?._token_history) ? existingContent._token_history : [],
+      _revision: existingContent?._revision || null
+    };
+  }
+
+  const nombreConsejo = clean(
+    body.nombre_consejo !== undefined ? body.nombre_consejo : (body.dependencia || existingContent?.nombre_consejo),
+    500
+  );
+  const numeroActa = clean(
+    body.numero_acta !== undefined ? body.numero_acta : existingContent?.numero_acta,
+    60
+  );
+  const ciudad = clean(
+    body.ciudad !== undefined ? body.ciudad : (existingContent?.ciudad || 'San Juan de Pasto'),
+    160
+  ) || 'San Juan de Pasto';
+  const fechaTexto = clean(
+    body.fecha_texto !== undefined ? body.fecha_texto : existingContent?.fecha_texto,
+    200
+  );
+  const ordenDelDiaHtml = sanitizeRichText(
+    body.orden_del_dia !== undefined ? body.orden_del_dia : body.objetivo
+  );
+  const desarrolloHtml = sanitizeRichText(body.desarrollo);
+  const compromisosHtml = sanitizeRichText(
+    body.compromisos !== undefined ? body.compromisos : body.conclusiones
+  );
+  const anexo = clean(
+    body.anexo !== undefined ? body.anexo : existingContent?.anexo,
+    500
+  );
+  const computedTitle = clean(body.titulo, 160)
+    || [nombreConsejo, numeroActa ? `Acta ${numeroActa}` : ''].filter(Boolean).join(' · ').slice(0, 160);
+
+  return {
+    format_code: 'COM-GD-FR-012',
+    header: baseHeader,
+    titulo: computedTitle,
+    nombre_consejo: nombreConsejo,
+    numero_acta: numeroActa,
+    quorum_minimo: clean(
+      body.quorum_minimo !== undefined ? body.quorum_minimo : existingContent?.quorum_minimo,
+      4
+    ),
+    ciudad,
+    fecha_texto: fechaTexto,
+    responsables: clean(body.responsables, 1500),
+    responsable_document: clean(body.responsable_document, 100),
+    responsable_role: clean(body.responsable_role, 220),
+    responsables_data: Array.isArray(body.responsables_data) ? body.responsables_data : null,
+    dependencia: nombreConsejo || clean(body.dependencia, 500),
+    lugar: clean(body.lugar, 500),
+    fecha: clean(body.fecha, 50),
+    horario: clean(body.horario, 100),
+    orden_del_dia: [ordenDelDiaHtml],
+    objetivo: [ordenDelDiaHtml],
+    desarrollo: [desarrolloHtml],
+    compromisos: [compromisosHtml],
+    conclusiones: [compromisosHtml],
+    anexo,
+    participantes_meta: sanitizeParticipantsCouncilMeta(
+      body.participantes_meta,
+      Array.isArray(body.participants) ? body.participants : existingContent?.participantes_meta
+    ),
+    invitados_sin_firma_data: body.invitados_sin_firma_data !== undefined
+      ? sanitizeCouncilMemberList(mergeCouncilAttendanceInvitationState(
+        body.invitados_sin_firma_data,
+        [...(existingContent?.invitados_sin_firma_data || []), ...(existingContent?.ausentes_data || [])]
+      ))
+      : sanitizeCouncilMemberList(existingContent?.invitados_sin_firma_data),
+    ausentes_data: body.ausentes_data !== undefined
+      ? sanitizeCouncilMemberList(mergeCouncilAttendanceInvitationState(
+        body.ausentes_data,
+        [...(existingContent?.invitados_sin_firma_data || []), ...(existingContent?.ausentes_data || [])]
+      ))
+      : sanitizeCouncilMemberList(existingContent?.ausentes_data),
+    _attendance_confirmations: Array.isArray(existingContent?._attendance_confirmations)
+      ? existingContent._attendance_confirmations
+      : [],
+    _public_token: body._public_token || existingContent?._public_token || null,
+    _token_history: Array.isArray(existingContent?._token_history) ? existingContent._token_history : [],
+    _revision: existingContent?._revision || null
+  };
+};
+
+const resolveCouncilMinuteYear = (value, fallbackValue = null) => {
+  const directMatch = String(value || '').trim().match(/^(\d{4})/);
+  if (directMatch) {
+    const directYear = Number.parseInt(directMatch[1], 10);
+    if (directYear >= 1900 && directYear <= 9999) return directYear;
+  }
+
+  const parsed = value ? new Date(value) : null;
+  if (parsed && !Number.isNaN(parsed.getTime())) return parsed.getFullYear();
+
+  const fallback = fallbackValue ? new Date(fallbackValue) : new Date();
+  return Number.isNaN(fallback.getTime()) ? new Date().getFullYear() : fallback.getFullYear();
+};
+
+const calculateNextCouncilMinuteNumber = (minutes = [], year = new Date().getFullYear()) => {
+  const highestNumber = minutes.reduce((highest, minute) => {
+    const content = minute?.content || {};
+    if (resolveMeetingMinuteFormatCode(minute) !== 'COM-GD-FR-012') return highest;
+    const minuteYear = resolveCouncilMinuteYear(content.fecha, minute?.created_at);
+    if (minuteYear !== Number(year)) return highest;
+    const numberMatch = String(content.numero_acta || '').trim().match(/^\d+/);
+    const currentNumber = numberMatch ? Number.parseInt(numberMatch[0], 10) : 0;
+    return Number.isFinite(currentNumber) ? Math.max(highest, currentNumber) : highest;
+  }, 0);
+
+  return String(highestNumber + 1).padStart(2, '0');
+};
+
+const findNextCouncilMinuteNumber = async (year, { transaction = null, lock = false } = {}) => {
+  const normalizedYear = resolveCouncilMinuteYear(`${year}-01-01`);
+  if (lock && transaction) {
+    // El bloqueo transaccional por formato y ano evita que dos usuarios reciban
+    // el mismo consecutivo cuando guardan actas al mismo tiempo.
+    await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:lock_key))', {
+      replacements: { lock_key: `meeting-minute:COM-GD-FR-012:${normalizedYear}` },
+      transaction
+    });
+  }
+  const minutes = await DigitalMeetingMinute.findAll({
+    attributes: ['content', 'created_at'],
+    transaction
+  });
+  return calculateNextCouncilMinuteNumber(minutes, normalizedYear);
+};
+
+const getNextCouncilMinuteNumber = wrap(async (req, res) => {
+  const year = resolveCouncilMinuteYear(req.query.year);
+  const numeroActa = await findNextCouncilMinuteNumber(year);
+  res.json({
+    success: true,
+    data: {
+      format_code: 'COM-GD-FR-012',
+      year,
+      numero_acta: numeroActa
+    }
+  });
 });
 
 const saveDraft = wrap(async (req, res) => {
-  if (!(await getMeetingMinuteFeatureState())) throw Object.assign(new Error('El formulario de actas de reunión no está habilitado.'), { statusCode: 403 });
-  const document = await Documento.findByPk(req.body.documento_id);
-  if (!document || !isMeetingMinuteDocument(document)) throw Object.assign(new Error('El formato seleccionado no corresponde al Registro de Asistencia y Reunión.'), { statusCode: 422 });
+  const requestedFormatCode = req.body.format_code
+    ? resolveMeetingMinuteFormatCode(req.body.format_code)
+    : null;
+  let document = req.body.documento_id ? await Documento.findByPk(req.body.documento_id) : null;
+  const documentFormatCode = document && isMeetingMinuteDocument(document)
+    ? resolveMeetingMinuteFormatCode(document)
+    : null;
+  // `format_code` representa la selección visible del usuario y es la fuente
+  // autoritativa. Un documento_id atrasado nunca debe cambiar el tipo de acta.
+  if (requestedFormatCode && documentFormatCode !== requestedFormatCode) {
+    const formatMeta = getMeetingMinuteFormatMeta(requestedFormatCode);
+    document = await Documento.findOne({
+      where: { codigo: { [Op.in]: formatMeta.codes } },
+      order: [['id', 'DESC']]
+    });
+  }
+  if (!document || !isMeetingMinuteDocument(document)) {
+    throw Object.assign(new Error('El formato seleccionado no corresponde a un formato de acta sistematizado válido.'), { statusCode: 422 });
+  }
+  const formatCode = resolveMeetingMinuteFormatCode(document);
+  if (!(await isMeetingMinuteFormatEnabled(formatCode))) {
+    throw Object.assign(new Error(`El formulario ${formatCode} no está habilitado por el administrador.`), { statusCode: 403 });
+  }
+  const isCouncil = formatCode === 'COM-GD-FR-012';
   const rawResponsablesData = Array.isArray(req.body.responsables_data) && req.body.responsables_data.length > 0
     ? req.body.responsables_data
     : null;
-  const primaryDoc = clean(req.body.responsable_document || rawResponsablesData?.find((r) => r.is_primary)?.document || rawResponsablesData?.[0]?.document, 100);
+  const requestedPrimaryDoc = clean(req.body.responsable_document || rawResponsablesData?.find((r) => r.is_primary)?.document || rawResponsablesData?.[0]?.document, 100);
+  // En las actas de Consejo/Comité nuevas, quien crea el acta es siempre el
+  // responsable principal. Los demás responsables se registran como revisores.
+  const primaryDoc = clean(isCouncil && !req.body.id
+    ? (req.user.username || req.user.documento || req.user.cedula)
+    : requestedPrimaryDoc, 100);
   const responsibleUser = primaryDoc
     ? await User.findOne({ where: { username: primaryDoc, estado: 'activo' }, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] })
     : null;
@@ -1253,7 +1603,12 @@ const saveDraft = wrap(async (req, res) => {
     }
   }
 
-  const requestedParticipants = placeResponsibleFirst(Array.isArray(req.body.participants) ? req.body.participants : [], allResponsables);
+  // En COM-GD-FR-012 la responsabilidad editorial y la asistencia son conceptos
+  // independientes. Un responsable solo aparece como asistente si fue convocado
+  // expresamente en la lista inicial.
+  const requestedParticipants = isCouncil
+    ? (Array.isArray(req.body.participants) ? req.body.participants : [])
+    : placeResponsibleFirst(Array.isArray(req.body.participants) ? req.body.participants : [], allResponsables);
   const participants = await Promise.all(requestedParticipants.map(async (participant) => {
     const participantDocument = clean(participant.document, 100);
     const normalizedDocument = participantDocument.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -1288,19 +1643,31 @@ const saveDraft = wrap(async (req, res) => {
   const hasDraftData = Boolean(
     primaryDoc ||
     clean(req.body.titulo, 120) ||
+    clean(req.body.nombre_consejo, 500) ||
+    clean(req.body.numero_acta, 60) ||
     clean(req.body.dependencia, 500) ||
     clean(req.body.lugar, 500) ||
     clean(req.body.fecha, 50) ||
     clean(req.body.horario, 100) ||
     richPlainText(req.body.objetivo) ||
+    richPlainText(req.body.orden_del_dia) ||
     richPlainText(req.body.desarrollo) ||
     richPlainText(req.body.conclusiones) ||
+    richPlainText(req.body.compromisos) ||
+    clean(req.body.anexo, 500) ||
+    (Array.isArray(req.body.ausentes_data) && req.body.ausentes_data.length > 0) ||
+    (Array.isArray(req.body.invitados_sin_firma_data) && req.body.invitados_sin_firma_data.length > 0) ||
     participants.length
   );
   if (!hasDraftData) throw Object.assign(new Error('Diligencie al menos un campo para guardar el borrador.'), { statusCode: 422 });
   // El borrador admite contenido parcial. Las reglas de obligatoriedad se
   // verifican de forma autoritativa al publicar el acta para firmas.
-  if (participants.some((participant) => !clean(participant.name, 240) || !clean(participant.email, 254))) throw Object.assign(new Error('Todos los participantes deben tener nombre y correo.'), { statusCode: 422 });
+  if (participants.some((participant) => (
+    !clean(participant.name, 240)
+    || (!isCouncil && !clean(participant.email, 254))
+  ))) throw Object.assign(new Error(isCouncil
+    ? 'Todas las personas registradas deben tener nombre.'
+    : 'Todos los participantes deben tener nombre y correo.'), { statusCode: 422 });
   const participantKeys = participants.map((participant) => {
     const documentKey = clean(participant.document, 100).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     return documentKey || clean(participant.email, 254).toLowerCase();
@@ -1311,6 +1678,10 @@ const saveDraft = wrap(async (req, res) => {
     let row = req.body.id ? await DigitalMeetingMinute.findByPk(req.body.id, { transaction }) : null;
     let isRevisionDraft = false;
     if (row) {
+      const storedFormatCode = resolveMeetingMinuteFormatCode(row);
+      if (storedFormatCode !== formatCode) {
+        throw Object.assign(new Error('El formato de un acta guardada no puede cambiarse. Cree una nueva acta en el formato seleccionado.'), { statusCode: 409 });
+      }
       if (row.status !== 'draft') {
         throw Object.assign(new Error('Para modificar un acta enviada a firmas debe usar la opción “Editar acta”. Las firmas anteriores deberán renovarse.'), { statusCode: 409 });
       }
@@ -1320,8 +1691,19 @@ const saveDraft = wrap(async (req, res) => {
         : await canAccessMinuteFullSignatures(req.user, row);
       if (!authorized) throw Object.assign(new Error('No tiene permiso para editar esta acta.'), { statusCode: 403 });
     }
+    const normalizedRequest = { ...req.body };
+    if (isCouncil) {
+      const requestedYear = resolveCouncilMinuteYear(req.body.fecha);
+      const storedYear = row
+        ? resolveCouncilMinuteYear(row.content?.fecha, row.created_at)
+        : null;
+      normalizedRequest.numero_acta = row?.content?.numero_acta && storedYear === requestedYear
+        ? row.content.numero_acta
+        : await findNextCouncilMinuteNumber(requestedYear, { transaction, lock: true });
+    }
     const content = normalizeContent({
-      ...req.body,
+      ...normalizedRequest,
+      participants,
       responsables: isRevisionDraft
         ? row.content?.responsables
         : (clean(req.body.responsables, 1500) || (responsibleUser ? formatPersonName(responsibleUser.nombre) : '')),
@@ -1336,10 +1718,14 @@ const saveDraft = wrap(async (req, res) => {
         role_title: r.cargo || r.role_title,
         is_primary: Boolean(r.is_primary)
       })),
-      dependencia: clean(req.body.dependencia, 500) || responsibleUser?.dependencia || ''
+      dependencia: isCouncil
+        ? (clean(req.body.nombre_consejo || req.body.dependencia, 500) || responsibleUser?.dependencia || '')
+        : (clean(req.body.dependencia, 500) || responsibleUser?.dependencia || '')
     }, document, row?.content || {});
     if (!row) {
-      const code = `ACTA-${new Date().getFullYear()}-${Date.now().toString().slice(-9)}`;
+      const formatMeta = getMeetingMinuteFormatMeta(document);
+      const prefix = formatMeta.consecutivePrefix || 'ACTA';
+      const code = `${prefix}-${new Date().getFullYear()}-${Date.now().toString().slice(-9)}`;
       row = await DigitalMeetingMinute.create({ documento_id: document.id, code, content, content_hash: contentHash(content), created_by: req.user.id, updated_by: req.user.id }, { transaction });
       for (const participant of participants) {
         await DigitalMeetingParticipant.create({
@@ -1361,7 +1747,7 @@ const saveDraft = wrap(async (req, res) => {
         await row.update({ content, content_hash: contentHash(content), updated_by: req.user.id }, { transaction });
         return row;
       }
-      await row.update({ content, content_hash: contentHash(content), updated_by: req.user.id }, { transaction });
+      await row.update({ documento_id: document.id, content, content_hash: contentHash(content), updated_by: req.user.id }, { transaction });
       const isCollaborativeAutosave = req.body.autosave === true;
       const participantsChanged = req.body.participants_changed === true;
 
@@ -1389,9 +1775,10 @@ const saveDraft = wrap(async (req, res) => {
         let existingParticipants = await DigitalMeetingParticipant.findAll({ where: { minute_id: row.id }, transaction });
         const idsToRemove = existingParticipants
           .filter((participant) => {
+            const idKey = participant.id ? `id:${String(participant.id).trim().toLowerCase()}` : '';
             const docKey = participant.document ? `doc:${String(participant.document).trim().toLowerCase()}` : '';
             const emailKey = participant.email ? `email:${String(participant.email).trim().toLowerCase()}` : '';
-            return (docKey && removalKeys.has(docKey)) || (emailKey && removalKeys.has(emailKey));
+            return (idKey && removalKeys.has(idKey)) || (docKey && removalKeys.has(docKey)) || (emailKey && removalKeys.has(emailKey));
           })
           .map((participant) => participant.id);
         if (idsToRemove.length) {
@@ -1429,6 +1816,185 @@ const saveDraft = wrap(async (req, res) => {
   res.status(req.body.id ? 200 : 201).json({ success: true, message: minute.status === 'draft' ? 'Borrador del acta guardado.' : 'Cambios del acta guardados exitosamente.', data: result });
 });
 
+const attendanceTokenParts = (value = '') => {
+  const [minuteId, secret] = String(value || '').trim().split('.', 2);
+  return minuteId && secret ? { minuteId, secret, tokenHash: hash(secret) } : null;
+};
+
+const buildAttendanceInvitationEmail = ({ member, minute, confirmationUrl }) => {
+  const name = formatPersonName(member.nombre || member.name || 'Participante');
+  const council = clean(minute.content?.nombre_consejo || minute.content?.dependencia, 300);
+  const subject = `${minute.code} · Confirmación de asistencia`;
+  const bodyHtml = `
+    <p style="margin:0 0 12px;font-size:15px;color:#334155;">Estimado(a) <strong>${escapeHtml(name)}</strong>:</p>
+    <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.6;">Ha sido convocado(a) a ${council ? `<strong>${escapeHtml(council)}</strong>` : 'una reunión institucional'}. Si asistirá, pulse una sola vez el siguiente botón.</p>
+    <div style="margin:18px 0;padding:20px;border:1px solid #bfdbfe;border-radius:12px;background:#eff6ff;text-align:center;">
+      <a href="${escapeHtml(confirmationUrl)}" style="display:inline-block;padding:14px 36px;border-radius:8px;background:#15803d;color:#fff;text-decoration:none;font-weight:900;font-size:16px;">PRESENTE</a>
+      <p style="margin:14px 0 0;font-size:12px;color:#64748b;">El enlace es personal. Al pulsarlo se registrará inmediatamente como asistente; esto no implica que deba firmar el acta.</p>
+    </div>`;
+  return {
+    subject,
+    html: renderInstitutionalTemplate({ title: 'Confirmación de asistencia', introHtml: '', bodyHtml }),
+    text: `Estimado(a) ${name}:\n\nSi asistirá a ${council || 'la reunión institucional'}, confirme con un solo clic en PRESENTE:\n${confirmationUrl}\n\nAl abrir el enlace se registrará inmediatamente como asistente. Esto no implica firmar el acta.`
+  };
+};
+
+const sendAttendanceInvitations = wrap(async (req, res) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [participantInclude] });
+  if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+  if (resolveMeetingMinuteFormatCode(minute) !== 'COM-GD-FR-012') throw Object.assign(new Error('La confirmación de asistencia aplica al formato de Consejos y Comités.'), { statusCode: 422 });
+  if (minute.status !== 'draft') throw Object.assign(new Error('Las confirmaciones de asistencia se envían mientras el acta está en borrador.'), { statusCode: 409 });
+  if (!(await canAccessMinuteFullSignatures(req.user, minute))) throw Object.assign(new Error('No tiene permiso para enviar estas confirmaciones.'), { statusCode: 403 });
+
+  const content = { ...(minute.content || {}) };
+  const pending = Array.isArray(content.invitados_sin_firma_data) ? content.invitados_sin_firma_data.map((item) => ({ ...item })) : [];
+  if (!pending.length) throw Object.assign(new Error('No hay miembros o invitados pendientes para notificar.'), { statusCode: 422 });
+  const confirmations = Array.isArray(content._attendance_confirmations) ? [...content._attendance_confirmations] : [];
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const responsible = await resolveMinutePrimaryResponsible(minute);
+  const summary = { sent: 0, failed: 0, skipped_without_email: 0 };
+
+  for (let index = 0; index < pending.length; index += 1) {
+    const member = pending[index];
+    const email = clean(member.email, 254).toLowerCase();
+    if (!email) {
+      summary.skipped_without_email += 1;
+      continue;
+    }
+    const invitationId = clean(member.attendance_invitation_id, 80) || crypto.randomUUID();
+    const secret = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = hash(secret);
+    const confirmationUrl = `${publicFrontend(req)}/confirmar-asistencia-acta/${minute.id}.${secret}`;
+    const emailContent = buildAttendanceInvitationEmail({ member, minute, confirmationUrl });
+    try {
+      const result = await sendInstitutionalEmail({
+        to: email,
+        ...emailContent,
+        replyTo: responsible?.email || undefined,
+        allowExternalRecipients: true
+      });
+      if (!result.success) throw new Error(result.error || 'El servicio de correo rechazó la invitación.');
+      pending[index] = { ...member, attendance_invitation_id: invitationId, attendance_invitation_sent_at: new Date().toISOString() };
+      const previousIndex = confirmations.findIndex((item) => item.id === invitationId);
+      const record = {
+        id: invitationId,
+        token_hash: tokenHash,
+        expires_at: expiresAt.toISOString(),
+        email,
+        name: formatPersonName(member.nombre || member.name || ''),
+        status: 'pending',
+        sent_at: new Date().toISOString()
+      };
+      if (previousIndex >= 0) confirmations[previousIndex] = record;
+      else confirmations.push(record);
+      summary.sent += 1;
+    } catch (error) {
+      console.error('[digital-meeting-minute] attendance invitation', minute.id, email, error.message);
+      summary.failed += 1;
+    }
+  }
+
+  await minute.update({ content: { ...content, invitados_sin_firma_data: pending, _attendance_confirmations: confirmations } });
+  if (!summary.sent && summary.failed) throw Object.assign(new Error('No fue posible enviar las confirmaciones de asistencia.'), { statusCode: 503 });
+  res.json({
+    success: true,
+    message: `Se enviaron ${summary.sent} confirmación(es) de asistencia.${summary.skipped_without_email ? ` ${summary.skipped_without_email} registro(s) no tienen correo.` : ''}`,
+    data: summary
+  });
+});
+
+const resolveAttendanceInvitation = async (rawToken, transaction = null) => {
+  const parts = attendanceTokenParts(rawToken);
+  if (!parts) return null;
+  const minute = await DigitalMeetingMinute.findOne({
+    where: { id: parts.minuteId, deleted_at: null },
+    ...(transaction ? { transaction, lock: transaction.LOCK.UPDATE } : {})
+  });
+  if (!minute || resolveMeetingMinuteFormatCode(minute) !== 'COM-GD-FR-012') return null;
+  const confirmations = Array.isArray(minute.content?._attendance_confirmations) ? minute.content._attendance_confirmations : [];
+  const confirmation = confirmations.find((item) => item.token_hash === parts.tokenHash);
+  return confirmation ? { minute, confirmation, confirmations } : null;
+};
+
+const getAttendanceInvitation = wrap(async (req, res) => {
+  const access = await resolveAttendanceInvitation(req.params.token);
+  if (!access) throw Object.assign(new Error('La invitación de asistencia no es válida.'), { statusCode: 404 });
+  const expired = new Date(access.confirmation.expires_at) <= new Date();
+  res.json({
+    success: true,
+    data: {
+      code: access.minute.code,
+      name: access.confirmation.name,
+      council: access.minute.content?.nombre_consejo || access.minute.content?.dependencia || '',
+      date: access.minute.content?.fecha || '',
+      time: access.minute.content?.horario || '',
+      place: access.minute.content?.lugar || '',
+      status: access.confirmation.status,
+      expired
+    }
+  });
+});
+
+const confirmAttendance = wrap(async (req, res) => {
+  const result = await sequelize.transaction(async (transaction) => {
+    const access = await resolveAttendanceInvitation(req.params.token, transaction);
+    if (!access) throw Object.assign(new Error('La invitación de asistencia no es válida.'), { statusCode: 404 });
+    if (access.confirmation.status === 'present') return { alreadyConfirmed: true, name: access.confirmation.name };
+    if (new Date(access.confirmation.expires_at) <= new Date()) throw Object.assign(new Error('La invitación de asistencia venció.'), { statusCode: 410 });
+    if (access.minute.status !== 'draft') throw Object.assign(new Error('La confirmación de asistencia ya fue cerrada.'), { statusCode: 409 });
+
+    const content = { ...(access.minute.content || {}) };
+    const pending = Array.isArray(content.invitados_sin_firma_data) ? [...content.invitados_sin_firma_data] : [];
+    const absent = Array.isArray(content.ausentes_data) ? [...content.ausentes_data] : [];
+    let source = 'pending';
+    let memberIndex = pending.findIndex((item) => item.attendance_invitation_id === access.confirmation.id);
+    let member = memberIndex >= 0 ? pending[memberIndex] : null;
+    if (!member) {
+      source = 'absent';
+      memberIndex = absent.findIndex((item) => item.attendance_invitation_id === access.confirmation.id);
+      member = memberIndex >= 0 ? absent[memberIndex] : null;
+    }
+    if (!member) throw Object.assign(new Error('La persona ya no está incluida en la convocatoria.'), { statusCode: 409 });
+
+    const participant = await DigitalMeetingParticipant.create({
+      minute_id: access.minute.id,
+      user_id: member.user_id || null,
+      document: clean(member.document, 100) || null,
+      name: formatPersonName(member.nombre || member.name || access.confirmation.name),
+      email: clean(member.email || access.confirmation.email, 254).toLowerCase() || null,
+      organization: clean(member.organization, 240) || null,
+      role_title: clean(member.cargo || member.role_title, 220) || null,
+      status: 'invited'
+    }, { transaction });
+    if (source === 'pending') pending.splice(memberIndex, 1);
+    else absent.splice(memberIndex, 1);
+    const meta = Array.isArray(content.participantes_meta) ? [...content.participantes_meta] : [];
+    meta.push({
+      document: clean(member.document, 100).toLowerCase(),
+      email: clean(member.email || access.confirmation.email, 254).toLowerCase(),
+      name: participant.name,
+      cargo_acta: clean(member.cargo || member.role_title, 220),
+      attendance_type: 'asistente',
+      member_kind: member.member_kind === 'invitado' ? 'invitado' : 'miembro',
+      requires_signature: false
+    });
+    const confirmations = access.confirmations.map((item) => item.id === access.confirmation.id
+      ? { ...item, status: 'present', confirmed_at: new Date().toISOString(), participant_id: participant.id }
+      : item);
+    await access.minute.update({
+      content: {
+        ...content,
+        invitados_sin_firma_data: pending,
+        ausentes_data: absent,
+        participantes_meta: meta,
+        _attendance_confirmations: confirmations
+      }
+    }, { transaction });
+    return { alreadyConfirmed: false, name: participant.name };
+  });
+  res.json({ success: true, message: result.alreadyConfirmed ? 'Su asistencia ya estaba confirmada.' : 'Su asistencia fue confirmada correctamente.', data: result });
+});
+
 const publish = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }, { model: Documento, as: 'documento', required: false }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
@@ -1439,27 +2005,52 @@ const publish = wrap(async (req, res) => {
   if (!authorized) throw Object.assign(new Error('No tiene permiso para publicar esta acta.'), { statusCode: 403 });
   if (minute.status !== 'draft') throw Object.assign(new Error('El acta debe estar en borrador antes de enviarse a firmas.'), { statusCode: 409 });
   const content = minute.content || {};
+  const formatCode = resolveMeetingMinuteFormatCode(minute);
+  const isCouncil = formatCode === 'COM-GD-FR-012';
+  const signingParticipants = (minute.participants || []).filter((participant) => participantRequiresSignature(participant, minute));
   const responsibleData = Array.isArray(content.responsables_data) ? content.responsables_data : [];
-  const requiredContentMissing = (
-    !clean(content.responsables, 1500) ||
-    !clean(content.responsable_document, 100) ||
-    !responsibleData.length ||
-    !clean(content.titulo, 120) ||
-    !clean(content.dependencia, 500) ||
-    !clean(content.lugar, 500) ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(clean(content.fecha, 50)) ||
-    !/^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(clean(content.horario, 100)) ||
-    !richPlainText(Array.isArray(content.objetivo) ? content.objetivo.join(' ') : content.objetivo) ||
-    !richPlainText(Array.isArray(content.desarrollo) ? content.desarrollo.join(' ') : content.desarrollo) ||
-    !richPlainText(Array.isArray(content.conclusiones) ? content.conclusiones.join(' ') : content.conclusiones)
-  );
+  const requiredContentMissing = isCouncil
+    ? (
+      !clean(content.responsables, 1500) ||
+      !clean(content.responsable_document, 100) ||
+      !responsibleData.length ||
+      !clean(content.nombre_consejo || content.dependencia, 500) ||
+      !clean(content.numero_acta, 60) ||
+      !clean(content.lugar, 500) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(clean(content.fecha, 50)) ||
+      !/^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(clean(content.horario, 100)) ||
+      !richPlainText(Array.isArray(content.orden_del_dia || content.objetivo) ? (content.orden_del_dia || content.objetivo).join(' ') : (content.orden_del_dia || content.objetivo)) ||
+      !richPlainText(Array.isArray(content.desarrollo) ? content.desarrollo.join(' ') : content.desarrollo) ||
+      !richPlainText(Array.isArray(content.compromisos || content.conclusiones) ? (content.compromisos || content.conclusiones).join(' ') : (content.compromisos || content.conclusiones))
+    )
+    : (
+      !clean(content.responsables, 1500) ||
+      !clean(content.responsable_document, 100) ||
+      !responsibleData.length ||
+      !clean(content.titulo, 120) ||
+      !clean(content.dependencia, 500) ||
+      !clean(content.lugar, 500) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(clean(content.fecha, 50)) ||
+      !/^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(clean(content.horario, 100)) ||
+      !richPlainText(Array.isArray(content.objetivo) ? content.objetivo.join(' ') : content.objetivo) ||
+      !richPlainText(Array.isArray(content.desarrollo) ? content.desarrollo.join(' ') : content.desarrollo) ||
+      !richPlainText(Array.isArray(content.conclusiones) ? content.conclusiones.join(' ') : content.conclusiones)
+    );
   if (requiredContentMissing) {
     throw Object.assign(new Error('Complete todos los campos obligatorios del acta antes de enviarla para firmas.'), { statusCode: 422 });
   }
-  if (!minute.participants?.length || minute.participants.length < 2) {
-    throw Object.assign(new Error('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".'), { statusCode: 422 });
+  const pendingCouncilMembers = isCouncil && Array.isArray(content.invitados_sin_firma_data)
+    ? content.invitados_sin_firma_data.filter((item) => item.member_kind !== 'invitado')
+    : [];
+  if (pendingCouncilMembers.length) {
+    throw Object.assign(new Error(`Clasifique como asistentes o ausentes a los ${pendingCouncilMembers.length} miembro(s) pendientes antes de enviar el acta.`), { statusCode: 422 });
   }
-  if (minute.participants.some((participant) => !clean(participant.name, 240) || !clean(participant.email, 254))) {
+  if (!signingParticipants.length || (!isCouncil && signingParticipants.length < 2)) {
+    throw Object.assign(new Error(isCouncil
+      ? 'Seleccione al menos una persona que deba firmar el acta.'
+      : 'Debe agregar al menos un participante firmante aparte del responsable.'), { statusCode: 422 });
+  }
+  if (signingParticipants.some((participant) => !clean(participant.name, 240) || !clean(participant.email, 254))) {
     throw Object.assign(new Error('Todos los participantes deben tener nombre y correo para habilitar las firmas.'), { statusCode: 422 });
   }
   const token = crypto.randomBytes(32).toString('base64url');
@@ -1638,7 +2229,8 @@ const publicMinute = wrap(async (req, res) => {
       code: minute.code,
       version: minute.version,
       status: minute.status,
-      content: invitationVerified ? { ...(minute.content || {}), header: resolveMinuteHeader(minute) } : null,
+      format_code: resolveMeetingMinuteFormatCode(minute),
+      content: invitationVerified ? { ...(minute.content || {}), format_code: resolveMeetingMinuteFormatCode(minute), header: resolveMinuteHeader(minute) } : null,
       invitation_verified: invitationVerified,
       requires_identity_verification: !invitationVerified,
       invited_participant_id: invitedParticipant?.id || null,
@@ -1653,14 +2245,21 @@ const publicMinute = wrap(async (req, res) => {
         status: invitedParticipant.status
       } : null,
       signature_info: signatureInfo,
-      preview_participants: (invitationVerified ? minute.participants : []).map((p) => ({
-        id: p.id,
-        name: p.name,
-        role_title: p.role_title,
-        organization: p.organization,
-        external: !p.user_id,
-        status: p.status
-      })),
+      preview_participants: (invitationVerified ? minute.participants : []).map((p) => {
+        const councilMeta = findParticipantCouncilMeta(p, minute.content?.participantes_meta);
+        return {
+          id: p.id,
+          name: p.name,
+          role_title: p.role_title,
+          organization: p.organization,
+          attendance_type: councilMeta.attendance_type || 'asistente',
+          member_kind: councilMeta.member_kind === 'invitado' ? 'invitado' : 'miembro',
+          requires_signature: councilMeta.requires_signature !== false,
+          cargo_acta: councilMeta.cargo_acta || p.role_title || '',
+          external: !p.user_id,
+          status: p.status
+        };
+      }),
       participants: available.map((p) => ({
         id: p.id,
         name: p.name,
@@ -1700,6 +2299,9 @@ const googleSigningAccess = wrap(async (req, res) => {
   if (!participant) {
     throw Object.assign(new Error(`La cuenta ${googleEmail} no coincide con el correo de ningún participante registrado en esta acta. Continúe con la cuenta correcta o solicite al responsable que actualice el correo.`), { statusCode: 403 });
   }
+  if (!participantRequiresSignature(participant, minute)) {
+    throw Object.assign(new Error('Usted figura como asistente, pero no fue seleccionado para firmar esta acta.'), { statusCode: 403 });
+  }
   if (participant.status === 'signed') throw Object.assign(new Error('Usted ya firmó este documento anteriormente.'), { statusCode: 409 });
 
   const personalToken = crypto.randomBytes(32).toString('base64url');
@@ -1724,6 +2326,9 @@ const sign = wrap(async (req, res) => {
     throw Object.assign(new Error('Por seguridad, verifique con Google el mismo correo registrado en el acta.'), { statusCode: 403 });
   }
   const participant = access.invitedParticipant;
+  if (!participantRequiresSignature(participant, minute)) {
+    throw Object.assign(new Error('Esta persona no fue seleccionada como firmante del acta.'), { statusCode: 403 });
+  }
   if (participant.status === 'signed') throw Object.assign(new Error('Usted ya firmó este documento anteriormente.'), { statusCode: 409 });
   if (!participant.user_id && req.body.privacy_accepted !== true) throw Object.assign(new Error('Debe aceptar la autorización de tratamiento de datos personales para firmar.'), { statusCode: 422 });
   const parsed = parseDataUrl(req.body.signature_data);
@@ -1734,11 +2339,8 @@ const sign = wrap(async (req, res) => {
   const clientIp = clean(req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress, 80);
   await DigitalMeetingSignature.create({ minute_id: minute.id, participant_id: participant.id, signer_name: participant.name, signer_email: participant.email, signature_storage_key: storage, signature_hash: hash(parsed.buffer), content_hash: minute.content_hash, signed_at: signedAt, privacy_accepted_at: !participant.user_id ? signedAt : null, privacy_policy_version: !participant.user_id ? PRIVACY_POLICY_VERSION : null, ip_address: clientIp, user_agent: clean(req.headers['user-agent'], 500) });
   await participant.update({ status: 'signed', email_verified_at: new Date(), otp_hash: null, otp_expires_at: null });
-  const [participantCount, signedCount] = await Promise.all([
-    DigitalMeetingParticipant.count({ where: { minute_id: minute.id } }),
-    DigitalMeetingParticipant.count({ where: { minute_id: minute.id, status: 'signed' } })
-  ]);
-  if (participantCount > 0 && signedCount === participantCount) {
+  const selectedSigners = (minute.participants || []).filter((item) => participantRequiresSignature(item, minute));
+  if (selectedSigners.length > 0 && selectedSigners.every((item) => item.status === 'signed')) {
     await minute.update({ status: 'signed', finalized_at: signedAt });
   }
   res.json({ success: true, message: 'Firma registrada y vinculada al acta.', data: { id: participant.id } });
@@ -1782,7 +2384,8 @@ const sendFinalMinute = wrap(async (req, res) => {
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
   const isAuthorized = await canAccessMinuteFullSignatures(req.user, minute);
   if (!isAuthorized) throw Object.assign(new Error('Solo el responsable de la reunión o el creador del acta pueden enviarla.'), { statusCode: 403 });
-  if (!minute.participants?.length || minute.participants.some((participant) => participant.status !== 'signed')) {
+  const signingParticipants = (minute.participants || []).filter((participant) => participantRequiresSignature(participant, minute));
+  if (!signingParticipants.length || signingParticipants.some((participant) => participant.status !== 'signed')) {
     throw Object.assign(new Error('El acta solo puede enviarse cuando todas las personas hayan firmado.'), { statusCode: 422 });
   }
 
@@ -2359,15 +2962,18 @@ module.exports = {
   calendarAvailability,
   calendarSuggestions,
   calendarOAuthCallback,
+  confirmAttendance,
   deleteMinute,
   downloadArchivedPdf,
   downloadPdf,
   downloadWord,
   getConfig,
   getCalendarSchedule,
+  getAttendanceInvitation,
   listUpcomingCalendarSchedules,
   googleSigningAccess,
   getMinute,
+  getNextCouncilMinuteNumber,
   getSigningAccess,
   getStatistics,
   listMeetingLocations,
@@ -2383,6 +2989,7 @@ module.exports = {
   restoreAllMinutes,
   restoreMinute,
   saveDraft,
+  sendAttendanceInvitations,
   saveCalendarSchedule,
   cancelCalendarSchedule,
   startCalendarConnection,
@@ -2394,6 +3001,7 @@ module.exports = {
   _internals: {
     buildPrivacyPolicyEmailSection,
     buildSigningInvitationEmail,
+    calculateNextCouncilMinuteNumber,
     canManageMinuteCalendar,
     formatDependencyOfficeLocation,
     hasSameParticipantMembership,
@@ -2403,7 +3011,10 @@ module.exports = {
     minuteRootMessageId,
     minuteParticipantMessageId,
     participantRoleLabel,
+    participantIsCouncilAbsent,
+    participantRequiresSignature,
     placeResponsibleFirst,
+    resolveCouncilMinuteYear,
     sanitizeRichText
   }
 };

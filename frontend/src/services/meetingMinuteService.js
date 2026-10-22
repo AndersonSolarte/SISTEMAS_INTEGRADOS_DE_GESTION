@@ -5,18 +5,20 @@ const unwrap = (response) => response.data;
 
 const meetingMinuteService = {
   getConfig: () => api.get(`${root}/config`).then(unwrap),
-  updateConfig: (enabled) => api.patch(`${root}/config`, { enabled }).then(unwrap),
+  updateConfig: (enabled, formatCode) => api.patch(`${root}/config`, formatCode ? { enabled, format_code: formatCode } : { enabled }).then(unwrap),
   lookupParticipant: (document) => api.get(`${root}/participants/lookup`, { params: { document } }).then(unwrap),
   searchParticipants: (query) => api.get(`${root}/participants/search`, { params: { query } }).then(unwrap),
   lookupEnrolledStudent: (document) => api.get(`${root}/students/lookup`, { params: { document } }).then(unwrap),
   listLocations: () => api.get(`${root}/locations`).then(unwrap),
   list: () => api.get(root).then(unwrap),
   listMine: () => api.get(`${root}/mine`).then(unwrap),
+  getNextCouncilNumber: (year) => api.get(`${root}/next-number`, { params: { year } }).then(unwrap),
   getStatistics: (year = '') => api.get(`${root}/statistics`, { params: year ? { year } : {} }).then(unwrap),
   downloadArchivedPdf: (id) => api.get(`${root}/statistics/${id}/pdf`, { responseType: 'blob' }).then((response) => response.data),
   get: (id) => api.get(`${root}/${id}`).then(unwrap),
   save: (payload) => api.post(root, payload).then(unwrap),
   publish: (id, payload = {}) => api.post(`${root}/${id}/publish`, payload).then(unwrap),
+  sendAttendanceInvitations: (id, payload = {}) => api.post(`${root}/${id}/attendance-invitations`, payload).then(unwrap),
   getSigningAccess: (id, payload = {}) => api.post(`${root}/${id}/signing-access`, payload).then(unwrap),
   resendInvitations: (id, payload = {}) => api.post(`${root}/${id}/resend-invitations`, payload).then(unwrap),
   reopen: (id) => api.post(`${root}/${id}/reopen`).then(unwrap),
@@ -36,6 +38,8 @@ const meetingMinuteService = {
   restoreMinute: (id) => api.post(`${root}/${id}/restore`).then(unwrap),
   restoreAll: () => api.post(`${root}/restore-all`).then(unwrap),
   publicMinute: (token) => api.get(`${root}/public/${encodeURIComponent(String(token || '').trim())}`, { skipAuthRedirect: true }).then(unwrap),
+  attendanceInvitation: (token) => api.get(`${root}/attendance/${encodeURIComponent(String(token || '').trim())}`, { skipAuthRedirect: true }).then(unwrap),
+  confirmAttendance: (token) => api.post(`${root}/attendance/${encodeURIComponent(String(token || '').trim())}/present`, {}, { skipAuthRedirect: true }).then(unwrap),
   googleSigningAccess: (token, payload) => api.post(`${root}/public/${encodeURIComponent(String(token || '').trim())}/google-access`, payload, { skipAuthRedirect: true }).then(unwrap),
   sign: (token, payload) => api.post(`${root}/public/${encodeURIComponent(String(token || '').trim())}/sign`, payload, { skipAuthRedirect: true }).then(unwrap)
 };

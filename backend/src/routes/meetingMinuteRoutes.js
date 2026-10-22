@@ -6,6 +6,8 @@ const { ROLES } = require('../constants/roles');
 
 const router = express.Router();
 
+router.get('/attendance/:token', publicLimiter, controller.getAttendanceInvitation);
+router.post('/attendance/:token/present', publicLimiter, controller.confirmAttendance);
 router.get('/public/:token', publicLimiter, controller.publicMinute);
 router.post('/public/:token/google-access', publicLimiter, controller.googleSigningAccess);
 router.post('/public/:token/sign', publicLimiter, controller.sign);
@@ -18,6 +20,7 @@ router.get('/participants/search', auth, controller.searchParticipants);
 router.get('/students/lookup', auth, controller.lookupEnrolledStudent);
 router.get('/locations', auth, controller.listMeetingLocations);
 router.get('/calendar/upcoming', auth, controller.listUpcomingCalendarSchedules);
+router.get('/next-number', auth, controller.getNextCouncilMinuteNumber);
 router.get('/statistics', auth, hasAnyRoleOrModulePermission({
   roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_INFORMACION, ROLES.GESTION_PROCESOS],
   moduleKeys: ['gestion_procesos', 'estadisticas_formatos', 'estadistica_documental']
@@ -40,6 +43,7 @@ router.delete('/:id/calendar', auth, controller.cancelCalendarSchedule);
 router.get('/:id', auth, controller.getMinute);
 router.post('/:id/restore', auth, controller.restoreMinute);
 router.post('/:id/publish', auth, controller.publish);
+router.post('/:id/attendance-invitations', auth, controller.sendAttendanceInvitations);
 router.post('/:id/signing-access', auth, controller.getSigningAccess);
 router.post('/:id/resend-invitations', auth, controller.resendInvitations);
 router.post('/:id/reopen', auth, controller.reopenForEditing);
