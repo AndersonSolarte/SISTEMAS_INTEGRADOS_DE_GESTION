@@ -53,7 +53,7 @@ const ensureEvidenceFolder = async (drive, evidence) => {
   const yearFolder = await findOrCreateFolder(drive, { parentId: pedFolder, name: `PLANES DE ACCIÓN ${item.actionPlan.term.year}`, key: `term:${item.actionPlan.term.id}` });
   const unitCode = item.actionPlan.organizationalUnit?.code || item.actionPlan.code;
   const unitName = item.actionPlan.organizationalUnit?.name || item.actionPlan.title;
-  const planFolderName = compactFolderName(unitCode, unitName, 44);
+  const planFolderName = compactFolderName(unitCode, unitName, 240);
   const actionFolder = await findOrCreateFolder(drive, { parentId: yearFolder, name: planFolderName, key: `action-plan:${item.actionPlan.id}` });
   return findOrCreateFolder(drive, {
     parentId: actionFolder,
@@ -71,7 +71,7 @@ const ensureActionPlanFolder = async (drive, actionPlan) => {
   const yearFolder = await findOrCreateFolder(drive, { parentId: pedFolder, name: `PLANES DE ACCIÓN ${actionPlan.term?.year || 'VIGENCIA'}`, key: `action-repository:term:${actionPlan.term?.id || 'default'}` });
   const unitCode = actionPlan.organizationalUnit?.code || actionPlan.code;
   const unitName = actionPlan.organizationalUnit?.name || actionPlan.title;
-  const planFolderName = compactFolderName(unitCode, unitName, 44);
+  const planFolderName = compactFolderName(unitCode, unitName, 240);
   const unitScope = `${actionPlan.term_id}:${actionPlan.catalog_item_id || actionPlan.id}`;
   return findOrCreateFolder(drive, { parentId: yearFolder, name: planFolderName, key: `action-repository:unit:${unitScope}` });
 };

@@ -127,14 +127,20 @@ const verifyRepositoryRoot = async (drive, rootId) => {
   }
 };
 
-const repositoryName = (value, max = 140) => String(value || 'SIN NOMBRE')
+const repositoryName = (value, max = 240) => String(value || 'SIN NOMBRE')
   .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
   .replace(/\s+/g, ' ').trim().replace(/[. ]+$/g, '').slice(0, max).replace(/[. ]+$/g, '') || 'SIN NOMBRE';
 
-const compactFolderName = (code, label, max = 60) => {
-  const safeCode = repositoryName(code || 'SIN-CODIGO', 18).replace(/\s+/g, '-');
-  const available = Math.max(12, max - safeCode.length - 1);
-  return `${safeCode}_${repositoryName(label, available)}`;
+const compactFolderName = (code, label, max = 240) => {
+  if (!code) {
+    return repositoryName(label || 'SIN NOMBRE', max);
+  }
+  const safeCode = repositoryName(code, 60).replace(/\s+/g, '-');
+  const safeLabel = repositoryName(label || code, max);
+  if (safeLabel.startsWith(safeCode)) {
+    return safeLabel.slice(0, max);
+  }
+  return `${safeCode}_${safeLabel}`.slice(0, max);
 };
 
 const compactFileName = (name, prefix, max = 78) => {
@@ -411,7 +417,7 @@ const syncActionPlanRepositoryTerm = async (termId) => {
     const unitName = unit?.name || actionPlan?.title;
     const unitScope = `${term.id}:${unit?.id || actionPlan.id}`;
     const planFolder = await ensureFolder(drive, {
-      parentId: yearFolder, name: compactFolderName(unitCode, unitName, 44), key: `action-repository:unit:${unitScope}`
+      parentId: yearFolder, name: compactFolderName(unitCode, unitName, 240), key: `action-repository:unit:${unitScope}`
     }, counters);
     const minutesFolder = await ensureFolder(drive, { parentId: planFolder, name: 'ACTAS DE REUNIÓN', key: `action-repository:minutes:${unitScope}` }, counters);
     const officialFolder = await ensureFolder(drive, { parentId: planFolder, name: 'PLAN DE ACCIÓN OFICIAL DIR-PE-FR-003', key: `action-repository:official:${unitScope}` }, counters);
@@ -639,7 +645,7 @@ const syncSinglePlanOfficialWorkbook = async (actionPlanId) => {
 
   const planFolder = await ensureFolder(drive, {
     parentId: yearFolder,
-    name: compactFolderName(unitCode, unitName, 44),
+    name: compactFolderName(unitCode, unitName, 240),
     key: `action-repository:unit:${unitScope}`
   }, counters);
 
