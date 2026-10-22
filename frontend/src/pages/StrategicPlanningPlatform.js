@@ -143,6 +143,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [pedWorkspaceOpen, setPedWorkspaceOpen] = useState(false);
   const [selectedActionTermId, setSelectedActionTermId] = useState('');
   const [dependencySearch, setDependencySearch] = useState('');
+  const [referenceSearch, setReferenceSearch] = useState('');
   const [dependencyView, setDependencyView] = useState('cards');
   const [actionPlanCreationContext, setActionPlanCreationContext] = useState(null);
   const [managedListFieldId, setManagedListFieldId] = useState('');
@@ -1297,8 +1298,105 @@ export default function StrategicPlanningPlatform({ onBack }) {
 
           {termDependencyPreview && <Paper variant="outlined" sx={{ mb: 2, borderRadius: 3.5, overflow: 'hidden', borderColor: termDependencyPreview.summary?.errors ? '#fecaca' : '#bbf7d0' }}><Box sx={{ p: 2, bgcolor: termDependencyPreview.summary?.errors ? '#fef2f2' : '#f0fdf4' }}><Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1}><Box><Typography fontWeight={950}>3. Revise antes de confirmar</Typography><Typography variant="body2" color="text.secondary">{termDependencyPreview.summary?.matched} responsables encontrados · {termDependencyPreview.summary?.errors} errores</Typography></Box><Button variant="contained" color="success" disabled={saving || Boolean(termDependencyPreview.summary?.errors)} onClick={confirmAnnualDependencies}>Confirmar lista de {selectedReferenceTerm.year}</Button></Stack></Box><TableContainer sx={{ maxHeight: 330 }}><Table size="small" stickyHeader><TableHead><TableRow><TableCell>Fila</TableCell><TableCell>Dependencia</TableCell><TableCell>Cédula</TableCell><TableCell>Responsable encontrado</TableCell><TableCell>Unidad en SIAC</TableCell><TableCell>Cargo</TableCell><TableCell>Correo</TableCell><TableCell>Validación</TableCell></TableRow></TableHead><TableBody>{(termDependencyPreview.parsed_data?.rows || []).map((row) => <TableRow key={row.row_number}><TableCell>{row.row_number}</TableCell><TableCell>{row.dependency}</TableCell><TableCell>{row.document}</TableCell><TableCell>{row.responsible?.nombre || '—'}</TableCell><TableCell>{row.responsible?.dependencia || '—'}</TableCell><TableCell>{row.responsible?.cargo || '—'}</TableCell><TableCell>{row.responsible?.email || '—'}</TableCell><TableCell><Chip size="small" color={row.errors?.length ? 'error' : 'success'} label={row.errors?.length ? row.errors.join(' ') : 'Correcto'} /></TableCell></TableRow>)}</TableBody></Table></TableContainer></Paper>}
 
-          <Paper variant="outlined" sx={{ borderRadius: 3.5, overflow: 'hidden' }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} sx={{ p: 2, borderBottom: '1px solid #e2e8f0' }}><Box><Typography variant="h6" fontWeight={950}>Dependencias de {selectedReferenceTerm.year}</Typography><Typography variant="body2" color="text.secondary">Estas son las únicas que aparecerán al crear Planes de Acción para este año.</Typography></Box><Chip color={selectedReferenceAssignments.length ? 'success' : 'warning'} label={`${selectedReferenceAssignments.length} configuradas`} sx={{ fontWeight: 900 }} /></Stack>
-            {!selectedReferenceAssignments.length ? <Alert severity="info" sx={{ m: 2 }}>Todavía no hay dependencias en esta vigencia. Agréguelas arriba o cargue el Excel.</Alert> : <TableContainer><Table size="small"><TableHead><TableRow><TableCell>Dependencia</TableCell><TableCell>Responsable</TableCell><TableCell>Cédula</TableCell><TableCell>Unidad en SIAC</TableCell><TableCell>Cargo</TableCell><TableCell>Correo</TableCell><TableCell align="right">Acción</TableCell></TableRow></TableHead><TableBody>{selectedReferenceAssignments.map((assignment) => <TableRow key={assignment.id} hover><TableCell><Typography fontWeight={850}>{assignment.dependency?.name}</Typography></TableCell><TableCell>{assignment.responsible?.name}</TableCell><TableCell>{assignment.responsible?.document}</TableCell><TableCell>{assignment.responsible?.dependency || '—'}</TableCell><TableCell>{assignment.responsible?.position || '—'}</TableCell><TableCell>{assignment.responsible?.email || '—'}</TableCell><TableCell align="right"><Button color="error" size="small" startIcon={<DeleteOutline />} onClick={() => removeAnnualDependency(assignment)}>Retirar</Button></TableCell></TableRow>)}</TableBody></Table></TableContainer>}
+          <Paper variant="outlined" sx={{ borderRadius: 3.5, overflow: 'hidden' }}>
+            <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1.5} sx={{ p: 2, borderBottom: '1px solid #e2e8f0', bgcolor: '#fff' }}>
+              <Box sx={{ flexShrink: 0 }}>
+                <Typography variant="h6" fontWeight={950}>Dependencias de {selectedReferenceTerm.year}</Typography>
+                <Typography variant="body2" color="text.secondary">Estas son las únicas que aparecerán al crear Planes de Acción para este año.</Typography>
+              </Box>
+              <Stack direction="row" alignItems="center" spacing={1.25} sx={{ width: { xs: '100%', md: 'auto' }, flex: { md: 1 }, maxWidth: { md: 460 }, mx: { md: 2 } }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Buscar por dependencia, responsable, cédula, cargo..."
+                  value={referenceSearch}
+                  onChange={(e) => setReferenceSearch(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Search fontSize="small" sx={{ color: '#64748b' }} />
+                      </InputAdornment>
+                    ),
+                    endAdornment: referenceSearch ? (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => setReferenceSearch('')} edge="end" sx={{ color: '#94a3b8' }}>
+                          <Close fontSize="small" />
+                        </IconButton>
+                      </InputAdornment>
+                    ) : null
+                  }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2.5,
+                      bgcolor: '#f8fafc',
+                      transition: 'all 0.2s',
+                      '&:hover': { bgcolor: '#fff', borderColor: '#93c5fd' },
+                      '&.Mui-focused': { bgcolor: '#fff' }
+                    }
+                  }}
+                />
+              </Stack>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
+                {referenceSearch && (
+                  <Chip
+                    size="small"
+                    label={`${filteredReferenceAssignments.length} de ${selectedReferenceAssignments.length}`}
+                    color="primary"
+                    variant="outlined"
+                    sx={{ fontWeight: 800 }}
+                  />
+                )}
+                <Chip
+                  color={selectedReferenceAssignments.length ? 'success' : 'warning'}
+                  label={`${selectedReferenceAssignments.length} configuradas`}
+                  sx={{ fontWeight: 900 }}
+                />
+              </Stack>
+            </Stack>
+
+            {!selectedReferenceAssignments.length ? (
+              <Alert severity="info" sx={{ m: 2 }}>Todavía no hay dependencias en esta vigencia. Agréguelas arriba o cargue el Excel.</Alert>
+            ) : !filteredReferenceAssignments.length ? (
+              <Box sx={{ p: 3, textAlign: 'center' }}>
+                <Typography variant="body2" color="#475569" fontWeight={750}>
+                  No se encontraron dependencias que coincidan con "{referenceSearch}".
+                </Typography>
+                <Button size="small" onClick={() => setReferenceSearch('')} sx={{ mt: 1, textTransform: 'none', fontWeight: 800 }}>
+                  Limpiar búsqueda
+                </Button>
+              </Box>
+            ) : (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Dependencia</TableCell>
+                      <TableCell>Responsable</TableCell>
+                      <TableCell>Cédula</TableCell>
+                      <TableCell>Unidad en SIAC</TableCell>
+                      <TableCell>Cargo</TableCell>
+                      <TableCell>Correo</TableCell>
+                      <TableCell align="right">Acción</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {filteredReferenceAssignments.map((assignment) => (
+                      <TableRow key={assignment.id} hover>
+                        <TableCell><Typography fontWeight={850}>{assignment.dependency?.name}</Typography></TableCell>
+                        <TableCell>{assignment.responsible?.name}</TableCell>
+                        <TableCell>{assignment.responsible?.document}</TableCell>
+                        <TableCell>{assignment.responsible?.dependency || '—'}</TableCell>
+                        <TableCell>{assignment.responsible?.position || '—'}</TableCell>
+                        <TableCell>{assignment.responsible?.email || '—'}</TableCell>
+                        <TableCell align="right">
+                          <Button color="error" size="small" startIcon={<DeleteOutline />} onClick={() => removeAnnualDependency(assignment)}>Retirar</Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
           </Paper>
         </>}
         <StepNavigation onBack={() => setSpace('configuration')} onNext={() => setSpace('actions')} nextLabel="Continuar a Planes de Acción" />
