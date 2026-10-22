@@ -26,7 +26,7 @@ test('calcula el consecutivo anual sin reutilizar actas archivadas o eliminadas'
   assert.equal(meetingMinuteInternals.calculateNextCouncilMinuteNumber(minutes, 2027), '01');
 });
 
-test('separa asistentes de firmantes y solo incluye las personas seleccionadas para firma', () => {
+test('convierte miembros heredados en asistentes y solo incluye las personas seleccionadas para firma', () => {
   const groups = councilPdfInternals.resolveCouncilGroups({
     participantes: [
       { name: 'Persona participante', member_kind: 'miembro', attendance_type: 'asistente', requires_signature: false },
@@ -40,9 +40,9 @@ test('separa asistentes de firmantes y solo incluye las personas seleccionadas p
     ausentes_data: [{ name: 'Miembro ausente', member_kind: 'miembro' }]
   });
 
-  assert.equal(groups.asistentes.length, 2);
+  assert.equal(groups.asistentes.length, 3);
   assert.equal(groups.invitados.length, 2);
-  assert.equal(groups.pendientes.length, 1);
+  assert.equal(groups.pendientes, undefined);
   assert.equal(groups.ausentes.length, 1);
   assert.equal(groups.firmantes.length, 1);
   assert.equal(groups.firmantes[0].name, 'Persona firmante');
@@ -124,7 +124,7 @@ test('genera el PDF oficial de COM-GD-FR-012 (Acta de Reunión Consejos y Comit�
       { titulo_academico: 'Dr.', name: 'Carlos Alberto Pérez', role_title: 'Decano Facultad de Ingeniería' }
     ],
     invitados_sin_firma_data: [
-      { titulo_academico: 'Mg.', name: 'Laura Sofía Gómez', role_title: 'Coordinadora de Autoevaluación' }
+      { titulo_academico: 'Mg.', name: 'Laura Sofía Gómez', role_title: 'Coordinadora de Autoevaluación', member_kind: 'invitado' }
     ],
     participants: [
       {

@@ -208,7 +208,14 @@ const resolveCouncilGroups = (payload = {}) => {
     ? payload.invitados_sin_firma_data
     : [];
   const invitadosSinFirma = listaInicial.filter((item) => item.member_kind === 'invitado');
-  const pendientes = listaInicial.filter((item) => item.member_kind !== 'invitado');
+  const attendeeKeys = new Set(asistentes.map((item) => String(item.document || item.email || item.name || '').trim().toLowerCase()));
+  listaInicial
+    .filter((item) => item.member_kind !== 'invitado')
+    .forEach((item) => {
+      const key = String(item.document || item.email || item.name || '').trim().toLowerCase();
+      if (!attendeeKeys.has(key)) asistentes.push({ ...item, attendance_type: 'asistente', requires_signature: false });
+      attendeeKeys.add(key);
+    });
   const ausentes = Array.isArray(payload.ausentes_data)
     ? payload.ausentes_data.filter((item) => item.member_kind !== 'invitado')
     : [];
@@ -216,7 +223,6 @@ const resolveCouncilGroups = (payload = {}) => {
   return {
     asistentes,
     invitados: [...invitadosConFirma, ...invitadosSinFirma],
-    pendientes,
     ausentes,
     firmantes: participants.filter((participant) => participant.requires_signature !== false)
   };
@@ -359,12 +365,10 @@ const buildSignaturesGrid = (firmantes = [], options = {}) => {
 
 const generateCouncilMinutePdf = async (payload = {}, options = {}) => {
   const header = payload.header || {};
-  const { asistentes, invitados, pendientes, ausentes, firmantes } = resolveCouncilGroups(payload);
-  const totalConvocados = asistentes.length + pendientes.length + ausentes.length;
+  const { asistentes, invitados, ausentes, firmantes } = resolveCouncilGroups(payload);
+  const totalConvocados = asistentes.length + ausentes.length;
   const quorumMinimo = totalConvocados ? Math.floor(totalConvocados / 2) + 1 : 0;
-  const quorumLabel = pendientes.length
-    ? `${pendientes.length} PENDIENTE(S) POR CLASIFICAR`
-    : (asistentes.length >= quorumMinimo && totalConvocados ? 'HAY QUÓRUM' : 'NO HAY QUÓRUM');
+  const quorumLabel = asistentes.length >= quorumMinimo && totalConvocados ? 'HAY QUÓRUM' : 'NO HAY QUÓRUM';
   const councilName = String(
     payload.nombre_consejo || payload.dependencia || 'CONSEJO O COMITÉ INSTITUCIONAL'
   ).trim().toLocaleUpperCase('es');
@@ -455,7 +459,6 @@ const generateCouncilMinutePdf = async (payload = {}, options = {}) => {
       },
       buildPopulationTable('ASISTENTES', asistentes, 'Sin asistentes registrados'),
       buildPopulationTable('INVITADOS', invitados, 'Sin invitados registrados'),
-      ...(pendientes.length ? [buildPopulationTable('PENDIENTES POR CLASIFICAR', pendientes, '')] : []),
       buildPopulationTable('AUSENTES', ausentes, 'Sin ausentes registrados'),
       {
         text: [

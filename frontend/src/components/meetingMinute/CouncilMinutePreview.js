@@ -122,7 +122,7 @@ export default function CouncilMinutePreview({
   };
 
   const enrichedParticipants = participants.map(enrichParticipant);
-  const asistentes = enrichedParticipants.filter(
+  const registeredAttendees = enrichedParticipants.filter(
     (p) => p.member_kind !== 'invitado'
   );
   const invitadosConFirma = enrichedParticipants.filter(
@@ -130,15 +130,19 @@ export default function CouncilMinutePreview({
   );
   const listaInicial = Array.isArray(form.invitados_sin_firma_data) ? form.invitados_sin_firma_data : [];
   const invitadosSinFirma = listaInicial.filter((item) => item.member_kind === 'invitado');
-  const pendientes = listaInicial.filter((item) => item.member_kind !== 'invitado');
+  const attendeeKeys = new Set(registeredAttendees.map((item) => String(item.document || item.email || item.name || '').trim().toLowerCase()));
+  const legacyAttendees = listaInicial.filter((item) => (
+    item.member_kind !== 'invitado'
+    && !attendeeKeys.has(String(item.document || item.email || item.name || '').trim().toLowerCase())
+  ));
+  const asistentes = [...registeredAttendees, ...legacyAttendees];
   const invitados = [...invitadosConFirma, ...invitadosSinFirma];
   const ausentes = (Array.isArray(form.ausentes_data) ? form.ausentes_data : [])
     .filter((item) => item.member_kind !== 'invitado');
   const firmantes = enrichedParticipants.filter((participant) => participant.requires_signature !== false);
-  const totalConvocados = asistentes.length + pendientes.length + ausentes.length;
+  const totalConvocados = asistentes.length + ausentes.length;
   const quorumMinimo = totalConvocados ? Math.floor(totalConvocados / 2) + 1 : 0;
-  const quorumCompleto = pendientes.length === 0;
-  const hayQuorum = quorumCompleto && asistentes.length >= quorumMinimo;
+  const hayQuorum = totalConvocados > 0 && asistentes.length >= quorumMinimo;
 
   const councilTitle = String(
     form.nombre_consejo || form.dependencia || 'NOMBRE DEL CONSEJO O COMITÉ'
@@ -275,13 +279,12 @@ export default function CouncilMinutePreview({
 
         {renderPopulationTable('ASISTENTES', asistentes, 'Sin asistentes registrados')}
         {renderPopulationTable('INVITADOS', invitados, 'Sin invitados registrados')}
-        {pendientes.length > 0 && renderPopulationTable('PENDIENTES POR CLASIFICAR', pendientes, '')}
         {renderPopulationTable('AUSENTES', ausentes, 'Sin ausentes registrados')}
         <Box sx={{ mb: 2, border: '1px solid #64748b', bgcolor: '#f8fafc', px: 1.2, py: 0.9, fontSize: 11 }}>
           <Box component="span" sx={{ fontWeight: 900 }}>CONTROL DE QUÓRUM: </Box>
           {asistentes.length} asistentes de {totalConvocados} convocados · mínimo requerido {quorumMinimo} ·{' '}
-          <Box component="span" sx={{ fontWeight: 900, color: quorumCompleto ? (hayQuorum ? '#15803d' : '#b91c1c') : '#b45309' }}>
-            {quorumCompleto ? (hayQuorum ? 'HAY QUÓRUM' : 'NO HAY QUÓRUM') : `${pendientes.length} PENDIENTE(S) POR CLASIFICAR`}
+          <Box component="span" sx={{ fontWeight: 900, color: hayQuorum ? '#15803d' : '#b91c1c' }}>
+            {hayQuorum ? 'HAY QUÓRUM' : 'NO HAY QUÓRUM'}
           </Box>
         </Box>
 

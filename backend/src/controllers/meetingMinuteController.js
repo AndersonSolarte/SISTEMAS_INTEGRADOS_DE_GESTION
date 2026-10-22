@@ -953,8 +953,10 @@ const listMinutes = wrap(async (req, res) => {
     limit: 200
   });
 
+  const formatStates = await getMeetingMinuteFormatStates();
   const ownedRows = rows.filter((row) => (
-    Number(row.created_by) === userId || isMinuteResponsible(req.user, row)
+    formatStates[resolveMeetingMinuteFormatCode(row)]
+    && (Number(row.created_by) === userId || isMinuteResponsible(req.user, row))
   ));
   res.json({ success: true, data: ownedRows.map(addRetentionMetadata) });
 });
@@ -984,8 +986,10 @@ const listMyMinutes = wrap(async (req, res) => {
     limit: 300
   });
 
+  const formatStates = await getMeetingMinuteFormatStates();
   const ownedRows = rows.filter((row) => (
-    Number(row.created_by) === userId || isMinuteResponsible(req.user, row)
+    formatStates[resolveMeetingMinuteFormatCode(row)]
+    && (Number(row.created_by) === userId || isMinuteResponsible(req.user, row))
   ));
   res.json({
     success: true,
@@ -1215,6 +1219,10 @@ const getMinute = wrap(async (req, res) => {
   if (!row || row.deleted_at) {
     throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
   }
+  const formatCode = resolveMeetingMinuteFormatCode(row);
+  if (!(await isMeetingMinuteFormatEnabled(formatCode))) {
+    throw Object.assign(new Error(`El formulario ${formatCode} no está habilitado por el administrador.`), { statusCode: 403 });
+  }
   const authorized = await canAccessMinuteFullSignatures(req.user, row);
   if (!authorized) throw Object.assign(new Error('No tiene permiso para consultar esta acta.'), { statusCode: 403 });
   for (const signature of row.signatures || []) {
@@ -1399,6 +1407,12 @@ const normalizeContent = (body, document, existingContent = {}) => {
   );
   const computedTitle = clean(body.titulo, 160)
     || [nombreConsejo, numeroActa ? `Acta ${numeroActa}` : ''].filter(Boolean).join(' · ').slice(0, 160);
+  const councilInvitations = sanitizeCouncilMemberList(mergeCouncilAttendanceInvitationState(
+    body.invitados_sin_firma_data !== undefined
+      ? body.invitados_sin_firma_data
+      : existingContent?.invitados_sin_firma_data,
+    [...(existingContent?.invitados_sin_firma_data || []), ...(existingContent?.ausentes_data || [])]
+  )).filter((item) => item.member_kind === 'invitado');
 
   return {
     format_code: 'COM-GD-FR-012',
@@ -1430,12 +1444,7 @@ const normalizeContent = (body, document, existingContent = {}) => {
       body.participantes_meta,
       Array.isArray(body.participants) ? body.participants : existingContent?.participantes_meta
     ),
-    invitados_sin_firma_data: body.invitados_sin_firma_data !== undefined
-      ? sanitizeCouncilMemberList(mergeCouncilAttendanceInvitationState(
-        body.invitados_sin_firma_data,
-        [...(existingContent?.invitados_sin_firma_data || []), ...(existingContent?.ausentes_data || [])]
-      ))
-      : sanitizeCouncilMemberList(existingContent?.invitados_sin_firma_data),
+    invitados_sin_firma_data: councilInvitations,
     ausentes_data: body.ausentes_data !== undefined
       ? sanitizeCouncilMemberList(mergeCouncilAttendanceInvitationState(
         body.ausentes_data,
@@ -1606,9 +1615,35 @@ const saveDraft = wrap(async (req, res) => {
   // En COM-GD-FR-012 la responsabilidad editorial y la asistencia son conceptos
   // independientes. Un responsable solo aparece como asistente si fue convocado
   // expresamente en la lista inicial.
+  const submittedParticipants = Array.isArray(req.body.participants) ? req.body.participants : [];
   const requestedParticipants = isCouncil
-    ? (Array.isArray(req.body.participants) ? req.body.participants : [])
-    : placeResponsibleFirst(Array.isArray(req.body.participants) ? req.body.participants : [], allResponsables);
+    ? (() => {
+        const roster = [...submittedParticipants];
+        const rosterKeys = new Set(roster.map((item) => (
+          participantMembershipKey(item)
+          || `name:${clean(item.name || item.nombre, 240).toLowerCase()}`
+        )));
+        (Array.isArray(req.body.invitados_sin_firma_data) ? req.body.invitados_sin_firma_data : [])
+          .filter((item) => item.member_kind !== 'invitado')
+          .forEach((item) => {
+            const key = participantMembershipKey(item) || `name:${clean(item.name || item.nombre, 240).toLowerCase()}`;
+            if (!rosterKeys.has(key)) {
+              roster.push({
+                ...item,
+                name: clean(item.name || item.nombre, 240),
+                member_kind: 'miembro',
+                attendance_type: 'asistente',
+                requires_signature: item.requires_signature === true,
+                role_title: clean(item.role_title || item.cargo, 220),
+                cargo_acta: clean(item.cargo_acta || item.role_title || item.cargo, 220),
+                status: item.status || 'invited'
+              });
+              rosterKeys.add(key);
+            }
+          });
+        return roster;
+      })()
+    : placeResponsibleFirst(submittedParticipants, allResponsables);
   const participants = await Promise.all(requestedParticipants.map(async (participant) => {
     const participantDocument = clean(participant.document, 100);
     const normalizedDocument = participantDocument.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -1847,8 +1882,10 @@ const sendAttendanceInvitations = wrap(async (req, res) => {
   if (!(await canAccessMinuteFullSignatures(req.user, minute))) throw Object.assign(new Error('No tiene permiso para enviar estas confirmaciones.'), { statusCode: 403 });
 
   const content = { ...(minute.content || {}) };
-  const pending = Array.isArray(content.invitados_sin_firma_data) ? content.invitados_sin_firma_data.map((item) => ({ ...item })) : [];
-  if (!pending.length) throw Object.assign(new Error('No hay miembros o invitados pendientes para notificar.'), { statusCode: 422 });
+  const pending = Array.isArray(content.invitados_sin_firma_data)
+    ? content.invitados_sin_firma_data.filter((item) => item.member_kind === 'invitado').map((item) => ({ ...item }))
+    : [];
+  if (!pending.length) throw Object.assign(new Error('No hay invitados para notificar.'), { statusCode: 422 });
   const confirmations = Array.isArray(content._attendance_confirmations) ? [...content._attendance_confirmations] : [];
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   const responsible = await resolveMinutePrimaryResponsible(minute);
@@ -2038,12 +2075,6 @@ const publish = wrap(async (req, res) => {
     );
   if (requiredContentMissing) {
     throw Object.assign(new Error('Complete todos los campos obligatorios del acta antes de enviarla para firmas.'), { statusCode: 422 });
-  }
-  const pendingCouncilMembers = isCouncil && Array.isArray(content.invitados_sin_firma_data)
-    ? content.invitados_sin_firma_data.filter((item) => item.member_kind !== 'invitado')
-    : [];
-  if (pendingCouncilMembers.length) {
-    throw Object.assign(new Error(`Clasifique como asistentes o ausentes a los ${pendingCouncilMembers.length} miembro(s) pendientes antes de enviar el acta.`), { statusCode: 422 });
   }
   if (!signingParticipants.length || (!isCouncil && signingParticipants.length < 2)) {
     throw Object.assign(new Error(isCouncil

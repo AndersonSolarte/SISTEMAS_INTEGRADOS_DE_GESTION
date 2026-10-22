@@ -388,8 +388,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const availableFormats = useMemo(() => (
     enabledFormats
       ? MEETING_MINUTE_FORMAT_LIST.filter((fmt) => enabledFormats[fmt.code])
-      : MEETING_MINUTE_FORMAT_LIST.filter((fmt) => fmt.code === resolveMeetingMinuteFormatCode(document))
-  ), [enabledFormats, document]);
+      : []
+  ), [enabledFormats]);
   const isFormatAvailable = (code) => availableFormats.some((fmt) => fmt.code === code);
   const visibleMyMinutes = useMemo(
     () => myMinutes.filter((minute) => availableFormats.some((fmt) => fmt.code === resolveMeetingMinuteFormatCode(minute))),
@@ -432,17 +432,16 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     return Number.isFinite(days) && days >= 0 && days <= 7;
   }), [myMinutes]);
   const councilAttendanceSummary = useMemo(() => {
-    const asistentes = form.participants.filter((item) => item.member_kind !== 'invitado').length;
+    const legacyAttendees = (form.invitados_sin_firma_data || []).filter((item) => item.member_kind !== 'invitado').length;
+    const asistentes = form.participants.filter((item) => item.member_kind !== 'invitado').length + legacyAttendees;
     const invitados = form.participants.filter((item) => item.member_kind === 'invitado').length
       + (form.invitados_sin_firma_data || []).filter((item) => item.member_kind === 'invitado').length;
-    const pendientes = (form.invitados_sin_firma_data || []).filter((item) => item.member_kind !== 'invitado').length;
     const ausentes = (form.ausentes_data || []).filter((item) => item.member_kind !== 'invitado').length;
-    const convocados = asistentes + pendientes + ausentes;
+    const convocados = asistentes + ausentes;
     const minimo = convocados ? Math.floor(convocados / 2) + 1 : 0;
     return {
       asistentes,
       invitados,
-      pendientes,
       ausentes,
       convocados,
       minimo,
@@ -693,6 +692,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   }, [open, enabledFormats, activeFormatCode, form.id]);
 
   useEffect(() => {
+    if (myMinutesFormatFilter !== 'ALL' && !isFormatAvailable(myMinutesFormatFilter)) {
+      setMyMinutesFormatFilter('ALL');
+    }
+    // isFormatAvailable deriva exclusivamente de availableFormats.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableFormats, myMinutesFormatFilter]);
+
+  useEffect(() => {
     if (!open || expiryAlertShownRef.current || expiringMinutes.length === 0) return;
     expiryAlertShownRef.current = true;
     enqueueSnackbar(
@@ -759,6 +766,45 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     });
   };
 
+  const councilPersonKey = (person = {}) => {
+    const documentKey = String(person.document || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    if (documentKey) return `doc:${documentKey}`;
+    const emailKey = String(person.email || '').trim().toLowerCase();
+    if (emailKey) return `email:${emailKey}`;
+    return `name:${String(person.name || person.nombre || '').trim().toLowerCase()}`;
+  };
+
+  const normalizeCouncilRoster = (participants = [], metaList = [], initialList = []) => {
+    const hydrated = hydrateParticipantsWithMeta(participants, metaList);
+    const attendees = [...hydrated];
+    const existingKeys = new Set(attendees.map(councilPersonKey));
+    const legacyExpectedMembers = (Array.isArray(initialList) ? initialList : [])
+      .filter((item) => item.member_kind !== 'invitado');
+
+    legacyExpectedMembers.forEach((member) => {
+      const key = councilPersonKey(member);
+      if (existingKeys.has(key)) return;
+      attendees.push({
+        ...member,
+        name: formatPersonName(member.name || member.nombre),
+        member_kind: 'miembro',
+        attendance_type: 'asistente',
+        requires_signature: member.requires_signature === true,
+        cargo_acta: member.cargo_acta || member.role_title || member.cargo || '',
+        role_title: member.role_title || member.cargo_acta || member.cargo || '',
+        status: member.status || 'invited'
+      });
+      existingKeys.add(key);
+    });
+
+    return {
+      participants: attendees,
+      invitations: (Array.isArray(initialList) ? initialList : [])
+        .filter((item) => item.member_kind === 'invitado'),
+      migratedLegacyMembers: legacyExpectedMembers.length
+    };
+  };
+
   const openMinute = async (id, targetFormatOverride = null) => {
     setFieldErrors({});
     participantGuidanceShownRef.current = false;
@@ -793,7 +839,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       const rowFormat = resolveMeetingMinuteFormatCode(row);
       const [start = '', end = ''] = String(content.horario || '').split('-').map((part) => part.trim());
       const loadedResponsables = loadResponsablesFromMinute(content);
-      const hydratedParticipants = hydrateParticipantsWithMeta(row.participants || [], content.participantes_meta);
+      const councilRoster = rowFormat === 'COM-GD-FR-012'
+        ? normalizeCouncilRoster(row.participants || [], content.participantes_meta, content.invitados_sin_firma_data)
+        : null;
+      const hydratedParticipants = councilRoster?.participants
+        || hydrateParticipantsWithMeta(row.participants || [], content.participantes_meta);
       hasUnsavedChangesRef.current = false;
       localChangeVersionRef.current = 0;
       failedAutoSaveVersionRef.current = null;
@@ -832,10 +882,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         compromisos: content.compromisos?.[0] || content.conclusiones?.[0] || '',
         anexo: content.anexo || '',
         participantes_meta: Array.isArray(content.participantes_meta) ? content.participantes_meta : [],
-        invitados_sin_firma_data: Array.isArray(content.invitados_sin_firma_data) ? content.invitados_sin_firma_data : [],
+        invitados_sin_firma_data: councilRoster?.invitations
+          || (Array.isArray(content.invitados_sin_firma_data) ? content.invitados_sin_firma_data : []),
         ausentes_data: Array.isArray(content.ausentes_data) ? content.ausentes_data : [],
         participants: hydratedParticipants
       });
+      if (councilRoster?.migratedLegacyMembers) {
+        markUnsavedChanges({ participants: true });
+      }
       setResponsibleDocument('');
       setResponsibleCandidate(null);
       setSignatures(row.signatures || []);
@@ -878,7 +932,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 const rowContent = row.content || {};
                 const loadedResp = loadResponsablesFromMinute(rowContent);
                 const hasUnsavedChanges = hasUnsavedChangesRef.current;
-                const hydrated = hydrateParticipantsWithMeta(row.participants || [], rowContent.participantes_meta);
+                const remoteCouncilRoster = resolveMeetingMinuteFormatCode(row) === 'COM-GD-FR-012'
+                  ? normalizeCouncilRoster(row.participants || [], rowContent.participantes_meta, rowContent.invitados_sin_firma_data)
+                  : null;
+                const hydrated = remoteCouncilRoster?.participants
+                  || hydrateParticipantsWithMeta(row.participants || [], rowContent.participantes_meta);
                 if (layoutMode === 'preview' && !hasUnsavedChanges) {
                   const [start = '', end = ''] = String(rowContent.horario || '').split('-').map((p) => p.trim());
                   return {
@@ -906,7 +964,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     compromisos: rowContent.compromisos?.[0] || rowContent.conclusiones?.[0] || prev.compromisos,
                     anexo: rowContent.anexo ?? prev.anexo,
                     participantes_meta: Array.isArray(rowContent.participantes_meta) ? rowContent.participantes_meta : prev.participantes_meta,
-                    invitados_sin_firma_data: Array.isArray(rowContent.invitados_sin_firma_data) ? rowContent.invitados_sin_firma_data : prev.invitados_sin_firma_data,
+                    invitados_sin_firma_data: remoteCouncilRoster?.invitations
+                      || (Array.isArray(rowContent.invitados_sin_firma_data) ? rowContent.invitados_sin_firma_data : prev.invitados_sin_firma_data),
                     ausentes_data: Array.isArray(rowContent.ausentes_data) ? rowContent.ausentes_data : prev.ausentes_data,
                     participants: hydrated
                   };
@@ -917,7 +976,9 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   revision_required: Boolean(rowContent._revision?.requires_resignature),
                   titulo: hasUnsavedChanges ? prev.titulo : (rowContent.titulo || ''),
                   participantes_meta: hasUnsavedChanges ? prev.participantes_meta : (Array.isArray(rowContent.participantes_meta) ? rowContent.participantes_meta : prev.participantes_meta),
-                  invitados_sin_firma_data: hasUnsavedChanges ? prev.invitados_sin_firma_data : (Array.isArray(rowContent.invitados_sin_firma_data) ? rowContent.invitados_sin_firma_data : prev.invitados_sin_firma_data),
+                  invitados_sin_firma_data: hasUnsavedChanges
+                    ? prev.invitados_sin_firma_data
+                    : (remoteCouncilRoster?.invitations || (Array.isArray(rowContent.invitados_sin_firma_data) ? rowContent.invitados_sin_firma_data : prev.invitados_sin_firma_data)),
                   ausentes_data: hasUnsavedChanges ? prev.ausentes_data : (Array.isArray(rowContent.ausentes_data) ? rowContent.ausentes_data : prev.ausentes_data),
                   // Si hay ediciones locales, el servidor aun no conoce participantes
                   // recien agregados o eliminados. Conservarlos evita que desaparezcan
@@ -935,6 +996,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       isMounted = false;
       clearInterval(syncInterval);
     };
+  // El normalizador es puro y se usa únicamente al recibir cada respuesta del sondeo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, form.id, layoutMode, loading]);
 
   const lookupResponsible = async () => {
@@ -1096,7 +1159,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       ...external,
       name: formatPersonName(external.name),
       member_kind: isCouncilFormat && external.member_kind === 'invitado' ? 'invitado' : 'miembro',
-      attendance_type: isCouncilFormat ? 'pendiente' : 'asistente',
+      attendance_type: isCouncilFormat && external.member_kind === 'invitado' ? 'invitado' : 'asistente',
       requires_signature: isCouncilFormat ? false : true,
       cargo_acta: external.role_title || '',
       user_id: isInstitutional ? (externalStudentResult.institutionalId || null) : null,
@@ -1120,7 +1183,9 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       setResponsablesList(nextResponsables);
       setForm((previous) => ({
         ...previous,
-        invitados_sin_firma_data: [...(previous.invitados_sin_firma_data || []), newMember],
+        ...(newMember.member_kind === 'invitado'
+          ? { invitados_sin_firma_data: [...(previous.invitados_sin_firma_data || []), newMember] }
+          : { participants: [...previous.participants, newMember] }),
         ...(isCouncilCoResponsible ? {
           responsables: formatResponsablesText(nextResponsables),
           responsable_document: primary?.document || '',
@@ -1130,8 +1195,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       }));
       enqueueSnackbar(
         isCouncilCoResponsible
-          ? `${newMember.name} fue agregado como corresponsable y miembro esperado.`
-          : `${newMember.name} fue agregado a la lista inicial.`,
+          ? `${newMember.name} fue agregado como corresponsable y asistente.`
+          : newMember.member_kind === 'invitado'
+            ? `${newMember.name} fue agregado como invitado.`
+            : `${newMember.name} fue agregado automáticamente como asistente.`,
         { variant: 'success' }
       );
     } else {
@@ -1175,8 +1242,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     setForm((previous) => ({
       ...previous,
       participants: previous.participants.filter((_, participantIndex) => participantIndex !== index),
-      [population === 'invitado' ? 'invitados_sin_firma_data' : 'ausentes_data']: [
-        ...(previous[population === 'invitado' ? 'invitados_sin_firma_data' : 'ausentes_data'] || []),
+      ausentes_data: [
+        ...(previous.ausentes_data || []),
         {
           document: participant.document || '',
           email: participant.email || '',
@@ -1190,7 +1257,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       ]
     }));
     enqueueSnackbar(
-      `${formatPersonName(participant.name)} pasó a ${population === 'invitado' ? 'invitados pendientes' : 'ausentes'}.`,
+      `${formatPersonName(participant.name)} pasó a ausentes.`,
       { variant: 'info' }
     );
   };
@@ -1695,7 +1762,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         revision_required: Boolean(row.content?._revision?.requires_resignature),
         // Una respuesta antigua no puede borrar cambios hechos mientras se guardaba.
         participants: noNewerLocalChanges
-          ? hydrateParticipantsWithMeta(row.participants || previous.participants, row.content?.participants_meta || [])
+          ? hydrateParticipantsWithMeta(row.participants || previous.participants, row.content?.participantes_meta || [])
           : previous.participants
       }));
       await loadMinutes();
@@ -2579,17 +2646,15 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               {isCouncilFormat && (
                 <Stack sx={{ my: 1.5 }}>
                   <Alert
-                    severity={councilAttendanceSummary.pendientes > 0 ? 'warning' : (councilAttendanceSummary.hayQuorum ? 'success' : 'error')}
+                    severity={councilAttendanceSummary.hayQuorum ? 'success' : 'error'}
                     sx={{ flex: 1, borderRadius: 2.5, alignItems: 'center' }}
                   >
                     <Typography fontWeight={900} fontSize={13.5}>
                       Control de quórum: {councilAttendanceSummary.asistentes} asistentes de {councilAttendanceSummary.convocados} convocados ({councilAttendanceSummary.porcentaje}%)
                     </Typography>
                     <Typography variant="caption" display="block">
-                      Miembros esperados: {councilAttendanceSummary.convocados} · Asistentes: {councilAttendanceSummary.asistentes} · Ausentes: {councilAttendanceSummary.ausentes} · Pendientes: {councilAttendanceSummary.pendientes}. Mínimo automático por mayoría simple: {councilAttendanceSummary.minimo || 0}.
-                      {councilAttendanceSummary.pendientes > 0
-                        ? ` Faltan ${councilAttendanceSummary.pendientes} miembro(s) por clasificar.`
-                        : councilAttendanceSummary.hayQuorum ? ' Hay quórum.' : ' No hay quórum.'}
+                      Miembros esperados: {councilAttendanceSummary.convocados} · Asistentes: {councilAttendanceSummary.asistentes} · Ausentes: {councilAttendanceSummary.ausentes}. Mínimo automático por mayoría simple: {councilAttendanceSummary.minimo || 0}.
+                      {councilAttendanceSummary.hayQuorum ? ' Hay quórum.' : ' No hay quórum.'}
                     </Typography>
                   </Alert>
                 </Stack>
@@ -2966,7 +3031,6 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                                 onChange={(event) => updateCouncilPopulation(index, event.target.value)}
                               >
                                 <MenuItem value="asistente">ASISTENTE</MenuItem>
-                                <MenuItem value="invitado">PENDIENTE</MenuItem>
                                 <MenuItem value="ausente">AUSENTE</MenuItem>
                               </TextField>
                             </TableCell>
@@ -3130,7 +3194,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                                 value={tipo}
                                 onChange={(event) => updateNonSigningPopulation(tipo, index, event.target.value)}
                               >
-                                <MenuItem value="invitado_sin_firma">{item.member_kind === 'invitado' ? 'INVITADO' : 'PENDIENTE'}</MenuItem>
+                                {item.member_kind === 'invitado' && <MenuItem value="invitado_sin_firma">INVITADO</MenuItem>}
                                 <MenuItem value="asistente">ASISTENTE</MenuItem>
                                 {item.member_kind !== 'invitado' && <MenuItem value="ausente">AUSENTE</MenuItem>}
                               </TextField>

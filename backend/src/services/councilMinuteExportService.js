@@ -387,12 +387,10 @@ const buildSignaturesSection = (firmantes = []) => {
 
 const buildCouncilDocument = (payload = {}) => {
   const header = payload.header || {};
-  const { asistentes, invitados, pendientes, ausentes, firmantes } = resolveCouncilGroups(payload);
-  const totalConvocados = asistentes.length + pendientes.length + ausentes.length;
+  const { asistentes, invitados, ausentes, firmantes } = resolveCouncilGroups(payload);
+  const totalConvocados = asistentes.length + ausentes.length;
   const quorumMinimo = totalConvocados ? Math.floor(totalConvocados / 2) + 1 : 0;
-  const quorumLabel = pendientes.length
-    ? `${pendientes.length} PENDIENTE(S) POR CLASIFICAR`
-    : (asistentes.length >= quorumMinimo && totalConvocados ? 'HAY QUÓRUM' : 'NO HAY QUÓRUM');
+  const quorumLabel = asistentes.length >= quorumMinimo && totalConvocados ? 'HAY QUÓRUM' : 'NO HAY QUÓRUM';
   const councilName = String(
     payload.nombre_consejo || payload.dependencia || 'CONSEJO O COMITÉ INSTITUCIONAL'
   ).trim().toLocaleUpperCase('es');
@@ -468,7 +466,6 @@ const buildCouncilDocument = (payload = {}) => {
     metadataTable,
     ...buildPopulationTable('ASISTENTES', asistentes, 'Sin asistentes registrados'),
     ...buildPopulationTable('INVITADOS', invitados, 'Sin invitados registrados'),
-    ...(pendientes.length ? buildPopulationTable('PENDIENTES POR CLASIFICAR', pendientes, '') : []),
     ...buildPopulationTable('AUSENTES', ausentes, 'Sin ausentes registrados'),
     paragraph([
       textRun('CONTROL DE QUÓRUM: ', { bold: true, size: 19 }),
