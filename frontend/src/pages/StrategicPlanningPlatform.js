@@ -1758,7 +1758,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       textAlign: 'left',
                       cursor: 'pointer',
                       minWidth: { xs: 150, md: 0 },
-                      p: 1.75,
+                      p: 1.5,
                       borderRadius: 3,
                       border: '1.5px solid',
                       borderColor: selected ? '#1d4ed8' : '#e2e8f0',
@@ -1781,11 +1781,11 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       }
                     }}
                   >
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={0.5}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.75}>
                       <Typography
                         variant="caption"
                         sx={{
-                          fontWeight: 800,
+                          fontWeight: 900,
                           fontSize: 10,
                           letterSpacing: '0.6px',
                           textTransform: 'uppercase',
@@ -1794,51 +1794,12 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       >
                         Vigencia
                       </Typography>
-                      <Box
-                        sx={{
-                          width: 30,
-                          height: 30,
-                          borderRadius: 2,
-                          bgcolor: selected ? 'rgba(255,255,255,0.2)' : '#f1f5f9',
-                          color: selected ? '#ffffff' : '#64748b',
-                          display: 'grid',
-                          placeItems: 'center'
-                        }}
-                      >
-                        <CalendarTodayOutlined sx={{ fontSize: 16 }} />
-                      </Box>
-                    </Stack>
-
-                    <Typography
-                      fontWeight={950}
-                      fontSize={{ xs: 20, sm: 22 }}
-                      sx={{
-                        lineHeight: 1.1,
-                        color: selected ? '#ffffff' : '#0f172a',
-                        letterSpacing: '-0.5px'
-                      }}
-                    >
-                      {term.year}
-                    </Typography>
-
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" mt={1.25} mb={0.75} spacing={0.5}>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          fontWeight: 850,
-                          fontSize: 11,
-                          color: selected ? 'rgba(255,255,255,0.92)' : '#475569',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        {createdPlansCount} de {expectedPlansCount} planes
-                      </Typography>
                       <Chip
                         size="small"
                         label={TERM_STATUS_LABEL[term.status] || term.status}
                         sx={{
-                          height: 20,
-                          fontSize: 10,
+                          height: 19,
+                          fontSize: 9.5,
                           fontWeight: 850,
                           px: 0.5,
                           bgcolor: selected
@@ -1857,6 +1818,43 @@ export default function StrategicPlanningPlatform({ onBack }) {
                           borderColor: selected ? 'transparent' : term.status === 'active' ? '#bbf7d0' : '#e2e8f0'
                         }}
                       />
+                    </Stack>
+
+                    <Typography
+                      fontWeight={950}
+                      fontSize={{ xs: 20, sm: 22 }}
+                      sx={{
+                        lineHeight: 1.1,
+                        color: selected ? '#ffffff' : '#0f172a',
+                        letterSpacing: '-0.5px',
+                        mb: 1
+                      }}
+                    >
+                      {term.year}
+                    </Typography>
+
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.5}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 850,
+                          fontSize: 10.5,
+                          color: selected ? 'rgba(255,255,255,0.92)' : '#475569',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {createdPlansCount} de {expectedPlansCount} planes
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 800,
+                          fontSize: 10,
+                          color: selected ? 'rgba(255,255,255,0.75)' : '#94a3b8'
+                        }}
+                      >
+                        {Math.round(percentage)}%
+                      </Typography>
                     </Stack>
 
                     <LinearProgress
