@@ -18,6 +18,7 @@ const strategicPlanningService = {
   deleteElement: (planId, elementId) => api.delete(`${root}/plans/${planId}/elements/${elementId}`).then(data),
   applyInstitutionalTemplate: (planId) => api.post(`${root}/plans/${planId}/apply-institutional-template`).then(data),
   createField: (planId, payload) => api.post(`${root}/plans/${planId}/fields`, payload).then(data),
+  reorderFields: (planId, fieldIds) => api.put(`${root}/plans/${planId}/fields/reorder`, { fieldIds }).then(data),
   updateField: (planId, fieldId, payload) => api.patch(`${root}/plans/${planId}/fields/${fieldId}`, payload).then(data),
   deleteField: (planId, fieldId) => api.delete(`${root}/plans/${planId}/fields/${fieldId}`).then(data),
   previewFieldSchema: (planId, formData) => api.post(`${root}/plans/${planId}/field-schema/preview`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }).then(data),

@@ -22,6 +22,7 @@ router.patch('/plans/:planId/elements/:elementId', permit('pei_configurar'), c.u
 router.delete('/plans/:planId/elements/:elementId', permit('pei_configurar'), c.deleteElement);
 router.post('/plans/:planId/apply-institutional-template', permit('pei_configurar'), c.applyInstitutionalTemplate);
 router.post('/plans/:planId/fields', permit('pei_configurar'), c.createFieldDefinition);
+router.put('/plans/:planId/fields/reorder', permit('pei_configurar'), c.reorderFieldDefinitions);
 router.patch('/plans/:planId/fields/:fieldId', permit('pei_configurar'), c.updateFieldDefinition);
 router.delete('/plans/:planId/fields/:fieldId', permit('pei_configurar'), c.deleteFieldDefinition);
 router.post('/plans/:planId/field-schema/preview', permit('pei_configurar'), upload.single('file'), c.previewFieldSchema);

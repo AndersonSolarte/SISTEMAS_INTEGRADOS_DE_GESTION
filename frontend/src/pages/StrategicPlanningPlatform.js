@@ -138,6 +138,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [fieldOptionDraft, setFieldOptionDraft] = useState('');
   const [fieldSchemaPreview, setFieldSchemaPreview] = useState(null);
   const [replaceSchemaFields, setReplaceSchemaFields] = useState(false);
+  const [reorderingFields, setReorderingFields] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
   const [pedWorkspaceOpen, setPedWorkspaceOpen] = useState(false);
@@ -523,6 +524,40 @@ export default function StrategicPlanningPlatform({ onBack }) {
     try { await strategicPlanningService.deleteField(plan.id, field.id); await load(); enqueueSnackbar('Campo eliminado sin alterar planes anteriores.', { variant: 'success' }); }
     catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar el campo.', { variant: 'error' }); }
   };
+  const moveField = async (index, direction) => {
+    const sorted = [...activeFieldDefinitions].sort((a, b) => (a.position || 0) - (b.position || 0));
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= sorted.length) return;
+
+    const swapped = [...sorted];
+    [swapped[index], swapped[targetIndex]] = [swapped[targetIndex], swapped[index]];
+
+    const fieldIds = swapped.map((f) => f.id);
+
+    setStrategicPlans((currentPlans) =>
+      currentPlans.map((p) => {
+        if (p.id !== plan.id) return p;
+        const updatedFields = (p.fieldDefinitions || []).map((f) => {
+          const newPos = fieldIds.indexOf(f.id);
+          return newPos !== -1 ? { ...f, position: newPos + 1 } : f;
+        });
+        return { ...p, fieldDefinitions: updatedFields };
+      })
+    );
+
+    setReorderingFields(true);
+    try {
+      await strategicPlanningService.reorderFields(plan.id, fieldIds);
+      await load();
+      enqueueSnackbar('Orden de columnas actualizado correctamente.', { variant: 'success' });
+    } catch (error) {
+      await load();
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible cambiar el orden de las columnas.', { variant: 'error' });
+    } finally {
+      setReorderingFields(false);
+    }
+  };
+
 
   const previewFieldSchema = async (file) => {
     if (!file) return;
@@ -998,7 +1033,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
               <Table stickyHeader size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ fontWeight: 800, width: 70 }}>#</TableCell>
+                    <TableCell sx={{ fontWeight: 800, width: 60 }}>#</TableCell>
+                    <TableCell sx={{ fontWeight: 800, width: 90, textAlign: 'center' }}>Mover</TableCell>
                     <TableCell sx={{ fontWeight: 800 }}>Nombre visible / Identificador</TableCell>
                     <TableCell sx={{ fontWeight: 800 }}>Tipo de información</TableCell>
                     <TableCell sx={{ fontWeight: 800 }}>Opciones / Lista</TableCell>
@@ -1008,8 +1044,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
                 </TableHead>
                 <TableBody>
                   {[...activeFieldDefinitions]
-                    .sort((a, b) => a.position - b.position)
-                    .map((field) => {
+                    .sort((a, b) => (a.position || 0) - (b.position || 0))
+                    .map((field, index, sortedList) => {
                       const isChoice = ['list', 'catalog', 'catalog_multi'].includes(field.data_type);
                       const catalogType = field.validation_rules?.catalog_type;
                       const choices = catalogType
@@ -1018,7 +1054,49 @@ export default function StrategicPlanningPlatform({ onBack }) {
 
                       return (
                         <TableRow key={field.id} hover>
-                          <TableCell sx={{ fontWeight: 800, color: 'text.secondary' }}>{field.position}</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: 'text.secondary' }}>{index + 1}</TableCell>
+                          <TableCell align="center" sx={{ px: 0.5 }}>
+                            <Stack direction="row" spacing={0.5} justifyContent="center" alignItems="center">
+                              <Tooltip title={index === 0 ? 'Ya es la primera columna' : 'Subir posición'}>
+                                <span>
+                                  <IconButton
+                                    size="small"
+                                    disabled={index === 0 || reorderingFields}
+                                    onClick={() => moveField(index, -1)}
+                                    sx={{
+                                      p: 0.4,
+                                      borderRadius: 1.5,
+                                      bgcolor: index === 0 ? 'transparent' : '#f1f5f9',
+                                      border: '1px solid',
+                                      borderColor: index === 0 ? 'transparent' : '#e2e8f0',
+                                      '&:hover': { bgcolor: '#e2e8f0', color: '#1d4ed8' }
+                                    }}
+                                  >
+                                    <ArrowUpward sx={{ fontSize: 16 }} />
+                                  </IconButton>
+                                </span>
+                              </Tooltip>
+                              <Tooltip title={index === sortedList.length - 1 ? 'Ya es la última columna' : 'Bajar posición'}>
+                                <span>
+                                  <IconButton
+                                    size="small"
+                                    disabled={index === sortedList.length - 1 || reorderingFields}
+                                    onClick={() => moveField(index, 1)}
+                                    sx={{
+                                      p: 0.4,
+                                      borderRadius: 1.5,
+                                      bgcolor: index === sortedList.length - 1 ? 'transparent' : '#f1f5f9',
+                                      border: '1px solid',
+                                      borderColor: index === sortedList.length - 1 ? 'transparent' : '#e2e8f0',
+                                      '&:hover': { bgcolor: '#e2e8f0', color: '#1d4ed8' }
+                                    }}
+                                  >
+                                    <ArrowDownward sx={{ fontSize: 16 }} />
+                                  </IconButton>
+                                </span>
+                              </Tooltip>
+                            </Stack>
+                          </TableCell>
                           <TableCell>
                             <Typography fontWeight={800} fontSize={14}>{field.label}</Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>

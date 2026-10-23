@@ -403,6 +403,31 @@ const deleteFieldDefinition = wrap(async (req, res) => {
   ok(res, { id: field.id }, 'Campo eliminado de forma lógica.');
 });
 
+const reorderFieldDefinitions = wrap(async (req, res) => {
+  const plan = await StrategicPlan.findByPk(req.params.planId);
+  if (!plan) throw Object.assign(new Error('PED no encontrado.'), { statusCode: 404 });
+  const { fieldIds } = req.body;
+  if (!Array.isArray(fieldIds) || !fieldIds.length) {
+    throw Object.assign(new Error('Se requiere la lista de IDs de campos en orden.'), { statusCode: 422 });
+  }
+
+  await sequelize.transaction(async (transaction) => {
+    for (let i = 0; i < fieldIds.length; i++) {
+      await StrategicFieldDefinition.update(
+        { position: i + 1 },
+        { where: { id: fieldIds[i], strategic_plan_id: plan.id, active: true }, transaction }
+      );
+    }
+  });
+
+  const updated = await StrategicFieldDefinition.findAll({
+    where: { strategic_plan_id: plan.id, active: true },
+    order: [['position', 'ASC']]
+  });
+  await audit(req, 'field.reorder', 'strategic_plan', plan.id, null, { fieldIds }, 'Reordenamiento de columnas del PED');
+  ok(res, updated, 'Orden de columnas actualizado correctamente.');
+});
+
 const previewFieldSchema = wrap(async (req, res) => {
   if (!req.file) throw Object.assign(new Error('Seleccione el Excel del formato que desea convertir en campos.'), { statusCode: 422 });
   const batch = await previewFieldSchemaImport({ strategicPlanId: req.params.planId, file: req.file, userId: req.user.id });
@@ -3124,7 +3149,7 @@ const cancelPlanCalendarSchedule = wrap(async (req, res) => {
 module.exports = {
   bootstrap, listPlans, createPlan, updatePlan, deletePlan, createLevel, updateLevel, deleteLevel,
   createElement, updateElement, deleteElement, listStructure, upsertCatalog, updateCatalog, deleteCatalog,
-  applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, previewFieldSchema, confirmFieldSchema,
+  applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, reorderFieldDefinitions, previewFieldSchema, confirmFieldSchema,
   downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, searchMeetingParticipants, termDependencies, downloadTermDependencyTemplate,
   termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
   listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,

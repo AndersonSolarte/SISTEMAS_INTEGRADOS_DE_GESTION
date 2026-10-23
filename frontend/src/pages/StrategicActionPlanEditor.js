@@ -2056,7 +2056,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   <Box sx={{
                     display: 'grid',
                     gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))', xl: 'repeat(4, minmax(0, 1fr))' },
-                    gridAutoFlow: 'row dense',
                     alignItems: 'start',
                     gap: { xs: 1.35, md: 1.6 }
                   }}>
