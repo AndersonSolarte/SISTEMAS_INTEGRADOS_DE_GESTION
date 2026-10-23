@@ -1192,14 +1192,6 @@ export default function StrategicPlanningPlatform({ onBack }) {
             </Box>
           ) : (
             <Box>
-              {activeFieldDefinitions.length > 1 && (
-                <Box sx={{ px: 2, py: 1.1, bgcolor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 2, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <DragIndicator sx={{ fontSize: 18, color: '#0284c7' }} />
-                  <Typography variant="caption" sx={{ color: '#0369a1', fontWeight: 700 }}>
-                    <strong>Reordenamiento flexible:</strong> Puede arrastrar las filas (use la rueda del ratón o acérquese a los bordes superior/inferior para desplazar la lista automáticamente), usar las flechas ↑ ↓, o hacer clic en el número # para cambiar de posición directamente.
-                  </Typography>
-                </Box>
-              )}
               <TableContainer
                 ref={fieldTableContainerRef}
                 onDragOver={(e) => {
