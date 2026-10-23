@@ -381,5 +381,6 @@ const generatePlanAccionBuffer = async (payload = {}) => {
 };
 
 module.exports = {
+  buildPlanAccionWorkbook,
   generatePlanAccionBuffer
 };

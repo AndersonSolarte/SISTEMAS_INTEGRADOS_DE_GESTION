@@ -4,7 +4,7 @@ import {
   Table, TableHead, TableRow, TableCell, TableBody, TableContainer,
   TextField, CircularProgress, Divider, Tooltip, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions, MenuItem,
-  Grid, InputAdornment
+  Grid, InputAdornment, Tabs, Tab
 } from '@mui/material';
 import {
   AssignmentTurnedIn as AssignmentTurnedInIcon,
@@ -90,6 +90,7 @@ export default function PlanAccionConsulta() {
   const [peiPlans, setPeiPlans] = useState([]);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [legacyPlans, setLegacyPlans] = useState([]);
+  const [activityViewTab, setActivityViewTab] = useState('responsible'); // 'responsible' | 'co_responsible'
 
   // Modal de registro de avances y evidencias (sin campos de texto, solo documento)
   const [monitoringModalOpen, setMonitoringModalOpen] = useState(false);
@@ -360,6 +361,25 @@ export default function PlanAccionConsulta() {
     }
   };
 
+  // Exportar formato oficial Excel DIR-PE-FR-003 (con hoja PLAN DE ACCIÓN y hoja EN CORRESPONSABILIDAD)
+  const handleExportExcel = async () => {
+    if (!selectedPlan?.id) return;
+    try {
+      enqueueSnackbar('Generando formato oficial DIR-PE-FR-003...', { variant: 'info' });
+      const blob = await strategicPlanningService.exportActionPlan(selectedPlan.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `DIR-PE-FR-003_${selectedPlan.code}_${selectedPlan.term?.year || ''}.xlsx`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      enqueueSnackbar('Formato institucional DIR-PE-FR-003 descargado exitosamente.', { variant: 'success' });
+    } catch (error) {
+      console.error('Error al exportar Excel:', error);
+      enqueueSnackbar('No fue posible exportar el formato DIR-PE-FR-003.', { variant: 'error' });
+    }
+  };
+
   // Previsualizar acta oficial en el visor interno de SIAC (sin salir a Drive)
   const handlePreviewMinute = async (minuteId, title = 'Acta Oficial COM-IF-FR-002') => {
     if (!minuteId) return;
@@ -506,9 +526,14 @@ export default function PlanAccionConsulta() {
     return [...raw].sort((a, b) => (a.position || 0) - (b.position || 0));
   }, [selectedPlan]);
 
+  // Actividades en corresponsabilidad asignadas a esta dependencia
+  const coResponsibleItems = useMemo(() => {
+    return selectedPlan?.co_responsible_items || [];
+  }, [selectedPlan]);
+
   // Cálculos de métricas del plan seleccionado (Sumatoria institucional de seguimientos)
   const planMetrics = useMemo(() => {
-    if (!selectedPlan) return { totalActivities: 0, avgProgress: '0.0', totalEvidences: 0, completedActivities: 0, inProgressActivities: 0 };
+    if (!selectedPlan) return { totalActivities: 0, avgProgress: '0.0', totalEvidences: 0, completedActivities: 0, inProgressActivities: 0, totalCoActivities: 0 };
     const items = selectedPlan.items || [];
     const totalActivities = items.length;
     let sumProgress = 0;
@@ -534,10 +559,11 @@ export default function PlanAccionConsulta() {
 
     const avgProgress = totalActivities > 0 ? (sumProgress / totalActivities).toFixed(1) : '0.0';
     const inProgressActivities = Math.max(0, totalActivities - completedActivities);
-    return { totalActivities, avgProgress, totalEvidences, completedActivities, inProgressActivities };
-  }, [selectedPlan]);
+    const totalCoActivities = coResponsibleItems.length;
+    return { totalActivities, avgProgress, totalEvidences, completedActivities, inProgressActivities, totalCoActivities };
+  }, [selectedPlan, coResponsibleItems]);
 
-  // Actividades filtradas por búsqueda en tiempo real
+  // Actividades filtradas por búsqueda en tiempo real (Como Responsable)
   const filteredItems = useMemo(() => {
     const planItems = selectedPlan?.items || [];
     if (!activitySearch.trim()) return planItems;
@@ -549,6 +575,21 @@ export default function PlanAccionConsulta() {
       (it.macroactivity || '').toLowerCase().includes(term)
     );
   }, [selectedPlan, activitySearch]);
+
+  // Actividades filtradas por búsqueda en tiempo real (En Corresponsabilidad)
+  const filteredCoItems = useMemo(() => {
+    const list = coResponsibleItems;
+    if (!activitySearch.trim()) return list;
+    const term = activitySearch.toLowerCase().trim();
+    return list.filter((it) =>
+      (it.code || '').toLowerCase().includes(term) ||
+      (it.activity || '').toLowerCase().includes(term) ||
+      (it.indicator || '').toLowerCase().includes(term) ||
+      (it.macroactivity || '').toLowerCase().includes(term) ||
+      (it.parent_plan?.dependency_name || '').toLowerCase().includes(term) ||
+      (it.parent_plan?.leader_name || '').toLowerCase().includes(term)
+    );
+  }, [coResponsibleItems, activitySearch]);
 
   // ==========================================
   // RENDER: VISTA LISTADO DE PLANES
@@ -837,6 +878,25 @@ export default function PlanAccionConsulta() {
 
           <Stack direction="row" spacing={1} flexWrap="wrap">
             <Button
+              variant="contained"
+              startIcon={<ExcelIcon />}
+              onClick={handleExportExcel}
+              sx={{
+                borderRadius: 2.2,
+                textTransform: 'none',
+                fontWeight: 850,
+                fontSize: 12.5,
+                px: 1.8,
+                py: 0.6,
+                bgcolor: '#16a34a',
+                color: '#ffffff',
+                '&:hover': { bgcolor: '#15803d' },
+                boxShadow: 'none'
+              }}
+            >
+              Exportar DIR-PE-FR-003
+            </Button>
+            <Button
               variant="outlined"
               color="secondary"
               startIcon={<DescriptionIcon />}
@@ -986,9 +1046,18 @@ export default function PlanAccionConsulta() {
                   <Typography variant="caption" sx={{ color: '#1e40af', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
                     Actividades Concertadas
                   </Typography>
-                  <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 900, color: '#1e3a8a', mt: 0.2 }}>
-                    {planMetrics.totalActivities}
-                  </Typography>
+                  <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 0.2 }}>
+                    <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 900, color: '#1e3a8a' }}>
+                      {planMetrics.totalActivities}
+                    </Typography>
+                    {planMetrics.totalCoActivities > 0 && (
+                      <Chip
+                        size="small"
+                        label={`+${planMetrics.totalCoActivities} corresponsables`}
+                        sx={{ bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 800, fontSize: 10, height: 20 }}
+                      />
+                    )}
+                  </Stack>
                   <Typography variant="caption" sx={{ color: '#3b82f6', fontWeight: 600, fontSize: 11.5 }}>
                     {planMetrics.completedActivities} culminadas al 100%
                   </Typography>
@@ -1085,28 +1154,77 @@ export default function PlanAccionConsulta() {
           boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
         }}
       >
-        {/* Cabecera compacta con contador y buscador */}
+        {/* Cabecera con selector de pestaña (Como Responsable vs En Corresponsabilidad) y buscador */}
         <Box sx={{ p: 2, px: 2.5, borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ sm: 'center' }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ md: 'center' }}>
             <Box>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Typography sx={{ fontSize: 15.5, fontWeight: 900, color: '#0f172a' }}>
-                  Plan de Trabajo y Evidencias de Cumplimiento
-                </Typography>
-                <Chip
-                  size="small"
-                  label={`${filteredItems.length} actividades`}
-                  sx={{ bgcolor: '#e2e8f0', fontWeight: 850, color: '#334155', fontSize: 11, height: 22 }}
+              <Tabs
+                value={activityViewTab}
+                onChange={(e, val) => setActivityViewTab(val)}
+                sx={{
+                  minHeight: 40,
+                  '& .MuiTabs-indicator': {
+                    bgcolor: activityViewTab === 'responsible' ? '#2563eb' : '#d97706',
+                    height: 3,
+                    borderRadius: 2
+                  }
+                }}
+              >
+                <Tab
+                  value="responsible"
+                  label={
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography sx={{ fontSize: 13.5, fontWeight: activityViewTab === 'responsible' ? 900 : 700 }}>
+                        Como Responsable
+                      </Typography>
+                      <Chip
+                        size="small"
+                        label={filteredItems.length}
+                        sx={{
+                          bgcolor: activityViewTab === 'responsible' ? '#dbeafe' : '#e2e8f0',
+                          color: activityViewTab === 'responsible' ? '#1e40af' : '#64748b',
+                          fontWeight: 850,
+                          fontSize: 11,
+                          height: 20
+                        }}
+                      />
+                    </Stack>
+                  }
+                  sx={{ textTransform: 'none', px: 1.5, minHeight: 40, color: activityViewTab === 'responsible' ? '#1e40af' : '#64748b' }}
                 />
-              </Stack>
-              <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.2 }}>
-                Monitoreo por periodos semestrales y cargue de evidencias de cumplimiento.
+                <Tab
+                  value="co_responsible"
+                  label={
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography sx={{ fontSize: 13.5, fontWeight: activityViewTab === 'co_responsible' ? 900 : 700 }}>
+                        En Corresponsabilidad
+                      </Typography>
+                      <Chip
+                        size="small"
+                        label={filteredCoItems.length}
+                        sx={{
+                          bgcolor: activityViewTab === 'co_responsible' ? '#fef3c7' : '#e2e8f0',
+                          color: activityViewTab === 'co_responsible' ? '#92400e' : '#64748b',
+                          fontWeight: 850,
+                          fontSize: 11,
+                          height: 20
+                        }}
+                      />
+                    </Stack>
+                  }
+                  sx={{ textTransform: 'none', px: 1.5, minHeight: 40, color: activityViewTab === 'co_responsible' ? '#92400e' : '#64748b' }}
+                />
+              </Tabs>
+              <Typography sx={{ fontSize: 11.5, color: '#64748b', mt: 0.5 }}>
+                {activityViewTab === 'responsible'
+                  ? 'Actividades directas asignadas a su dependencia para su ejecución y monitoreo semestral.'
+                  : 'Actividades de otros planes institucionales donde su dependencia participa en corresponsabilidad para su conocimiento y cumplimiento.'}
               </Typography>
             </Box>
 
             <TextField
               size="small"
-              placeholder="Buscar por código, actividad..."
+              placeholder={activityViewTab === 'responsible' ? "Buscar por código, actividad..." : "Buscar por código, actividad, dependencia de origen..."}
               value={activitySearch}
               onChange={(e) => setActivitySearch(e.target.value)}
               InputProps={{
@@ -1117,14 +1235,15 @@ export default function PlanAccionConsulta() {
                 )
               }}
               sx={{
-                width: { xs: '100%', sm: 280 },
+                width: { xs: '100%', md: 280 },
                 '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff', fontSize: 12.5, height: 36 }
               }}
             />
           </Stack>
         </Box>
 
-        <TableContainer sx={{ maxHeight: 520, overflowX: 'auto' }}>
+        {activityViewTab === 'responsible' ? (
+          <TableContainer sx={{ maxHeight: 520, overflowX: 'auto' }}>
           <Table stickyHeader size="small" sx={{ minWidth: 980 }}>
             <TableHead>
               <TableRow>
@@ -1447,6 +1566,309 @@ export default function PlanAccionConsulta() {
             </TableBody>
           </Table>
         </TableContainer>
+        ) : (
+          /* TABLA DE ACTIVIDADES EN CORRESPONSABILIDAD */
+          <TableContainer sx={{ maxHeight: 520, overflowX: 'auto' }}>
+            <Table stickyHeader size="small" sx={{ minWidth: 980 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell align="center" sx={{ bgcolor: '#fef3c7', fontWeight: 800, color: '#78350f', width: 75, py: 1, px: 1, fontSize: 11.5 }}>
+                    Código
+                  </TableCell>
+                  <TableCell sx={{ bgcolor: '#fef3c7', fontWeight: 800, color: '#78350f', minWidth: 190, maxWidth: { xs: 230, sm: 280, md: 320 }, py: 1, px: 1, fontSize: 11.5 }}>
+                    Actividad en Corresponsabilidad
+                  </TableCell>
+                  <TableCell sx={{ bgcolor: '#fef3c7', fontWeight: 800, color: '#78350f', minWidth: 180, py: 1, px: 1, fontSize: 11.5 }}>
+                    Plan / Dependencia Responsable
+                  </TableCell>
+                  <TableCell sx={{ bgcolor: '#fef3c7', fontWeight: 800, color: '#78350f', minWidth: 150, py: 1, px: 1, fontSize: 11.5 }}>
+                    Indicador y Meta
+                  </TableCell>
+                  <TableCell align="center" sx={{ bgcolor: '#fef3c7', fontWeight: 800, color: '#78350f', width: 110, py: 1, px: 1, fontSize: 11.5 }}>
+                    Plazo
+                  </TableCell>
+                  {periods.map((p) => (
+                    <TableCell
+                      key={p.id}
+                      align="center"
+                      sx={{
+                        bgcolor: '#fef3c7',
+                        fontWeight: 800,
+                        color: '#78350f',
+                        minWidth: 80,
+                        maxWidth: 105,
+                        py: 1,
+                        px: 0.5,
+                        fontSize: 11.5
+                      }}
+                    >
+                      Avance {p.code || p.name}
+                    </TableCell>
+                  ))}
+                  <TableCell sx={{ bgcolor: '#fef3c7', fontWeight: 800, color: '#78350f', width: 120, minWidth: 110, py: 1, px: 0.5, fontSize: 11.5 }} align="center">
+                    Cumplimiento
+                  </TableCell>
+                  <TableCell sx={{ bgcolor: '#fef3c7', fontWeight: 800, color: '#78350f', width: 85, py: 1, px: 0.5, fontSize: 11.5 }} align="center">
+                    Evidencias
+                  </TableCell>
+                  <TableCell sx={{ bgcolor: '#fef3c7', fontWeight: 800, color: '#78350f', width: 105, py: 1, px: 1, fontSize: 11.5 }} align="center">
+                    Acción
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredCoItems.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8 + periods.length} align="center" sx={{ py: 6, color: '#64748b', fontSize: 12 }}>
+                      <Stack spacing={1} alignItems="center">
+                        <Typography sx={{ fontWeight: 700, color: '#94a3b8' }}>
+                          {activitySearch ? 'No se encontraron actividades en corresponsabilidad con ese criterio.' : 'No tiene actividades asignadas en corresponsabilidad en esta vigencia.'}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                          Cuando otras dependencias incluyan su dependencia en el campo "Corresponsables", aparecerán automáticamente aquí.
+                        </Typography>
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredCoItems.map((it) => {
+                    const evidences = it.evidence || [];
+                    const validResults = (it.monitoringResults || []).filter(
+                      (r) => r.physical_progress !== null && r.physical_progress !== undefined && !isNaN(Number(r.physical_progress))
+                    );
+                    let compProg = null;
+                    if (validResults.length > 0) {
+                      compProg = validResults.reduce((acc, r) => acc + Number(r.physical_progress || 0), 0);
+                    } else if (it.current_progress !== undefined && it.current_progress !== null && !isNaN(Number(it.current_progress))) {
+                      compProg = Number(it.current_progress);
+                    }
+
+                    return (
+                      <TableRow
+                        key={it.id}
+                        hover
+                        sx={{
+                          '&:hover': { bgcolor: '#fffbeb' },
+                          borderBottom: '1px solid #fef3c7'
+                        }}
+                      >
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
+                          <Chip
+                            size="small"
+                            label={it.code || '—'}
+                            sx={{
+                              fontWeight: 800,
+                              bgcolor: '#fef3c7',
+                              color: '#92400e',
+                              fontSize: 10.5,
+                              height: 22,
+                              borderRadius: 1
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1, minWidth: 190, maxWidth: { xs: 230, sm: 280, md: 320 } }}>
+                          <Tooltip title={it.activity} arrow placement="top-start">
+                            <Typography
+                              sx={{
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color: '#0f172a',
+                                lineHeight: 1.3,
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {it.activity}
+                            </Typography>
+                          </Tooltip>
+                          {it.macroactivity && (
+                            <Typography
+                              sx={{
+                                fontSize: 10.5,
+                                color: '#64748b',
+                                mt: 0.2,
+                                display: '-webkit-box',
+                                WebkitLineClamp: 1,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }}
+                            >
+                              PED: {it.macroactivity}
+                            </Typography>
+                          )}
+                        </TableCell>
+                        <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
+                          <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: '#1e3a8a', lineHeight: 1.25 }}>
+                            {it.parent_plan?.dependency_name || 'Dependencia'}
+                          </Typography>
+                          <Typography sx={{ fontSize: 10.5, color: '#64748b', mt: 0.2 }}>
+                            Plan {it.parent_plan?.code} · Líder: <strong>{it.parent_plan?.leader_name || '—'}</strong>
+                          </Typography>
+                        </TableCell>
+                        <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
+                          <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: '#334155', lineHeight: 1.25 }}>
+                            {it.indicator || 'Sin indicador'}
+                          </Typography>
+                          <Typography sx={{ fontSize: 11, color: '#059669', fontWeight: 700, mt: 0.2 }}>
+                            Meta: {it.target || '100%'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
+                          <Typography sx={{ fontSize: 10.5, color: '#475569', lineHeight: 1.3 }}>
+                            {formatFecha(it.starts_on)} al {formatFecha(it.ends_on)}
+                          </Typography>
+                        </TableCell>
+                        {periods.map((p) => {
+                          const r = (it.monitoringResults || []).find((res) => res.monitoring_period_id === p.id);
+                          const prog = r && r.physical_progress !== null && r.physical_progress !== undefined ? Number(r.physical_progress) : null;
+                          return (
+                            <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
+                              {prog !== null ? (
+                                <Chip
+                                  size="small"
+                                  label={`${prog}%`}
+                                  sx={{
+                                    fontWeight: 800,
+                                    fontSize: 11,
+                                    height: 22,
+                                    borderRadius: 1,
+                                    bgcolor: prog >= 100 ? '#dcfce7' : prog > 0 ? '#e0f2fe' : '#f1f5f9',
+                                    color: prog >= 100 ? '#15803d' : prog > 0 ? '#0369a1' : '#64748b'
+                                  }}
+                                />
+                              ) : (
+                                <Typography sx={{ fontSize: 11, color: '#cbd5e1' }}>—</Typography>
+                              )}
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
+                          {compProg !== null && compProg >= 100 ? (
+                            <Tooltip title="Meta cumplida exitosamente (100% o superior)" arrow>
+                              <Stack alignItems="center" spacing={0.2}>
+                                <Chip
+                                  size="small"
+                                  icon={<CheckCircleIcon sx={{ fontSize: 13, color: '#15803d !important' }} />}
+                                  label={`${compProg}%`}
+                                  sx={{
+                                    fontWeight: 850,
+                                    fontSize: 11,
+                                    height: 22,
+                                    borderRadius: 1,
+                                    bgcolor: '#dcfce7',
+                                    color: '#15803d',
+                                    border: '1px solid #86efac'
+                                  }}
+                                />
+                                <Typography sx={{ fontSize: 9, fontWeight: 800, color: '#15803d', lineHeight: 1 }}>
+                                  Cumplida
+                                </Typography>
+                              </Stack>
+                            </Tooltip>
+                          ) : compProg !== null && compProg > 0 ? (
+                            <Tooltip title={`Cumplimiento acumulado del ${compProg}%. Resta ${Number((100 - compProg).toFixed(0))}% para completar la meta.`} arrow>
+                              <Stack alignItems="center" spacing={0.2}>
+                                <Chip
+                                  size="small"
+                                  label={`${compProg}%`}
+                                  sx={{
+                                    fontWeight: 800,
+                                    fontSize: 11,
+                                    height: 22,
+                                    borderRadius: 1,
+                                    bgcolor: '#fffbeb',
+                                    color: '#b45309',
+                                    border: '1px solid #fde68a'
+                                  }}
+                                />
+                                <Typography sx={{ fontSize: 9, fontWeight: 750, color: '#b45309', lineHeight: 1 }}>
+                                  Falta {Number((100 - compProg).toFixed(0))}%
+                                </Typography>
+                              </Stack>
+                            </Tooltip>
+                          ) : (
+                            <Tooltip title="Sin avances registrados aún. Falta el 100% de la meta." arrow>
+                              <Stack alignItems="center" spacing={0.2}>
+                                <Chip
+                                  size="small"
+                                  label="0%"
+                                  sx={{
+                                    fontWeight: 750,
+                                    fontSize: 10.5,
+                                    height: 21,
+                                    borderRadius: 1,
+                                    bgcolor: '#f1f5f9',
+                                    color: '#64748b',
+                                    border: '1px solid #cbd5e1'
+                                  }}
+                                />
+                                <Typography sx={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', lineHeight: 1 }}>
+                                  Falta 100%
+                                </Typography>
+                              </Stack>
+                            </Tooltip>
+                          )}
+                        </TableCell>
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
+                          {evidences.length > 0 ? (
+                            <Tooltip title="Clic para ver evidencias en ventana emergente" arrow>
+                              <Chip
+                                size="small"
+                                icon={<AttachFileIcon sx={{ fontSize: 13 }} />}
+                                label={`${evidences.length} arch.`}
+                                onClick={() => handleOpenEvidenceModal(it)}
+                                sx={{
+                                  cursor: 'pointer',
+                                  fontWeight: 800,
+                                  fontSize: 11,
+                                  height: 22,
+                                  borderRadius: 1,
+                                  bgcolor: '#fef3c7',
+                                  color: '#92400e',
+                                  transition: 'all 0.15s ease',
+                                  '&:hover': { bgcolor: '#fde68a' }
+                                }}
+                              />
+                            </Tooltip>
+                          ) : (
+                            <Typography sx={{ fontSize: 10.5, color: '#94a3b8' }}>Sin soportes</Typography>
+                          )}
+                        </TableCell>
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="warning"
+                            startIcon={<CloudUploadIcon sx={{ fontSize: 15 }} />}
+                            onClick={() => handleOpenMonitoringModal(it)}
+                            sx={{
+                              borderRadius: 2,
+                              textTransform: 'none',
+                              fontWeight: 800,
+                              fontSize: 11.5,
+                              py: 0.5,
+                              px: 1.5,
+                              bgcolor: '#d97706',
+                              boxShadow: '0 2px 6px rgba(217, 119, 6, 0.2)',
+                              '&:hover': { bgcolor: '#b45309', boxShadow: '0 4px 10px rgba(217, 119, 6, 0.3)' }
+                            }}
+                          >
+                            Aportar
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       </Paper>
 
       {/* ==========================================

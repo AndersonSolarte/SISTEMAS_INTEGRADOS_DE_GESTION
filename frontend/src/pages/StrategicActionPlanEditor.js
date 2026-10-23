@@ -222,6 +222,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [lastDriveSync, setLastDriveSync] = useState(null);
   const [previewPlanModalOpen, setPreviewPlanModalOpen] = useState(false);
   const [previewPlanSearch, setPreviewPlanSearch] = useState('');
+  const [previewSheetTab, setPreviewSheetTab] = useState(0); // 0: 'PLAN DE ACCIÓN', 1: 'EN CORRESPONSABILIDAD'
   const [syncingDriveExcel, setSyncingDriveExcel] = useState(false);
   const autoSyncedTabRef = useRef(false);
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saved' | 'saving' | 'pending' | 'error'
@@ -837,6 +838,28 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       });
     });
   }, [detail?.items, previewPlanSearch, recordColumns]);
+
+  const coResponsiblePreviewItems = useMemo(() => {
+    return detail?.co_responsible_items || [];
+  }, [detail?.co_responsible_items]);
+
+  const filteredCoPreviewItems = useMemo(() => {
+    const items = coResponsiblePreviewItems;
+    if (!previewPlanSearch.trim()) return items;
+    const q = previewPlanSearch.toLowerCase();
+    return items.filter((row) => {
+      if (row.code?.toLowerCase().includes(q)) return true;
+      if (row.activity?.toLowerCase().includes(q)) return true;
+      if (row.indicator?.toLowerCase().includes(q)) return true;
+      if (row.target?.toLowerCase().includes(q)) return true;
+      if (row.parent_plan?.dependency_name?.toLowerCase().includes(q)) return true;
+      if (row.parent_plan?.leader_name?.toLowerCase().includes(q)) return true;
+      return recordColumns.some((col) => {
+        const val = recordValue(row, col);
+        return String(val || '').toLowerCase().includes(q);
+      });
+    });
+  }, [coResponsiblePreviewItems, previewPlanSearch, recordColumns]);
 
   const fieldValue = (field) => {
     if (isResponsibleField(field)) {
@@ -5743,6 +5766,67 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
           </Stack>
         </DialogTitle>
 
+        {/* SELECTOR DE HOJA TIPO EXCEL (PLAN DE ACCIÓN vs EN CORRESPONSABILIDAD) */}
+        <Box sx={{ px: 2.5, bgcolor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
+          <Tabs
+            value={previewSheetTab}
+            onChange={(e, val) => setPreviewSheetTab(val)}
+            sx={{
+              minHeight: 40,
+              '& .MuiTabs-indicator': {
+                bgcolor: previewSheetTab === 0 ? '#1f3864' : '#800000',
+                height: 3,
+                borderRadius: 2
+              }
+            }}
+          >
+            <Tab
+              value={0}
+              label={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography sx={{ fontSize: 13, fontWeight: previewSheetTab === 0 ? 900 : 700 }}>
+                    Hoja 1: PLAN DE ACCIÓN
+                  </Typography>
+                  <Chip
+                    size="small"
+                    label={detail?.items?.length || 0}
+                    sx={{
+                      bgcolor: previewSheetTab === 0 ? '#dbeafe' : '#f1f5f9',
+                      color: previewSheetTab === 0 ? '#1e40af' : '#64748b',
+                      fontWeight: 850,
+                      fontSize: 10.5,
+                      height: 20
+                    }}
+                  />
+                </Stack>
+              }
+              sx={{ textTransform: 'none', px: 2, minHeight: 40, color: previewSheetTab === 0 ? '#1f3864' : '#64748b' }}
+            />
+            <Tab
+              value={1}
+              label={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography sx={{ fontSize: 13, fontWeight: previewSheetTab === 1 ? 900 : 700 }}>
+                    Hoja 2: EN CORRESPONSABILIDAD
+                  </Typography>
+                  <Chip
+                    size="small"
+                    label={coResponsiblePreviewItems.length}
+                    sx={{
+                      bgcolor: previewSheetTab === 1 ? '#fee2e2' : '#f1f5f9',
+                      color: previewSheetTab === 1 ? '#991b1b' : '#64748b',
+                      fontWeight: 850,
+                      fontSize: 10.5,
+                      height: 20
+                    }}
+                  />
+                </Stack>
+              }
+              sx={{ textTransform: 'none', px: 2, minHeight: 40, color: previewSheetTab === 1 ? '#800000' : '#64748b' }}
+            />
+          </Tabs>
+        </Box>
+
         <DialogContent sx={{ p: 2.5, flex: 1, display: 'flex', flexDirection: 'column' }}>
           <Paper variant="outlined" sx={{ flex: 1, borderRadius: 3, bgcolor: '#ffffff', borderColor: '#b4c6e7', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {/* ENCABEZADO INSTITUCIONAL OFICIAL */}
@@ -5755,12 +5839,26 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             </Box>
 
             {/* TIRA INSTITUCIONAL FILA 5 EXCEL */}
-            <Box sx={{ p: 1.25, px: 2.5, bgcolor: '#d9e2f3', borderBottom: '2px solid #2f5597', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-              <Typography sx={{ fontWeight: 900, fontSize: 13, color: '#1f3864', letterSpacing: 0.5 }}>
-                {`${detail?.code || 'RXX'}_ ${(detail?.organizationalUnit?.name || detail?.title || 'PLAN DE ACCIÓN').toUpperCase()}`}
+            <Box
+              sx={{
+                p: 1.25,
+                px: 2.5,
+                bgcolor: previewSheetTab === 0 ? '#d9e2f3' : '#fef3c7',
+                borderBottom: `2px solid ${previewSheetTab === 0 ? '#2f5597' : '#b45309'}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 1
+              }}
+            >
+              <Typography sx={{ fontWeight: 900, fontSize: 13, color: previewSheetTab === 0 ? '#1f3864' : '#78350f', letterSpacing: 0.5 }}>
+                {previewSheetTab === 0
+                  ? `${detail?.code || 'RXX'}_ ${(detail?.organizationalUnit?.name || detail?.title || 'PLAN DE ACCIÓN').toUpperCase()}`
+                  : `ACTIVIDADES EN CORRESPONSABILIDAD · ${(detail?.organizationalUnit?.name || detail?.title || 'PLAN DE ACCIÓN').toUpperCase()}`}
               </Typography>
-              <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#2f5597' }}>
-                FORMATO OFICIAL DIR-PE-FR-003 · VERSIÓN 5 (17/10/2024)
+              <Typography sx={{ fontSize: 11, fontWeight: 800, color: previewSheetTab === 0 ? '#2f5597' : '#b45309' }}>
+                FORMATO OFICIAL DIR-PE-FR-003 · HOJA: {previewSheetTab === 0 ? 'PLAN DE ACCIÓN' : 'EN CORRESPONSABILIDAD'}
               </Typography>
             </Box>
 
@@ -5768,13 +5866,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               <Table stickyHeader size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ bgcolor: '#2f5597', color: '#ffffff', fontWeight: 900, fontSize: 12, minWidth: 80, zIndex: 3, position: 'sticky', left: 0, borderRight: '1px solid #ffffff' }}>
+                    <TableCell sx={{ bgcolor: previewSheetTab === 0 ? '#2f5597' : '#78350f', color: '#ffffff', fontWeight: 900, fontSize: 12, minWidth: 80, zIndex: 3, position: 'sticky', left: 0, borderRight: '1px solid #ffffff' }}>
                       No.
                     </TableCell>
                     {recordColumns.map((col) => {
                       const isResp = col.key === 'responsables' || col.key === 'responsable';
                       const isCorresp = col.key === 'corresponsables' || col.key === 'corresponsable';
-                      const headerBg = isResp ? '#c00000' : isCorresp ? '#800000' : '#2f5597';
+                      const headerBg = isResp ? '#c00000' : isCorresp ? '#800000' : (previewSheetTab === 0 ? '#2f5597' : '#78350f');
                       return (
                         <TableCell key={col.key} sx={{ bgcolor: headerBg, color: '#ffffff', fontWeight: 900, fontSize: 12, minWidth: 160, whiteSpace: 'nowrap', borderRight: '1px solid #ffffff' }}>
                           {col.label?.toUpperCase() || col.key}
@@ -5784,22 +5882,38 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredPreviewItems.length === 0 ? (
+                  {(previewSheetTab === 0 ? filteredPreviewItems : filteredCoPreviewItems).length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={recordColumns.length + 1} align="center" sx={{ py: 8 }}>
                         <Typography color="#64748b" fontWeight={700}>
-                          {previewPlanSearch ? 'No se encontraron actividades que coincidan con la búsqueda.' : 'No hay actividades registradas en el Plan de Acción todavía.'}
+                          {previewPlanSearch
+                            ? 'No se encontraron actividades que coincidan con la búsqueda.'
+                            : previewSheetTab === 0
+                              ? 'No hay actividades registradas en el Plan de Acción todavía.'
+                              : 'No hay actividades asignadas en corresponsabilidad para esta dependencia en esta vigencia.'}
                         </Typography>
                         <Typography variant="caption" color="#94a3b8">
-                          Las actividades creadas en la Etapa 1 se reflejan aquí de forma inmediata.
+                          {previewSheetTab === 0
+                            ? 'Las actividades creadas en la Etapa 1 se reflejan aquí de forma inmediata.'
+                            : 'Cuando otras dependencias agreguen esta dependencia como corresponsable, aparecerán aquí.'}
                         </Typography>
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredPreviewItems.map((row, idx) => (
+                    (previewSheetTab === 0 ? filteredPreviewItems : filteredCoPreviewItems).map((row, idx) => (
                       <TableRow key={row.id || idx} hover sx={{ '&:hover': { filter: 'brightness(0.97)' } }}>
-                        <TableCell sx={{ position: 'sticky', left: 0, bgcolor: '#d9e2f3', fontWeight: 900, color: '#1f3864', fontSize: 12.5, zIndex: 1, borderRight: '1px solid #b4c6e7', textAlign: 'center' }}>
+                        <TableCell sx={{ position: 'sticky', left: 0, bgcolor: previewSheetTab === 0 ? '#d9e2f3' : '#fef3c7', fontWeight: 900, color: previewSheetTab === 0 ? '#1f3864' : '#78350f', fontSize: 12.5, zIndex: 1, borderRight: '1px solid #b4c6e7', textAlign: 'center' }}>
                           {idx + 1}
+                          {previewSheetTab === 1 && row.parent_plan && (
+                            <Box sx={{ mt: 0.5 }}>
+                              <Chip
+                                size="small"
+                                label={row.parent_plan.code}
+                                title={`${row.parent_plan.dependency_name} (Líder: ${row.parent_plan.leader_name})`}
+                                sx={{ fontSize: 9.5, height: 18, bgcolor: '#ffffff', color: '#78350f', border: '1px solid #d97706', fontWeight: 800 }}
+                              />
+                            </Box>
+                          )}
                         </TableCell>
                         {recordColumns.map((field) => {
                           const isResp = field.key === 'responsables' || field.key === 'responsable';
@@ -5809,7 +5923,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             <TableCell
                               key={field.key}
                               sx={{
-                                bgcolor: isWhiteCol ? '#ffffff' : '#edf3fc',
+                                bgcolor: isWhiteCol ? '#ffffff' : (previewSheetTab === 0 ? '#edf3fc' : '#fffbeb'),
                                 maxWidth: 340,
                                 whiteSpace: 'normal',
                                 fontSize: 12.5,
@@ -5834,7 +5948,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
         <DialogActions sx={{ p: 2, px: 3, bgcolor: '#ffffff', borderTop: '1px solid #e2e8f0', justifyContent: 'space-between' }}>
           <Typography variant="caption" color="#64748b" fontWeight={600}>
-            Mostrando {filteredPreviewItems.length} de {detail?.items?.length || 0} actividades · Universidad CESMAG
+            {previewSheetTab === 0
+              ? `Mostrando ${filteredPreviewItems.length} de ${detail?.items?.length || 0} actividades · Hoja: PLAN DE ACCIÓN · Universidad CESMAG`
+              : `Mostrando ${filteredCoPreviewItems.length} de ${coResponsiblePreviewItems.length} actividades · Hoja: EN CORRESPONSABILIDAD · Universidad CESMAG`}
           </Typography>
           <Button
             onClick={() => setPreviewPlanModalOpen(false)}
