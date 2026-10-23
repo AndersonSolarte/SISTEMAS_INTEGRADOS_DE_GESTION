@@ -323,6 +323,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     return [...activeMeeting.minuteVersions].sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
   }, [activeMeeting]);
 
+  const isFinalized = Boolean(activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized');
+
   useEffect(() => {
     if (!open || editingActa || latestMinute?.status !== 'signing') return undefined;
     const signatureRefresh = setInterval(() => load(false), 15000);
