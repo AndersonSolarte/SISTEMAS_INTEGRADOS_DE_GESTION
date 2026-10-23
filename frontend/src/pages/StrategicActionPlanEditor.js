@@ -882,11 +882,36 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     // 1. Campo de Responsable: precargado automáticamente con el líder del Plan de Acción
     if (isResponsibleField(field)) {
       const currentRespVal = fieldValue(field) || defaultResponsibleText;
+      const isLeader = Boolean(defaultResponsibleText && currentRespVal === defaultResponsibleText);
       return (
         <Box
           key={field.id || field.key}
-          sx={{ gridColumn: { xs: '1 / -1', md: 'span 1' } }}
+          sx={{
+            gridColumn: { xs: '1 / -1', md: 'span 1' },
+            position: 'relative'
+          }}
         >
+          {isLeader && (
+            <Chip
+              size="small"
+              label="Líder del Plan"
+              color="primary"
+              variant="outlined"
+              sx={{
+                position: 'absolute',
+                top: -10,
+                right: 12,
+                zIndex: 2,
+                height: 20,
+                fontSize: 10.5,
+                fontWeight: 850,
+                bgcolor: '#eff6ff',
+                color: '#1d4ed8',
+                borderColor: '#bfdbfe',
+                boxShadow: '0 1px 3px rgba(37,99,235,0.08)'
+              }}
+            />
+          )}
           <Autocomplete
             freeSolo
             options={institutionalUsers.map((u) => u.name || u.nombre).filter(Boolean)}
@@ -903,28 +928,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                 size="small"
                 required={field.required}
                 label={field.label || 'Responsable'}
-                helperText={
-                  defaultResponsibleText && currentRespVal === defaultResponsibleText
-                    ? 'Precargado automáticamente del responsable configurado en el Plan de Acción.'
-                    : 'Puede modificarlo o seleccionar otra persona de la institución.'
-                }
-                InputProps={{
-                  ...params.InputProps,
-                  endAdornment: (
-                    <>
-                      {defaultResponsibleText && currentRespVal === defaultResponsibleText && (
-                        <Chip
-                          size="small"
-                          label="Líder del Plan"
-                          color="primary"
-                          variant="outlined"
-                          sx={{ fontWeight: 800, fontSize: 11, height: 22, mr: 0.5 }}
-                        />
-                      )}
-                      {params.InputProps.endAdornment}
-                    </>
-                  )
-                }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 2.5,
@@ -1053,7 +1056,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                 required={field.required}
                 label={field.label || 'Corresponsable(s)'}
                 placeholder={selectedValues.length ? '' : 'Buscar por cédula, nombre, cargo o dependencia...'}
-                helperText="Seleccione una o varias personas marcando las casillas de verificación."
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 2.5,
