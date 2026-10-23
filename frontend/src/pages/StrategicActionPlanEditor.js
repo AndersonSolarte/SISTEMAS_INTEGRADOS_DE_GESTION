@@ -388,7 +388,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         setLastDriveSync(response.data.driveSync);
       }
       await load();
-      enqueueSnackbar(response?.message || 'Acta formalizada y sincronizada en Google Drive.', { variant: 'success' });
+      const hasDriveError = Boolean(response?.data?.driveError);
+      enqueueSnackbar(response?.message || 'Acta formalizada y sincronizada en Google Drive.', {
+        variant: hasDriveError ? 'warning' : 'success'
+      });
     } catch (error) {
       if (!silent) {
         enqueueSnackbar(error.response?.data?.message || 'No fue posible sincronizar el acta.', { variant: 'error' });
@@ -3058,25 +3061,27 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             }}
                           />
                         ) : (latestMinute?.content?.storage_quota_limited || (latestMinute?.content?.drive_folder_id && !latestMinute?.drive_file_id)) ? (
-                          <Chip
-                            size="small"
-                            icon={<InsertDriveFile sx={{ color: '#d97706 !important', fontSize: 16 }} />}
-                            label="Carpeta lista en Drive"
-                            clickable={Boolean(latestMinute?.content?.drive_folder_url)}
-                            component={latestMinute?.content?.drive_folder_url ? 'a' : 'div'}
-                            href={latestMinute?.content?.drive_folder_url || undefined}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            sx={{
-                              fontWeight: 750,
-                              fontSize: 11,
-                              bgcolor: '#fffbeb',
-                              color: '#b45309',
-                              border: '1px solid #fde68a',
-                              height: 24,
-                              '& .MuiChip-icon': { ml: 0.5 }
-                            }}
-                          />
+                          <Tooltip title="La carpeta institucional está lista en Google Drive. Para subir directamente el archivo PDF, configure el Refresh Token OAuth (PLAN_ACTION_GOOGLE_REFRESH_TOKEN) en el servidor.">
+                            <Chip
+                              size="small"
+                              icon={<InsertDriveFile sx={{ color: '#d97706 !important', fontSize: 16 }} />}
+                              label="Carpeta lista en Drive"
+                              clickable={Boolean(latestMinute?.content?.drive_folder_url)}
+                              component={latestMinute?.content?.drive_folder_url ? 'a' : 'div'}
+                              href={latestMinute?.content?.drive_folder_url || undefined}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              sx={{
+                                fontWeight: 750,
+                                fontSize: 11,
+                                bgcolor: '#fffbeb',
+                                color: '#b45309',
+                                border: '1px solid #fde68a',
+                                height: 24,
+                                '& .MuiChip-icon': { ml: 0.5 }
+                              }}
+                            />
+                          </Tooltip>
                         ) : syncingMinute ? (
                           <Chip
                             size="small"
@@ -3848,19 +3853,21 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             }}
                           />
                         ) : detail?.metadata?.drive_sync?.storage_quota_limited ? (
-                          <Chip
-                            icon={<Folder sx={{ color: '#d97706 !important', fontSize: 20 }} />}
-                            label="Carpeta oficial lista en Drive"
-                            size="medium"
-                            sx={{
-                              fontWeight: 800,
-                              bgcolor: '#fef3c7',
-                              color: '#b45309',
-                              height: 38,
-                              borderRadius: 2.5,
-                              px: 0.5
-                            }}
-                          />
+                          <Tooltip title="La carpeta está creada en Google Drive. Para alojar directamente el archivo Excel, configure el Refresh Token OAuth (PLAN_ACTION_GOOGLE_REFRESH_TOKEN) en el servidor.">
+                            <Chip
+                              icon={<Folder sx={{ color: '#d97706 !important', fontSize: 20 }} />}
+                              label="Carpeta oficial lista en Drive"
+                              size="medium"
+                              sx={{
+                                fontWeight: 800,
+                                bgcolor: '#fef3c7',
+                                color: '#b45309',
+                                height: 38,
+                                borderRadius: 2.5,
+                                px: 0.5
+                              }}
+                            />
+                          </Tooltip>
                         ) : (
                           <Chip
                             icon={<CheckCircle sx={{ color: '#16a34a !important', fontSize: 20 }} />}

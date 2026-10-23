@@ -38,7 +38,8 @@ import {
   ShowChart as ShowChartIcon,
   Timeline as TimelineIcon,
   TrendingUp as TrendingUpIcon,
-  } from '@mui/icons-material';
+  FiberManualRecord as FiberManualRecordIcon
+} from '@mui/icons-material';
 import {
   Bar,
   BarChart,
@@ -56,6 +57,7 @@ import gestionInformacionService from '../services/gestionInformacionService';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import StrategicPlanningPlatform from './StrategicPlanningPlatform';
+import PedLiveStatisticsDashboard from '../components/planeacionEstrategica/PedLiveStatisticsDashboard';
 
 const PED_YEAR_WEIGHT = 14.28;
 
@@ -1780,6 +1782,7 @@ function PlaneacionEfectividad() {
   const dashboards = (user && user.allowedPlanAccionDashboards) || [];
   const canEstadistica = isAdmin || dashboards.includes('plan_accion_estadistica');
   const canAccion = isAdmin || dashboards.includes('plan_accion_gestion') || dashboards.includes('plan_accion_nuevo');
+  const canEstadisticaPed = isAdmin || canEstadistica || canAccion;
 
   const createDefaultFilters = () => ({
     mode: 'estadistica',
@@ -1894,7 +1897,7 @@ function PlaneacionEfectividad() {
     }));
   };
 
-  const isPlatformSection = section === 'accion' || section === 'nuevo' || section === 'gestion';
+  const isPlatformSection = section === 'accion' || section === 'nuevo' || section === 'gestion' || section === 'estadistica_ped';
 
   return (
     <Fade in={true}>
@@ -1922,12 +1925,13 @@ function PlaneacionEfectividad() {
                   <Box
                     sx={{
                       display: 'grid',
-                      gap: 3.5,
+                      gap: 3,
                       gridTemplateColumns: {
                         xs: '1fr',
-                        md: [canEstadistica, canAccion].filter(Boolean).length > 1 ? 'repeat(2, 1fr)' : '1fr'
+                        sm: 'repeat(2, 1fr)',
+                        lg: 'repeat(3, 1fr)'
                       },
-                      maxWidth: [canEstadistica, canAccion].filter(Boolean).length > 1 ? 980 : 500,
+                      maxWidth: 1200,
                       margin: '0 auto',
                       px: 1,
                       width: '100%'
@@ -2076,13 +2080,91 @@ function PlaneacionEfectividad() {
                         </Button>
                       </Paper>
                     )}
+
+                    {canEstadisticaPed && (
+                      <Paper
+                        elevation={0}
+                        onClick={() => setSection('estadistica_ped')}
+                        sx={{
+                          p: 4.5,
+                          borderRadius: 5,
+                          border: '1.5px solid #0284c7',
+                          background: 'linear-gradient(145deg, #ffffff 0%, #f0fdf4 100%)',
+                          boxShadow: '0 10px 25px rgba(2,132,199,0.06)',
+                          cursor: 'pointer',
+                          transition: 'all .3s ease',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          textAlign: 'center',
+                          position: 'relative',
+                          overflow: 'hidden',
+                          '&:hover': {
+                            transform: 'translateY(-6px)',
+                            borderColor: '#0284c7',
+                            boxShadow: '0 25px 50px rgba(2,132,199,0.18)',
+                            '& .live-icon': {
+                              transform: 'scale(1.1) rotate(-5deg)'
+                            }
+                          }
+                        }}
+                      >
+                        <Box
+                          className="live-icon"
+                          sx={{
+                            width: 84,
+                            height: 84,
+                            borderRadius: 4.5,
+                            background: 'linear-gradient(135deg, #0284c7 0%, #059669 100%)',
+                            color: 'white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            mb: 3.5,
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            boxShadow: '0 12px 24px rgba(2,132,199,0.22)'
+                          }}
+                        >
+                          <TrendingUpIcon sx={{ fontSize: 44 }} />
+                        </Box>
+                        <Chip
+                          icon={<FiberManualRecordIcon sx={{ fontSize: '10px !important', color: '#86efac !important' }} />}
+                          label="EN TIEMPO REAL"
+                          color="success"
+                          size="small"
+                          sx={{ mb: 1.2, fontWeight: 900, fontSize: 11 }}
+                        />
+                        <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f766e', mb: 1.8, fontSize: 20 }}>
+                          Estadística PED en Vivo
+                        </Typography>
+                        <Typography sx={{ color: '#64748b', fontSize: 14.5, mb: 4, flexGrow: 1, lineHeight: 1.6, px: 2 }}>
+                          Tablero de control en tiempo real: monitoreo automático de objetivos, lineamientos y planes de acción por cada vigencia del PED.
+                        </Typography>
+                        <Button
+                          variant="contained"
+                          sx={{
+                            textTransform: 'none',
+                            borderRadius: 3,
+                            px: 3.5,
+                            py: 1.2,
+                            fontWeight: 800,
+                            background: 'linear-gradient(135deg, #0284c7 0%, #059669 100%)',
+                            boxShadow: '0 4px 14px rgba(2,132,199,0.2)'
+                          }}
+                        >
+                          Ingresar a Estadísticas en Vivo
+                        </Button>
+                      </Paper>
+                    )}
                   </Box>
                 </Box>
               )}
             </Box>
           ) : (
             <>
-              {isPlatformSection ? (
+              {section === 'estadistica_ped' ? (
+                <PedLiveStatisticsDashboard onBack={() => setSection(null)} />
+              ) : isPlatformSection ? (
                 <StrategicPlanningPlatform onBack={() => setSection(null)} />
               ) : (
                 <>

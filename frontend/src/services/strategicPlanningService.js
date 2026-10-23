@@ -89,7 +89,8 @@ const strategicPlanningService = {
   checkCalendarAvailability: (planId, payload) => api.post(`${root}/action-plans/${planId}/calendar/availability`, payload).then(data),
   suggestCalendarSlots: (planId, payload) => api.post(`${root}/action-plans/${planId}/calendar/suggestions`, payload).then(data),
   saveCalendarSchedule: (planId, payload) => api.put(`${root}/action-plans/${planId}/calendar`, payload).then(data),
-  cancelCalendarSchedule: (planId, params = {}) => api.delete(`${root}/action-plans/${planId}/calendar`, { params }).then(data)
+  cancelCalendarSchedule: (planId, params = {}) => api.delete(`${root}/action-plans/${planId}/calendar`, { params }).then(data),
+  getLiveStatistics: (params = {}) => api.get(`${root}/statistics`, { params }).then(data)
 };
 
 export default strategicPlanningService;

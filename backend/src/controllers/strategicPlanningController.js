@@ -38,6 +38,7 @@ const { captureActionPlanSchema } = require('../services/strategicActionPlanSche
 const { improveStrategicMinuteText, generateStrategicMinuteSummary } = require('../services/strategicMinuteWritingService');
 const { validateAdministrativeActDate } = require('../services/strategicPlanDateValidationService');
 const { syncActionPlanRepositoryTerm, syncSinglePlanOfficialWorkbook, buildOfficialWorkbook } = require('../services/actionPlanRepositoryDriveService');
+const { getPlanStatistics } = require('../services/strategicPlanningStatsService');
 const { PRIVACY_POLICY_NOTICE, PRIVACY_POLICY_URL, PRIVACY_POLICY_VERSION } = require('../constants/privacyPolicy');
 
 const PLANNING_DEPARTMENT_NAME = 'Dirección de Planeación y Aseguramiento de la Calidad';
@@ -2145,22 +2146,25 @@ const finalizeAndSyncMinuteInternal = async (minuteId, { req = null, userId = nu
       hideGraphicSignatures: false
     });
     const reportsDir = path.join(PRIVATE_ROOT, '_minutes'); ensureDir(reportsDir);
-    const finalPdfPath = minute.final_pdf_storage_key || path.join(reportsDir, `ACTA-${minute.meeting_id}-V${minute.version}.pdf`);
+    const hasValidKeyDir = minute.final_pdf_storage_key && fs.existsSync(path.dirname(minute.final_pdf_storage_key));
+    const finalPdfPath = hasValidKeyDir ? minute.final_pdf_storage_key : path.join(reportsDir, `ACTA-${minute.meeting_id}-V${minute.version}.pdf`);
     fs.writeFileSync(finalPdfPath, originalBuffer);
     await minute.update({ final_pdf_storage_key: finalPdfPath, final_pdf_hash: sha256(originalBuffer) });
 
     let driveSync = null;
+    let driveError = null;
     try {
       driveSync = await syncMinute(minute.id);
     } catch (driveErr) {
-      console.warn('PEI: Sincronización con Drive no completada, encolando tarea:', driveErr.message);
+      driveError = driveErr.message || String(driveErr);
+      console.warn('PEI: Sincronización con Drive no completada, encolando tarea:', driveError);
       await enqueueSync({ entityType: 'minute', entityId: minute.id, createdBy: userId });
     }
     const meeting = await StrategicMeeting.findByPk(minute.meeting_id, {
       include: [{ model: StrategicActionPlan, as: 'actionPlan', attributes: ['term_id'] }]
     });
     await refreshActionRepository(meeting?.actionPlan?.term_id, req, 'minute_resynced');
-    return { minute, driveSync };
+    return { minute, driveSync, driveError };
   }
 
   if (minute.status !== 'signing') throw Object.assign(new Error('El acta no está en firma ni finalizada.'), { statusCode: 409 });
@@ -2292,10 +2296,12 @@ const finalizeAndSyncMinuteInternal = async (minuteId, { req = null, userId = nu
   }
 
   let driveSync = null;
+  let driveError = null;
   try {
     driveSync = await syncMinute(minute.id);
   } catch (driveErr) {
-    console.warn('PEI: Sincronización inmediata con Drive no completada, encolando tarea:', driveErr.message);
+    driveError = driveErr.message || String(driveErr);
+    console.warn('PEI: Sincronización inmediata con Drive no completada, encolando tarea:', driveError);
     await enqueueSync({ entityType: 'minute', entityId: minute.id, createdBy: userId });
   }
 
@@ -2303,7 +2309,7 @@ const finalizeAndSyncMinuteInternal = async (minuteId, { req = null, userId = nu
   if (req && userId) {
     await audit(req, 'minute.finalize', 'minute_version', minute.id, null, minute.toJSON(), justification);
   }
-  return { minute, driveSync };
+  return { minute, driveSync, driveError };
 };
 
 const checkAndAutoFinalizeMinute = async (minuteId, req, userId) => {
@@ -2397,7 +2403,7 @@ const downloadMinuteWord = wrap(async (req, res) => {
 });
 
 const finalizeMinute = wrap(async (req, res) => {
-  const { minute, driveSync } = await finalizeAndSyncMinuteInternal(req.params.minuteId, {
+  const { minute, driveSync, driveError } = await finalizeAndSyncMinuteInternal(req.params.minuteId, {
     req,
     userId: req.user.id,
     justification: req.body.justification
@@ -2406,8 +2412,10 @@ const finalizeMinute = wrap(async (req, res) => {
     ? `Acta formalizada, notificada y sincronizada en Google Drive como "${driveSync.fileName}".`
     : driveSync?.folderWebViewLink
     ? `Acta formalizada y guardada en SIAC. Carpeta institucional preparada en Google Drive.`
+    : driveError
+    ? `Acta formalizada y notificada en SIAC. Sincronización con Drive pendiente (${driveError}).`
     : 'Acta formalizada y notificada en SIAC. Sincronización con Google Drive programada.';
-  ok(res, { ...minute.toJSON(), driveSync }, successMsg);
+  ok(res, { ...minute.toJSON(), driveSync, driveError: driveError || null }, successMsg);
 });
 
 const downloadMinutePdf = wrap(async (req, res) => {
@@ -2664,6 +2672,16 @@ const analytics = wrap(async (req, res) => {
   const budget = planIds.length ? await StrategicBudgetMovement.findAll({ include: [{ model: StrategicActionItem, as: 'actionItem', required: false }], where: req.query.termId ? { term_id: req.query.termId } : {} }).catch(() => []) : [];
   const evidences = items.length ? await StrategicEvidence.findAll({ where: { action_item_id: { [Op.in]: items.map((i) => i.id) }, deleted_at: null } }) : [];
   ok(res, { plans: plans.length, activities: items.length, physical_progress: items.length ? items.reduce((s, i) => s + Number(i.current_progress || 0), 0) / items.length : 0, evidence: { total: evidences.length, pending: evidences.filter((e) => e.sync_status !== 'synced').length }, budget: budget.reduce((acc, row) => ({ ...acc, [row.movement_type]: Number(acc[row.movement_type] || 0) + Number(row.amount || 0) }), {}) });
+});
+
+const getPedLiveStatistics = wrap(async (req, res) => {
+  const data = await getPlanStatistics({
+    planId: req.query.planId || null,
+    termId: req.query.termId || null,
+    year: req.query.year || null,
+    catalogItemId: req.query.catalogItemId || null
+  });
+  ok(res, data);
 });
 
 const listAudit = wrap(async (req, res) => ok(res, await StrategicAuditEvent.findAll({ where: req.query.entity_type ? { entity_type: req.query.entity_type } : {}, limit: Math.min(500, Number(req.query.limit || 100)), order: [['created_at', 'DESC']] })));
@@ -3114,7 +3132,7 @@ module.exports = {
   improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
   uploadEvidence, downloadEvidence, retrySync, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
-  previewHistorical, confirmHistorical, exportActionPlan, syncPlanDriveExcel, analytics, listAudit, listSyncJobs,
+  previewHistorical, confirmHistorical, exportActionPlan, syncPlanDriveExcel, analytics, getPedLiveStatistics, listAudit, listSyncJobs,
   getPlanCalendarSchedule, listPlanUpcomingCalendar, startPlanCalendarConnect, disconnectPlanCalendar,
   checkPlanCalendarAvailability, suggestPlanCalendarSlots, savePlanCalendarSchedule, cancelPlanCalendarSchedule
 };

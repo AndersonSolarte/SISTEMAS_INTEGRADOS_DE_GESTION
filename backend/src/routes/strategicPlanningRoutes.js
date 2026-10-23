@@ -103,6 +103,7 @@ router.post('/budget-imports/:importId/reverse', permit('pei_presupuesto'), c.re
 router.post('/historical-imports/preview', permit('pei_configurar'), upload.single('file'), c.previewHistorical);
 router.post('/historical-imports/:importId/confirm', permit('pei_configurar'), c.confirmHistorical);
 router.get('/analytics', permit('pei_consulta_ejecutiva'), c.analytics);
+router.get('/statistics', permit(), c.getPedLiveStatistics);
 router.get('/audit', permit('pei_auditoria'), c.listAudit);
 
 module.exports = router;

@@ -482,12 +482,32 @@ const generateStrategicMinutePdf = async ({
 
 const ensureMinuteFinalPdfBuffer = async (minute, forceRegenerate = false) => {
   if (!minute) return null;
-  const privateRoot = process.env.PRIVATE_UPLOADS_ROOT || path.join(__dirname, '..', '..', 'uploads_private');
+  const privateRoot = process.env.PRIVATE_UPLOADS_ROOT
+    || process.env.SIAC_PEI_TEMP_DIR
+    || path.resolve(__dirname, '..', '..', 'uploads', '.private', 'strategic-planning');
   const reportsDir = path.join(privateRoot, '_minutes');
-  if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
+  if (!fs.existsSync(reportsDir)) {
+    try {
+      fs.mkdirSync(reportsDir, { recursive: true });
+    } catch (mkdirErr) {
+      console.warn('ensureMinuteFinalPdfBuffer: no se pudo crear directorio reportsDir:', mkdirErr.message);
+    }
+  }
 
-  if (!forceRegenerate && minute.final_pdf_storage_key && fs.existsSync(minute.final_pdf_storage_key)) {
-    return fs.readFileSync(minute.final_pdf_storage_key);
+  const standardPdfPath = path.join(reportsDir, `ACTA-${minute.meeting_id}-V${minute.version}.pdf`);
+  const hasValidStoredFile = Boolean(minute.final_pdf_storage_key && fs.existsSync(minute.final_pdf_storage_key));
+
+  if (!forceRegenerate) {
+    if (hasValidStoredFile) {
+      try {
+        return fs.readFileSync(minute.final_pdf_storage_key);
+      } catch (_) {}
+    }
+    if (fs.existsSync(standardPdfPath)) {
+      try {
+        return fs.readFileSync(standardPdfPath);
+      } catch (_) {}
+    }
   }
 
   const { StrategicMinuteSignature } = require('../models');
@@ -514,11 +534,13 @@ const ensureMinuteFinalPdfBuffer = async (minute, forceRegenerate = false) => {
     hideGraphicSignatures: false
   });
 
-  const finalPdfPath = minute.final_pdf_storage_key || path.join(reportsDir, `ACTA-${minute.meeting_id}-V${minute.version}.pdf`);
+  // Si minute.final_pdf_storage_key proviene de otro SO (ej. C:\ en Linux) o no existe,
+  // guardar en la ruta estandarizada del entorno actual
+  const targetPdfPath = hasValidStoredFile ? minute.final_pdf_storage_key : standardPdfPath;
   try {
-    fs.writeFileSync(finalPdfPath, buffer);
+    fs.writeFileSync(targetPdfPath, buffer);
     const hash = crypto.createHash('sha256').update(buffer).digest('hex');
-    await minute.update({ final_pdf_storage_key: finalPdfPath, final_pdf_hash: hash });
+    await minute.update({ final_pdf_storage_key: targetPdfPath, final_pdf_hash: hash });
   } catch (err) {
     console.warn('ensureMinuteFinalPdfBuffer: no se pudo guardar en disco:', err.message);
   }

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { Readable } = require('stream');
 const { google } = require('googleapis');
 const { Op } = require('sequelize');
 const {
@@ -113,7 +114,7 @@ const syncMinute = async (minuteId, forceRegenerate = true) => {
   });
   const { ensureMinuteFinalPdfBuffer } = require('./strategicMinutePdfService');
   const buffer = await ensureMinuteFinalPdfBuffer(minute, forceRegenerate);
-  if (!buffer || !minute?.final_pdf_storage_key || !fs.existsSync(minute.final_pdf_storage_key)) {
+  if (!buffer || !Buffer.isBuffer(buffer)) {
     throw new Error('No fue posible preparar el PDF final del acta para sincronización.');
   }
   const drive = buildWritableDriveClient();
@@ -142,7 +143,16 @@ const syncMinute = async (minuteId, forceRegenerate = true) => {
       actionPlanCode: actionPlan?.code || ''
     }
   };
-  const media = { mimeType: 'application/pdf', body: fs.createReadStream(minute.final_pdf_storage_key) };
+
+  const createMediaStream = () => {
+    if (minute.final_pdf_storage_key && fs.existsSync(minute.final_pdf_storage_key)) {
+      try {
+        return fs.createReadStream(minute.final_pdf_storage_key);
+      } catch (_) {}
+    }
+    return Readable.from(buffer);
+  };
+
   let response = null;
   let storageQuotaLimited = false;
   try {
@@ -155,14 +165,14 @@ const syncMinute = async (minuteId, forceRegenerate = true) => {
           fileId: minute.drive_file_id,
           ...(hasParent ? {} : { addParents: folderId }),
           requestBody: { ...requestBody, trashed: false },
-          media,
+          media: { mimeType: 'application/pdf', body: createMediaStream() },
           fields: 'id,webViewLink',
           supportsAllDrives: true
         });
       } catch (_) {
         response = await drive.files.create({
           requestBody: { ...requestBody, parents: [folderId] },
-          media,
+          media: { mimeType: 'application/pdf', body: createMediaStream() },
           fields: 'id,webViewLink',
           supportsAllDrives: true
         });
@@ -170,7 +180,7 @@ const syncMinute = async (minuteId, forceRegenerate = true) => {
     } else {
       response = await drive.files.create({
         requestBody: { ...requestBody, parents: [folderId] },
-        media,
+        media: { mimeType: 'application/pdf', body: createMediaStream() },
         fields: 'id,webViewLink',
         supportsAllDrives: true
       });
