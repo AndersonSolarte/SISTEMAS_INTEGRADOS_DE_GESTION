@@ -3043,7 +3043,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           <Chip
                             size="small"
                             icon={<CheckCircle sx={{ color: '#16a34a !important', fontSize: 16 }} />}
-                            label="Sincronizada con Google Drive"
+                            label={isFinalized ? "Sincronizada con Google Drive" : "Borrador sincronizado con Drive"}
                             clickable={Boolean(latestMinute?.content?.drive_file_url || latestMinute?.content?.drive_folder_url)}
                             component={latestMinute?.content?.drive_file_url ? 'a' : 'div'}
                             href={latestMinute?.content?.drive_file_url || latestMinute?.content?.drive_folder_url || undefined}

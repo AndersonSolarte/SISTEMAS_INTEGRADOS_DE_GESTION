@@ -1617,6 +1617,23 @@ const createMeeting = wrap(async (req, res) => {
     }
     await audit(req, 'meeting.create', 'meeting', row.id, null, row.toJSON(), null, transaction); return row;
   });
+
+  // Inicializar automáticamente el borrador versión 1 y sincronizarlo en tiempo real con Google Drive
+  try {
+    const canonicalContent = await minutePayload(meeting);
+    const initialMinute = await StrategicMinuteVersion.create({
+      meeting_id: meeting.id,
+      version: 1,
+      content: canonicalContent,
+      content_hash: hashObject(canonicalContent),
+      status: 'draft',
+      created_by: req.user.id
+    });
+    syncMinute(initialMinute.id, true).catch((e) => console.warn('Auto-sync Drive tras createMeeting:', e.message));
+  } catch (syncErr) {
+    console.warn('Error inicializando borrador o syncMinute en createMeeting:', syncErr.message);
+  }
+
   res.status(201); ok(res, meeting, 'Reunión creada.');
 });
 
@@ -1752,15 +1769,37 @@ const updateMeeting = wrap(async (req, res) => {
     return row;
   });
 
-  // Sincronización automática a Google Drive ante cualquier cambio si el acta ya fue formalizada o sincronizada previamente
+  // Auto-sincronización en tiempo real a Google Drive ante cualquier cambio (borrador, firmas o formalizada)
+  // Actualiza el MISMO archivo en Google Drive sin crear duplicados
   try {
-    const existingMinute = await StrategicMinuteVersion.findOne({
+    let existingMinute = await StrategicMinuteVersion.findOne({
       where: { meeting_id: meeting.id },
       order: [['version', 'DESC']]
     });
-    if (existingMinute && (meeting.status === 'formalized' || existingMinute.status === 'finalized' || existingMinute.drive_file_id)) {
-      syncMinute(existingMinute.id, true).catch((e) => console.warn('Auto-sync Drive tras updateMeeting:', e.message));
+    if (!existingMinute) {
+      const canonicalContent = await minutePayload(meeting);
+      existingMinute = await StrategicMinuteVersion.create({
+        meeting_id: meeting.id,
+        version: 1,
+        content: canonicalContent,
+        content_hash: hashObject(canonicalContent),
+        status: meeting.status === 'formalized' ? 'finalized' : 'draft',
+        created_by: req.user.id
+      });
+    } else if (existingMinute.status !== 'finalized') {
+      const updatedContent = await minutePayload(meeting);
+      await existingMinute.update({
+        content: {
+          ...(existingMinute.content || {}),
+          ...updatedContent,
+          meeting: updatedContent.meeting,
+          participants: updatedContent.participants,
+          responsables: updatedContent.responsables
+        },
+        content_hash: hashObject(updatedContent)
+      });
     }
+    syncMinute(existingMinute.id, true).catch((e) => console.warn('Auto-sync Drive tras updateMeeting:', e.message));
   } catch (syncErr) {
     console.warn('Error verificando syncMinute en updateMeeting:', syncErr.message);
   }
