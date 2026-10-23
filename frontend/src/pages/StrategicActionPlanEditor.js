@@ -1,12 +1,12 @@
 // PEI StrategicActionPlanEditor Module
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  Alert, Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, Grid, IconButton, InputAdornment, Menu, MenuItem, Paper, Stack, Tab, Tabs, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
 import {
-  Add, ArrowBack, AssignmentTurnedIn, AttachFile, AutoAwesome, CheckCircle, CheckCircleOutline,
+  Add, ArrowBack, AssignmentTurnedIn, AttachFile, AutoAwesome, CheckBox as CheckBoxIcon, CheckBoxOutlineBlank as CheckBoxOutlineBlankIcon, CheckCircle, CheckCircleOutline,
   Close, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Email,
   AccessTime, CalendarMonth, Folder, History, LockOutlined, MoreTime, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, OpenInNew,
   PersonSearch, PictureAsPdf as PdfIcon, PlayArrow, PriorityHigh, QrCode2, Refresh, Save, Search, Send,
@@ -32,8 +32,55 @@ const STATUS_LABELS = {
   owner_validation: 'En validación y firmas de acta', rectorate_notification: 'Información a Rectoría',
   active: 'En Ejecución Oficial', monitoring: 'En Seguimiento Semestral', closed: 'Cerrado'
 };
-const emptyItem = { macroactivity: '', activity: '', indicator_type: '', starts_on: '', ends_on: '', indicator: '', target: '', co_responsibles: '', budget: '', custom_values: {} };
-const ACTIVITY_FORM_EXCLUDED_KEYS = new Set(['responsible','progress_s1','observations_s1','progress_s2','observations_s2','total_progress']);
+const emptyItem = { macroactivity: '', activity: '', indicator_type: '', starts_on: '', ends_on: '', indicator: '', target: '', co_responsibles: [], budget: '', custom_values: {} };
+const ACTIVITY_FORM_EXCLUDED_KEYS = new Set(['progress_s1','observations_s1','progress_s2','observations_s2','total_progress','avance_a_ip_2026','avance_a_iip_2026','observaciones','observaciones_2','total']);
+const normalizeFieldText = (str) =>
+  String(str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+const isCoResponsibleField = (field) => {
+  if (!field) return false;
+  const k = normalizeFieldText(field.key);
+  const l = normalizeFieldText(field.label);
+  const combined = `${k} ${l}`;
+  return (
+    combined.includes('corresponsable') ||
+    combined.includes('coresponsable') ||
+    combined.includes('co_responsable') ||
+    k === 'co_responsibles' ||
+    k === 'co_responsible'
+  );
+};
+
+const isResponsibleField = (field) => {
+  if (!field || isCoResponsibleField(field)) return false;
+  const k = normalizeFieldText(field.key);
+  const l = normalizeFieldText(field.label);
+  const combined = `${k} ${l}`;
+  return (
+    combined.includes('responsable') ||
+    k === 'responsible'
+  );
+};
+
+const parseCoResponsibles = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter(Boolean);
+  if (typeof val === 'string' && val.trim()) {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    } catch (_) {}
+    if (val.includes(',')) {
+      return val.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    return [val.trim()];
+  }
+  return [];
+};
 const toDatetimeLocal = (val, defaultHour = 8) => {
   if (!val) {
     const d = new Date();
@@ -132,6 +179,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [item, setItem] = useState(emptyItem);
+  const [institutionalUsers, setInstitutionalUsers] = useState([]);
   const [meeting, setMeeting] = useState(emptyMeeting);
   const [selectedMeetingId, setSelectedMeetingId] = useState('');
   const [meetingParticipants, setMeetingParticipants] = useState([]);
@@ -215,8 +263,15 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         } catch (_) {
           setStructure([]);
         }
+        try {
+          const leadersRes = await strategicPlanningService.leaderOptions(targetPedId);
+          setInstitutionalUsers(leadersRes.data || []);
+        } catch (_) {
+          setInstitutionalUsers([]);
+        }
       } else {
         setStructure([]);
+        setInstitutionalUsers([]);
       }
     } catch (error) {
       const replacementPlanId = error.response?.data?.data?.replacement_plan_id;
@@ -692,7 +747,43 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const activityFields = activeFields.filter((field) => field.data_type !== 'formula' && !ACTIVITY_FORM_EXCLUDED_KEYS.has(field.key));
   const recordColumns = activeFields;
+
+  const planResponsiblePerson =
+    detail?.currentResponsibility?.responsibleUser ||
+    detail?.responsibleUser ||
+    detail?.planResponsibleUser ||
+    detail?.owner;
+
+  const defaultResponsibleText = useMemo(() => {
+    if (planResponsiblePerson?.nombre) {
+      return planResponsiblePerson.nombre;
+    }
+    if (detail?.organizationalUnit?.name) {
+      return detail.organizationalUnit.name;
+    }
+    return '';
+  }, [planResponsiblePerson, detail?.organizationalUnit]);
+
+  const getInitialItem = useCallback(() => {
+    const respField = activityFields.find(isResponsibleField);
+    return {
+      ...emptyItem,
+      co_responsibles: [],
+      custom_values: respField && defaultResponsibleText ? { [respField.key]: defaultResponsibleText } : {}
+    };
+  }, [activityFields, defaultResponsibleText]);
+
   const recordValue = (row, field) => {
+    if (isCoResponsibleField(field)) {
+      const val = row[field.key] || row.co_responsibles || row.custom_values?.[field.key];
+      const parsed = parseCoResponsibles(val);
+      return parsed.length ? parsed.join(', ') : '—';
+    }
+    if (isResponsibleField(field)) {
+      const val = row[field.key] || row.custom_values?.[field.key];
+      if (val && String(val).trim()) return String(val);
+      return defaultResponsibleText || '—';
+    }
     const directKeys = new Set(['indicator_type', 'starts_on', 'ends_on', 'indicator', 'target', 'co_responsibles']);
     let value = field.key === 'activity' ? row.activity : directKeys.has(field.key) ? row[field.key] : row.custom_values?.[field.key];
     const catalogType = field.validation_rules?.catalog_type;
@@ -748,14 +839,236 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   }, [detail?.items, previewPlanSearch, recordColumns]);
 
   const fieldValue = (field) => {
+    if (isResponsibleField(field)) {
+      const direct = item[field.key];
+      const custom = item.custom_values?.[field.key];
+      return direct || custom || defaultResponsibleText;
+    }
+    if (isCoResponsibleField(field)) {
+      const custom = item.custom_values?.[field.key];
+      if (custom && (!Array.isArray(item.co_responsibles) || !item.co_responsibles.length)) {
+        return parseCoResponsibles(custom);
+      }
+      return parseCoResponsibles(item.co_responsibles);
+    }
     const direct = { activity: item.activity, indicator_type: item.indicator_type, starts_on: item.starts_on, ends_on: item.ends_on, indicator: item.indicator, target: item.target, co_responsibles: item.co_responsibles };
     return Object.prototype.hasOwnProperty.call(direct, field.key) ? direct[field.key] : item.custom_values?.[field.key];
   };
   const setFieldValue = (field, value) => {
-    if (['activity','indicator_type','starts_on','ends_on','indicator','target','co_responsibles'].includes(field.key)) setItem((current) => ({ ...current, [field.key]: value }));
-    else setItem((current) => ({ ...current, custom_values: { ...(current.custom_values || {}), [field.key]: value } }));
+    if (isCoResponsibleField(field)) {
+      const parsed = Array.isArray(value) ? value : parseCoResponsibles(value);
+      setItem((current) => ({
+        ...current,
+        co_responsibles: parsed,
+        custom_values: { ...(current.custom_values || {}), [field.key]: parsed }
+      }));
+      return;
+    }
+    if (isResponsibleField(field)) {
+      setItem((current) => ({
+        ...current,
+        [field.key]: value,
+        custom_values: { ...(current.custom_values || {}), [field.key]: value }
+      }));
+      return;
+    }
+    if (['activity','indicator_type','starts_on','ends_on','indicator','target','co_responsibles'].includes(field.key)) {
+      setItem((current) => ({ ...current, [field.key]: value }));
+    } else {
+      setItem((current) => ({ ...current, custom_values: { ...(current.custom_values || {}), [field.key]: value } }));
+    }
   };
   const renderConfiguredField = (field) => {
+    // 1. Campo de Responsable: precargado automáticamente con el líder del Plan de Acción
+    if (isResponsibleField(field)) {
+      const currentRespVal = fieldValue(field) || defaultResponsibleText;
+      return (
+        <Box
+          key={field.id || field.key}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 1' } }}
+        >
+          <Autocomplete
+            freeSolo
+            options={institutionalUsers.map((u) => u.name || u.nombre).filter(Boolean)}
+            value={currentRespVal}
+            onInputChange={(_, newInputValue) => {
+              setFieldValue(field, newInputValue);
+            }}
+            onChange={(_, newValue) => {
+              setFieldValue(field, typeof newValue === 'string' ? newValue : (newValue?.name || newValue?.nombre || ''));
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                size="small"
+                required={field.required}
+                label={field.label || 'Responsable'}
+                helperText={
+                  defaultResponsibleText && currentRespVal === defaultResponsibleText
+                    ? 'Precargado automáticamente del responsable configurado en el Plan de Acción.'
+                    : 'Puede modificarlo o seleccionar otra persona de la institución.'
+                }
+                InputProps={{
+                  ...params.InputProps,
+                  endAdornment: (
+                    <>
+                      {defaultResponsibleText && currentRespVal === defaultResponsibleText && (
+                        <Chip
+                          size="small"
+                          label="Líder del Plan"
+                          color="primary"
+                          variant="outlined"
+                          sx={{ fontWeight: 800, fontSize: 11, height: 22, mr: 0.5 }}
+                        />
+                      )}
+                      {params.InputProps.endAdornment}
+                    </>
+                  )
+                }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2.5,
+                    bgcolor: '#f8fafc',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': { borderColor: '#86add9' },
+                    '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(104, 157, 214, 0.14)', bgcolor: '#ffffff' }
+                  }
+                }}
+              />
+            )}
+          />
+        </Box>
+      );
+    }
+
+    // 2. Campo de Corresponsable(s): selector interactivo múltiple con casillas de verificación (checkboxes) y búsqueda por cédula, nombre, cargo o dependencia
+    if (isCoResponsibleField(field)) {
+      const rawValues = parseCoResponsibles(fieldValue(field) || item.co_responsibles);
+      const selectedValues = rawValues.map((val) => {
+        if (!val) return null;
+        if (typeof val === 'object' && (val.name || val.nombre)) return val;
+        const normVal = normalizeFieldText(val);
+        const match = institutionalUsers.find((u) =>
+          String(u.id) === String(val) ||
+          String(u.document) === String(val) ||
+          normalizeFieldText(u.name || u.nombre) === normVal
+        );
+        return match || val;
+      }).filter(Boolean);
+
+      return (
+        <Box
+          key={field.id || field.key}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 2' } }}
+        >
+          <Autocomplete
+            multiple
+            disableCloseOnSelect
+            options={institutionalUsers}
+            value={selectedValues}
+            isOptionEqualToValue={(option, val) => {
+              if (!val) return false;
+              if (typeof val === 'string') {
+                return (
+                  option.name === val ||
+                  option.document === val ||
+                  normalizeFieldText(option.name) === normalizeFieldText(val)
+                );
+              }
+              return option.id === val.id || (option.document && option.document === val.document);
+            }}
+            getOptionLabel={(option) => {
+              if (typeof option === 'string') return option;
+              return `${option.name || option.nombre || ''} ${option.document ? `(CC: ${option.document})` : ''} - ${option.dependency || option.cargo || ''}`;
+            }}
+            filterOptions={(options, { inputValue }) => {
+              if (!inputValue || !inputValue.trim()) return options.slice(0, 50);
+              const q = normalizeFieldText(inputValue);
+              return options.filter((opt) => {
+                const doc = String(opt.document || '').toLowerCase();
+                const name = normalizeFieldText(opt.name || opt.nombre || '');
+                const email = String(opt.email || '').toLowerCase();
+                const dep = normalizeFieldText(opt.dependency || opt.dependencia || '');
+                const pos = normalizeFieldText(opt.position || opt.cargo || '');
+                return doc.includes(q) || name.includes(q) || email.includes(q) || dep.includes(q) || pos.includes(q);
+              }).slice(0, 50);
+            }}
+            onChange={(_, newValues) => {
+              const names = newValues.map((v) => (typeof v === 'string' ? v : (v.name || v.nombre || ''))).filter(Boolean);
+              setItem((curr) => ({
+                ...curr,
+                co_responsibles: names,
+                custom_values: {
+                  ...(curr.custom_values || {}),
+                  [field.key]: names
+                }
+              }));
+            }}
+            renderOption={(props, option, { selected }) => (
+              <li {...props} key={option.id || option.document || (typeof option === 'string' ? option : option.name)}>
+                <Checkbox
+                  icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
+                  checkedIcon={<CheckBoxIcon fontSize="small" />}
+                  style={{ marginRight: 8 }}
+                  checked={selected}
+                />
+                <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0, py: 0.5 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700, color: '#1e293b' }}>
+                    {typeof option === 'string' ? option : (option.name || option.nombre)}
+                  </Typography>
+                  {typeof option === 'object' && (
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>
+                      {option.document ? `C.C. ${option.document} · ` : ''}
+                      {option.dependency || option.dependencia || ''}
+                      {option.position || option.cargo ? ` (${option.position || option.cargo})` : ''}
+                    </Typography>
+                  )}
+                </Box>
+              </li>
+            )}
+            renderTags={(tagValue, getTagProps) =>
+              tagValue.map((opt, index) => {
+                const label = typeof opt === 'string' ? opt : (opt.name || opt.nombre);
+                return (
+                  <Chip
+                    {...getTagProps({ index })}
+                    key={typeof opt === 'string' ? opt : (opt.id || opt.document || index)}
+                    label={label}
+                    size="small"
+                    sx={{
+                      bgcolor: '#eff6ff',
+                      color: '#1d4ed8',
+                      fontWeight: 700,
+                      border: '1px solid #bfdbfe',
+                      borderRadius: 1.5
+                    }}
+                  />
+                );
+              })
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                size="small"
+                required={field.required}
+                label={field.label || 'Corresponsable(s)'}
+                placeholder={selectedValues.length ? '' : 'Buscar por cédula, nombre, cargo o dependencia...'}
+                helperText="Seleccione una o varias personas marcando las casillas de verificación."
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2.5,
+                    bgcolor: '#ffffff',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': { borderColor: '#86add9' },
+                    '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(104, 157, 214, 0.14)' }
+                  }
+                }}
+              />
+            )}
+          />
+        </Box>
+      );
+    }
     const catalogType = field.validation_rules?.catalog_type
       || (['responsible', 'responsable_de_ejecucion', 'co_responsibles'].includes(field.key) ? 'organizational_unit' : undefined);
     const catalogEntries = catalogType
@@ -955,19 +1268,52 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     if (missingField) return enqueueSnackbar(`Complete el campo “${missingField.label}”.`, { variant: 'warning' });
     setSaving(true);
     try {
+      const payloadCustomValues = { ...(item.custom_values || {}) };
+      let coRespPayload = Array.isArray(item.co_responsibles) ? item.co_responsibles : parseCoResponsibles(item.co_responsibles);
+
+      // Sincronizar automáticamente cualquier campo dinámico de responsable o corresponsable en cualquier PED
+      activityFields.forEach((f) => {
+        if (isResponsibleField(f)) {
+          const val = fieldValue(f) || defaultResponsibleText;
+          if (val) {
+            payloadCustomValues[f.key] = val;
+            if (['activity','indicator_type','starts_on','ends_on','indicator','target','responsible','responsable_de_ejecucion'].includes(f.key)) {
+              payloadCustomValues[f.key] = val;
+            }
+          }
+        }
+        if (isCoResponsibleField(f)) {
+          const val = (Array.isArray(item.co_responsibles) && item.co_responsibles.length)
+            ? item.co_responsibles
+            : parseCoResponsibles(item.custom_values?.[f.key]);
+          if (val && val.length) {
+            coRespPayload = val;
+            payloadCustomValues[f.key] = val;
+          }
+        }
+      });
+
       const payload = {
         code: editingItemId ? detail.items.find((row) => String(row.id) === String(editingItemId))?.code : `ACT-${String((detail.items?.length || 0) + 1).padStart(3, '0')}`,
         strategic_element_id: [...levels].reverse().map((level) => item.custom_values?.[structureKey(level.id)]).find(Boolean) || null,
         activity: primaryActivity, indicator_type: item.indicator_type, indicator: item.indicator,
         target: item.target, starts_on: item.starts_on || null, ends_on: item.ends_on || null,
-        co_responsibles: Array.isArray(item.co_responsibles) ? item.co_responsibles : String(item.co_responsibles || '').split(',').map((value) => value.trim()).filter(Boolean),
-        custom_values: { ...(item.custom_values || {}) },
+        co_responsibles: coRespPayload,
+        custom_values: payloadCustomValues,
         justification: editingItemId ? 'Actualización desde el formulario dinámico' : null
       };
+
+      // Si el campo directo de responsable existe en el schema, asignarlo en payload raíz
+      activityFields.forEach((f) => {
+        if (isResponsibleField(f) && (f.key === 'responsible' || f.key === 'responsable_de_ejecucion')) {
+          payload[f.key] = payloadCustomValues[f.key] || defaultResponsibleText;
+        }
+      });
+
       if (editingItemId) await strategicPlanningService.updateItem(planId, editingItemId, payload);
       else await strategicPlanningService.addItem(planId, payload);
       const wasEditing = Boolean(editingItemId);
-      setItem(emptyItem); setEditingItemId(null);
+      setItem(getInitialItem()); setEditingItemId(null);
       enqueueSnackbar(wasEditing ? 'Actividad actualizada; la versión anterior quedó en el historial.' : 'Actividad agregada al plan.', { variant: 'success' });
       try {
         await load();
@@ -986,11 +1332,23 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const editItem = (row) => {
     setEditingItemId(row.id);
+    const coRespField = activityFields.find(isCoResponsibleField);
+    const initialCoResp = (row.co_responsibles && row.co_responsibles.length > 0)
+      ? row.co_responsibles
+      : (coRespField && row.custom_values?.[coRespField.key]) || [];
+
+    const respField = activityFields.find(isResponsibleField);
+    const initialResp = (respField && row.custom_values?.[respField.key]) || row.responsible || row.responsable_de_ejecucion || defaultResponsibleText;
+
     setItem({
       macroactivity: '', activity: row.activity || '', indicator_type: row.indicator_type || '',
       starts_on: row.starts_on || '', ends_on: row.ends_on || '', indicator: row.indicator || '',
-      target: row.target || '', co_responsibles: row.co_responsibles || [], budget: '',
-      custom_values: { ...(row.custom_values || {}) }
+      target: row.target || '', co_responsibles: parseCoResponsibles(initialCoResp), budget: '',
+      custom_values: {
+        ...(row.custom_values || {}),
+        ...(respField ? { [respField.key]: initialResp } : {}),
+        ...(coRespField ? { [coRespField.key]: parseCoResponsibles(initialCoResp) } : {})
+      }
     });
     setTimeout(() => document.getElementById('activity-capture-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   };
@@ -2083,7 +2441,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     >
                       {saving ? 'Guardando registro…' : editingItemId ? 'Guardar cambios' : 'Crear actividad'}
                     </Button>
-                    {editingItemId && <Button variant="text" onClick={() => { setEditingItemId(null); setItem(emptyItem); }} sx={{ ml: { sm: 1 }, mt: { xs: 1, sm: 0 }, textTransform: 'none', fontWeight: 850 }}>Cancelar edición</Button>}
+                    {editingItemId && <Button variant="text" onClick={() => { setEditingItemId(null); setItem(getInitialItem()); }} sx={{ ml: { sm: 1 }, mt: { xs: 1, sm: 0 }, textTransform: 'none', fontWeight: 850 }}>Cancelar edición</Button>}
                   </Stack>
                 </Paper>
 
