@@ -37,7 +37,7 @@ const {
 const { captureActionPlanSchema } = require('../services/strategicActionPlanSchemaService');
 const { improveStrategicMinuteText, generateStrategicMinuteSummary } = require('../services/strategicMinuteWritingService');
 const { validateAdministrativeActDate } = require('../services/strategicPlanDateValidationService');
-const { syncActionPlanRepositoryTerm, syncSinglePlanOfficialWorkbook, buildOfficialWorkbook } = require('../services/actionPlanRepositoryDriveService');
+const { syncActionPlanRepositoryTerm, syncSinglePlanOfficialWorkbook, buildOfficialWorkbook, findCoResponsibleActivitiesForPlan } = require('../services/actionPlanRepositoryDriveService');
 const { getPlanStatistics } = require('../services/strategicPlanningStatsService');
 const { PRIVACY_POLICY_NOTICE, PRIVACY_POLICY_URL, PRIVACY_POLICY_VERSION } = require('../constants/privacyPolicy');
 
@@ -829,7 +829,16 @@ const getMyActionPlans = wrap(async (req, res) => {
     };
   });
 
-  ok(res, result);
+  const finalResult = await Promise.all(result.map(async (p) => {
+    try {
+      const coItems = await findCoResponsibleActivitiesForPlan(p);
+      return { ...p, co_responsible_items: coItems };
+    } catch (_) {
+      return { ...p, co_responsible_items: [] };
+    }
+  }));
+
+  ok(res, finalResult);
 });
 
 const listActionPlans = wrap(async (req, res) => {
@@ -955,6 +964,9 @@ const getActionPlan = wrap(async (req, res) => {
   if (peUser) {
     actionPlan.setDataValue('planningEfectividadUser', peUser);
   }
+
+  const coItems = await findCoResponsibleActivitiesForPlan(actionPlan).catch(() => []);
+  actionPlan.setDataValue('co_responsible_items', coItems);
 
   ok(res, actionPlan);
 });

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert, Autocomplete, Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions,
   Checkbox, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, IconButton, LinearProgress, MenuItem, Paper, Stack, Switch,
@@ -140,6 +140,133 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [replaceSchemaFields, setReplaceSchemaFields] = useState(false);
   const [draggedFieldIndex, setDraggedFieldIndex] = useState(null);
   const [dragOverFieldIndex, setDragOverFieldIndex] = useState(null);
+  const [directMoveModal, setDirectMoveModal] = useState(null);
+  const fieldTableContainerRef = useRef(null);
+  const scrollSpeedRef = useRef(0);
+  const scrollRafRef = useRef(null);
+  const lastDragPointerRef = useRef({ x: 0, y: 0 });
+  const draggedFieldIndexRef = useRef(null);
+  const dragOverFieldIndexRef = useRef(null);
+
+  const stopAutoScroll = useCallback(() => {
+    if (scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current);
+      scrollRafRef.current = null;
+    }
+    scrollSpeedRef.current = 0;
+  }, []);
+
+  const startAutoScroll = useCallback(() => {
+    if (scrollRafRef.current) return;
+    const step = () => {
+      const container = fieldTableContainerRef.current;
+      if (scrollSpeedRef.current !== 0 && container) {
+        const prevScrollTop = container.scrollTop;
+        container.scrollTop += scrollSpeedRef.current;
+
+        // Si el contenedor llegó a su límite superior/inferior, desplaza la ventana
+        if (container.scrollTop === prevScrollTop) {
+          window.scrollBy({ top: scrollSpeedRef.current });
+        }
+
+        // Actualizar en tiempo real la fila sobre la que se encuentra el cursor
+        if (lastDragPointerRef.current?.x && lastDragPointerRef.current?.y) {
+          const el = document.elementFromPoint(lastDragPointerRef.current.x, lastDragPointerRef.current.y);
+          const row = el?.closest('tr[data-field-index]');
+          if (row) {
+            const idx = Number(row.getAttribute('data-field-index'));
+            if (!isNaN(idx) && idx !== dragOverFieldIndexRef.current) {
+              dragOverFieldIndexRef.current = idx;
+              setDragOverFieldIndex(idx);
+            }
+          }
+        }
+
+        scrollRafRef.current = requestAnimationFrame(step);
+      } else {
+        scrollRafRef.current = null;
+      }
+    };
+    scrollRafRef.current = requestAnimationFrame(step);
+  }, []);
+
+  const handleContainerAutoScroll = useCallback((clientY) => {
+    const container = fieldTableContainerRef.current;
+    if (!container || draggedFieldIndexRef.current === null) return;
+
+    const rect = container.getBoundingClientRect();
+    const zoneSize = 85;
+    const topEdge = rect.top + zoneSize;
+    const bottomEdge = rect.bottom - zoneSize;
+
+    if (clientY < topEdge && clientY >= rect.top - 50) {
+      const intensity = Math.min(1, Math.max(0.15, (topEdge - clientY) / zoneSize));
+      scrollSpeedRef.current = -Math.round(4 + intensity * 20);
+      startAutoScroll();
+    } else if (clientY > bottomEdge && clientY <= rect.bottom + 50) {
+      const intensity = Math.min(1, Math.max(0.15, (clientY - bottomEdge) / zoneSize));
+      scrollSpeedRef.current = Math.round(4 + intensity * 20);
+      startAutoScroll();
+    } else {
+      stopAutoScroll();
+    }
+  }, [startAutoScroll, stopAutoScroll]);
+
+  // Listener global para permitir scroll con la rueda del ratón (mouse wheel) durante el arrastre
+  useEffect(() => {
+    draggedFieldIndexRef.current = draggedFieldIndex;
+    if (draggedFieldIndex === null) {
+      stopAutoScroll();
+      return;
+    }
+
+    const handleWheelDuringDrag = (e) => {
+      const container = fieldTableContainerRef.current;
+      if (!container) return;
+
+      const atTop = container.scrollTop <= 0;
+      const atBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 1;
+
+      if ((e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)) {
+        e.preventDefault();
+        container.scrollTop += e.deltaY;
+      } else {
+        window.scrollBy({ top: e.deltaY });
+      }
+
+      if (e.clientX && e.clientY) {
+        lastDragPointerRef.current = { x: e.clientX, y: e.clientY };
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const row = el?.closest('tr[data-field-index]');
+        if (row) {
+          const idx = Number(row.getAttribute('data-field-index'));
+          if (!isNaN(idx) && idx !== dragOverFieldIndexRef.current) {
+            dragOverFieldIndexRef.current = idx;
+            setDragOverFieldIndex(idx);
+          }
+        }
+      }
+    };
+
+    const handleGlobalDragEnd = () => {
+      stopAutoScroll();
+      setDraggedFieldIndex(null);
+      setDragOverFieldIndex(null);
+      draggedFieldIndexRef.current = null;
+      dragOverFieldIndexRef.current = null;
+    };
+
+    window.addEventListener('wheel', handleWheelDuringDrag, { passive: false });
+    window.addEventListener('dragend', handleGlobalDragEnd);
+    window.addEventListener('drop', handleGlobalDragEnd);
+
+    return () => {
+      window.removeEventListener('wheel', handleWheelDuringDrag);
+      window.removeEventListener('dragend', handleGlobalDragEnd);
+      window.removeEventListener('drop', handleGlobalDragEnd);
+      stopAutoScroll();
+    };
+  }, [draggedFieldIndex, stopAutoScroll]);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
   const [pedWorkspaceOpen, setPedWorkspaceOpen] = useState(false);
@@ -1069,15 +1196,39 @@ export default function StrategicPlanningPlatform({ onBack }) {
                 <Box sx={{ px: 2, py: 1.1, bgcolor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 2, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <DragIndicator sx={{ fontSize: 18, color: '#0284c7' }} />
                   <Typography variant="caption" sx={{ color: '#0369a1', fontWeight: 700 }}>
-                    <strong>Arrastrar y soltar activado:</strong> Puede agarrar cualquier fila desde el icono ⠿ (o arrastrar la fila) y soltarla directamente en la posición que desee. También puede usar las flechas ↑ ↓.
+                    <strong>Reordenamiento flexible:</strong> Puede arrastrar las filas (use la rueda del ratón o acérquese a los bordes superior/inferior para desplazar la lista automáticamente), usar las flechas ↑ ↓, o hacer clic en el número # para cambiar de posición directamente.
                   </Typography>
                 </Box>
               )}
-              <TableContainer sx={{ maxHeight: 520 }}>
+              <TableContainer
+                ref={fieldTableContainerRef}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  lastDragPointerRef.current = { x: e.clientX, y: e.clientY };
+                  handleContainerAutoScroll(e.clientY);
+                }}
+                onDragLeave={(e) => {
+                  const rect = fieldTableContainerRef.current?.getBoundingClientRect();
+                  if (rect && (e.clientY <= rect.top || e.clientY >= rect.bottom || e.clientX <= rect.left || e.clientX >= rect.right)) {
+                    stopAutoScroll();
+                  }
+                }}
+                onDrop={() => {
+                  stopAutoScroll();
+                }}
+                sx={{
+                  maxHeight: 'clamp(460px, 62vh, 680px)',
+                  overflowY: 'auto',
+                  position: 'relative',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 2
+                }}
+              >
                 <Table stickyHeader size="small">
                   <TableHead>
                     <TableRow>
-                      <TableCell sx={{ fontWeight: 800, width: 60 }}>#</TableCell>
+                      <TableCell sx={{ fontWeight: 800, width: 65, textAlign: 'center' }}>#</TableCell>
                       <TableCell sx={{ fontWeight: 800, width: 125, textAlign: 'center' }}>Mover</TableCell>
                       <TableCell sx={{ fontWeight: 800 }}>Nombre visible / Identificador</TableCell>
                       <TableCell sx={{ fontWeight: 800 }}>Tipo de información</TableCell>
@@ -1102,34 +1253,50 @@ export default function StrategicPlanningPlatform({ onBack }) {
                         return (
                           <TableRow
                             key={field.id}
+                            data-field-index={index}
                             hover
                             draggable
                             onDragStart={(e) => {
                               e.dataTransfer.setData('text/plain', String(index));
                               e.dataTransfer.effectAllowed = 'move';
+                              draggedFieldIndexRef.current = index;
                               setDraggedFieldIndex(index);
                             }}
                             onDragOver={(e) => {
                               e.preventDefault();
                               e.dataTransfer.dropEffect = 'move';
-                              if (dragOverFieldIndex !== index) setDragOverFieldIndex(index);
+                              lastDragPointerRef.current = { x: e.clientX, y: e.clientY };
+                              if (dragOverFieldIndex !== index) {
+                                dragOverFieldIndexRef.current = index;
+                                setDragOverFieldIndex(index);
+                              }
+                              handleContainerAutoScroll(e.clientY);
                             }}
                             onDragLeave={() => {
-                              if (dragOverFieldIndex === index) setDragOverFieldIndex(null);
+                              if (dragOverFieldIndex === index) {
+                                dragOverFieldIndexRef.current = null;
+                                setDragOverFieldIndex(null);
+                              }
                             }}
                             onDrop={(e) => {
                               e.preventDefault();
+                              stopAutoScroll();
                               const fromStr = e.dataTransfer.getData('text/plain');
                               const fromIdx = fromStr !== '' ? Number(fromStr) : draggedFieldIndex;
                               setDraggedFieldIndex(null);
                               setDragOverFieldIndex(null);
+                              draggedFieldIndexRef.current = null;
+                              dragOverFieldIndexRef.current = null;
                               if (fromIdx !== null && fromIdx !== undefined && !isNaN(fromIdx) && fromIdx !== index) {
                                 reorderFieldTo(fromIdx, index);
                               }
                             }}
                             onDragEnd={() => {
+                              stopAutoScroll();
                               setDraggedFieldIndex(null);
                               setDragOverFieldIndex(null);
+                              draggedFieldIndexRef.current = null;
+                              dragOverFieldIndexRef.current = null;
                             }}
                             sx={{
                               cursor: 'grab',
@@ -1147,7 +1314,39 @@ export default function StrategicPlanningPlatform({ onBack }) {
                               '&:active': { cursor: 'grabbing' }
                             }}
                           >
-                            <TableCell sx={{ fontWeight: 900, color: 'text.secondary' }}>{index + 1}</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 900, color: 'text.secondary', width: 65, px: 0.5 }}>
+                              <Tooltip title="Clic para mover a otra posición directamente" arrow>
+                                <Chip
+                                  size="small"
+                                  label={index + 1}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDirectMoveModal({
+                                      open: true,
+                                      field,
+                                      currentIndex: index,
+                                      targetPosition: index + 1,
+                                      total: sortedList.length
+                                    });
+                                  }}
+                                  sx={{
+                                    fontWeight: 900,
+                                    fontSize: '0.82rem',
+                                    cursor: 'pointer',
+                                    bgcolor: '#f1f5f9',
+                                    color: '#1e293b',
+                                    border: '1px solid #cbd5e1',
+                                    transition: 'all 0.15s',
+                                    '&:hover': {
+                                      bgcolor: '#dbeafe',
+                                      color: '#1d4ed8',
+                                      borderColor: '#93c5fd',
+                                      transform: 'scale(1.08)'
+                                    }
+                                  }}
+                                />
+                              </Tooltip>
+                            </TableCell>
                             <TableCell align="center" sx={{ px: 0.5 }}>
                               <Stack direction="row" spacing={0.6} justifyContent="center" alignItems="center">
                                 <Tooltip title="Haga clic, mantenga presionado y arrastre para soltar en cualquier fila">
@@ -2966,6 +3165,70 @@ export default function StrategicPlanningPlatform({ onBack }) {
           <Button onClick={() => setOpenField(false)}>Cancelar</Button>
           <Button variant="contained" disabled={saving || !fieldForm.key.trim() || !fieldForm.label.trim() || (fieldForm.data_type === 'list' && !fieldOptions.some((option) => String(option).trim()))} onClick={saveField}>
             {saving ? 'Guardando…' : fieldForm.id ? 'Actualizar campo' : 'Crear campo'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* DIÁLOGO: MOVER COLUMNA A POSICIÓN DIRECTA */}
+      <Dialog
+        open={Boolean(directMoveModal?.open)}
+        onClose={() => setDirectMoveModal(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ px: 3, pt: 2.5, pb: 1, fontWeight: 900, color: '#0f172a' }}>
+          Mover columna de posición
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: '12px !important' }}>
+          <Box sx={{ mb: 2, p: 1.5, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: '#1e293b' }}>
+              Columna: {directMoveModal?.field?.label || directMoveModal?.field?.key}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Posición actual: <strong>#{directMoveModal?.currentIndex != null ? directMoveModal.currentIndex + 1 : ''}</strong> de {directMoveModal?.total}
+            </Typography>
+          </Box>
+          <TextField
+            autoFocus
+            fullWidth
+            type="number"
+            label="Nueva posición"
+            value={directMoveModal?.targetPosition ?? ''}
+            onChange={(e) => {
+              const val = e.target.value === '' ? '' : Number(e.target.value);
+              setDirectMoveModal((prev) => ({ ...prev, targetPosition: val }));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const target = Number(directMoveModal?.targetPosition);
+                if (target >= 1 && target <= directMoveModal?.total) {
+                  reorderFieldTo(directMoveModal.currentIndex, target - 1);
+                  setDirectMoveModal(null);
+                }
+              }
+            }}
+            inputProps={{ min: 1, max: directMoveModal?.total || 1 }}
+            helperText={`Ingrese un número entre 1 y ${directMoveModal?.total || 1}`}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, gap: 1 }}>
+          <Button onClick={() => setDirectMoveModal(null)} sx={{ textTransform: 'none', fontWeight: 700 }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!directMoveModal?.targetPosition || Number(directMoveModal?.targetPosition) < 1 || Number(directMoveModal?.targetPosition) > directMoveModal?.total}
+            onClick={() => {
+              const target = Number(directMoveModal?.targetPosition);
+              if (target >= 1 && target <= directMoveModal?.total) {
+                reorderFieldTo(directMoveModal.currentIndex, target - 1);
+                setDirectMoveModal(null);
+              }
+            }}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
+          >
+            Mover a posición
           </Button>
         </DialogActions>
       </Dialog>

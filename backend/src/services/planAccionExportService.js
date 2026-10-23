@@ -134,12 +134,8 @@ const COLUMN_WIDTHS = [
   { col: 'R', w: 12 }
 ];
 
-const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corresponsabilidades = [] } = {}) => {
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'SIAC UNICESMAG - Sistema Interno de Aseguramiento de la Calidad';
-  workbook.created = new Date();
-
-  const sheet = workbook.addWorksheet('PLAN DE ACCION', {
+const setupPlanAccionSheet = (workbook, sheetName, planData = {}, activitiesList = [], isCoresponsibility = false) => {
+  const sheet = workbook.addWorksheet(sheetName, {
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 },
     views: [{ state: 'frozen', ySplit: HEADER_ROWS_BEFORE_DATA }]
   });
@@ -173,8 +169,10 @@ const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corres
   sheet.mergeCells('B3:E4');
   const titleCell = sheet.getCell('B3');
   const currentYear = planData.anio || new Date().getFullYear();
-  titleCell.value = `PLAN DE ACCIÓN INSTITUCIONAL\nAÑO: ${currentYear}`;
-  titleCell.font = { name: 'Calibri', bold: true, size: 14, color: { argb: 'FF1F3864' } };
+  titleCell.value = isCoresponsibility
+    ? `PLAN DE ACCIÓN INSTITUCIONAL - EN CORRESPONSABILIDAD\nAÑO: ${currentYear}`
+    : `PLAN DE ACCIÓN INSTITUCIONAL\nAÑO: ${currentYear}`;
+  titleCell.font = { name: 'Calibri', bold: true, size: 13, color: { argb: 'FF1F3864' } };
   titleCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
   setBorders(titleCell);
 
@@ -192,7 +190,9 @@ const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corres
 
   sheet.mergeCells('I3:R4');
   const instructionsCell = sheet.getCell('I3');
-  instructionsCell.value = INSTRUCCIONES.join('\n');
+  instructionsCell.value = isCoresponsibility
+    ? 'INSTRUCCIONES PARA ACTIVIDADES EN CORRESPONSABILIDAD:\n1. Estas actividades corresponden a planes institucionales donde su dependencia o usted fue asociado en corresponsabilidad.\n2. Consulte el estado de cumplimiento y avance concertado para su conocimiento y gestión institucional.\n3. Cumplimiento sincronizado en tiempo real con el Sistema Integrado de Gestión.'
+    : INSTRUCCIONES.join('\n');
   instructionsCell.font = { name: 'Calibri', bold: false, size: 8.5 };
   instructionsCell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true, indent: 1 };
   fillCell(instructionsCell, COLORS.instructionsFill);
@@ -203,10 +203,10 @@ const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corres
   const planCodeText = planData.responsable
     ? `${planData.codigoPlan || 'RXX'}_ ${planData.responsable.toUpperCase()}`
     : (planData.codigoPlan || 'RXX_ XXXXXXXXXXX').toUpperCase();
-  codePlanCell.value = planCodeText;
+  codePlanCell.value = isCoresponsibility ? `${planCodeText} - ACTIVIDADES EN CORRESPONSABILIDAD` : planCodeText;
   codePlanCell.font = { name: 'Calibri', bold: true, size: 11, color: { argb: 'FF1F3864' } };
   codePlanCell.alignment = { vertical: 'middle', horizontal: 'center' };
-  fillCell(codePlanCell, COLORS.codeBlockFill);
+  fillCell(codePlanCell, isCoresponsibility ? COLORS.yellowMid : COLORS.codeBlockFill);
   setBorders(codePlanCell, COLORS.borderGrid);
 
   const headers = [
@@ -234,10 +234,8 @@ const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corres
     applyHeaderStyle(cell, { color });
   });
 
-  const validActividades = (actividades || []).filter((a) => a && (a.actividad || a.indicador || a.meta || a.objetivo_estrategico || a.lineamiento_estrategico));
-  const validCorresponsabilidades = (corresponsabilidades || []).filter((a) => a && (a.actividad || a.indicador || a.meta));
-  const tieneCorresponsabilidades = validCorresponsabilidades.length > 0;
-  const totalRows = validActividades.length;
+  const validItems = (activitiesList || []).filter((a) => a && (a.actividad || a.indicador || a.meta || a.objetivo_estrategico || a.lineamiento_estrategico));
+  const totalRows = validItems.length;
   const firstDataRow = HEADER_ROWS_BEFORE_DATA + 1;
 
   const writeActivityRow = (activity = {}, rowNumber, idx) => {
@@ -264,16 +262,17 @@ const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corres
     const avanceIp = normalizePercentValue(activity.avance_ip);
     const avanceIip = normalizePercentValue(activity.avance_iip);
 
+    const isHighlight = isCoresponsibility;
     const cells = [
-      { col: 'B', value: idx + 1, opts: { center: true, number: true, isBlueCol: true } },
-      { col: 'C', value: activity.objetivo_estrategico || '', opts: { isBlueCol: true } },
-      { col: 'D', value: activity.lineamiento_estrategico || '', opts: { isBlueCol: true } },
-      { col: 'E', value: activity.actividad || '', opts: { isBlueCol: true } },
-      { col: 'F', value: activity.tipo_indicador || '', opts: { center: true, isBlueCol: true } },
-      { col: 'G', value: formatDate(activity.fecha_inicio), opts: { center: true, isBlueCol: true } },
-      { col: 'H', value: formatDate(activity.fecha_fin), opts: { center: true, isBlueCol: true } },
-      { col: 'I', value: activity.indicador || '', opts: { isBlueCol: true } },
-      { col: 'J', value: activity.meta || '', opts: { center: true, isBlueCol: true } },
+      { col: 'B', value: idx + 1, opts: { center: true, number: true, isBlueCol: !isHighlight } },
+      { col: 'C', value: activity.objetivo_estrategico || '', opts: { isBlueCol: !isHighlight } },
+      { col: 'D', value: activity.lineamiento_estrategico || '', opts: { isBlueCol: !isHighlight } },
+      { col: 'E', value: activity.actividad || '', opts: { isBlueCol: !isHighlight } },
+      { col: 'F', value: activity.tipo_indicador || '', opts: { center: true, isBlueCol: !isHighlight } },
+      { col: 'G', value: formatDate(activity.fecha_inicio), opts: { center: true, isBlueCol: !isHighlight } },
+      { col: 'H', value: formatDate(activity.fecha_fin), opts: { center: true, isBlueCol: !isHighlight } },
+      { col: 'I', value: activity.indicador || '', opts: { isBlueCol: !isHighlight } },
+      { col: 'J', value: activity.meta || '', opts: { center: true, isBlueCol: !isHighlight } },
       { col: 'K', value: activity.responsable || planData.responsable || '', opts: { isBlueCol: false } },
       { col: 'L', value: activity.corresponsable || planData.corresponsable || '', opts: { isBlueCol: false } },
       { col: 'M', value: avanceIp, opts: { percent: true, isBlueCol: false } },
@@ -286,6 +285,9 @@ const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corres
       const cell = sheet.getCell(`${col}${rowNumber}`);
       cell.value = value === null ? null : value;
       applyDataStyle(cell, opts);
+      if (isHighlight) {
+        fillCell(cell, 'FFFFFBEB');
+      }
     });
 
     const totalCell = sheet.getCell(`R${rowNumber}`);
@@ -315,80 +317,60 @@ const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corres
     }
   };
 
-  for (let i = 0; i < totalRows; i += 1) {
-    writeActivityRow(validActividades[i], firstDataRow + i, i);
-  }
-
-  const directLastDataRow = totalRows > 0 ? (firstDataRow + totalRows - 1) : null;
-  let corrFirstDataRow = null;
-  let corrLastDataRow = null;
-
-  if (tieneCorresponsabilidades) {
-    const titleRowNumber = (directLastDataRow || (firstDataRow - 1)) + 1;
-    sheet.getRow(titleRowNumber).height = 24;
-    sheet.mergeCells(`B${titleRowNumber}:R${titleRowNumber}`);
-    const title = sheet.getCell(`B${titleRowNumber}`);
-    title.value = 'ACTIVIDADES EN CORRESPONSABILIDAD';
-    title.font = { name: 'Calibri', bold: true, italic: true, size: 12, color: { argb: 'FF92400E' } };
-    title.alignment = { vertical: 'middle', horizontal: 'center' };
-    fillCell(title, COLORS.yellowMid);
-    setBorders(title, COLORS.softBorder);
-
-    validCorresponsabilidades.forEach((activity, idx) => {
-      const rowNumber = titleRowNumber + 1 + idx;
-      writeActivityRow(activity, rowNumber, idx);
-      ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R'].forEach((col) => {
-        fillCell(sheet.getCell(`${col}${rowNumber}`), 'FFFFFBEB');
-      });
-    });
-
-    corrFirstDataRow = titleRowNumber + 1;
-    corrLastDataRow = titleRowNumber + validCorresponsabilidades.length;
-  }
-
-  const addTotalConditionalFormatting = (startRow, endRow) => {
-    if (!startRow || !endRow || endRow < startRow) return;
+  if (totalRows > 0) {
+    for (let i = 0; i < totalRows; i += 1) {
+      writeActivityRow(validItems[i], firstDataRow + i, i);
+    }
+    const lastDataRow = firstDataRow + totalRows - 1;
     sheet.addConditionalFormatting({
-      ref: `R${startRow}:R${endRow}`,
+      ref: `R${firstDataRow}:R${lastDataRow}`,
       rules: [
         {
           type: 'expression',
-          formulae: [`AND(ISNUMBER(R${startRow}),R${startRow}>=1)`],
-          style: {
-            fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.greenOk } },
-            font: { bold: true }
-          },
+          formulae: [`AND(ISNUMBER(R${firstDataRow}),R${firstDataRow}>=1)`],
+          style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.greenOk } }, font: { bold: true } },
           priority: 1
         },
         {
           type: 'expression',
-          formulae: [`AND(ISNUMBER(R${startRow}),R${startRow}>=0.5,R${startRow}<1)`],
-          style: {
-            fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.yellowMid } },
-            font: { bold: true }
-          },
+          formulae: [`AND(ISNUMBER(R${firstDataRow}),R${firstDataRow}>=0.5,R${firstDataRow}<1)`],
+          style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.yellowMid } }, font: { bold: true } },
           priority: 2
         },
         {
           type: 'expression',
-          formulae: [`OR(NOT(ISNUMBER(R${startRow})),R${startRow}<0.5)`],
-          style: {
-            fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.redEmpty } }
-          },
+          formulae: [`OR(NOT(ISNUMBER(R${firstDataRow})),R${firstDataRow}<0.5)`],
+          style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.redEmpty } } },
           priority: 3
         }
       ]
     });
-  };
-
-  if (directLastDataRow) {
-    addTotalConditionalFormatting(firstDataRow, directLastDataRow);
-  }
-  if (corrFirstDataRow && corrLastDataRow) {
-    addTotalConditionalFormatting(corrFirstDataRow, corrLastDataRow);
+  } else if (isCoresponsibility) {
+    const emptyRow = sheet.getRow(firstDataRow);
+    emptyRow.height = 30;
+    sheet.mergeCells(`B${firstDataRow}:R${firstDataRow}`);
+    const emptyCell = sheet.getCell(`B${firstDataRow}`);
+    emptyCell.value = 'Esta dependencia no tiene actividades asignadas en corresponsabilidad para esta vigencia.';
+    emptyCell.font = { name: 'Calibri', italic: true, size: 10, color: { argb: 'FF64748B' } };
+    emptyCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    fillCell(emptyCell, 'FFF8FAFC');
+    setBorders(emptyCell, COLORS.softBorder);
   }
 
   sheet.pageSetup.margins = { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 };
+  return sheet;
+};
+
+const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corresponsabilidades = [] } = {}) => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'SIAC UNICESMAG - Sistema Interno de Aseguramiento de la Calidad';
+  workbook.created = new Date();
+
+  // Hoja 1: PLAN DE ACCION
+  setupPlanAccionSheet(workbook, 'PLAN DE ACCION', planData, actividades, false);
+
+  // Hoja 2: EN CORRESPONSABILIDAD (Pestaña dedicada institucional)
+  setupPlanAccionSheet(workbook, 'EN CORRESPONSABILIDAD', planData, corresponsabilidades, true);
 
   return workbook;
 };

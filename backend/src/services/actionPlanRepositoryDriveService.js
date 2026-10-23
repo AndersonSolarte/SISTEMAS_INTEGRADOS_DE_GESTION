@@ -6,8 +6,10 @@ const { google } = require('googleapis');
 const {
   StrategicPlan, StrategicTerm, StrategicActionPlan, StrategicActionItem,
   StrategicCatalogItem, StrategicMonitoringPeriod, StrategicMonitoringResult,
-  StrategicEvidence, StrategicMeeting, StrategicMinuteVersion, StrategicElement
+  StrategicEvidence, StrategicMeeting, StrategicMinuteVersion, StrategicElement,
+  User, StrategicResponsibility
 } = require('../models');
+const { Op } = require('sequelize');
 const { generatePlanAccionBuffer } = require('./planAccionExportService');
 const { listTermDependencies } = require('./strategicTermDependencyService');
 const { ensureMinuteFinalPdfBuffer } = require('./strategicMinutePdfService');
@@ -273,6 +275,135 @@ const buildRepositoryPeriods = (term) => {
   }));
 };
 
+const normalizeMatchText = (str) =>
+  String(str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const findCoResponsibleActivitiesForPlan = async (actionPlan, catalogMap = new Map(), elementMap = new Map()) => {
+  const termId = actionPlan.term_id || actionPlan.term?.id;
+  if (!termId) return [];
+
+  const unitName = actionPlan.organizationalUnit?.name;
+  const unitCode = actionPlan.organizationalUnit?.code;
+  const planCode = actionPlan.code;
+  const user = actionPlan.currentResponsibility?.responsibleUser || actionPlan.responsibleUser || actionPlan.owner;
+  let userNombre = user?.nombre;
+  let userUsername = user?.username;
+
+  if (!userNombre && actionPlan.responsible_user_id) {
+    try {
+      const u = await User.findByPk(actionPlan.responsible_user_id, { attributes: ['nombre', 'username'] });
+      if (u) {
+        userNombre = u.nombre;
+        userUsername = u.username;
+      }
+    } catch (_) {}
+  }
+
+  const rawTokens = [unitName, unitCode, planCode, userNombre, userUsername].filter(Boolean);
+  const normTokens = rawTokens.map(normalizeMatchText).filter((t) => t.length >= 3);
+
+  rawTokens.forEach((t) => {
+    const rMatch = String(t).match(/\bR\d+\b/i);
+    if (rMatch) normTokens.push(rMatch[0].toLowerCase());
+  });
+
+  if (!normTokens.length) return [];
+
+  const otherPlans = await StrategicActionPlan.findAll({
+    where: {
+      term_id: termId,
+      id: { [Op.ne]: actionPlan.id },
+      deleted_at: null
+    },
+    include: [
+      { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      {
+        model: StrategicActionItem, as: 'items',
+        where: { deleted_at: null },
+        required: false,
+        include: [
+          {
+            model: StrategicMonitoringResult, as: 'monitoringResults',
+            required: false,
+            include: [{ model: StrategicMonitoringPeriod, as: 'period' }]
+          },
+          {
+            model: StrategicEvidence, as: 'evidence',
+            where: { deleted_at: null },
+            required: false
+          }
+        ]
+      }
+    ]
+  });
+
+  const coActivities = [];
+
+  for (const otherPlan of otherPlans) {
+    for (const item of (otherPlan.items || [])) {
+      const coList = Array.isArray(item.co_responsibles)
+        ? item.co_responsibles
+        : (typeof item.co_responsibles === 'string' && item.co_responsibles.trim() ? [item.co_responsibles] : []);
+
+      const customCo = item.custom_values?.co_responsibles || item.custom_values?.co_responsible || '';
+      const customList = Array.isArray(customCo)
+        ? customCo
+        : (typeof customCo === 'string' && customCo.trim() ? [customCo] : []);
+
+      const allCoEntries = [...coList, ...customList];
+
+      const isMatch = allCoEntries.some((entry) => {
+        const normEntry = normalizeMatchText(entry);
+        if (!normEntry) return false;
+        return normTokens.some((tok) => normEntry.includes(tok) || (tok.length > 5 && tok.includes(normEntry)));
+      });
+
+      if (isMatch) {
+        const sorted = [...(item.monitoringResults || [])].sort((a, b) => (a.period?.position || 0) - (b.period?.position || 0));
+
+        const rawObj = item.custom_values?.strategic_objective || item.custom_values?.objetivo_estrategico || '';
+        const objText = elementMap.get(String(rawObj)) || rawObj;
+
+        const rawGuide = item.custom_values?.strategic_guideline || item.custom_values?.guideline || item.custom_values?.lineamiento_estrategico || '';
+        const guideText = elementMap.get(String(rawGuide)) || rawGuide;
+
+        const resolvedCo = coList.map((val) => catalogMap.get(String(val)) || val).filter(Boolean).join(', ');
+
+        coActivities.push({
+          id: item.id,
+          code: item.code,
+          parent_plan_id: otherPlan.id,
+          parent_plan_code: otherPlan.code,
+          parent_plan_name: otherPlan.organizationalUnit?.name || otherPlan.name,
+          responsable: otherPlan.organizationalUnit?.name || otherPlan.code,
+          corresponsable: resolvedCo || unitName,
+          objetivo_estrategico: objText,
+          lineamiento_estrategico: guideText,
+          actividad: item.activity,
+          tipo_indicador: item.indicator_type,
+          fecha_inicio: item.starts_on,
+          fecha_fin: item.ends_on,
+          indicador: item.indicator,
+          meta: item.target,
+          avance_ip: sorted[0]?.physical_progress,
+          observaciones_ip: sorted[0]?.observations,
+          avance_iip: sorted[1]?.physical_progress,
+          observaciones_iip: sorted[1]?.observations,
+          monitoringResults: item.monitoringResults || [],
+          evidence: item.evidence || []
+        });
+      }
+    }
+  }
+
+  return coActivities;
+};
+
 const buildOfficialWorkbook = async (actionPlan) => {
   const planId = actionPlan.term?.strategic_plan_id || actionPlan.term?.strategicPlan?.id;
   const [catalogItems, elements] = await Promise.all([
@@ -312,10 +443,13 @@ const buildOfficialWorkbook = async (actionPlan) => {
       observaciones_iip: sorted[1]?.observations
     };
   });
+
+  const coActivities = await findCoResponsibleActivitiesForPlan(actionPlan, catalogMap, elementMap);
+
   return generatePlanAccionBuffer({
     planData: { anio: actionPlan.term.year, codigoPlan: actionPlan.code, responsable: actionPlan.organizationalUnit?.name },
     actividades: activities,
-    corresponsabilidades: []
+    corresponsabilidades: coActivities
   });
 };
 
@@ -696,6 +830,7 @@ module.exports = {
   intersectsPeriod,
   buildRepositoryPeriods,
   buildOfficialWorkbook,
+  findCoResponsibleActivitiesForPlan,
   buildRepositoryEntries,
   buildActionRepositoryDriveClient,
   buildActionRepositoryDriveAuth,
