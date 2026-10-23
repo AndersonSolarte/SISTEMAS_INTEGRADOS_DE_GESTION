@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import {
   AccessTimeOutlined, Add, Analytics, ArrowBack, ArrowDownward, ArrowUpward, AssessmentOutlined, AssignmentOutlined, CalendarTodayOutlined, Close, MoreTime, CheckCircleOutline, CloudSync, CorporateFare,
-  DeleteOutline, Description, Download, EditOutlined, FolderOutlined, GridView, LockOutlined, OpenInNew, Payments, PlaylistAddCheckOutlined, Search,
+  DeleteOutline, Description, Download, DragIndicator, EditOutlined, FolderOutlined, GridView, LockOutlined, OpenInNew, Payments, PlaylistAddCheckOutlined, Search,
   SettingsOutlined, SwapHoriz, TableRows, Timeline, UploadFile, ViewWeekOutlined
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
@@ -139,6 +139,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [fieldSchemaPreview, setFieldSchemaPreview] = useState(null);
   const [replaceSchemaFields, setReplaceSchemaFields] = useState(false);
   const [reorderingFields, setReorderingFields] = useState(false);
+  const [draggedFieldIndex, setDraggedFieldIndex] = useState(null);
+  const [dragOverFieldIndex, setDragOverFieldIndex] = useState(null);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
   const [pedWorkspaceOpen, setPedWorkspaceOpen] = useState(false);
@@ -553,6 +555,43 @@ export default function StrategicPlanningPlatform({ onBack }) {
     } catch (error) {
       await load();
       enqueueSnackbar(error.response?.data?.message || 'No fue posible cambiar el orden de las columnas.', { variant: 'error' });
+    } finally {
+      setReorderingFields(false);
+    }
+  };
+
+  const reorderFieldTo = async (fromIndex, toIndex) => {
+    if (fromIndex === null || toIndex === null || fromIndex === undefined || toIndex === undefined) return;
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+
+    const sorted = [...activeFieldDefinitions].sort((a, b) => (a.position || 0) - (b.position || 0));
+    if (fromIndex >= sorted.length || toIndex >= sorted.length) return;
+
+    const reordered = [...sorted];
+    const [movedItem] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, movedItem);
+
+    const fieldIds = reordered.map((f) => f.id);
+
+    setStrategicPlans((currentPlans) =>
+      currentPlans.map((p) => {
+        if (p.id !== plan.id) return p;
+        const updatedFields = (p.fieldDefinitions || []).map((f) => {
+          const newPos = fieldIds.indexOf(f.id);
+          return newPos !== -1 ? { ...f, position: newPos + 1 } : f;
+        });
+        return { ...p, fieldDefinitions: updatedFields };
+      })
+    );
+
+    setReorderingFields(true);
+    try {
+      await strategicPlanningService.reorderFields(plan.id, fieldIds);
+      await load();
+      enqueueSnackbar(`Columna "${movedItem.label}" movida a la posición #${toIndex + 1}.`, { variant: 'success' });
+    } catch (error) {
+      await load();
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible actualizar el orden de las columnas.', { variant: 'error' });
     } finally {
       setReorderingFields(false);
     }
@@ -1029,74 +1068,154 @@ export default function StrategicPlanningPlatform({ onBack }) {
               </Stack>
             </Box>
           ) : (
-            <TableContainer sx={{ maxHeight: 520 }}>
-              <Table stickyHeader size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: 800, width: 60 }}>#</TableCell>
-                    <TableCell sx={{ fontWeight: 800, width: 90, textAlign: 'center' }}>Mover</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Nombre visible / Identificador</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Tipo de información</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Opciones / Lista</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Obligatorio</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 800 }}>Acciones</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {[...activeFieldDefinitions]
-                    .sort((a, b) => (a.position || 0) - (b.position || 0))
-                    .map((field, index, sortedList) => {
-                      const isChoice = ['list', 'catalog', 'catalog_multi'].includes(field.data_type);
-                      const catalogType = field.validation_rules?.catalog_type;
-                      const choices = catalogType
-                        ? (plan.catalogItems || []).filter((item) => item.catalog_type === catalogType && item.active)
-                        : (field.options || []);
+            <Box>
+              {activeFieldDefinitions.length > 1 && (
+                <Box sx={{ px: 2, py: 1.1, bgcolor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 2, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <DragIndicator sx={{ fontSize: 18, color: '#0284c7' }} />
+                  <Typography variant="caption" sx={{ color: '#0369a1', fontWeight: 700 }}>
+                    <strong>Arrastrar y soltar activado:</strong> Puede agarrar cualquier fila desde el icono ⠿ (o arrastrar la fila) y soltarla directamente en la posición que desee. También puede usar las flechas ↑ ↓.
+                  </Typography>
+                </Box>
+              )}
+              <TableContainer sx={{ maxHeight: 520 }}>
+                <Table stickyHeader size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 800, width: 60 }}>#</TableCell>
+                      <TableCell sx={{ fontWeight: 800, width: 125, textAlign: 'center' }}>Mover</TableCell>
+                      <TableCell sx={{ fontWeight: 800 }}>Nombre visible / Identificador</TableCell>
+                      <TableCell sx={{ fontWeight: 800 }}>Tipo de información</TableCell>
+                      <TableCell sx={{ fontWeight: 800 }}>Opciones / Lista</TableCell>
+                      <TableCell sx={{ fontWeight: 800 }}>Obligatorio</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 800 }}>Acciones</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {[...activeFieldDefinitions]
+                      .sort((a, b) => (a.position || 0) - (b.position || 0))
+                      .map((field, index, sortedList) => {
+                        const isChoice = ['list', 'catalog', 'catalog_multi'].includes(field.data_type);
+                        const catalogType = field.validation_rules?.catalog_type;
+                        const choices = catalogType
+                          ? (plan.catalogItems || []).filter((item) => item.catalog_type === catalogType && item.active)
+                          : (field.options || []);
 
-                      return (
-                        <TableRow key={field.id} hover>
-                          <TableCell sx={{ fontWeight: 900, color: 'text.secondary' }}>{index + 1}</TableCell>
-                          <TableCell align="center" sx={{ px: 0.5 }}>
-                            <Stack direction="row" spacing={0.5} justifyContent="center" alignItems="center">
-                              <Tooltip title={index === 0 ? 'Ya es la primera columna' : 'Subir posición'}>
-                                <span>
-                                  <IconButton
-                                    size="small"
-                                    disabled={index === 0 || reorderingFields}
-                                    onClick={() => moveField(index, -1)}
+                        const isDragging = draggedFieldIndex === index;
+                        const isDragOver = dragOverFieldIndex === index && draggedFieldIndex !== index;
+
+                        return (
+                          <TableRow
+                            key={field.id}
+                            hover
+                            draggable={!reorderingFields}
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('text/plain', String(index));
+                              e.dataTransfer.effectAllowed = 'move';
+                              setDraggedFieldIndex(index);
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = 'move';
+                              if (dragOverFieldIndex !== index) setDragOverFieldIndex(index);
+                            }}
+                            onDragLeave={() => {
+                              if (dragOverFieldIndex === index) setDragOverFieldIndex(null);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const fromStr = e.dataTransfer.getData('text/plain');
+                              const fromIdx = fromStr !== '' ? Number(fromStr) : draggedFieldIndex;
+                              setDraggedFieldIndex(null);
+                              setDragOverFieldIndex(null);
+                              if (fromIdx !== null && fromIdx !== undefined && !isNaN(fromIdx) && fromIdx !== index) {
+                                reorderFieldTo(fromIdx, index);
+                              }
+                            }}
+                            onDragEnd={() => {
+                              setDraggedFieldIndex(null);
+                              setDragOverFieldIndex(null);
+                            }}
+                            sx={{
+                              cursor: 'grab',
+                              userSelect: 'none',
+                              transition: 'all 0.15s ease',
+                              opacity: isDragging ? 0.35 : 1,
+                              bgcolor: isDragging
+                                ? '#f1f5f9'
+                                : isDragOver
+                                  ? '#eff6ff'
+                                  : 'inherit',
+                              outline: isDragOver ? '2px dashed #2563eb' : 'none',
+                              outlineOffset: '-2px',
+                              boxShadow: isDragOver ? '0 4px 14px rgba(37,99,235,0.12)' : 'none',
+                              '&:active': { cursor: 'grabbing' }
+                            }}
+                          >
+                            <TableCell sx={{ fontWeight: 900, color: 'text.secondary' }}>{index + 1}</TableCell>
+                            <TableCell align="center" sx={{ px: 0.5 }}>
+                              <Stack direction="row" spacing={0.6} justifyContent="center" alignItems="center">
+                                <Tooltip title="Haga clic, mantenga presionado y arrastre para soltar en cualquier fila">
+                                  <Box
+                                    component="span"
                                     sx={{
-                                      p: 0.4,
+                                      cursor: 'grab',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: 26,
+                                      height: 26,
                                       borderRadius: 1.5,
-                                      bgcolor: index === 0 ? 'transparent' : '#f1f5f9',
-                                      border: '1px solid',
-                                      borderColor: index === 0 ? 'transparent' : '#e2e8f0',
-                                      '&:hover': { bgcolor: '#e2e8f0', color: '#1d4ed8' }
+                                      color: '#64748b',
+                                      border: '1px dashed #cbd5e1',
+                                      bgcolor: '#f8fafc',
+                                      transition: 'all 0.2s',
+                                      '&:hover': { bgcolor: '#eff6ff', color: '#1d4ed8', borderColor: '#3b82f6', transform: 'scale(1.08)' },
+                                      '&:active': { cursor: 'grabbing' }
                                     }}
                                   >
-                                    <ArrowUpward sx={{ fontSize: 16 }} />
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
-                              <Tooltip title={index === sortedList.length - 1 ? 'Ya es la última columna' : 'Bajar posición'}>
-                                <span>
-                                  <IconButton
-                                    size="small"
-                                    disabled={index === sortedList.length - 1 || reorderingFields}
-                                    onClick={() => moveField(index, 1)}
-                                    sx={{
-                                      p: 0.4,
-                                      borderRadius: 1.5,
-                                      bgcolor: index === sortedList.length - 1 ? 'transparent' : '#f1f5f9',
-                                      border: '1px solid',
-                                      borderColor: index === sortedList.length - 1 ? 'transparent' : '#e2e8f0',
-                                      '&:hover': { bgcolor: '#e2e8f0', color: '#1d4ed8' }
-                                    }}
-                                  >
-                                    <ArrowDownward sx={{ fontSize: 16 }} />
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
-                            </Stack>
-                          </TableCell>
+                                    <DragIndicator sx={{ fontSize: 16 }} />
+                                  </Box>
+                                </Tooltip>
+                                <Tooltip title={index === 0 ? 'Ya es la primera columna' : 'Subir posición'}>
+                                  <span>
+                                    <IconButton
+                                      size="small"
+                                      disabled={index === 0 || reorderingFields}
+                                      onClick={(e) => { e.stopPropagation(); moveField(index, -1); }}
+                                      sx={{
+                                        p: 0.4,
+                                        borderRadius: 1.5,
+                                        bgcolor: index === 0 ? 'transparent' : '#f1f5f9',
+                                        border: '1px solid',
+                                        borderColor: index === 0 ? 'transparent' : '#e2e8f0',
+                                        '&:hover': { bgcolor: '#e2e8f0', color: '#1d4ed8' }
+                                      }}
+                                    >
+                                      <ArrowUpward sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                                <Tooltip title={index === sortedList.length - 1 ? 'Ya es la última columna' : 'Bajar posición'}>
+                                  <span>
+                                    <IconButton
+                                      size="small"
+                                      disabled={index === sortedList.length - 1 || reorderingFields}
+                                      onClick={(e) => { e.stopPropagation(); moveField(index, 1); }}
+                                      sx={{
+                                        p: 0.4,
+                                        borderRadius: 1.5,
+                                        bgcolor: index === sortedList.length - 1 ? 'transparent' : '#f1f5f9',
+                                        border: '1px solid',
+                                        borderColor: index === sortedList.length - 1 ? 'transparent' : '#e2e8f0',
+                                        '&:hover': { bgcolor: '#e2e8f0', color: '#1d4ed8' }
+                                      }}
+                                    >
+                                      <ArrowDownward sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              </Stack>
+                            </TableCell>
                           <TableCell>
                             <Typography fontWeight={800} fontSize={14}>{field.label}</Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
@@ -1174,6 +1293,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                 </TableBody>
               </Table>
             </TableContainer>
+            </Box>
           )}
         </Paper>
 
