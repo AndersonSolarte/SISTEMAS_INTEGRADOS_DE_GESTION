@@ -159,8 +159,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [editActionPlanCandidate, setEditActionPlanCandidate] = useState(null);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const [bootstrapResponse, strategicPlanResponse, planResponse] = await Promise.all([
         strategicPlanningService.bootstrap(), strategicPlanningService.listPlans(), strategicPlanningService.listActionPlans()
@@ -174,8 +174,10 @@ export default function StrategicPlanningPlatform({ onBack }) {
         return availablePlans[0]?.id || bootstrapResponse.data?.plan?.id || '';
       });
     } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'No fue posible abrir la nueva plataforma.', { variant: 'error' });
-    } finally { setLoading(false); }
+      if (!silent) enqueueSnackbar(error.response?.data?.message || 'No fue posible abrir la nueva plataforma.', { variant: 'error' });
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, [enqueueSnackbar]);
 
   useEffect(() => { load(); }, [load]);
@@ -536,6 +538,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
 
     const fieldIds = swapped.map((f) => f.id);
 
+    // Actualización inmediata en memoria (sin parpadeos, sin recarga ni pérdida de scroll)
     setStrategicPlans((currentPlans) =>
       currentPlans.map((p) => {
         if (p.id !== plan.id) return p;
@@ -547,16 +550,12 @@ export default function StrategicPlanningPlatform({ onBack }) {
       })
     );
 
-    setReorderingFields(true);
+    // Guardado silencioso en base de datos en segundo plano
     try {
       await strategicPlanningService.reorderFields(plan.id, fieldIds);
-      await load();
-      enqueueSnackbar('Orden de columnas actualizado correctamente.', { variant: 'success' });
     } catch (error) {
-      await load();
-      enqueueSnackbar(error.response?.data?.message || 'No fue posible cambiar el orden de las columnas.', { variant: 'error' });
-    } finally {
-      setReorderingFields(false);
+      await load({ silent: true });
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar el orden de las columnas.', { variant: 'error' });
     }
   };
 
@@ -573,6 +572,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
 
     const fieldIds = reordered.map((f) => f.id);
 
+    // Actualización inmediata en memoria (sin parpadeos, sin recarga ni pérdida de scroll)
     setStrategicPlans((currentPlans) =>
       currentPlans.map((p) => {
         if (p.id !== plan.id) return p;
@@ -584,16 +584,13 @@ export default function StrategicPlanningPlatform({ onBack }) {
       })
     );
 
-    setReorderingFields(true);
+    // Guardado silencioso en base de datos en segundo plano
     try {
       await strategicPlanningService.reorderFields(plan.id, fieldIds);
-      await load();
-      enqueueSnackbar(`Columna "${movedItem.label}" movida a la posición #${toIndex + 1}.`, { variant: 'success' });
+      enqueueSnackbar(`Columna "${movedItem.label}" ubicada en posición #${toIndex + 1}.`, { variant: 'success', autoHideDuration: 2200 });
     } catch (error) {
-      await load();
+      await load({ silent: true });
       enqueueSnackbar(error.response?.data?.message || 'No fue posible actualizar el orden de las columnas.', { variant: 'error' });
-    } finally {
-      setReorderingFields(false);
     }
   };
 
@@ -1176,11 +1173,11 @@ export default function StrategicPlanningPlatform({ onBack }) {
                                     <DragIndicator sx={{ fontSize: 16 }} />
                                   </Box>
                                 </Tooltip>
-                                <Tooltip title={index === 0 ? 'Ya es la primera columna' : 'Subir posición'}>
+                                <Tooltip title={index === 0 ? 'Ya es la primera columna' : 'Subir posición'} disableInteractive enterDelay={400}>
                                   <span>
                                     <IconButton
                                       size="small"
-                                      disabled={index === 0 || reorderingFields}
+                                      disabled={index === 0}
                                       onClick={(e) => { e.stopPropagation(); moveField(index, -1); }}
                                       sx={{
                                         p: 0.4,
@@ -1195,11 +1192,11 @@ export default function StrategicPlanningPlatform({ onBack }) {
                                     </IconButton>
                                   </span>
                                 </Tooltip>
-                                <Tooltip title={index === sortedList.length - 1 ? 'Ya es la última columna' : 'Bajar posición'}>
+                                <Tooltip title={index === sortedList.length - 1 ? 'Ya es la última columna' : 'Bajar posición'} disableInteractive enterDelay={400}>
                                   <span>
                                     <IconButton
                                       size="small"
-                                      disabled={index === sortedList.length - 1 || reorderingFields}
+                                      disabled={index === sortedList.length - 1}
                                       onClick={(e) => { e.stopPropagation(); moveField(index, 1); }}
                                       sx={{
                                         p: 0.4,
