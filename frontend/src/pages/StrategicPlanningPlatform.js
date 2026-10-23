@@ -138,7 +138,6 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [fieldOptionDraft, setFieldOptionDraft] = useState('');
   const [fieldSchemaPreview, setFieldSchemaPreview] = useState(null);
   const [replaceSchemaFields, setReplaceSchemaFields] = useState(false);
-  const [reorderingFields, setReorderingFields] = useState(false);
   const [draggedFieldIndex, setDraggedFieldIndex] = useState(null);
   const [dragOverFieldIndex, setDragOverFieldIndex] = useState(null);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
@@ -1104,7 +1103,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                           <TableRow
                             key={field.id}
                             hover
-                            draggable={!reorderingFields}
+                            draggable
                             onDragStart={(e) => {
                               e.dataTransfer.setData('text/plain', String(index));
                               e.dataTransfer.effectAllowed = 'move';
