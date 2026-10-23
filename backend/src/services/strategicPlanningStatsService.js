@@ -223,6 +223,8 @@ const getPlanStatistics = async ({ planId = null, termId = null, year = null, ca
       dependencia: actionPlan?.organizationalUnit?.name || 'Dependencia Institucional',
       responsable: actionPlan?.responsibleUser?.nombre || custom.responsible || 'Responsable Asignado',
       avance_total: progressVal,
+      avance_ip: custom.progress_s1 !== undefined ? custom.progress_s1 : null,
+      avance_iip: custom.progress_s2 !== undefined ? custom.progress_s2 : null,
       estado
     });
   });
