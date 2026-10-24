@@ -6,6 +6,7 @@ const {
   GestionInformacionCarga,
   PoblacionalContextoExternoGeneral
 } = require('../models');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { generateContextoExternoGeneralPdf } = require('../services/contextoExternoGeneralPdfService');
 
 let divipolaGeoIndex = null;
@@ -419,34 +420,62 @@ const downloadContextoExternoGeneralData = async (_req, res) => {
 };
 
 const fetchOpenAI = async (systemPrompt, userPrompt) => {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
-  if (!apiKey) return null;
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey.trim()}`
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature: 0.65,
-      max_tokens: 500
-    })
-  });
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content?.trim() || null;
+  const openAiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
+  if (openAiKey) {
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openAiKey.trim()}`
+        },
+        body: JSON.stringify({
+          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: 0.5,
+          max_tokens: 650
+        })
+      });
+      const data = await res.json();
+      const content = data?.choices?.[0]?.message?.content?.trim();
+      if (content) return content;
+    } catch (err) {
+      console.warn('Error en llamada a OpenAI para análisis de contexto:', err.message);
+    }
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_KEY;
+  if (geminiKey) {
+    try {
+      const genAI = new GoogleGenerativeAI(geminiKey.trim());
+      const model = genAI.getGenerativeModel({
+        model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+        systemInstruction: systemPrompt
+      });
+      const result = await model.generateContent(userPrompt);
+      const content = result?.response?.text()?.trim();
+      if (content) return content;
+    } catch (err) {
+      console.warn('Error en llamada a Gemini para análisis de contexto:', err.message);
+    }
+  }
+
+  return null;
 };
 
-const systemPrompt = `Eres un analista senior de planeación estratégica universitaria en Colombia. Tu objetivo es redactar los análisis de contexto externo universitario rigurosos, formales y fluidos de 2 a 3 párrafos bien estructurados para el Ministerio de Educación / SNIES.
-REGLAS ESTRICTAS DE REDACCIÓN:
-1. DEBES escribir en párrafos continuos y elegantes (2 a 3 párrafos máximo).
-2. NUNCA uses listas con viñetas, ni números, ni asteriscos, ni emojis, ni encabezados internos dentro del texto.
-3. Utiliza conectores formales colombianos: 'En la oferta académica...', 'Respecto a las modalidades de oferta...', 'En cuanto a las denominaciones...', 'Asimismo...', 'Por otra parte...', 'En cuanto a su distribución geográfica...', 'A nivel regional...', 'Los indicadores de inscritos, admitidos y matriculados...', 'El comportamiento de la matrícula...', 'La evolución del número de graduados...'.
-4. Incorpora de manera fluida en la narrativa las cifras y datos cuantitativos específicos que se te suministran.`;
+const systemPrompt = `Eres un asesor directivo senior de Planeación Estratégica y Aseguramiento de la Calidad de Educación Superior en Colombia, especializado en análisis institucional del SNIES (Ministerio de Educación Nacional).
+Tu objetivo es redactar análisis e interpretaciones ejecutivas de alto nivel profesional para el Consejo Académico, Rectoría y comités de autoevaluación institucional.
+
+ESTÁNDARES DE CALIDAD Y ESTILO DIRECTIVO:
+1. TONO Y REGISTRO: Formal, analítico, riguroso y estratégico. No te limites a describir o parafrasear números obvios; aporta interpretación contextual del mercado educativo, pertinencia académica, sostenibilidad del programa y ventajas competitivas.
+2. ESTRUCTURA: Redacta exactamente 2 párrafos continuos, sólidos y fluidos (sin subtítulos, sin viñetas, sin listas numeradas, sin asteriscos ni markdown).
+   - Primer párrafo: Diagnóstico estratégico y lectura de la estructura o tendencia de los datos proporcionados, contextualizando magnitudes clave y patrones predominantes.
+   - Segundo párrafo: Implicaciones directivas, pertinencia curricular, balance competitivo (sector oficial vs. privado / nacional vs. regional) y recomendaciones o conclusiones estratégicas para la toma de decisiones institucionales.
+3. LENGUAJE TÉCNICO COLOMBIANO: Usa con naturalidad y precisión términos del Sistema de Aseguramiento de la Calidad (ej. pertinencia social y curricular, área de influencia territorial, masa crítica de matrícula, selectividad y absorción vocacional, eficiencia terminal, retención estudiantil, diversificación formativa).
+4. INTEGRACIÓN DE CIFRAS: Teje las cifras suministradas dentro del análisis como soporte probatorio, sin saturar ni hacer listados mecánicos.`;
 
 const buildOfferStats = (rows) => {
   const total = rows.length;
@@ -498,8 +527,8 @@ const buildPopStats = (poblacionalRows, fieldPrefix, scope) => {
 
 const generateOpenAIAnalysis = async (program, oferta, poblacional, aiAnalysisInput = {}) => {
   let aiAnalysis = { ...aiAnalysisInput };
-  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
-  if (!apiKey || Object.keys(aiAnalysis).length > 0) return aiAnalysis;
+  const hasAiKey = !!(process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || process.env.GEMINI_API_KEY || process.env.GEMINI_KEY);
+  if (!hasAiKey || Object.keys(aiAnalysis).length > 0) return aiAnalysis;
 
   try {
     const natStats = buildOfferStats(oferta);
@@ -517,14 +546,32 @@ const generateOpenAIAnalysis = async (program, oferta, poblacional, aiAnalysisIn
       promises.push(
         fetchOpenAI(
           systemPrompt,
-          `Redacta el análisis institucional de denominaciones de programas afines a ${program}.\nCifras SNIES:\n- Total nacional: ${natStats.total} programas.\n- Principales denominaciones: ${natStats.topTitles}.\n- Otras denominaciones con menor presencia: ${natStats.otherTitles}.\n- En la región: ${regStats ? regStats.total : 0} programas (${regStats ? regStats.topTitles : ''}).\n\nModelo de estilo esperado:\n'En cuanto a las denominaciones, se evidencia una alta concentración de la oferta en torno a la gestión, la gerencia y el derecho tributario. La denominación con mayor frecuencia es [Denominación] con [N] programas, seguida de... En un segundo nivel se encuentran... Asimismo, se observa una amplia diversidad de denominaciones con menor presencia...'`
+          `Programa analizado: ${program}.
+DATOS OFICIALES SNIES DE DENOMINACIONES Y OFERTA ACADÉMICA AFÍN:
+- Universo nacional: ${natStats.total} programas afines identificados.
+- Denominaciones con mayor frecuencia nacional: ${natStats.topTitles}.
+- Otras denominaciones con presencia específica en el país: ${natStats.otherTitles}.
+- Oferta en la región (suroccidente): ${regStats ? regStats.total : 0} programas afines (denominaciones principales: ${regStats ? regStats.topTitles : 'Sin registros regionales adicionales'}).
+
+INSTRUCCIÓN ESPECÍFICA:
+Redacta un análisis directivo y riguroso sobre las tendencias de denominación y afinidad curricular del programa. Analiza si la oferta nacional converge en titulaciones convencionales o evoluciona hacia especializaciones aplicadas, y concluye con las implicaciones para la diferenciación académica y competitividad del programa en el contexto regional.`
         ).then((res) => { if (res) aiAnalysis.offer_tables = res; })
       );
 
       promises.push(
         fetchOpenAI(
           systemPrompt,
-          `Redacta el análisis de caracterización y distribución de la oferta nacional para ${program}.\nCifras SNIES:\n- Total programas afines nacional: ${natStats.total} (${natStats.privado} del sector privado, ${natStats.oficial} del sector público/oficial).\n- Duración: la totalidad tiene una duración de ${natStats.semestresModa} semestres.\n- Modalidades: ${natStats.modalidadesStr}.\n- Créditos académicos: oscilan entre ${natStats.minCred} y ${natStats.maxCred} créditos, con promedio de ${natStats.avgCred} créditos.\n- Distribución geográfica principal: ${natStats.topCities}.\n\nModelo de estilo esperado:\n'En la oferta académica nacional se identifican ${natStats.total} programas afines a ${program}, de los cuales ${natStats.privado} son ofrecidos por instituciones universitarias del sector privado y ${natStats.oficial} por el sector oficial. La totalidad de estos programas tiene una duración de dos semestres. Respecto a las modalidades de oferta, predomina la... En cuanto a su distribución geográfica, la oferta presenta una importante concentración en las ciudades de mayor tamaño del país...'`
+          `Programa analizado: ${program}.
+DATOS OFICIALES SNIES DE LA CARACTERIZACIÓN DE OFERTA NACIONAL:
+- Total programas afines vigentes: ${natStats.total}.
+- Composición sectorial: ${natStats.privado} programas del sector privado frente a ${natStats.oficial} del sector público/oficial.
+- Duración promedio curricular: ${natStats.semestresModa} semestres.
+- Modalidades de formación: ${natStats.modalidadesStr}.
+- Estructura crediticia: oscila entre ${natStats.minCred} y ${natStats.maxCred} créditos académicos (promedio de ${natStats.avgCred} créditos).
+- Nodos territoriales de concentración: ${natStats.topCities}.
+
+INSTRUCCIÓN ESPECÍFICA:
+Redacta un análisis ejecutivo caracterizando el ecosistema de oferta a nivel nacional. Interpreta el equilibrio sectorial (privado vs. oficial), la penetración de modalidades presenciales y virtuales, la consistencia de la carga crediticia bajo lineamientos MEN y la centralidad geográfica en nodos urbanos principales. Concluye con la lectura estratégica de madurez y competitividad del campo disciplinar.`
         ).then((res) => { if (res) aiAnalysis.offer_nacional = res; })
       );
     }
@@ -533,7 +580,18 @@ const generateOpenAIAnalysis = async (program, oferta, poblacional, aiAnalysisIn
       promises.push(
         fetchOpenAI(
           systemPrompt,
-          `Redacta el análisis de oferta a nivel regional para ${program}.\nCifras SNIES:\n- Total regional: ${regStats.total} programas (${regStats.privado} privadas, ${regStats.oficial} pública).\n- Duración: ${regStats.semestresModa} semestres.\n- Modalidades: ${regStats.modalidadesStr}. Créditos: entre ${regStats.minCred} y ${regStats.maxCred} créditos (promedio ${regStats.avgCred}).\n- Denominaciones en la región: ${regStats.topTitles}.\n- Lugares de oferta en la región: ${regStats.topCities}.\n\nModelo de estilo esperado:\n'En la región (suroccidente colombiano), la oferta está conformada por ${regStats.total} programas afines, de los cuales ${regStats.privado} son ofrecidos por IES privadas y ${regStats.oficial} por el sector público. Respecto a las denominaciones... En cuanto a los lugares de oferta a nivel regional...'`
+          `Programa analizado: ${program}.
+DATOS OFICIALES SNIES DE LA OFERTA ACADÉMICA REGIONAL (Suroccidente Colombiano):
+- Total programas afines en la región: ${regStats.total} (${natStats ? ((regStats.total / natStats.total) * 100).toFixed(1) : 0}% del mercado nacional).
+- Composición sectorial regional: ${regStats.privado} privadas vs. ${regStats.oficial} públicas.
+- Duración curricular: ${regStats.semestresModa} semestres.
+- Modalidades en la región: ${regStats.modalidadesStr}.
+- Rango de créditos en la región: entre ${regStats.minCred} y ${regStats.maxCred} créditos (promedio regional: ${regStats.avgCred}).
+- Principales denominaciones regionales: ${regStats.topTitles}.
+- Asientos municipales de la oferta regional: ${regStats.topCities}.
+
+INSTRUCCIÓN ESPECÍFICA:
+Redacta un informe analítico ejecutivo sobre la configuración competitiva en el área de influencia directa. Diagnostica la concentración de la oferta en los polos urbanos regionales, la cuota de mercado regional y el grado de competencia directa. Concluye con la pertinencia curricular y los nichos estratégicos de oportunidad para la institución.`
         ).then((res) => { if (res) aiAnalysis.offer_regional = res; })
       );
     }
@@ -542,7 +600,12 @@ const generateOpenAIAnalysis = async (program, oferta, poblacional, aiAnalysisIn
       promises.push(
         fetchOpenAI(
           systemPrompt,
-          `Redacta el análisis de inscritos, admitidos y matriculados a primer curso a nivel nacional para ${program}.\nSerie histórica por período: ${intakeNat}.\n\nModelo de estilo esperado:\n'Los indicadores de inscritos, admitidos y matriculados a primer curso a nivel nacional, evidencian una tendencia favorable desde [Año], periodo en el que se consolida... El periodo... mantiene esta dinámica... Tras la disminución observada en... representa una recuperación importante... Finalmente, concentra el mejor desempeño...'`
+          `Programa analizado: ${program}.
+SERIE HISTÓRICA SNIES DE DEMANDA Y EMBUDO DE INGRESO A NIVEL NACIONAL:
+Detalle por período (Inscritos, Admitidos y Primer Curso): ${intakeNat}.
+
+INSTRUCCIÓN ESPECÍFICA:
+Redacta una evaluación analítica ejecutiva del embudo vocacional nacional. Examina la evolución histórica de la atracción (aspirantes inscritos), la selectividad en la admisión y la tasa de conversión efectiva a primer curso (absorción institucional). Concluye sobre la estabilidad de la demanda vocacional en Colombia para esta disciplina formativa.`
         ).then((res) => { if (res) aiAnalysis.ingreso_nacional = res; })
       );
     }
@@ -551,7 +614,12 @@ const generateOpenAIAnalysis = async (program, oferta, poblacional, aiAnalysisIn
       promises.push(
         fetchOpenAI(
           systemPrompt,
-          `Redacta el análisis de inscritos, admitidos y matriculados a primer curso a nivel regional para ${program}.\nSerie histórica regional: ${intakeReg}.\n\nModelo de estilo esperado:\n'A nivel regional, los inscritos, admitidos y matriculados a primer curso presentan un comportamiento favorable desde... En [periodo] se mantienen resultados positivos... A partir de... se observa una recuperación progresiva con resultados cada vez más favorables...'`
+          `Programa analizado: ${program}.
+SERIE HISTÓRICA SNIES DE DEMANDA Y EMBUDO DE INGRESO A NIVEL REGIONAL:
+Detalle por período (Inscritos, Admitidos y Primer Curso): ${intakeReg}.
+
+INSTRUCCIÓN ESPECÍFICA:
+Elabora un análisis directivo del comportamiento del flujo de ingreso en la región suroccidental. Analiza la capacidad de atracción de nuevos aspirantes en el territorio, la efectividad de absorción de cohortes y las fluctuaciones entre períodos semestrales. Concluye con la lectura de sostenibilidad de la demanda en el área de influencia y recomendaciones para la gestión de matrícula.`
         ).then((res) => { if (res) aiAnalysis.ingreso_regional = res; })
       );
     }
@@ -560,7 +628,12 @@ const generateOpenAIAnalysis = async (program, oferta, poblacional, aiAnalysisIn
       promises.push(
         fetchOpenAI(
           systemPrompt,
-          `Redacta el análisis del total de matriculados a nivel nacional para ${program}.\nSerie histórica nacional: ${enrolledNat}.\n\nModelo de estilo esperado:\n'El número de matriculados a nivel nacional presenta una tendencia favorable a lo largo del periodo analizado. Tras la disminución registrada entre... a partir de... se evidencia una recuperación que se consolida... Finalmente, concentra los resultados más altos...'`
+          `Programa analizado: ${program}.
+SERIE HISTÓRICA SNIES DE ESTUDIANTES MATRICULADOS ACTIVOS A NIVEL NACIONAL:
+Totales por período académico: ${enrolledNat}.
+
+INSTRUCCIÓN ESPECÍFICA:
+Redacta un análisis institucional ejecutivo sobre la masa crítica de matrícula activa en Colombia para esta área. Evalúa la trayectoria temporal, los puntos de inflexión o consolidación de la matrícula, y la capacidad de permanencia del estudiantado en el sistema nacional. Concluye sobre la solidez y perspectivas de permanencia del campo disciplinar.`
         ).then((res) => { if (res) aiAnalysis.matriculados_nacional = res; })
       );
     }
@@ -569,7 +642,12 @@ const generateOpenAIAnalysis = async (program, oferta, poblacional, aiAnalysisIn
       promises.push(
         fetchOpenAI(
           systemPrompt,
-          `Redacta el análisis del total de matriculados a nivel regional para ${program}.\nSerie histórica regional: ${enrolledReg}.\n\nModelo de estilo esperado:\n'El comportamiento de la matrícula a nivel regional muestra una trayectoria de crecimiento durante los últimos años. Después de la variación observada... marca un punto de recuperación a partir del cual la matrícula inicia una dinámica ascendente...'`
+          `Programa analizado: ${program}.
+SERIE HISTÓRICA SNIES DE ESTUDIANTES MATRICULADOS ACTIVOS A NIVEL REGIONAL:
+Totales por período académico: ${enrolledReg}.
+
+INSTRUCCIÓN ESPECÍFICA:
+Elabora una lectura ejecutiva sobre la dinámica y estabilidad de la matrícula activa en la región. Analiza el comportamiento de la comunidad estudiantil a lo largo de los períodos observados, la retención en el programa y el peso del programa dentro del entorno regional. Concluye sobre el impacto en la viabilidad académica y operativa institucional.`
         ).then((res) => { if (res) aiAnalysis.matriculados_regional = res; })
       );
     }
@@ -578,7 +656,12 @@ const generateOpenAIAnalysis = async (program, oferta, poblacional, aiAnalysisIn
       promises.push(
         fetchOpenAI(
           systemPrompt,
-          `Redacta el análisis de graduados a nivel nacional para ${program}.\nSerie histórica nacional: ${gradNat}.\n\nModelo de estilo esperado:\n'La evolución del número de graduados a nivel nacional evidencia una tendencia creciente a lo largo de la serie analizada... Este comportamiento se caracteriza por una mayor concentración de graduados en los segundos periodos de cada año...'`
+          `Programa analizado: ${program}.
+SERIE HISTÓRICA SNIES DE GRADUADOS TITULADOS A NIVEL NACIONAL:
+Totales por período académico: ${gradNat}.
+
+INSTRUCCIÓN ESPECÍFICA:
+Redacta una evaluación ejecutiva sobre la eficiencia terminal y titulación a nivel nacional. Analiza la regularidad en el egreso, los patrones de graduación por período y el aporte acumulado de profesionales titulados a los sectores productivos y sociales de Colombia. Concluye destacando el valor de la titulación oportuna en los procesos de acreditación de alta calidad.`
         ).then((res) => { if (res) aiAnalysis.graduados_nacional = res; })
       );
     }
@@ -587,14 +670,19 @@ const generateOpenAIAnalysis = async (program, oferta, poblacional, aiAnalysisIn
       promises.push(
         fetchOpenAI(
           systemPrompt,
-          `Redacta el análisis de graduados a nivel regional para ${program}.\nSerie histórica regional: ${gradReg}.\n\nModelo de estilo esperado:\n'El comportamiento de los graduados a nivel regional muestra una evolución ascendente... los resultados más destacados tienden a concentrarse en los segundos periodos académicos...'`
+          `Programa analizado: ${program}.
+SERIE HISTÓRICA SNIES DE GRADUADOS TITULADOS A NIVEL REGIONAL:
+Totales por período académico: ${gradReg}.
+
+INSTRUCCIÓN ESPECÍFICA:
+Elabora un análisis ejecutivo del indicador de graduación en el entorno regional. Examina el flujo de egresados titulados aportados a la región suroccidental, su correspondencia con las necesidades del entorno productivo y social local, y el impacto de la comunidad de graduados en el posicionamiento y huella social de la institución.`
         ).then((res) => { if (res) aiAnalysis.graduados_regional = res; })
       );
     }
 
     await Promise.all(promises);
   } catch (err) {
-    console.warn('Error generando análisis automático con OpenAI:', err.message);
+    console.warn('Error generando análisis automático con IA:', err.message);
   }
 
   return aiAnalysis;
@@ -655,18 +743,27 @@ const downloadContextoExternoGeneralPdf = async (req, res) => {
     };
     const offerViews = ['sequence', 'panel', 'orbit', 'radial', 'executive'];
     const offerView = offerViews.includes(cleanText(req.query?.vista_oferta)) ? cleanText(req.query?.vista_oferta) : 'sequence';
+    const rawIncludeAnalysis = req.query?.incluir_analisis ?? req.body?.incluir_analisis;
+    const includeAnalysis = rawIncludeAnalysis === undefined
+      ? true
+      : (String(rawIncludeAnalysis).trim() === 'true' || String(rawIncludeAnalysis).trim() === '1');
+
     let aiAnalysisInput = {};
-    try {
-      if (req.body?.aiAnalysis) {
-        aiAnalysisInput = typeof req.body.aiAnalysis === 'string' ? JSON.parse(req.body.aiAnalysis) : req.body.aiAnalysis;
-      } else if (req.query?.aiAnalysis) {
-        aiAnalysisInput = typeof req.query.aiAnalysis === 'string' ? JSON.parse(req.query.aiAnalysis) : req.query.aiAnalysis;
+    if (includeAnalysis) {
+      try {
+        if (req.body?.aiAnalysis) {
+          aiAnalysisInput = typeof req.body.aiAnalysis === 'string' ? JSON.parse(req.body.aiAnalysis) : req.body.aiAnalysis;
+        } else if (req.query?.aiAnalysis) {
+          aiAnalysisInput = typeof req.query.aiAnalysis === 'string' ? JSON.parse(req.query.aiAnalysis) : req.query.aiAnalysis;
+        }
+      } catch (e) {
+        console.warn('Error parseando aiAnalysis para PDF:', e);
       }
-    } catch (e) {
-      console.warn('Error parseando aiAnalysis para PDF:', e);
     }
 
-    const aiAnalysis = await generateOpenAIAnalysis(program, oferta, poblacional, aiAnalysisInput);
+    const aiAnalysis = includeAnalysis
+      ? await generateOpenAIAnalysis(program, oferta, poblacional, aiAnalysisInput)
+      : {};
 
     const buffer = await generateContextoExternoGeneralPdf({
       program,
@@ -676,7 +773,8 @@ const downloadContextoExternoGeneralPdf = async (req, res) => {
       populationGroup,
       visualizations,
       offerView,
-      aiAnalysis
+      aiAnalysis,
+      includeAnalysis
     });
     const slug = normalizeKey(program).toLowerCase().replace(/_+/g, '_');
     res.setHeader('Content-Disposition', `attachment; filename=contexto_externo_${slug}.pdf`);

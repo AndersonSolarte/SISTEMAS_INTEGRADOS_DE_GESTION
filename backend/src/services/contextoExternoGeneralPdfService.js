@@ -45,10 +45,11 @@ const sectionHeader = (title, program) => ([
   }
 ]);
 
-const aiAnalysisBox = (analysisText, customTitle) => {
+const aiAnalysisBox = (analysisText, customTitle, includeAnalysis = true) => {
+  if (!includeAnalysis) return [];
   const contentText = text(analysisText);
   if (!contentText) return [];
-  const titleText = text(customTitle) || 'ANÁLISIS DESCRIPTIVO E INTERPRETACIÓN DE DATOS (IA)';
+  const titleText = text(customTitle) || 'ANÁLISIS E INTERPRETACIÓN ESTRATÉGICA DE DATOS';
 
   const paragraphs = contentText
     .split(/\n\s*\n|\n/)
@@ -59,7 +60,7 @@ const aiAnalysisBox = (analysisText, customTitle) => {
       fontSize: 8.8,
       color: '#334155',
       alignment: 'justify',
-      lineHeight: 1.22,
+      lineHeight: 1.25,
       margin: [0, 0, 0, 4]
     }));
 
@@ -73,15 +74,15 @@ const aiAnalysisBox = (analysisText, customTitle) => {
               stack: [
                 {
                   text: titleText.toUpperCase(),
-                  fontSize: 9.5,
+                  fontSize: 9.3,
                   bold: true,
                   color: '#082b66',
-                  margin: [0, 0, 0, 4]
+                  margin: [0, 0, 0, 5]
                 },
                 ...paragraphs
               ],
               fillColor: '#f3f7fd',
-              margin: [10, 7, 10, 5]
+              margin: [10, 8, 10, 6]
             }
           ]
         ]
@@ -89,13 +90,13 @@ const aiAnalysisBox = (analysisText, customTitle) => {
       layout: {
         hLineWidth: () => 0,
         vLineWidth: (i) => (i === 0 ? 4 : 0),
-        vLineColor: () => '#2f6fed',
+        vLineColor: () => '#1d4ed8',
         paddingLeft: () => 0,
         paddingRight: () => 0,
         paddingTop: () => 0,
         paddingBottom: () => 0
       },
-      margin: [0, 4, 0, 0]
+      margin: [0, 5, 0, 0]
     }
   ];
 };
@@ -107,22 +108,26 @@ const generateOfferAnalysis = (rows, regionalRows, scope = 'Nacional') => {
   const sectors = labelCountRows(targetRows, 'sector');
   const modalities = labelCountRows(targetRows, 'modalidad');
   const credits = targetRows.map((r) => number(r.numero_creditos)).filter((v) => v > 0);
-  const mainSector = sectors[0]?.label || 'Oficial/Privado';
+  const mainSector = sectors[0]?.label || 'Privado';
+  const mainSectorVal = sectors[0]?.value || 0;
+  const mainSectorPercent = count > 0 ? ((mainSectorVal / count) * 100).toFixed(1) : '0';
   const mainModality = modalities[0]?.label || 'Presencial';
+  const mainModalityVal = modalities[0]?.value || 0;
+  const mainModalityPercent = count > 0 ? ((mainModalityVal / count) * 100).toFixed(1) : '0';
   const minCred = credits.length ? Math.min(...credits) : 'N/A';
   const maxCred = credits.length ? Math.max(...credits) : 'N/A';
   const avgCred = credits.length ? Math.round(credits.reduce((a, b) => a + b, 0) / credits.length) : 'N/A';
 
-  return `El análisis detallado de la oferta académica a escala ${scope.toLowerCase()} consolida un registro total de ${count} programas educativos afines. La estructura institucional refleja una participación predominante del sector ${mainSector.toLowerCase()} (${sectors[0]?.value || 0} programas), impartidos prioritariamente bajo la modalidad ${mainModality.toLowerCase()} (${modalities[0]?.value || 0} programas).\n\nEn cuanto a la carga académica, la duración y la distribución de créditos oscilan entre un mínimo de ${minCred} y un máximo de ${maxCred} créditos (promedio ponderado de ${avgCred} créditos), lo que garantiza coherencia con los parámetros regulatorios del Ministerio de Educación Nacional (MEN). Esta configuración respalda el posicionamiento competitivo del programa frente a las demandas cambiantes del entorno socioeconómico y las expectativas formativas de la región.`;
+  return `La caracterización estructural de la oferta académica a escala ${scope.toLowerCase()} comprende un ecosistema de ${count} programas afines formalmente registrados ante el SNIES. El comportamiento sectorial refleja una participación preponderante del sector ${mainSector.toLowerCase()}, que agrupa el ${mainSectorPercent}% de la oferta (${mainSectorVal} programas), evidenciando las dinámicas de inversión e iniciativa institucional en este campo. En materia metodológica, la modalidad ${mainModality.toLowerCase()} se posiciona como el formato rector con un ${mainModalityPercent}% (${mainModalityVal} programas), reflejando la tradición formativa y la demanda de presencialidad en la disciplina.\n\nEn cuanto a la arquitectura curricular, la carga académica se estructura en un rango de ${minCred} a ${maxCred} créditos académicos, con una media de ${avgCred} créditos y duraciones estándar acordes a los lineamientos regulatorios del MEN (Decreto 1330). Esta distribución ratifica la consistencia académica del área formativa y delinea un marco de referencia propicio para fortalecer la diferenciación de contenidos, la pertinencia regional y la competitividad curricular institucional.`;
 };
 
 const generateOfferTablesAnalysis = (nationalRows, regionalRows) => {
   const natCount = nationalRows.reduce((a, b) => a + number(b.value), 0);
   const regCount = regionalRows.reduce((a, b) => a + number(b.value), 0);
   const ratio = natCount > 0 ? ((regCount / natCount) * 100).toFixed(1) : '0';
-  const topNat = nationalRows.slice(0, 3).map((r) => `${r.label} (${r.value})`).join(', ');
+  const topNat = nationalRows.slice(0, 3).map((r) => `${r.label} (${r.value} ofertas)`).join(', ');
 
-  return `La comparativa entre la oferta nacional (${natCount} programas) y la oferta regional (${regCount} programas) refleja la dinámica de concentración de la oferta de educación superior. Los programas con mayor representación a nivel nacional corresponden a: ${topNat || 'programas principales'}.\n\nLa cuota de participación de la oferta regional representa el ${ratio}% del mercado nacional. Esta métrica es fundamental para evaluar el margen de competencia directa y las oportunidades de diferenciación curricular e innovación pedagógica en el área de influencia de la institución.`;
+  return `El análisis comparativo entre la estructura nacional (${natCount} programas afines) y el contexto regional (${regCount} ofertas identificadas) evidencia las dinámicas de convergencia y dispersión curricular en el país. A nivel nacional, las denominaciones con mayor frecuencia y posicionamiento institucional corresponden a: ${topNat || 'titulaciones estándar del campo disciplinar'}, lo que demuestra la madurez del núcleo disciplinar formativo.\n\nLa oferta concentrada en la región representa el ${ratio}% del total nacional, delimitando un mapa de competencia directa delimitado y concentrado. Esta proporción subraya una oportunidad directiva estratégica para consolidar una propuesta académica distintiva que combine los estándares disciplinares del orden nacional con líneas de énfasis aplicadas a las potencialidades del entorno regional.`;
 };
 
 const generateGeoAnalysis = (type, scope, mapRows) => {
@@ -131,7 +136,7 @@ const generateGeoAnalysis = (type, scope, mapRows) => {
   const totalPrograms = mapRows.reduce((acc, row) => acc + number(row.value), 0);
   const territoryCount = mapRows.length;
 
-  return `La caracterización cartográfica y de densidad territorial en el ámbito ${scope.toLowerCase()} por ${isMunicipality ? 'municipios' : 'departamentos'} identifica un total de ${totalPrograms} programas distribuidos en ${territoryCount} entidades territoriales. Los principales focos de concentración geográfica corresponden a: ${topTerritories || 'los principales centros urbanos'}.\n\nLa dispersión espacial evidencia la focalización estratégica en zonas con alta densidad poblacional y fuerte demanda del mercado laboral, sugiriendo a su vez oportunidades de ampliación de cobertura mediante modalidades virtuales o a distancia en zonas periféricas.`;
+  return `El análisis de localización y cobertura geográfica en el ámbito ${scope.toLowerCase()} por ${isMunicipality ? 'municipios' : 'departamentos'} consolida un total de ${totalPrograms} programas distribuidos a lo largo de ${territoryCount} entidades territoriales. Los principales polos de concentración corresponden a: ${topTerritories || 'los centros urbanos neurálgicos'}.\n\nEsta distribución espacial constata la centralidad de la oferta en nodos metropolitanos con alta densidad empresarial y demográfica. Desde una óptica prospectiva institucional, dicha georreferenciación evidencia espacios de expansión y cobertura no atendida en ciudades intermedias y regiones periféricas mediante esquemas de regionalización, convenios o modalidades híbridas.`;
 };
 
 const generateIntakeAnalysis = (data, scope) => {
@@ -143,7 +148,7 @@ const generateIntakeAnalysis = (data, scope) => {
   const absorcion = totalAdmitidos > 0 ? ((totalPrimerCurso / totalAdmitidos) * 100).toFixed(1) : '0';
   const conversionTotal = totalInscritos > 0 ? ((totalPrimerCurso / totalInscritos) * 100).toFixed(1) : '0';
 
-  return `El análisis del embudo de ingreso (${scope}) en la serie histórica evaluada evidencia una demanda total de ${format.format(totalInscritos)} aspirantes inscritos, de los cuales ${format.format(totalAdmitidos)} alcanzaron el estado de admitidos y ${format.format(totalPrimerCurso)} formalizaron su matrícula en primer curso.\n\nEn términos de eficiencia del proceso, se registra una tasa de selectividad del ${selectividad}% (admitidos / inscritos) y una tasa de absorción institucional del ${absorcion}% (primer curso / admitidos). El índice de conversión global (primer curso / inscritos) del ${conversionTotal}% permite monitorear la capacidad de atracción y efectividad en la consolidación de la matrícula inicial por cohorte.`;
+  return `El diagnóstico longitudinal de la demanda y el embudo de ingreso (${scope.toLowerCase()}) registra un acumulado histórico de ${format.format(totalInscritos)} aspirantes inscritos, de los cuales ${format.format(totalAdmitidos)} resultaron admitidos y ${format.format(totalPrimerCurso)} concretaron efectivamente su matrícula en primer curso. Este flujo valida la vigencia del atractivo vocacional de la disciplina a lo largo de la serie histórica analizada.\n\nEn términos de eficiencia en los procesos de admisión, se identifica un índice de selectividad del ${selectividad}% (admitidos respecto a inscritos) y una tasa de absorción y efectividad de matrícula del ${absorcion}% sobre los admitidos, arrojando una conversión global del ${conversionTotal}%. Estas métricas constituyen indicadores clave para proyectar la sostenibilidad de cohortes de entrada y afinar las estrategias de atracción vocacional.`;
 };
 
 const generateEnrolledAnalysis = (data, scope) => {
@@ -155,7 +160,7 @@ const generateEnrolledAnalysis = (data, scope) => {
   const avg = periodsCount > 0 ? Math.round(totalMatriculados / periodsCount) : 0;
   const maxPeriod = periods.reduce((max, r) => (number(r[field]) > number(max[field] || 0) ? r : max), {});
 
-  return `El comportamiento de la población matriculada (${scope}) reporta un acumulado histórico de ${format.format(totalMatriculados)} estudiantes activos a lo largo de ${periodsCount} períodos académicos analizados, registrando un promedio semestral de ${format.format(avg)} matriculados.\n\nEl pico máximo de matrícula se alcanzó en el período ${maxPeriod.periodo || 'N/A'} con ${format.format(number(maxPeriod[field]))} estudiantes. La tendencia general refleja la capacidad de retención del programa, la estabilidad de la cohorte activa y la continuidad de la oferta formativa institucional.`;
+  return `El monitoreo de la masa estudiantil activa (${scope.toLowerCase()}) registra un consolidado acumulado de ${format.format(totalMatriculados)} matrículas a lo largo de ${periodsCount} períodos académicos observados, sosteniendo una media semestral de ${format.format(avg)} estudiantes activos. La cota máxima se ubicó en el período ${maxPeriod.periodo || 'N/A'} con ${format.format(number(maxPeriod[field]))} estudiantes.\n\nLa trayectoria histórica refleja la capacidad de retención, permanencia y persistencia estudiantil en el programa. La estabilidad de la población activa constituye un pilar central para la viabilidad económica, la asignación eficiente de recursos docentes y el fortalecimiento continuo de los procesos formativos y de bienestar universitario.`;
 };
 
 const generateGraduateAnalysis = (data, scope) => {
@@ -167,7 +172,7 @@ const generateGraduateAnalysis = (data, scope) => {
   const avg = periodsCount > 0 ? Math.round(totalGraduados / periodsCount) : 0;
   const maxPeriod = periods.reduce((max, r) => (number(r[field]) > number(max[field] || 0) ? r : max), {});
 
-  return `El monitoreo del indicador de graduados (${scope}) consolida un total de ${format.format(totalGraduados)} egresados titulados durante los períodos evaluados, con una media de ${format.format(avg)} graduados por cohorte semestral.\n\nEl mayor volumen de graduación se registró en el período ${maxPeriod.periodo || 'N/A'} con ${format.format(number(maxPeriod[field]))} graduados. Estos resultados certifican la efectividad del proceso de formación académica, el logro de la titulación oportuna y la entrega de profesionales cualificados al entorno laboral regional y nacional.`;
+  return `La evaluación del indicador de graduación y titulación (${scope.toLowerCase()}) certifica un acumulado de ${format.format(totalGraduados)} profesionales egresados a lo largo de los períodos evaluados, manteniendo un promedio de ${format.format(avg)} graduados por cohorte semestral, alcanzando su mayor volumen en el período ${maxPeriod.periodo || 'N/A'} con ${format.format(number(maxPeriod[field]))} titulados.\n\nEste balance corrobora la efectividad del ciclo formativo y la eficiencia terminal del programa, confirmando el cumplimiento de la promesa institucional de titulación oportuna. Asimismo, evidencia el impacto del programa en el desarrollo social y la transferencia de capital humano cualificado al mercado laboral regional y nacional.`;
 };
 
 const formatProgramNameSvg = (programStr) => {
@@ -230,11 +235,12 @@ const generateCoverAnalysis = (program, natCount, regCount, poblacional = []) =>
   const periods = poblacional.map((r) => text(r.periodo_referencia)).filter(Boolean).sort();
   const minPeriod = periods[0] || '2019-1';
   const maxPeriod = periods[periods.length - 1] || '2025-2';
+  const regPercent = natCount > 0 ? ((regCount / natCount) * 100).toFixed(1) : '0';
 
-  return `De acuerdo a la información oficial recopilada del Sistema Nacional de Información de la Educación Superior (SNIES), con el fin de recopilar e interpretar la información acerca de los programas académicos afines a ${program}, se consolida una ventana de observación de los períodos ${minPeriod} a ${maxPeriod}.\n\nEl estudio integra la caracterización de ${natCount} programas afines a nivel nacional y ${regCount} programas a nivel regional, abarcando variables de reconocimiento del MEN, sector institucional, modalidades de estudio, duración en semestres, rango de créditos académicos y distribución geográfica municipal, junto con la dinámica poblacional de inscritos, admitidos, matriculados y graduados.`;
+  return `El presente informe consolida el diagnóstico estratégico y la caracterización integral de contexto externo para el programa de ${program}, sustentado en los registros oficiales del Sistema Nacional de Información de la Educación Superior (SNIES) del Ministerio de Educación Nacional. El estudio abarca una ventana histórica de observación comprendida entre los períodos ${minPeriod} y ${maxPeriod}, proporcionando un marco referencial cuantitativo y analítico indispensable para los procesos de autoevaluación, registro calificado y toma de decisiones directivas.\n\nA escala territorial, se analiza un universo de ${natCount} programas afines a nivel nacional frente a ${regCount} ofertas identificadas en la región suroccidental (representando una cuota del ${regPercent}% del total del país). La evaluación articula variables estructurales de la oferta educativa —naturaleza jurídica de las instituciones, modalidades de impartición, duración y flexibilidad crediticia— junto con el desempeño longitudinal de los flujos poblacionales de aspirantes inscritos, admitidos, matrícula activa y graduados titulados.`;
 };
 
-const reportCoverPage = ({ program, nationalOffer, regionalOffer, aiAnalysis = {}, poblacional = [] }) => {
+const reportCoverPage = ({ program, nationalOffer, regionalOffer, aiAnalysis = {}, poblacional = [], includeAnalysis = true }) => {
   const generatedAt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date());
   const formattedProgram = formatProgramNameSvg(program);
   const programTexts = formattedProgram.lines.map((line, idx) =>
@@ -275,7 +281,7 @@ const reportCoverPage = ({ program, nationalOffer, regionalOffer, aiAnalysis = {
   return [
     ...(fs.existsSync(headerPath) ? [{ image: headerPath, fit: [955, 75], alignment: 'center', margin: [0, 0, 0, 10] }] : []),
     { svg: coverSvg, width: 955, alignment: 'center', margin: [0, 0, 0, 8] },
-    ...aiAnalysisBox(coverAnalysisText, 'MARCO DE REFERENCIA Y CONTEXTO EXTERNO GENERAL (SNIES)')
+    ...aiAnalysisBox(coverAnalysisText, 'MARCO DE REFERENCIA Y CONTEXTO EXTERNO GENERAL (SNIES)', includeAnalysis)
   ];
 };
 
@@ -974,7 +980,7 @@ const territoryRankingSvg = ({ title, rows, color, width = 250, height = 405 }) 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><filter id="rank-shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f294f" flood-opacity=".12"/></filter></defs><rect x="2" y="2" width="${innerW}" height="${height - 4}" rx="13" fill="#fff" stroke="#d5dfeb" filter="url(#rank-shadow)"/><path d="M15 2H${width - 15}Q${width - 2} 2 ${width - 2} 15V65H2V15Q2 2 15 2Z" fill="${color}"/><circle cx="24" cy="25" r="12" fill="#fff" fill-opacity=".14"/><path d="M18 25h12M24 19v12" stroke="#fff" stroke-width="2" stroke-linecap="round"/><text x="43" y="22" font-size="7.4" font-weight="bold" fill="#fff">RANKING TERRITORIAL</text><text x="43" y="37" font-size="5.5" font-weight="bold" fill="#fff" fill-opacity=".82">${escapeXml(text(title).slice(0, 32))}</text><rect x="13" y="49" width="95" height="19" rx="9.5" fill="#fff"/><text x="60.5" y="62" text-anchor="middle" font-size="5.8" font-weight="bold" fill="${color}">${rows.length} TERRITORIOS</text><rect x="${width - 110}" y="49" width="95" height="19" rx="9.5" fill="#fff" fill-opacity=".14"/><text x="${width - 62.5}" y="62" text-anchor="middle" font-size="5.8" font-weight="bold" fill="#fff">${format.format(total)} PROGRAMAS</text><text x="12" y="84" font-size="5.4" font-weight="bold" letter-spacing=".5" fill="#64748b">TERRITORIO</text><text x="${width - 25}" y="84" text-anchor="middle" font-size="5.4" font-weight="bold" fill="#64748b">TOTAL</text>${rowMarkup}<rect x="10" y="${height - 39}" width="${rowW}" height="29" rx="8" fill="${color}" fill-opacity=".08"/><text x="20" y="${height - 21}" font-size="6.5" font-weight="bold" fill="#183552">TOTAL GENERAL</text><text x="${width - 20}" y="${height - 21}" text-anchor="end" font-size="8.5" font-weight="bold" fill="${color}">${format.format(total)}</text></svg>`;
 };
 
-const geographyPages = ({ rows = [], regionalRows = [], program, aiAnalysis = {} }) => {
+const geographyPages = ({ rows = [], regionalRows = [], program, aiAnalysis = {}, includeAnalysis = true }) => {
   const geo = loadGeoData();
   if (!geo) return [];
   const national = aggregateGeography(rows, geo);
@@ -995,7 +1001,9 @@ const geographyPages = ({ rows = [], regionalRows = [], program, aiAnalysis = {}
         alignment: 'center'
       },
       ...aiAnalysisBox(
-        aiAnalysis[geoKey] || generateGeoAnalysis(type, heading.includes('REGIONAL') ? 'REGIONAL' : 'NACIONAL', mapRows)
+        aiAnalysis[geoKey] || generateGeoAnalysis(type, heading.includes('REGIONAL') ? 'REGIONAL' : 'NACIONAL', mapRows),
+        undefined,
+        includeAnalysis
       )
     ]);
   };
@@ -1281,7 +1289,7 @@ const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', pr
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${calculatedHeight}" viewBox="0 0 ${width} ${calculatedHeight}" preserveAspectRatio="xMidYMid meet"><rect x=".5" y=".5" width="${width - 1}" height="${calculatedHeight - 1}" rx="15" fill="#f8fbff" stroke="#cbd9ea"/><rect x="1" y="1" width="6" height="${calculatedHeight - 2}" rx="3" fill="${scopeColor}"/><g>${body}</g></svg>`;
 };
 
-const offerSingleProgramTableSvg = ({ rows, scope = 'Nacional', width = 580 }) => {
+const offerSingleProgramTableSvg = ({ rows, scope = 'Nacional', width = 955 }) => {
   const maxVisibleRows = 10;
   const summarizeRows = (r) => r.length <= maxVisibleRows ? r : [
     ...r.slice(0, maxVisibleRows - 1),
@@ -1317,10 +1325,11 @@ const offerSingleProgramTableSvg = ({ rows, scope = 'Nacional', width = 580 }) =
     const columnY = y + 42;
     const rowsY = y + 68;
     let currentY = rowsY;
+    const labelMaxLen = panelWidth < 500 ? 36 : 54;
 
     const rowMarkup = rows.length ? rows.map((row, index) => {
       const label = text(row.label);
-      const lines = splitLabel(label, 54);
+      const lines = splitLabel(label, labelMaxLen);
       const isMultiLine = lines.length > 1;
       const rh = isMultiLine ? 34 : 22;
       const ry = currentY;
@@ -1356,7 +1365,7 @@ const offerSingleProgramTableSvg = ({ rows, scope = 'Nacional', width = 580 }) =
   };
 };
 
-const offerPage = ({ rows = [], regionalRows = [], program, view, aiAnalysis = {} }) => {
+const offerPage = ({ rows = [], regionalRows = [], program, view, aiAnalysis = {}, includeAnalysis = true }) => {
   const analyzedPrograms = labelCountRows(rows, 'nombre_programa');
   const regionalPrograms = labelCountRows(regionalRows, 'nombre_programa');
   const hasNational = rows.length > 0 && analyzedPrograms.reduce((acc, r) => acc + number(r.value), 0) >= 1;
@@ -1365,48 +1374,70 @@ const offerPage = ({ rows = [], regionalRows = [], program, view, aiAnalysis = {
   const pages = [];
   const tablesAnalysisText = aiAnalysis.offer_tables || aiAnalysis.oferta_tablas || generateOfferTablesAnalysis(analyzedPrograms, regionalPrograms);
 
-  if (hasNational) {
-    const nationalTable = offerSingleProgramTableSvg({ rows: analyzedPrograms, scope: 'Nacional', width: 690 });
+  if (hasNational && hasRegional) {
+    const nationalTable = offerSingleProgramTableSvg({ rows: analyzedPrograms, scope: 'Nacional', width: 472 });
+    const regionalTable = offerSingleProgramTableSvg({ rows: regionalPrograms, scope: 'Regional', width: 472 });
+    pages.push([
+      ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA NACIONAL Y REGIONAL', program),
+      {
+        columns: [
+          { svg: nationalTable.svg, width: 472 },
+          { svg: regionalTable.svg, width: 472 }
+        ],
+        columnGap: 11,
+        alignment: 'center',
+        margin: [0, 4, 0, 8]
+      },
+      ...aiAnalysisBox(tablesAnalysisText, undefined, includeAnalysis)
+    ]);
+  } else if (hasNational) {
+    const nationalTable = offerSingleProgramTableSvg({ rows: analyzedPrograms, scope: 'Nacional', width: 955 });
     pages.push([
       ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA NACIONAL', program),
-      { svg: nationalTable.svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
-      ...aiAnalysisBox(tablesAnalysisText)
+      { svg: nationalTable.svg, width: 955, alignment: 'center', margin: [0, 4, 0, 8] },
+      ...aiAnalysisBox(tablesAnalysisText, undefined, includeAnalysis)
     ]);
-  }
-
-  if (hasRegional) {
-    const regionalTable = offerSingleProgramTableSvg({ rows: regionalPrograms, scope: 'Regional', width: 690 });
+  } else if (hasRegional) {
+    const regionalTable = offerSingleProgramTableSvg({ rows: regionalPrograms, scope: 'Regional', width: 955 });
     pages.push([
       ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA REGIONAL', program),
-      { svg: regionalTable.svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
-      ...aiAnalysisBox(tablesAnalysisText)
+      { svg: regionalTable.svg, width: 955, alignment: 'center', margin: [0, 4, 0, 8] },
+      ...aiAnalysisBox(tablesAnalysisText, undefined, includeAnalysis)
     ]);
   }
 
   if (hasNational) {
     pages.push([
       ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA NACIONAL', program),
-      { svg: offerSummaryVisualSvg({ rows, view, scope: 'Nacional', program, width: 690 }), width: 690, alignment: 'center', margin: [0, 4, 0, 8] }
+      { svg: offerSummaryVisualSvg({ rows, view, scope: 'Nacional', program, width: 955 }), width: 955, alignment: 'center', margin: [0, 4, 0, 8] }
     ]);
-    pages.push([
-      ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA NACIONAL', program),
-      ...aiAnalysisBox(
-        aiAnalysis.offer_nacional || aiAnalysis.oferta_nacional || generateOfferAnalysis(rows, regionalRows, 'Nacional')
-      )
-    ]);
+    if (includeAnalysis) {
+      pages.push([
+        ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA NACIONAL', program),
+        ...aiAnalysisBox(
+          aiAnalysis.offer_nacional || aiAnalysis.oferta_nacional || generateOfferAnalysis(rows, regionalRows, 'Nacional'),
+          undefined,
+          includeAnalysis
+        )
+      ]);
+    }
   }
 
   if (hasRegional) {
     pages.push([
       ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA REGIONAL', program),
-      { svg: offerSummaryVisualSvg({ rows: regionalRows, view, scope: 'Regional', program, width: 690 }), width: 690, alignment: 'center', margin: [0, 4, 0, 8] }
+      { svg: offerSummaryVisualSvg({ rows: regionalRows, view, scope: 'Regional', program, width: 955 }), width: 955, alignment: 'center', margin: [0, 4, 0, 8] }
     ]);
-    pages.push([
-      ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA REGIONAL', program),
-      ...aiAnalysisBox(
-        aiAnalysis.offer_regional || aiAnalysis.oferta_regional || generateOfferAnalysis(rows, regionalRows, 'Regional')
-      )
-    ]);
+    if (includeAnalysis) {
+      pages.push([
+        ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA REGIONAL', program),
+        ...aiAnalysisBox(
+          aiAnalysis.offer_regional || aiAnalysis.oferta_regional || generateOfferAnalysis(rows, regionalRows, 'Regional'),
+          undefined,
+          includeAnalysis
+        )
+      ]);
+    }
   }
 
   return pages;
@@ -1486,7 +1517,7 @@ const singleMetricSpecialChartSvg = ({ data, series, type, width = 580, height =
   return frame(`<polygon points="${left},${bottom} ${points} ${right},${bottom}" fill="${item.color}" fill-opacity=".76"/><polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linejoin="miter"/>${labels}`);
 };
 
-const populationPage = ({ title, program, data, charts, selection = {}, aiAnalysis = {}, aiGroup = 'ingreso' }) => {
+const populationPage = ({ title, program, data, charts, selection = {}, aiAnalysis = {}, aiGroup = 'ingreso', includeAnalysis = true }) => {
   const selectedScope = text(selection.scope || 'nacional').toLowerCase();
   if (selectedScope === 'ambos') {
     return charts.flatMap((item) => populationPage({
@@ -1496,7 +1527,8 @@ const populationPage = ({ title, program, data, charts, selection = {}, aiAnalys
       charts,
       selection: { ...selection, scope: text(item.scope).toLowerCase() },
       aiAnalysis,
-      aiGroup
+      aiGroup,
+      includeAnalysis
     }));
   }
   const chart = charts.find((item) => text(item.scope).toLowerCase() === selectedScope) || charts[0];
@@ -1535,62 +1567,67 @@ const populationPage = ({ title, program, data, charts, selection = {}, aiAnalys
     ? requestedType
     : ['stacked', 'trend', 'funnel', 'indicators', 'shaded', 'bubbles', 'periodCards', 'journey', 'timeline', 'conversion', 'stackedArea'].includes(requestedType) ? requestedType : 'stacked';
   const styledSeries = (colors, softColors = []) => chart.funnelSeries.map((item, index) => ({ ...item, color: colors[index], soft: softColors[index] }));
-  let height = 260;
+  const chartWidth = 955;
+
+  const baseHeights = {
+    trend: 310,
+    funnel: 310,
+    indicators: 295,
+    shaded: chart.funnelSeries ? 285 : 200,
+    bubbles: chart.funnelSeries ? 260 : 200,
+    periodCards: chart.funnelSeries ? 340 : 300,
+    journey: 285,
+    timeline: 300,
+    conversion: 330,
+    stackedArea: 320,
+    stacked: 300
+  };
+  const baseHeight = baseHeights[supportedType] || 300;
+  const height = includeAnalysis ? baseHeight : Math.min(410, Math.round(baseHeight * 1.25));
   let svg;
-  const chartWidth = 690;
 
   if (supportedType === 'trend') {
     svg = trendLineChartSvg({ data, series: chart.trendSeries || chart.series, width: chartWidth, height, subtitle: chart.trendSubtitle || chart.subtitle, scope: chart.scope });
   } else if (supportedType === 'funnel') {
-    height = 310;
     svg = chart.funnelSeries
       ? funnelChartSvg({ data, series: chart.funnelSeries, width: chartWidth, height, scope: chart.scope })
       : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'indicators') {
-    height = 295;
     svg = chart.funnelSeries
       ? indicatorTrendBoardSvg({ data, series: styledSeries(['#123b7a', '#1f67bd', '#239447'], ['#eaf1fb', '#eaf4ff', '#ecf8ef']), width: chartWidth, height, scope: chart.scope })
       : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'shaded') {
-    height = chart.funnelSeries ? 285 : 180;
     svg = shadedTrendChartSvg({ data, series: chart.funnelSeries ? styledSeries(['#123b7a', '#2f6fed', '#239447']) : chart.series, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'bubbles') {
-    height = chart.funnelSeries ? 260 : 180;
     svg = bubbleMatrixChartSvg({ data, series: chart.funnelSeries ? styledSeries(['#123b7a', '#2f6fed', '#27a861'], ['#edf3fb', '#eff5ff', '#edf9f1']) : chart.series, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'periodCards') {
-    height = chart.funnelSeries ? 350 : 300;
     svg = chart.funnelSeries
       ? periodCardsChartSvg({ data, series: styledSeries(['#123b7a', '#1593a5', '#239447']), width: chartWidth, height, scope: chart.scope })
       : singleMetricCardsChartSvg({ data, series: chart.series, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'journey') {
-    height = 285;
     svg = chart.funnelSeries
       ? studentJourneyChartSvg({ data, series: styledSeries(['#123b7a', '#2f6fed', '#239447'], ['#edf3fb', '#eff5ff', '#edf9f1']), width: chartWidth, height, scope: chart.scope })
       : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'timeline') {
-    height = 300;
     svg = chart.funnelSeries
       ? annualTimelineChartSvg({ data, series: styledSeries(['#123b7a', '#2f6fed', '#239447']), width: chartWidth, height, scope: chart.scope })
       : singleMetricCardsChartSvg({ data, series: chart.series, width: chartWidth, height, scope: chart.scope, annual: true });
   } else if (supportedType === 'conversion') {
-    height = 340;
     svg = chart.funnelSeries
       ? conversionIndicatorsChartSvg({ data, series: styledSeries(['#123b7a', '#2f6fed', '#239447']), width: chartWidth, height, scope: chart.scope })
       : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'stackedArea') {
-    height = 330;
     svg = chart.funnelSeries
       ? stackedAreaChartSvg({ data, series: chart.funnelSeries, width: chartWidth, height, scope: chart.scope })
       : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: chartWidth, height, scope: chart.scope });
   } else {
-    height = 300;
     svg = stackedBarChartSvg({ data, series: chart.series, width: chartWidth, height, title: chart.title, subtitle: chart.subtitle, scope: chart.scope });
   }
 
   return [[
     ...sectionHeader(title, program),
-    { svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
-    ...aiAnalysisBox(customAnalysisText || defaultAnalysisText)
+    { svg, width: chartWidth, alignment: 'center', margin: [0, 4, 0, 8] },
+    ...aiAnalysisBox(customAnalysisText || defaultAnalysisText, undefined, includeAnalysis)
   ]];
 };
 
@@ -1618,7 +1655,7 @@ const joinDocumentPages = (pagesList) => {
   return result;
 };
 
-const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblacional = [], section = 'completo', populationGroup = 'ingreso', visualizations = {}, offerView = 'sequence', aiAnalysis = {} }) => {
+const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblacional = [], section = 'completo', populationGroup = 'ingreso', visualizations = {}, offerView = 'sequence', aiAnalysis = {}, includeAnalysis = true }) => {
   // El reporte de referencia denomina "Oferta nacional" al universo completo
   // y muestra la oferta regional como un subconjunto de ese mismo universo.
   const nationalOffer = oferta;
@@ -1635,7 +1672,8 @@ const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblaci
         { title: 'Flujo apilado por período', subtitle: 'Inscritos, admitidos y primer curso en una lectura consolidada.', trendSubtitle: 'Comportamiento histórico de inscritos, admitidos y estudiantes de primer curso.', scope: 'Regional', series: [['inscritos_regional', 'Inscritos', '#2f6fed'], ['admitidos_regional', 'Admitidos', '#df2426'], ['primer_curso_regional', 'Primer curso', '#687b94']].map(([key, label, color]) => ({ key, label, color })), trendSeries: [['inscritos_regional', 'Inscritos', '#2f6fed'], ['admitidos_regional', 'Admitidos', '#1494a8'], ['primer_curso_regional', 'Primer curso', '#5b8f45']].map(([key, label, color]) => ({ key, label, color })), funnelSeries: [['inscritos_regional', 'Inscritos', '#082b66'], ['admitidos_regional', 'Admitidos', '#1f67bd'], ['primer_curso_regional', 'Primer curso', '#27a861']].map(([key, label, color]) => ({ key, label, color })) }
       ],
       aiAnalysis,
-      aiGroup: 'ingreso'
+      aiGroup: 'ingreso',
+      includeAnalysis
     }),
     matriculados: populationPage({
       title: 'MATRICULADOS', program, data: enrolledData, selection: section === 'completo' ? { ...visualizations.matriculados, scope: 'ambos' } : visualizations.matriculados,
@@ -1644,7 +1682,8 @@ const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblaci
         { title: 'Matriculados por período', subtitle: 'Evolución de estudiantes matriculados según el alcance seleccionado.', scope: 'Regional', series: [{ key: 'matriculados_regional', label: 'Matriculados', color: '#b5123f' }] }
       ],
       aiAnalysis,
-      aiGroup: 'matriculados'
+      aiGroup: 'matriculados',
+      includeAnalysis
     }),
     graduados: populationPage({
       title: 'GRADUADOS', program, data: graduateData, selection: section === 'completo' ? { ...visualizations.graduados, scope: 'ambos' } : visualizations.graduados,
@@ -1653,13 +1692,14 @@ const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblaci
         { title: 'Graduados por período', subtitle: 'Evolución de graduados según el alcance seleccionado.', scope: 'Regional', series: [{ key: 'graduados_regional', label: 'Graduados', color: '#b5123f' }] }
       ],
       aiAnalysis,
-      aiGroup: 'graduados'
+      aiGroup: 'graduados',
+      includeAnalysis
     })
   };
 
-  const coverPageBlocks = reportCoverPage({ program, nationalOffer, regionalOffer, aiAnalysis, poblacional });
-  const offerPages = offerPage({ rows: nationalOffer, regionalRows: regionalOffer, program, view: offerView, aiAnalysis });
-  const geoPages = geographyPages({ rows: nationalOffer, regionalRows: regionalOffer, program, aiAnalysis });
+  const coverPageBlocks = reportCoverPage({ program, nationalOffer, regionalOffer, aiAnalysis, poblacional, includeAnalysis });
+  const offerPages = offerPage({ rows: nationalOffer, regionalRows: regionalOffer, program, view: offerView, aiAnalysis, includeAnalysis });
+  const geoPages = geographyPages({ rows: nationalOffer, regionalRows: regionalOffer, program, aiAnalysis, includeAnalysis });
 
   const completePages = [
     ...(coverPageBlocks && coverPageBlocks.length ? [coverPageBlocks] : []),

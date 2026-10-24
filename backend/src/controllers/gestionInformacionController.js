@@ -5149,8 +5149,9 @@ const buildGraduadosGeneralDashboardPayload = async (anioFilter = null) => {
   const rawYears = Array.isArray(anioFilter)
     ? anioFilter.flatMap((v) => String(v).split(','))
     : (anioFilter && anioFilter !== 'todos' ? String(anioFilter).split(',') : []);
+  const isNoneYear = rawYears.includes('__NONE__');
   const anioValues = rawYears.map((v) => Number(v)).filter((n) => !Number.isNaN(n) && n > 0);
-  const hasYearFilter = anioValues.length > 0;
+  const hasYearFilter = isNoneYear || anioValues.length > 0;
 
   const [aniosHistRaw, aniosDinRaw, historicoRawRows, graduadosRawRows] = await Promise.all([
     PoblacionalCantidadTotalEgresado.findAll({
@@ -5167,7 +5168,7 @@ const buildGraduadosGeneralDashboardPayload = async (anioFilter = null) => {
       order: [['anio', 'ASC']],
       raw: true
     }),
-    hasYearFilter && anioValues.every((y) => y >= 2020)
+    isNoneYear || (hasYearFilter && anioValues.every((y) => y >= 2020))
       ? Promise.resolve([])
       : PoblacionalCantidadTotalEgresado.findAll({
           attributes: ['id', 'anio', 'programa', 'cantidad', 'detalle'],
@@ -5175,7 +5176,7 @@ const buildGraduadosGeneralDashboardPayload = async (anioFilter = null) => {
           order: [['programa', 'ASC'], ['id', 'ASC']],
           raw: true
         }),
-    hasYearFilter && anioValues.every((y) => y <= 2019)
+    isNoneYear || (hasYearFilter && anioValues.every((y) => y <= 2019))
       ? Promise.resolve([])
       : PoblacionalGraduado.findAll({
           attributes: ['id', 'anio', 'periodo', 'programa', 'numero_documento', 'fecha_grado'],

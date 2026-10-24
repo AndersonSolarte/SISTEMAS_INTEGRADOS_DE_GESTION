@@ -7519,9 +7519,12 @@ const renderCategoryBars = (items = [], options = {}) => {
         };
       });
     const caracterizacionProgramOptions = caracterizacionCatalogs.programas || [];
-    const selectedCaracterizacionPrograms = (activeStatsFilters.programas || []).filter((item) =>
-      caracterizacionProgramOptions.some((option) => normalizeProgramKey(option) === normalizeProgramKey(item))
-    );
+    const isCaracterizacionProgramsNone = (activeStatsFilters.programas || []).includes('__NONE__');
+    const selectedCaracterizacionPrograms = isCaracterizacionProgramsNone
+      ? ['__NONE__']
+      : (activeStatsFilters.programas || []).filter((item) =>
+          caracterizacionProgramOptions.some((option) => normalizeProgramKey(option) === normalizeProgramKey(item))
+        );
     const handleCaracterizacionYearChange = (nextValues) => {
       const nextYear = String(nextValues?.[0] || '');
       setSectionFilterMode('caracterizacion', 'manual');
@@ -8997,14 +9000,20 @@ const renderCategoryBars = (items = [], options = {}) => {
       }
 
       const generalProgramOptions = (graduadosGeneralData.programas || []).map((row) => row.programa).filter(Boolean);
-      const selectedProgramKeys = new Set((graduadosGeneralProgramsFilter || []).map((item) => normalizeProgramKey(item)));
-      const allProgramsSelected = generalProgramOptions.length > 0 && (
+      const isExplicitNonePrograms = (graduadosGeneralProgramsFilter || []).includes('__NONE__');
+      const selectedProgramKeys = new Set(
+        (graduadosGeneralProgramsFilter || [])
+          .filter((item) => item !== '__NONE__')
+          .map((item) => normalizeProgramKey(item))
+      );
+      const allProgramsSelected = !isExplicitNonePrograms && generalProgramOptions.length > 0 && (
         (graduadosGeneralProgramsFilter || []).length === 0
         || (graduadosGeneralProgramsFilter || []).length === generalProgramOptions.length
       );
       const generalSearchLower = (graduadosGeneralSearch || '').trim().toLowerCase();
       const rows = (graduadosGeneralData.programas || [])
         .filter((row) => {
+          if (isExplicitNonePrograms) return false;
           const matchesProgram = allProgramsSelected || selectedProgramKeys.size === 0 || selectedProgramKeys.has(normalizeProgramKey(row.programa));
           const matchesSearch = !generalSearchLower || (row.programa || '').toLowerCase().includes(generalSearchLower);
           return matchesProgram && matchesSearch;
@@ -9258,15 +9267,20 @@ const renderCategoryBars = (items = [], options = {}) => {
     const renderGraduadosGeneralFilters = () => {
       if (!graduadosGeneralData) return null;
       const generalAniosOptions = (graduadosGeneralData.aniosDisponibles || []).map((anio) => String(anio));
+      const isExplicitNoneAnio = graduadosGeneralAnioFilter === '__NONE__'
+        || (Array.isArray(graduadosGeneralAnioFilter) && graduadosGeneralAnioFilter.includes('__NONE__'));
       const selectedAnioValues = graduadosGeneralAnioFilter === 'todos'
         ? []
-        : (Array.isArray(graduadosGeneralAnioFilter) ? graduadosGeneralAnioFilter.map(String) : [String(graduadosGeneralAnioFilter)]);
+        : (isExplicitNoneAnio ? ['__NONE__'] : (Array.isArray(graduadosGeneralAnioFilter) ? graduadosGeneralAnioFilter.map(String) : [String(graduadosGeneralAnioFilter)]));
 
       const generalProgramOptions = (graduadosGeneralData.programas || []).map((row) => row.programa).filter(Boolean);
-      const selectedGeneralProgramValues = (graduadosGeneralProgramsFilter || []).filter((item) => generalProgramOptions.includes(item));
+      const isExplicitNonePrograms = (graduadosGeneralProgramsFilter || []).includes('__NONE__');
+      const selectedGeneralProgramValues = isExplicitNonePrograms
+        ? ['__NONE__']
+        : (graduadosGeneralProgramsFilter || []).filter((item) => generalProgramOptions.includes(item));
 
-      const isAnioFiltered = generalAniosOptions.length > 0 && selectedAnioValues.length > 0 && selectedAnioValues.length < generalAniosOptions.length;
-      const isProgramFiltered = generalProgramOptions.length > 0 && selectedGeneralProgramValues.length > 0 && selectedGeneralProgramValues.length < generalProgramOptions.length;
+      const isAnioFiltered = isExplicitNoneAnio || (generalAniosOptions.length > 0 && selectedAnioValues.length > 0 && selectedAnioValues.length < generalAniosOptions.length);
+      const isProgramFiltered = isExplicitNonePrograms || (generalProgramOptions.length > 0 && selectedGeneralProgramValues.length > 0 && selectedGeneralProgramValues.length < generalProgramOptions.length);
       const isSearchFiltered = Boolean(graduadosGeneralSearch.trim());
 
       const activeGeneralFilterCount = [isAnioFiltered, isProgramFiltered, isSearchFiltered].filter(Boolean).length;

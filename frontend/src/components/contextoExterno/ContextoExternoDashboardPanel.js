@@ -4,12 +4,14 @@ import {
   Autocomplete,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Paper,
@@ -3261,6 +3263,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [includeAnalysisInPdf, setIncludeAnalysisInPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
   const [exportingExcel, setExportingExcel] = useState(false);
   const [excelError, setExcelError] = useState('');
@@ -3554,7 +3557,8 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
         grafico_matriculados: populationViews[1].chartType,
         alcance_matriculados: populationViews[1].scope,
         grafico_graduados: populationViews[2].chartType,
-        alcance_graduados: populationViews[2].scope
+        alcance_graduados: populationViews[2].scope,
+        incluir_analisis: includeAnalysisInPdf ? '1' : '0'
       });
       const url = window.URL.createObjectURL(response.data);
       const link = document.createElement('a');
@@ -3826,16 +3830,47 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
             <Box sx={{ flex: 1 }}>
               <SearchableFilterSelect label="Programa para todo el análisis" value={selectedProgram} onChange={(value) => { setSelectedProgram(value); setPeriod(ALL); }} options={programOptions} />
             </Box>
-            <Button
-              variant="contained"
-              color="error"
-              startIcon={<PictureAsPdfRoundedIcon />}
-              onClick={handleExportPdf}
-              disabled={selectedProgram === ALL || exportingPdf}
-              sx={{ minWidth: 220, py: 1.05, fontWeight: 900 }}
-            >
-              {exportingPdf ? 'Generando informe completo…' : 'Exportar informe PDF completo'}
-            </Button>
+            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={includeAnalysisInPdf}
+                    onChange={(e) => setIncludeAnalysisInPdf(e.target.checked)}
+                    size="small"
+                    sx={{
+                      color: '#2563eb',
+                      '&.Mui-checked': { color: '#1d4ed8' },
+                      py: 0.5
+                    }}
+                  />
+                }
+                label={
+                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#1e3a8a', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                    Incluir análisis ejecutivo
+                  </Typography>
+                }
+                sx={{
+                  m: 0,
+                  px: 1.2,
+                  py: 0.4,
+                  bgcolor: '#f1f5f9',
+                  borderRadius: 2,
+                  border: '1px solid #cbd5e1',
+                  transition: 'background-color 0.15s ease',
+                  '&:hover': { bgcolor: '#e2e8f0' }
+                }}
+              />
+              <Button
+                variant="contained"
+                color="error"
+                startIcon={<PictureAsPdfRoundedIcon />}
+                onClick={handleExportPdf}
+                disabled={selectedProgram === ALL || exportingPdf}
+                sx={{ minWidth: 220, py: 1.05, fontWeight: 900, whiteSpace: 'nowrap' }}
+              >
+                {exportingPdf ? 'Generando informe completo…' : 'Exportar informe PDF completo'}
+              </Button>
+            </Stack>
           </Stack>
         </Stack>
       </Paper>
