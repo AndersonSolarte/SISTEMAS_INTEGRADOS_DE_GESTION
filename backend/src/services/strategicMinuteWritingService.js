@@ -211,9 +211,5 @@ const generateStrategicMinuteSummary = async ({ context = {}, activities = [] })
     clearTimeout(timeout);
   }
 };
-  } finally {
-    clearTimeout(timeout);
-  }
-};
 
 module.exports = { improveStrategicMinuteText, generateStrategicMinuteSummary };
