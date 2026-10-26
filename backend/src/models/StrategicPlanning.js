@@ -272,7 +272,21 @@ const StrategicMinuteVersion = sequelize.define('StrategicMinuteVersion', {
   final_pdf_storage_key: { type: DataTypes.STRING(500), allowNull: true },
   final_pdf_hash: { type: DataTypes.STRING(64), allowNull: true },
   drive_file_id: { type: DataTypes.STRING(160), allowNull: true },
-  created_by: userId(false)
+  created_by: userId(false),
+  drive_url: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      const fileId = this.getDataValue('drive_file_id') || this.getDataValue('content')?.drive_file_id;
+      return fileId ? `https://drive.google.com/file/d/${fileId}/view` : (this.getDataValue('content')?.drive_file_url || null);
+    }
+  },
+  drive_folder_url: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      const folderId = this.getDataValue('content')?.drive_folder_id;
+      return folderId ? `https://drive.google.com/drive/folders/${folderId}` : (this.getDataValue('content')?.drive_folder_url || null);
+    }
+  }
 }, commonOptions('pei_minute_versions', [{ unique: true, fields: ['meeting_id', 'version'] }, { unique: true, fields: ['public_token_hash'] }]));
 
 const StrategicMinuteProposal = sequelize.define('StrategicMinuteProposal', {

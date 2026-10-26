@@ -25,7 +25,7 @@ const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailSe
 const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
 const { ensureStrategicPlanningDefaults, DEFAULT_WORKFLOW, DEFAULT_FIELDS } = require('../services/strategicPlanningBootstrap');
 const { sha256, cleanCode, requestMeta, audit, transitionPlan, saveActionItem, upsertMonitoring, findActionPlans } = require('../services/strategicPlanningDomainService');
-const { enqueueSync, enqueueActionRepositorySync, reconcileTerm, syncMinute, syncEvidence, getActivityDriveFolder } = require('../services/strategicPlanningDriveService');
+const { enqueueSync, enqueueActionRepositorySync, reconcileTerm, syncMinute, syncEvidence, getActivityDriveFolder, getMinutesDriveFolder } = require('../services/strategicPlanningDriveService');
 const { buildReferenceWorkbook, previewReferenceImport, confirmReferenceImport } = require('../services/strategicReferenceService');
 const { buildPedSchedule, reconcilePlanTerms } = require('../services/strategicPlanSetupService');
 const { buildDynamicActionItemWorkbook, previewDynamicActionItems, confirmDynamicActionItems } = require('../services/strategicDynamicWorkbookService');
@@ -2660,6 +2660,34 @@ const getActionItemDriveFolder = wrap(async (req, res) => {
   }
 });
 
+const getActionPlanMinutesDriveFolder = wrap(async (req, res) => {
+  const actionPlan = await StrategicActionPlan.findByPk(req.params.id, {
+    include: [
+      { model: StrategicMeeting, as: 'meetings', required: false, include: [{ model: StrategicMinuteVersion, as: 'minuteVersions', required: false }] }
+    ]
+  });
+  if (!actionPlan) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+
+  for (const meeting of actionPlan.meetings || []) {
+    for (const v of meeting.minuteVersions || []) {
+      const folderId = v.content?.drive_folder_id;
+      if (folderId) {
+        return ok(res, {
+          folderId,
+          folderUrl: `https://drive.google.com/drive/folders/${folderId}`
+        });
+      }
+    }
+  }
+
+  try {
+    const folderInfo = await getMinutesDriveFolder(actionPlan.id);
+    return ok(res, folderInfo);
+  } catch (e) {
+    return ok(res, { folderId: null, folderUrl: null, message: e.message });
+  }
+});
+
 const reconcile = wrap(async (req, res) => ok(res, await reconcileTerm(req.params.termId, req.user.id), 'Conciliación programada.'));
 const syncActionRepository = wrap(async (req, res) => {
   const result = await syncActionPlanRepositoryTerm(req.params.termId);
@@ -3268,7 +3296,7 @@ module.exports = {
   transitionActionPlan, saveMonitoring, createMeeting, updateMeeting,
   improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
-  uploadEvidence, downloadEvidence, retrySync, getActionItemDriveFolder, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
+  uploadEvidence, downloadEvidence, retrySync, getActionItemDriveFolder, getActionPlanMinutesDriveFolder, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
   previewHistorical, confirmHistorical, exportActionPlan, syncPlanDriveExcel, analytics, getPedLiveStatistics, listAudit, listSyncJobs,
   getPlanCalendarSchedule, listPlanUpcomingCalendar, startPlanCalendarConnect, disconnectPlanCalendar,
   checkPlanCalendarAvailability, suggestPlanCalendarSlots, savePlanCalendarSchedule, cancelPlanCalendarSchedule

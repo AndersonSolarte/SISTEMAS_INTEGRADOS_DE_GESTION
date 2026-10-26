@@ -243,6 +243,28 @@ const ensureActionPlanFolder = async (drive, actionPlan) => {
   return findOrCreateFolder(drive, { parentId: yearFolder, name: planFolderName, key: `action-repository:unit:${unitScope}` });
 };
 
+const getMinutesDriveFolder = async (actionPlanId) => {
+  const actionPlan = await StrategicActionPlan.findByPk(actionPlanId, {
+    include: [
+      { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }] }
+    ]
+  });
+  if (!actionPlan) throw new Error('Plan de Acción no encontrado.');
+  const drive = buildWritableDriveClient();
+  const actionFolder = await ensureActionPlanFolder(drive, actionPlan);
+  const unitScope = `${actionPlan.term_id}:${actionPlan.catalog_item_id || actionPlan.id}`;
+  const folderId = await findOrCreateFolder(drive, {
+    parentId: actionFolder,
+    name: 'ACTAS DE REUNIÓN',
+    key: `action-repository:minutes:${unitScope}`
+  });
+  return {
+    folderId,
+    folderUrl: `https://drive.google.com/drive/folders/${folderId}`
+  };
+};
+
 
 const syncEvidence = async (evidenceId) => {
   const evidence = await StrategicEvidence.findByPk(evidenceId);
@@ -480,4 +502,4 @@ const reconcileTerm = async (termId, createdBy) => {
   return { total: evidence.length, pending: pending.length };
 };
 
-module.exports = { buildWritableDriveClient, enqueueSync, enqueueActionRepositorySync, syncEvidence, syncMinute, reconcileTerm, processOneSyncJob, startStrategicPlanningSyncWorker, safeName, getActivityDriveFolder };
+module.exports = { buildWritableDriveClient, enqueueSync, enqueueActionRepositorySync, syncEvidence, syncMinute, reconcileTerm, processOneSyncJob, startStrategicPlanningSyncWorker, safeName, getActivityDriveFolder, getMinutesDriveFolder };

@@ -36,7 +36,7 @@ import {
   FolderShared as FolderSharedIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
-import { useNavigate } from 'react-router-dom';
+// import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import strategicPlanningService from '../services/strategicPlanningService';
@@ -83,7 +83,6 @@ const getFileIcon = (fileName) => {
 
 export default function PlanAccionConsulta() {
   const { enqueueSnackbar } = useSnackbar();
-  const navigate = useNavigate();
   const { user: authUser } = useAuth();
   const userId = authUser?.id;
   // eslint-disable-next-line no-unused-vars
@@ -490,7 +489,7 @@ export default function PlanAccionConsulta() {
     }
   };
 
-  // Listado de actas OFICIALES formalizadas y cargadas en el repositorio (Drive)
+  // Listado de actas de reunión del plan para consulta institucional
   const planActas = useMemo(() => {
     if (!selectedPlan) return [];
     const list = [];
@@ -498,33 +497,36 @@ export default function PlanAccionConsulta() {
 
     meetings.forEach((m) => {
       const versions = m.minuteVersions || [];
-      // Solo versiones formalizadas / cargadas en el repositorio Drive
-      const officialVersions = versions.filter(
-        (v) => v.status === 'finalized' || v.drive_file_id || v.content?.drive_file_id
-      );
+      if (versions.length > 0) {
+        // Ordenar versiones de más reciente a más antigua
+        const sortedVersions = [...versions].sort((a, b) => Number(b.version || 0) - Number(a.version || 0));
+        const v = sortedVersions[0];
+        const driveFileId = v.drive_file_id || v.content?.drive_file_id || null;
+        const driveUrl = v.drive_url || v.content?.drive_file_url || (driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : null);
+        const driveFolderId = v.content?.drive_folder_id || null;
+        const driveFolderUrl = v.content?.drive_folder_url || (driveFolderId ? `https://drive.google.com/drive/folders/${driveFolderId}` : null);
 
-      if (officialVersions.length > 0) {
-        // Tomar la versión formalizada más reciente para esta reunión
-        officialVersions.sort((a, b) => Number(b.version || 0) - Number(a.version || 0));
-        const v = officialVersions[0];
         list.push({
           id: v.id,
           minuteId: v.id,
           meetingId: m.id,
           meetingTitle: m.title || 'Reunión de Concertación / Seguimiento',
           meetingType: m.meeting_type || 'concertation',
-          meetingDate: m.starts_at || m.meeting_date,
+          meetingDate: m.starts_at || m.meeting_date || m.created_at,
           version: v.version || 1,
-          status: 'finalized',
+          status: v.status || 'draft',
           finalizedAt: v.finalized_at || v.created_at,
-          driveFileId: v.drive_file_id || v.content?.drive_file_id || null,
+          driveFileId,
+          driveUrl,
+          driveFolderUrl,
           signaturesCount: (v.signatures || []).length
         });
       }
     });
 
-    // Fallback: si no llegaron minuteVersions en meetings pero el plan tiene latest_minute_id formalizado
-    if (list.length === 0 && selectedPlan.latest_minute_id && (selectedPlan.latest_minute_status === 'finalized' || selectedPlan.drive_file_id)) {
+    // Fallback: si no llegaron minuteVersions en meetings pero el plan tiene latest_minute_id
+    if (list.length === 0 && selectedPlan.latest_minute_id) {
+      const driveFileId = selectedPlan.drive_file_id || null;
       list.push({
         id: selectedPlan.latest_minute_id,
         minuteId: selectedPlan.latest_minute_id,
@@ -533,9 +535,11 @@ export default function PlanAccionConsulta() {
         meetingType: 'concertation',
         meetingDate: selectedPlan.created_at,
         version: 1,
-        status: 'finalized',
+        status: selectedPlan.latest_minute_status || 'finalized',
         finalizedAt: selectedPlan.updated_at,
-        driveFileId: selectedPlan.drive_file_id,
+        driveFileId,
+        driveUrl: driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : null,
+        driveFolderUrl: null,
         signaturesCount: selectedPlan.my_signed ? 1 : 0
       });
     }
@@ -543,10 +547,27 @@ export default function PlanAccionConsulta() {
     return list.sort((a, b) => new Date(b.finalizedAt || b.meetingDate || 0) - new Date(a.finalizedAt || a.meetingDate || 0));
   }, [selectedPlan]);
 
-  // Última acta para validación y firma
-  const latestMinute = useMemo(() => {
-    return planActas.find((a) => a.status === 'signing') || planActas[0] || null;
-  }, [planActas]);
+  const handleOpenMinutesFolder = async () => {
+    if (!selectedPlan) return;
+    const directFolderUrl = planActas.find((a) => a.driveFolderUrl)?.driveFolderUrl;
+    if (directFolderUrl) {
+      window.open(directFolderUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    try {
+      enqueueSnackbar('Localizando carpeta ACTAS DE REUNIÓN en Google Drive...', { variant: 'info' });
+      const res = await strategicPlanningService.getActionPlanMinutesDriveFolder(selectedPlan.id);
+      const url = res?.folderUrl || res?.data?.folderUrl;
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else {
+        enqueueSnackbar('La carpeta de actas en Drive se habilitará al sincronizar la primera acta oficial.', { variant: 'warning' });
+      }
+    } catch (e) {
+      console.error('Error al abrir carpeta de actas en Drive:', e);
+      enqueueSnackbar('No fue posible abrir la carpeta de actas en Google Drive.', { variant: 'error' });
+    }
+  };
 
   // Períodos de monitoreo dinámicos del plan (1, 2, 3 o más según la vigencia)
   const periods = useMemo(() => {
@@ -618,6 +639,17 @@ export default function PlanAccionConsulta() {
       (it.parent_plan?.leader_name || '').toLowerCase().includes(term)
     );
   }, [coResponsibleItems, activitySearch]);
+
+  // Actas filtradas por búsqueda en tiempo real
+  const filteredActas = useMemo(() => {
+    if (!activitySearch.trim()) return planActas;
+    const term = activitySearch.toLowerCase().trim();
+    return planActas.filter((a) =>
+      (a.meetingTitle || '').toLowerCase().includes(term) ||
+      (a.meetingType || '').toLowerCase().includes(term) ||
+      (a.status || '').toLowerCase().includes(term)
+    );
+  }, [planActas, activitySearch]);
 
   // Evidencias asociadas al período seleccionado en el modal de radicación
   const targetPeriodEvidences = useMemo(() => {
@@ -941,7 +973,7 @@ export default function PlanAccionConsulta() {
               variant="outlined"
               color="secondary"
               startIcon={<DescriptionIcon />}
-              onClick={() => setActasModalOpen(true)}
+              onClick={() => setActivityViewTab('minutes')}
               sx={{
                 borderRadius: 2.2,
                 textTransform: 'none',
@@ -955,54 +987,53 @@ export default function PlanAccionConsulta() {
                 '&:hover': { bgcolor: '#f3e8ff', borderColor: '#c084fc' }
               }}
             >
-              Descargar Actas {planActas.length > 0 ? `(${planActas.length})` : ''}
+              Consultar Actas {planActas.length > 0 ? `(${planActas.length})` : ''}
             </Button>
           </Stack>
         </Stack>
       </Paper>
 
-      {/* 2. Banner de Estado y Advertencia Institucional */}
+      {/* 2. Banner Institucional de Consulta y Seguimiento */}
       {isOwnerValidation ? (
         <Alert
-          severity="warning"
-          icon={<WarningIcon sx={{ fontSize: 26, color: '#d97706' }} />}
+          severity="info"
+          icon={<DescriptionIcon sx={{ fontSize: 26, color: '#1d4ed8' }} />}
           sx={{
             borderRadius: 3,
-            border: '1px solid #fde68a',
-            bgcolor: '#fffbeb',
+            border: '1px solid #bfdbfe',
+            bgcolor: '#eff6ff',
             alignItems: 'center',
+            py: 1.2,
+            px: 2.2,
             '& .MuiAlert-message': { width: '100%' }
           }}
           action={
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Button
-                variant="outlined"
-                color="inherit"
-                startIcon={<EditNoteIcon />}
-                onClick={() => setAdjustmentsModalOpen(true)}
-                sx={{ textTransform: 'none', fontWeight: 850, borderRadius: 2, fontSize: 12, borderColor: '#d97706', color: '#92400e', '&:hover': { bgcolor: 'rgba(217,119,6,0.08)' } }}
-              >
-                Devolver con observaciones a Planeación
-              </Button>
-              {latestMinute && (
-                <Button
-                  variant="contained"
-                  color="warning"
-                  startIcon={<VerifiedIcon />}
-                  onClick={() => navigate(`/strategic-minutes/${latestMinute.id}/signing`)}
-                  sx={{ textTransform: 'none', fontWeight: 900, borderRadius: 2, color: '#451a03', fontSize: 12 }}
-                >
-                  Firmar Acta
-                </Button>
-              )}
-            </Stack>
+            <Button
+              variant="outlined"
+              color="primary"
+              size="small"
+              startIcon={<EditNoteIcon />}
+              onClick={() => setAdjustmentsModalOpen(true)}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 850,
+                borderRadius: 2,
+                fontSize: 12,
+                borderColor: '#2563eb',
+                color: '#1d4ed8',
+                bgcolor: '#ffffff',
+                '&:hover': { bgcolor: '#f0f7ff', borderColor: '#1d4ed8' }
+              }}
+            >
+              Devolver con observaciones a Planeación
+            </Button>
           }
         >
-          <Typography sx={{ fontWeight: 850, fontSize: 14, color: '#92400e' }}>
-            Plan de Acción en Revisión y Retroalimentación (Etapa Transitoria)
+          <Typography sx={{ fontWeight: 850, fontSize: 14, color: '#1e3a8a' }}>
+            Plan de Acción en Revisión y Retroalimentación Institucional
           </Typography>
-          <Typography sx={{ fontSize: 12.5, color: '#b45309', mt: 0.2 }}>
-            Revise las actividades concertadas y el Acta COM-IF-FR-002. Si requiere modificaciones, devuélvalo con sus observaciones a Planeación y Efectividad (el plan saldrá temporalmente de su bandeja mientras es ajustado). Si está conforme, proceda a la firma del acta.
+          <Typography sx={{ fontSize: 12.5, color: '#1e40af', mt: 0.2 }}>
+            Revise las actividades concertadas y las actas oficiales del plan. Recuerde que la formalización y firma electrónica del acta se realiza a través del enlace enviado a su correo institucional. Si requiere modificaciones en las actividades antes de continuar, puede remitirlas a Planeación y Efectividad.
           </Typography>
         </Alert>
       ) : (
@@ -1212,7 +1243,7 @@ export default function PlanAccionConsulta() {
             sx={{
               minHeight: 44,
               '& .MuiTabs-indicator': {
-                bgcolor: activityViewTab === 'responsible' ? '#1f3864' : '#800000',
+                bgcolor: activityViewTab === 'responsible' ? '#1f3864' : (activityViewTab === 'co_responsible' ? '#800000' : '#7e22ce'),
                 height: 3
               }
             }}
@@ -1261,11 +1292,39 @@ export default function PlanAccionConsulta() {
               }
               sx={{ textTransform: 'none', px: 2, minHeight: 44, color: activityViewTab === 'co_responsible' ? '#800000' : '#64748b' }}
             />
+            <Tab
+              value="minutes"
+              label={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography sx={{ fontSize: 13, fontWeight: activityViewTab === 'minutes' ? 900 : 700 }}>
+                    Hoja 3: ACTAS DE REUNIÓN
+                  </Typography>
+                  <Chip
+                    size="small"
+                    label={planActas.length}
+                    sx={{
+                      bgcolor: activityViewTab === 'minutes' ? '#f3e8ff' : '#f1f5f9',
+                      color: activityViewTab === 'minutes' ? '#7e22ce' : '#64748b',
+                      fontWeight: 850,
+                      fontSize: 10.5,
+                      height: 20
+                    }}
+                  />
+                </Stack>
+              }
+              sx={{ textTransform: 'none', px: 2, minHeight: 44, color: activityViewTab === 'minutes' ? '#7e22ce' : '#64748b' }}
+            />
           </Tabs>
 
           <TextField
             size="small"
-            placeholder={activityViewTab === 'responsible' ? "Buscar por código, actividad..." : "Buscar por código, actividad, dependencia..."}
+            placeholder={
+              activityViewTab === 'responsible'
+                ? "Buscar por código, actividad..."
+                : (activityViewTab === 'co_responsible'
+                    ? "Buscar por código, actividad, dependencia..."
+                    : "Buscar acta por reunión, fecha...")
+            }
             value={activitySearch}
             onChange={(e) => setActivitySearch(e.target.value)}
             InputProps={{
@@ -1288,8 +1347,8 @@ export default function PlanAccionConsulta() {
           sx={{
             p: 1.25,
             px: 2.5,
-            bgcolor: activityViewTab === 'responsible' ? '#d9e2f3' : '#fef3c7',
-            borderBottom: `2px solid ${activityViewTab === 'responsible' ? '#2f5597' : '#b45309'}`,
+            bgcolor: activityViewTab === 'responsible' ? '#d9e2f3' : (activityViewTab === 'co_responsible' ? '#fef3c7' : '#f5f3ff'),
+            borderBottom: `2px solid ${activityViewTab === 'responsible' ? '#2f5597' : (activityViewTab === 'co_responsible' ? '#b45309' : '#7e22ce')}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -1297,17 +1356,203 @@ export default function PlanAccionConsulta() {
             gap: 1
           }}
         >
-          <Typography sx={{ fontWeight: 900, fontSize: 13, color: activityViewTab === 'responsible' ? '#1f3864' : '#78350f', letterSpacing: 0.5 }}>
+          <Typography sx={{ fontWeight: 900, fontSize: 13, color: activityViewTab === 'responsible' ? '#1f3864' : (activityViewTab === 'co_responsible' ? '#78350f' : '#581c87'), letterSpacing: 0.5 }}>
             {activityViewTab === 'responsible'
               ? `${selectedPlan?.code || 'PLAN'}_ ${(selectedPlan?.organizationalUnit?.name || selectedPlan?.title || 'PLAN DE ACCIÓN').toUpperCase()}`
-              : `ACTIVIDADES EN CORRESPONSABILIDAD · ${(selectedPlan?.organizationalUnit?.name || selectedPlan?.title || 'PLAN DE ACCIÓN').toUpperCase()}`}
+              : (activityViewTab === 'co_responsible'
+                  ? `ACTIVIDADES EN CORRESPONSABILIDAD · ${(selectedPlan?.organizationalUnit?.name || selectedPlan?.title || 'PLAN DE ACCIÓN').toUpperCase()}`
+                  : `ACTAS DE REUNIÓN · ${(selectedPlan?.organizationalUnit?.name || selectedPlan?.title || 'PLAN DE ACCIÓN').toUpperCase()}`)}
           </Typography>
-          <Typography sx={{ fontSize: 11, fontWeight: 800, color: activityViewTab === 'responsible' ? '#2f5597' : '#b45309' }}>
-            FORMATO OFICIAL DIR-PE-FR-003 · HOJA: {activityViewTab === 'responsible' ? 'PLAN DE ACCIÓN' : 'EN CORRESPONSABILIDAD'}
-          </Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            {activityViewTab === 'minutes' && (
+              <Button
+                size="small"
+                variant="contained"
+                startIcon={<FolderSharedIcon sx={{ fontSize: 14 }} />}
+                onClick={handleOpenMinutesFolder}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 850,
+                  fontSize: 11,
+                  borderRadius: 2,
+                  py: 0.3,
+                  px: 1.4,
+                  bgcolor: '#7e22ce',
+                  color: '#ffffff',
+                  boxShadow: 'none',
+                  '&:hover': { bgcolor: '#6b21a8' }
+                }}
+              >
+                Carpeta en Google Drive
+              </Button>
+            )}
+            <Typography sx={{ fontSize: 11, fontWeight: 800, color: activityViewTab === 'responsible' ? '#2f5597' : (activityViewTab === 'co_responsible' ? '#b45309' : '#7e22ce') }}>
+              FORMATO OFICIAL DIR-PE-FR-003 · HOJA: {activityViewTab === 'responsible' ? 'PLAN DE ACCIÓN' : (activityViewTab === 'co_responsible' ? 'EN CORRESPONSABILIDAD' : 'ACTAS DE REUNIÓN')}
+            </Typography>
+          </Stack>
         </Box>
 
-        {activityViewTab === 'responsible' ? (
+        {activityViewTab === 'minutes' ? (
+          <TableContainer sx={{ maxHeight: 560, overflowX: 'auto' }}>
+            <Table stickyHeader size="small" sx={{ minWidth: 980 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, textAlign: 'center', width: 55, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                    NO.
+                  </TableCell>
+                  <TableCell sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 140, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                    DOCUMENTO
+                  </TableCell>
+                  <TableCell sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, minWidth: 260, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                    REUNIÓN / ASUNTO
+                  </TableCell>
+                  <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 130, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                    TIPO
+                  </TableCell>
+                  <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 130, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                    FECHA
+                  </TableCell>
+                  <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 90, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                    VERSIÓN
+                  </TableCell>
+                  <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 180, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                    ESTADO
+                  </TableCell>
+                  <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 220, py: 1.2 }}>
+                    CONSULTA EN REPOSITORIO
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredActas.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} sx={{ textAlign: 'center', py: 6, color: '#64748b' }}>
+                      <Stack spacing={1.5} alignItems="center" justifyContent="center">
+                        <DescriptionIcon sx={{ fontSize: 48, color: '#cbd5e1' }} />
+                        <Typography sx={{ fontWeight: 800, fontSize: 14, color: '#334155' }}>
+                          No hay actas registradas para este plan de acción
+                        </Typography>
+                        <Typography sx={{ fontSize: 12, color: '#64748b', maxWidth: 480 }}>
+                          Cada acta de concertación o seguimiento generada por Planeación y Efectividad estará disponible aquí con su enlace directo a la carpeta "ACTAS DE REUNIÓN" en Google Drive.
+                        </Typography>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<FolderSharedIcon sx={{ fontSize: 15 }} />}
+                          onClick={handleOpenMinutesFolder}
+                          sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, mt: 1, borderColor: '#c084fc', color: '#7e22ce' }}
+                        >
+                          Ver Carpeta de Actas en Google Drive
+                        </Button>
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredActas.map((acta, idx) => (
+                    <TableRow key={acta.minuteId || idx} hover sx={{ '&:hover': { bgcolor: '#faf5ff' } }}>
+                      <TableCell align="center" sx={{ fontWeight: 800, color: '#475569', fontSize: 11.5, verticalAlign: 'middle', py: 1.2 }}>
+                        {idx + 1}
+                      </TableCell>
+                      <TableCell sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                        <Chip
+                          size="small"
+                          label="COM-IF-FR-002"
+                          sx={{ fontWeight: 850, fontSize: 10.5, bgcolor: '#f3e8ff', color: '#6b21a8', height: 22 }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                        <Typography sx={{ fontWeight: 800, fontSize: 12.5, color: '#0f172a' }}>
+                          {acta.meetingTitle}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                        <Chip
+                          size="small"
+                          label={acta.meetingType === 'concertation' ? 'Concertación' : 'Seguimiento'}
+                          sx={{
+                            fontWeight: 750,
+                            fontSize: 10,
+                            height: 20,
+                            bgcolor: acta.meetingType === 'concertation' ? '#eff6ff' : '#f0fdf4',
+                            color: acta.meetingType === 'concertation' ? '#1d4ed8' : '#15803d'
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontSize: 11.5, color: '#475569', verticalAlign: 'middle', py: 1.2 }}>
+                        {formatFecha(acta.finalizedAt || acta.meetingDate)}
+                      </TableCell>
+                      <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                        <Chip
+                          size="small"
+                          label={`v${acta.version}.0`}
+                          sx={{ fontWeight: 800, fontSize: 10.5, height: 20, bgcolor: '#f1f5f9', color: '#334155' }}
+                        />
+                      </TableCell>
+                      <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                        <Chip
+                          size="small"
+                          icon={<CheckCircleIcon sx={{ fontSize: '13px !important', color: (acta.status === 'finalized' ? '#15803d' : '#92400e') + ' !important' }} />}
+                          label={acta.status === 'finalized' ? 'Formalizada en Repositorio' : (acta.status === 'signing' ? 'En Firma por Correo' : 'Borrador')}
+                          sx={{
+                            fontWeight: 800,
+                            fontSize: 10.5,
+                            height: 22,
+                            bgcolor: acta.status === 'finalized' ? '#dcfce7' : '#fef3c7',
+                            color: acta.status === 'finalized' ? '#15803d' : '#92400e'
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                        <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
+                          {(acta.driveUrl || acta.driveFileId) ? (
+                            <Button
+                              size="small"
+                              variant="contained"
+                              startIcon={<FileIcon sx={{ fontSize: 14 }} />}
+                              onClick={() => handleOpenDriveUrl(acta.driveUrl || `https://drive.google.com/file/d/${acta.driveFileId}/view`)}
+                              sx={{
+                                textTransform: 'none',
+                                fontWeight: 850,
+                                fontSize: 11,
+                                py: 0.4,
+                                px: 1.2,
+                                borderRadius: 2,
+                                bgcolor: '#15803d',
+                                boxShadow: 'none',
+                                '&:hover': { bgcolor: '#166534' }
+                              }}
+                            >
+                              Ver en Drive
+                            </Button>
+                          ) : null}
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<VisibilityIcon sx={{ fontSize: 14 }} />}
+                            onClick={() => handlePreviewMinute(acta.minuteId, acta.meetingTitle)}
+                            sx={{
+                              textTransform: 'none',
+                              fontWeight: 800,
+                              fontSize: 11,
+                              py: 0.4,
+                              px: 1,
+                              borderRadius: 2,
+                              borderColor: '#cbd5e1',
+                              color: '#334155',
+                              '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8' }
+                            }}
+                          >
+                            Visor
+                          </Button>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        ) : activityViewTab === 'responsible' ? (
           <TableContainer sx={{ maxHeight: 560, overflowX: 'auto' }}>
           <Table stickyHeader size="small" sx={{ minWidth: 1040 }}>
             <TableHead>
@@ -2714,6 +2959,26 @@ export default function PlanAccionConsulta() {
             </Box>
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center">
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<FolderSharedIcon sx={{ fontSize: 14 }} />}
+              onClick={handleOpenMinutesFolder}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 850,
+                fontSize: 11,
+                borderRadius: 2,
+                py: 0.3,
+                px: 1.4,
+                bgcolor: '#7e22ce',
+                color: '#ffffff',
+                boxShadow: 'none',
+                '&:hover': { bgcolor: '#6b21a8' }
+              }}
+            >
+              Carpeta en Drive
+            </Button>
             <Tooltip title="Actualizar actas desde el repositorio" arrow>
               <IconButton
                 size="small"
@@ -2813,6 +3078,29 @@ export default function PlanAccionConsulta() {
 
                         <TableCell align="center" sx={{ py: 1.2 }}>
                           <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
+                            {(acta.driveUrl || acta.driveFileId) && (
+                              <Tooltip title="Abrir y consultar el acta directamente en Google Drive" arrow>
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  startIcon={<FileIcon sx={{ fontSize: 14 }} />}
+                                  onClick={() => handleOpenDriveUrl(acta.driveUrl || `https://drive.google.com/file/d/${acta.driveFileId}/view`)}
+                                  sx={{
+                                    textTransform: 'none',
+                                    fontSize: 11,
+                                    fontWeight: 850,
+                                    py: 0.5,
+                                    px: 1.2,
+                                    borderRadius: 2,
+                                    bgcolor: '#15803d',
+                                    boxShadow: 'none',
+                                    '&:hover': { bgcolor: '#166534' }
+                                  }}
+                                >
+                                  Ver en Drive
+                                </Button>
+                              </Tooltip>
+                            )}
                             {/* Previsualizar en el visor interno de SIAC sin salir a Drive */}
                             <Tooltip title="Previsualizar el documento oficial en el visor interno del sistema" arrow>
                               <Button
