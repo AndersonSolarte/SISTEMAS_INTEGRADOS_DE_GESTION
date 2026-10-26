@@ -2644,7 +2644,8 @@ const getActionItemDriveFolder = wrap(async (req, res) => {
     include: [{ model: StrategicEvidence, as: 'evidence', where: { deleted_at: null }, required: false }]
   });
   if (!item) throw Object.assign(new Error('Actividad no encontrada.'), { statusCode: 404 });
-  const syncedEvidence = (item.evidence || []).find((e) => e.drive_folder_id);
+  const periodId = req.query.periodId || null;
+  const syncedEvidence = (item.evidence || []).find((e) => periodId ? (String(e.monitoring_period_id) === String(periodId) && e.drive_folder_id) : e.drive_folder_id);
   if (syncedEvidence) {
     return ok(res, {
       folderId: syncedEvidence.drive_folder_id,
@@ -2652,7 +2653,7 @@ const getActionItemDriveFolder = wrap(async (req, res) => {
     });
   }
   try {
-    const folderInfo = await getActivityDriveFolder(item.id);
+    const folderInfo = await getActivityDriveFolder(item.id, periodId);
     return ok(res, folderInfo);
   } catch (e) {
     return ok(res, { folderId: null, folderUrl: null, message: e.message });

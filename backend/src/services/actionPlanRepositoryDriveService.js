@@ -187,7 +187,19 @@ const findByRepositoryKey = async (drive, parentId, key, mimeType, expectedName 
     fields: 'files(id,name,mimeType,parents,appProperties,webViewLink)', spaces: 'drive',
     supportsAllDrives: true, includeItemsFromAllDrives: true, pageSize: 2
   });
-  return byName.data.files?.[0] || null;
+  if (byName.data.files?.[0]) return byName.data.files[0];
+
+  // Si el nombre anterior fue truncado a 48 caracteres o modificado, buscar por prefijo
+  if (safeName.length > 40) {
+    const prefix = safeName.slice(0, 42);
+    const byPrefix = await drive.files.list({
+      q: `'${driveEscape(parentId)}' in parents and trashed=false${mimeQuery} and name contains '${driveEscape(prefix)}'`,
+      fields: 'files(id,name,mimeType,parents,appProperties,webViewLink)', spaces: 'drive',
+      supportsAllDrives: true, includeItemsFromAllDrives: true, pageSize: 2
+    });
+    if (byPrefix.data.files?.[0]) return byPrefix.data.files[0];
+  }
+  return null;
 };
 
 const ensureFolder = async (drive, { parentId, name, key, legacyParentIds = [] }, counters) => {
@@ -568,7 +580,7 @@ const syncActionPlanRepositoryTerm = async (termId) => {
       for (const period of (applicablePeriods.length ? applicablePeriods : periods)) {
         const activityFolder = await ensureFolder(drive, {
           parentId: periodFolders.get(String(period.id)),
-          name: compactFolderName(item.code, item.activity, 48),
+          name: compactFolderName(item.code, item.activity, 240),
           key: `action-repository:activity:${item.id}:period:${period.id}`
         }, counters);
         activityFolders.set(`${item.id}:${period.id}`, activityFolder);

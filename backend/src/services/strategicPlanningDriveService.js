@@ -11,7 +11,10 @@ const {
 const {
   buildActionRepositoryDriveClient,
   buildPedFolderName,
-  compactFolderName
+  compactFolderName,
+  repositoryName,
+  repositoryPropertyValue,
+  REPOSITORY_PROPERTY
 } = require('./actionPlanRepositoryDriveService');
 
 const buildWritableDriveClient = () => {
@@ -23,51 +26,192 @@ const safeName = (value, max = 80) => String(value || 'SIN-CODIGO').normalize('N
   .replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, max) || 'SIN-CODIGO';
 
 const findOrCreateFolder = async (drive, { parentId, name, key }) => {
-  const cleanName = String(name || '').trim();
+  const cleanName = repositoryName(name, 240);
   const escapedName = cleanName.replace(/'/g, "\\'");
   const escapedSafeName = safeName(cleanName).replace(/'/g, "\\'");
-  const escapedKey = String(key).replace(/'/g, "\\'");
+  const propVal = repositoryPropertyValue(key);
+  const escapedPropVal = String(propVal).replace(/'/g, "\\'");
+  const rawKey = String(key).replace(/'/g, "\\'");
+
   const response = await drive.files.list({
-    q: `'${parentId}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder' and (name='${escapedName}' or name='${escapedSafeName}' or appProperties has { key='siacPeiKey' and value='${escapedKey}' } or appProperties has { key='siacActionRepository' and value='${escapedKey}' })`,
-    fields: 'files(id,name)', spaces: 'drive', supportsAllDrives: true, includeItemsFromAllDrives: true, pageSize: 2
+    q: `'${parentId}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder' and (` +
+       `name='${escapedName}' or name='${escapedSafeName}' or ` +
+       `appProperties has { key='${REPOSITORY_PROPERTY}' and value='${escapedPropVal}' } or ` +
+       `appProperties has { key='${REPOSITORY_PROPERTY}' and value='${rawKey}' } or ` +
+       `appProperties has { key='siacPeiKey' and value='${rawKey}' })`,
+    fields: 'files(id,name,appProperties)',
+    spaces: 'drive',
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    pageSize: 5
   });
-  if (response.data.files?.[0]) return response.data.files[0].id;
+
+  if (response.data.files?.[0]) {
+    const existing = response.data.files[0];
+    if (cleanName && existing.name !== cleanName) {
+      try {
+        await drive.files.update({
+          fileId: existing.id,
+          requestBody: {
+            name: cleanName,
+            appProperties: {
+              ...(existing.appProperties || {}),
+              [REPOSITORY_PROPERTY]: propVal,
+              siacPeiKey: rawKey
+            }
+          },
+          fields: 'id,name',
+          supportsAllDrives: true
+        });
+      } catch (renameErr) {
+        console.warn(`[StrategicDrive] No se pudo actualizar nombre de carpeta ${existing.id} a "${cleanName}":`, renameErr.message);
+      }
+    }
+    return existing.id;
+  }
+
+  // Si no se encontró por coincidencia exacta (ej. fue truncada previamente a 48 caracteres), buscar por prefijo
+  if (cleanName.length > 35) {
+    const prefix = cleanName.slice(0, 35).replace(/'/g, "\\'");
+    try {
+      const prefixSearch = await drive.files.list({
+        q: `'${parentId}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder' and name contains '${prefix}'`,
+        fields: 'files(id,name,appProperties)',
+        spaces: 'drive',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+        pageSize: 5
+      });
+      if (prefixSearch.data.files?.[0]) {
+        const existing = prefixSearch.data.files[0];
+        try {
+          await drive.files.update({
+            fileId: existing.id,
+            requestBody: {
+              name: cleanName,
+              appProperties: {
+                ...(existing.appProperties || {}),
+                [REPOSITORY_PROPERTY]: propVal,
+                siacPeiKey: rawKey
+              }
+            },
+            fields: 'id,name',
+            supportsAllDrives: true
+          });
+        } catch (renameErr) {
+          console.warn(`[StrategicDrive] No se pudo renombrar carpeta prefijo ${existing.id} a "${cleanName}":`, renameErr.message);
+        }
+        return existing.id;
+      }
+    } catch (_) {}
+  }
+
   const created = await drive.files.create({
-    requestBody: { name: cleanName || safeName(name), mimeType: 'application/vnd.google-apps.folder', parents: [parentId], appProperties: { siacPeiKey: String(key), siacActionRepository: String(key) } },
-    fields: 'id', supportsAllDrives: true
+    requestBody: {
+      name: cleanName || safeName(name),
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentId],
+      appProperties: {
+        [REPOSITORY_PROPERTY]: propVal,
+        siacPeiKey: rawKey
+      }
+    },
+    fields: 'id',
+    supportsAllDrives: true
   });
   return created.data.id;
 };
 
 const ensureEvidenceFolder = async (drive, evidence) => {
-  const item = await StrategicActionItem.findByPk(evidence.action_item_id, { include: [{
-    model: StrategicActionPlan, as: 'actionPlan', include: [
-      { model: StrategicCatalogItem, as: 'organizationalUnit' },
-      { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }] }
-    ]
-  }] });
-  const plan = item?.actionPlan?.term?.strategicPlan;
+  const item = await StrategicActionItem.findByPk(evidence.action_item_id, {
+    include: [{
+      model: StrategicActionPlan, as: 'actionPlan',
+      include: [
+        { model: StrategicCatalogItem, as: 'organizationalUnit' },
+        { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }] }
+      ]
+    }]
+  });
+  if (!item) throw new Error('Actividad no encontrada para organizar carpeta de evidencias.');
+  const actionPlan = item.actionPlan;
+  const term = actionPlan?.term;
+  const plan = term?.strategicPlan;
   const rootId = plan?.drive_root_id || process.env.SIAC_PEI_DRIVE_ROOT_ID || process.env.SIAC_ACTION_REPOSITORY_ROOT_ID;
   if (!rootId) throw Object.assign(new Error('Falta SIAC_PEI_DRIVE_ROOT_ID o SIAC_ACTION_REPOSITORY_ROOT_ID en la configuración de Drive.'), { statusCode: 503 });
-  const pedFolder = await findOrCreateFolder(drive, { parentId: rootId, name: safeName(plan.code), key: `ped:${plan.id}` });
-  const yearFolder = await findOrCreateFolder(drive, { parentId: pedFolder, name: `PLANES DE ACCIÓN ${item.actionPlan.term.year}`, key: `term:${item.actionPlan.term.id}` });
-  const unitCode = item.actionPlan.organizationalUnit?.code || item.actionPlan.code;
-  const unitName = item.actionPlan.organizationalUnit?.name || item.actionPlan.title;
+
+  // 1. Carpeta PED (ej. "PED 2021-2027")
+  const pedFolderName = buildPedFolderName(plan);
+  const pedFolder = await findOrCreateFolder(drive, {
+    parentId: rootId,
+    name: pedFolderName,
+    key: `action-repository:ped:${plan?.id || 'default'}`
+  });
+
+  // 2. Carpeta Vigencia (ej. "PLANES DE ACCIÓN 2026")
+  const yearFolder = await findOrCreateFolder(drive, {
+    parentId: pedFolder,
+    name: `PLANES DE ACCIÓN ${term.year}`,
+    key: `action-repository:term:${term.id}`
+  });
+
+  // 3. Carpeta Unidad Organizacional (ej. "DIR-PLAN - DIRECCIÓN DE PLANEACIÓN Y EFECTIVIDAD INSTITUCIONAL")
+  const unitCode = actionPlan.organizationalUnit?.code || actionPlan.code;
+  const unitName = actionPlan.organizationalUnit?.name || actionPlan.title;
   const planFolderName = compactFolderName(unitCode, unitName, 240);
-  const actionFolder = await findOrCreateFolder(drive, { parentId: yearFolder, name: planFolderName, key: `action-plan:${item.actionPlan.id}` });
-  
-  // Carpeta de Drive organizada con el nombre y código oficial de la ACTIVIDAD
-  const actCode = item.code || 'ACTIVIDAD';
+  const unitScope = `${term.id}:${actionPlan.catalog_item_id || actionPlan.id}`;
+  const planFolder = await findOrCreateFolder(drive, {
+    parentId: yearFolder,
+    name: planFolderName,
+    key: `action-repository:unit:${unitScope}`
+  });
+
+  // 4. Período / Semestre (ej. "2026-1" o "2026-2")
+  const periods = await StrategicMonitoringPeriod.findAll({
+    where: { term_id: term.id },
+    order: [['order', 'ASC'], ['starts_on', 'ASC']]
+  });
+
+  let selectedPeriod = null;
+  if (evidence.monitoring_period_id) {
+    selectedPeriod = periods.find((p) => String(p.id) === String(evidence.monitoring_period_id));
+  }
+  if (!selectedPeriod) {
+    // Si no se especifica período, deducir por la fecha de entrega de la actividad o la fecha actual
+    const checkDateStr = item.delivery_date || item.end_date || item.start_date || new Date().toISOString();
+    const checkMonth = new Date(checkDateStr).getMonth() + 1; // 1 a 12
+    const periodIdx = checkMonth <= 7 ? 0 : 1;
+    selectedPeriod = periods[periodIdx] || periods[0];
+  }
+
+  const periodIndex = periods.findIndex((p) => String(p.id) === String(selectedPeriod?.id));
+  const periodFolderName = selectedPeriod
+    ? `${term.year}-${periodIndex >= 0 ? periodIndex + 1 : 1}`
+    : `${term.year}-1`;
+  const periodKey = selectedPeriod
+    ? `action-repository:period:${unitScope}:${selectedPeriod.id}`
+    : `action-repository:period:${unitScope}:default`;
+
+  const periodFolder = await findOrCreateFolder(drive, {
+    parentId: planFolder,
+    name: periodFolderName,
+    key: periodKey
+  });
+
+  // 5. Carpeta de la ACTIVIDAD con su nombre completo (hasta 240 caracteres)
   const actName = item.activity || item.description || 'ACTIVIDAD';
-  const activityFolderName = compactFolderName(actCode, actName, 240);
+  const activityFolderName = compactFolderName(item.code, actName, 240);
+  const activityKey = selectedPeriod
+    ? `action-repository:activity:${item.id}:period:${selectedPeriod.id}`
+    : `action-repository:activity:${item.id}`;
+
   return findOrCreateFolder(drive, {
-    parentId: actionFolder,
+    parentId: periodFolder,
     name: activityFolderName,
-    key: `action-item:${item.id}`
+    key: activityKey
   });
 };
 
-const getActivityDriveFolder = async (actionItemId) => {
+const getActivityDriveFolder = async (actionItemId, periodId = null) => {
   const item = await StrategicActionItem.findByPk(actionItemId, {
     include: [{
       model: StrategicActionPlan, as: 'actionPlan', include: [
@@ -78,7 +222,7 @@ const getActivityDriveFolder = async (actionItemId) => {
   });
   if (!item) throw new Error('Actividad no encontrada.');
   const drive = buildWritableDriveClient();
-  const folderId = await ensureEvidenceFolder(drive, { action_item_id: item.id });
+  const folderId = await ensureEvidenceFolder(drive, { action_item_id: item.id, monitoring_period_id: periodId });
   return {
     folderId,
     folderUrl: `https://drive.google.com/drive/folders/${folderId}`

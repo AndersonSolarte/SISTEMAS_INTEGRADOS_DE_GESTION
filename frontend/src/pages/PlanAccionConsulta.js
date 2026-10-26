@@ -462,10 +462,13 @@ export default function PlanAccionConsulta() {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const handleOpenActivityFolder = async (item) => {
+  const handleOpenActivityFolder = async (item, periodId = null) => {
     if (!item) return;
-    const directUrl = (item.evidence || []).find((e) => e.drive_folder_url)?.drive_folder_url
-      || ((item.evidence || []).find((e) => e.drive_folder_id) ? `https://drive.google.com/drive/folders/${item.evidence.find((e) => e.drive_folder_id).drive_folder_id}` : null);
+    const targetPeriodId = periodId || monitoringForm?.period_id || null;
+    const directUrl = (item.evidence || []).find((e) => targetPeriodId ? (String(e.monitoring_period_id) === String(targetPeriodId) && e.drive_folder_url) : e.drive_folder_url)?.drive_folder_url
+      || ((item.evidence || []).find((e) => targetPeriodId ? (String(e.monitoring_period_id) === String(targetPeriodId) && e.drive_folder_id) : e.drive_folder_id)
+          ? `https://drive.google.com/drive/folders/${item.evidence.find((e) => targetPeriodId ? (String(e.monitoring_period_id) === String(targetPeriodId) && e.drive_folder_id) : e.drive_folder_id).drive_folder_id}`
+          : null);
     
     if (directUrl) {
       window.open(directUrl, '_blank', 'noopener,noreferrer');
@@ -474,9 +477,10 @@ export default function PlanAccionConsulta() {
 
     try {
       enqueueSnackbar('Localizando carpeta en Google Drive...', { variant: 'info' });
-      const res = await strategicPlanningService.getActionItemDriveFolder(item.id);
-      if (res?.folderUrl) {
-        window.open(res.folderUrl, '_blank', 'noopener,noreferrer');
+      const res = await strategicPlanningService.getActionItemDriveFolder(item.id, targetPeriodId);
+      const url = res?.folderUrl || res?.data?.folderUrl;
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
       } else {
         enqueueSnackbar('La carpeta de la actividad en Drive se habilitará al sincronizar el primer soporte.', { variant: 'warning' });
       }
@@ -2093,7 +2097,7 @@ export default function PlanAccionConsulta() {
                     size="small"
                     variant="outlined"
                     startIcon={<FolderSharedIcon sx={{ fontSize: 14 }} />}
-                    onClick={() => handleOpenActivityFolder(targetItem)}
+                    onClick={() => handleOpenActivityFolder(targetItem, monitoringForm.period_id)}
                     sx={{ textTransform: 'none', fontWeight: 750, fontSize: 11, borderRadius: 2, height: 28, py: 0 }}
                   >
                     Drive
