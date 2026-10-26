@@ -2434,7 +2434,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         </Box>
       </DialogTitle>
 
-      <DialogContent sx={{ p: { xs: 1.5, sm: 2.5, md: 3.5 }, bgcolor: '#f7f8fc' }}>
+      <DialogContent sx={{ p: { xs: 1.5, sm: 2.5, md: 3.5 }, pb: { xs: 14, sm: 16, md: 18 }, bgcolor: '#f7f8fc' }}>
         {loading ? (
           <Stack alignItems="center" py={10}><CircularProgress /></Stack>
         ) : !detail ? (
@@ -2659,7 +2659,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Alert>
                 )}
 
-                <Paper variant="outlined" sx={{ borderRadius: 3.5, overflow: 'hidden', borderColor: '#e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                <Paper variant="outlined" sx={{ borderRadius: 3.5, overflow: 'hidden', borderColor: '#e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', mb: 3 }}>
                   <Box sx={{ px: 3, py: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                       <Typography variant="h6" fontWeight={900} color="#0f172a" sx={{ fontSize: 16 }}>
@@ -5067,6 +5067,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                 </Paper>
               </Stack>
             )}
+
+            {/* Margen inferior en blanco extendido para que el botón flotante no se superponga sobre tablas ni acciones */}
+            <Box sx={{ height: { xs: 80, sm: 100 }, width: '100%', pointerEvents: 'none' }} />
           </Stack>
         )}
       </DialogContent>
