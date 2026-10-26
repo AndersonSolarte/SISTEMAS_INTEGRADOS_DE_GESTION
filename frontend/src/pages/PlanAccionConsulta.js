@@ -36,7 +36,7 @@ import {
   FolderShared as FolderSharedIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
-// import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import strategicPlanningService from '../services/strategicPlanningService';
@@ -82,6 +82,8 @@ const getFileIcon = (fileName) => {
 };
 
 export default function PlanAccionConsulta() {
+  // eslint-disable-next-line no-unused-vars
+  const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const { user: authUser } = useAuth();
   const userId = authUser?.id;
