@@ -25,7 +25,7 @@ const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailSe
 const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
 const { ensureStrategicPlanningDefaults, DEFAULT_WORKFLOW, DEFAULT_FIELDS } = require('../services/strategicPlanningBootstrap');
 const { sha256, cleanCode, requestMeta, audit, transitionPlan, saveActionItem, upsertMonitoring, findActionPlans } = require('../services/strategicPlanningDomainService');
-const { enqueueSync, enqueueActionRepositorySync, reconcileTerm, syncMinute } = require('../services/strategicPlanningDriveService');
+const { enqueueSync, enqueueActionRepositorySync, reconcileTerm, syncMinute, syncEvidence, getActivityDriveFolder } = require('../services/strategicPlanningDriveService');
 const { buildReferenceWorkbook, previewReferenceImport, confirmReferenceImport } = require('../services/strategicReferenceService');
 const { buildPedSchedule, reconcilePlanTerms } = require('../services/strategicPlanSetupService');
 const { buildDynamicActionItemWorkbook, previewDynamicActionItems, confirmDynamicActionItems } = require('../services/strategicDynamicWorkbookService');
@@ -2552,20 +2552,60 @@ const uploadEvidence = wrap(async (req, res) => {
   ensureDir(yearDir);
   const ext = path.extname(req.file.originalname).slice(0, 12).toLowerCase();
   const nextVersion = (await StrategicEvidence.max('version', { where: { action_item_id: item.id, monitoring_period_id: period.id } }) || 0) + 1;
-  const storedName = `${cleanCode(item.code)}-EV-${String(nextVersion).padStart(3, '0')}${ext}`;
+  const storedName = `${cleanCode(item.code)}-${cleanCode(period.code || 'PER')}-EV-${String(nextVersion).padStart(3, '0')}${ext}`;
   const storageKey = path.join(yearDir, storedName); fs.writeFileSync(storageKey, req.file.buffer, { flag: 'wx' });
-  const evidence = await StrategicEvidence.create({ action_item_id: item.id, monitoring_period_id: period.id, original_name: req.file.originalname, stored_name: storedName, storage_key: storageKey, mime_type: req.file.mimetype || 'application/octet-stream', size_bytes: req.file.size, sha256: digest, version: nextVersion, description: req.body.description || null, uploaded_by: req.user.id });
-  await enqueueSync({ entityId: evidence.id, createdBy: req.user.id });
+  const evidence = await StrategicEvidence.create({
+    action_item_id: item.id,
+    monitoring_period_id: period.id,
+    original_name: req.file.originalname,
+    stored_name: storedName,
+    storage_key: storageKey,
+    mime_type: req.file.mimetype || 'application/octet-stream',
+    size_bytes: req.file.size,
+    sha256: digest,
+    version: nextVersion,
+    description: req.body.description || null,
+    uploaded_by: req.user.id
+  });
+
+  // Sincronización automática e inmediata en Google Drive en la carpeta a nombre de la actividad
+  let driveSyncSuccess = false;
+  try {
+    const driveResult = await syncEvidence(evidence.id);
+    if (driveResult && !driveResult.skipped) {
+      driveSyncSuccess = true;
+      await evidence.reload();
+    }
+  } catch (driveErr) {
+    console.warn('[StrategicDrive] No se pudo sincronizar de inmediato a Drive; se encola en segundo plano:', driveErr.message);
+    await enqueueSync({ entityId: evidence.id, createdBy: req.user.id });
+  }
+
   await refreshActionRepository(item.actionPlan.term_id, req, 'evidence_uploaded');
   await audit(req, 'evidence.upload', 'evidence', evidence.id, null, { ...evidence.toJSON(), storage_key: '[PRIVATE]' });
-  res.status(201); ok(res, evidence, 'Evidencia almacenada temporalmente y puesta en cola para Drive.');
+  res.status(201);
+  ok(res, evidence, driveSyncSuccess
+    ? 'Evidencia cargada y respaldada de inmediato en la carpeta de la actividad en Google Drive.'
+    : 'Evidencia almacenada temporalmente y programada para sincronización con Drive.'
+  );
 });
 
 const downloadEvidence = wrap(async (req, res) => {
   const evidence = await StrategicEvidence.findByPk(req.params.evidenceId);
   if (!evidence || evidence.deleted_at) throw Object.assign(new Error('Evidencia no encontrada.'), { statusCode: 404 });
+  
+  const driveUrl = evidence.drive_file_id ? `https://drive.google.com/file/d/${evidence.drive_file_id}/view` : null;
+  if (req.query.drive === 'true' && driveUrl) {
+    return res.redirect(driveUrl);
+  }
+
   const fullPath = path.resolve(evidence.storage_key);
-  if (!fs.existsSync(fullPath)) throw Object.assign(new Error('El archivo físico de la evidencia no se encuentra en el servidor.'), { statusCode: 404 });
+  if (!fs.existsSync(fullPath)) {
+    if (driveUrl) {
+      return res.redirect(driveUrl);
+    }
+    throw Object.assign(new Error('El archivo físico de la evidencia no se encuentra en el servidor ni en Google Drive.'), { statusCode: 404 });
+  }
 
   const ext = path.extname(evidence.original_name || '').toLowerCase();
   const mimeMap = {
@@ -2597,6 +2637,26 @@ const retrySync = wrap(async (req, res) => {
   if (!evidence) throw Object.assign(new Error('Evidencia no encontrada.'), { statusCode: 404 });
   await evidence.update({ sync_status: 'pending' });
   ok(res, await enqueueSync({ entityId: evidence.id, createdBy: req.user.id, payload: { manual_retry: true } }), 'Reintento programado.');
+});
+
+const getActionItemDriveFolder = wrap(async (req, res) => {
+  const item = await StrategicActionItem.findByPk(req.params.itemId, {
+    include: [{ model: StrategicEvidence, as: 'evidence', where: { deleted_at: null }, required: false }]
+  });
+  if (!item) throw Object.assign(new Error('Actividad no encontrada.'), { statusCode: 404 });
+  const syncedEvidence = (item.evidence || []).find((e) => e.drive_folder_id);
+  if (syncedEvidence) {
+    return ok(res, {
+      folderId: syncedEvidence.drive_folder_id,
+      folderUrl: `https://drive.google.com/drive/folders/${syncedEvidence.drive_folder_id}`
+    });
+  }
+  try {
+    const folderInfo = await getActivityDriveFolder(item.id);
+    return ok(res, folderInfo);
+  } catch (e) {
+    return ok(res, { folderId: null, folderUrl: null, message: e.message });
+  }
 });
 
 const reconcile = wrap(async (req, res) => ok(res, await reconcileTerm(req.params.termId, req.user.id), 'Conciliación programada.'));
@@ -3207,7 +3267,7 @@ module.exports = {
   transitionActionPlan, saveMonitoring, createMeeting, updateMeeting,
   improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
-  uploadEvidence, downloadEvidence, retrySync, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
+  uploadEvidence, downloadEvidence, retrySync, getActionItemDriveFolder, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
   previewHistorical, confirmHistorical, exportActionPlan, syncPlanDriveExcel, analytics, getPedLiveStatistics, listAudit, listSyncJobs,
   getPlanCalendarSchedule, listPlanUpcomingCalendar, startPlanCalendarConnect, disconnectPlanCalendar,
   checkPlanCalendarAvailability, suggestPlanCalendarSlots, savePlanCalendarSchedule, cancelPlanCalendarSchedule

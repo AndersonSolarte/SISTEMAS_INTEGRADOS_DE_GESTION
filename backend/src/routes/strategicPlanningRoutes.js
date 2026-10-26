@@ -91,6 +91,7 @@ router.get('/minutes/:minuteId/pdf', permit(), c.downloadMinutePdf);
 router.post('/my-signature', permit(), c.registerUserSignature);
 
 router.post('/action-items/:itemId/evidence', permit('pei_seguimiento'), upload.single('file'), c.uploadEvidence);
+router.get('/action-items/:itemId/drive-folder', permit(), c.getActionItemDriveFolder);
 router.get('/evidence/:evidenceId/download', permit(), c.downloadEvidence);
 router.post('/evidence/:evidenceId/retry', permit('pei_drive'), c.retrySync);
 router.post('/terms/:termId/reconcile', permit('pei_drive'), c.reconcile);

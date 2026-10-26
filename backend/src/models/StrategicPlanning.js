@@ -354,7 +354,21 @@ const StrategicEvidence = sequelize.define('StrategicEvidence', {
   drive_md5: { type: DataTypes.STRING(64), allowNull: true },
   synced_at: { type: DataTypes.DATE, allowNull: true },
   uploaded_by: userId(false),
-  deleted_at: { type: DataTypes.DATE, allowNull: true }
+  deleted_at: { type: DataTypes.DATE, allowNull: true },
+  drive_url: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      const fileId = this.getDataValue('drive_file_id');
+      return fileId ? `https://drive.google.com/file/d/${fileId}/view` : null;
+    }
+  },
+  drive_folder_url: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      const folderId = this.getDataValue('drive_folder_id');
+      return folderId ? `https://drive.google.com/drive/folders/${folderId}` : null;
+    }
+  }
 }, commonOptions('pei_evidence', [{ fields: ['action_item_id', 'monitoring_period_id'] }, { fields: ['sync_status'] }]));
 
 const StrategicSyncJob = sequelize.define('StrategicSyncJob', {

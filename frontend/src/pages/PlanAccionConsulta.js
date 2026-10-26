@@ -31,7 +31,9 @@ import {
   Image as ImageIcon,
   OpenInNew as OpenInNewIcon,
   Search as SearchIcon,
-  Visibility as VisibilityIcon
+  Visibility as VisibilityIcon,
+  CloudDone as CloudDoneIcon,
+  FolderShared as FolderSharedIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router-dom';
@@ -460,6 +462,35 @@ export default function PlanAccionConsulta() {
     } catch (err) {
       console.error('Error al descargar evidencia:', err);
       enqueueSnackbar('No fue posible descargar el archivo.', { variant: 'error' });
+    }
+  };
+
+  const handleOpenDriveUrl = (url) => {
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleOpenActivityFolder = async (item) => {
+    if (!item) return;
+    const directUrl = (item.evidence || []).find((e) => e.drive_folder_url)?.drive_folder_url
+      || ((item.evidence || []).find((e) => e.drive_folder_id) ? `https://drive.google.com/drive/folders/${item.evidence.find((e) => e.drive_folder_id).drive_folder_id}` : null);
+    
+    if (directUrl) {
+      window.open(directUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    try {
+      enqueueSnackbar('Localizando carpeta en Google Drive...', { variant: 'info' });
+      const res = await strategicPlanningService.getActionItemDriveFolder(item.id);
+      if (res?.folderUrl) {
+        window.open(res.folderUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        enqueueSnackbar('La carpeta de la actividad en Drive se habilitará al sincronizar el primer soporte.', { variant: 'warning' });
+      }
+    } catch (e) {
+      console.error('Error al obtener carpeta de Drive:', e);
+      enqueueSnackbar('No fue posible abrir la carpeta en Google Drive.', { variant: 'error' });
     }
   };
 
@@ -2112,13 +2143,20 @@ export default function PlanAccionConsulta() {
                   border: '1px solid #e2e8f0'
                 }}
               >
-                <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1} flexWrap="wrap" gap={1}>
                   <Typography sx={{ fontSize: 12.5, fontWeight: 850, color: '#334155' }}>
                     Soportes ya radicados para este período ({targetPeriodEvidences.length})
                   </Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>
-                    Puede anexar soportes adicionales abajo
-                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="primary"
+                    startIcon={<FolderSharedIcon sx={{ fontSize: 15 }} />}
+                    onClick={() => handleOpenActivityFolder(targetItem)}
+                    sx={{ textTransform: 'none', fontWeight: 750, fontSize: 11, borderRadius: 1.5, py: 0.3 }}
+                  >
+                    Carpeta en Drive
+                  </Button>
                 </Stack>
                 <Stack spacing={0.8}>
                   {targetPeriodEvidences.map((ev) => (
@@ -2142,13 +2180,48 @@ export default function PlanAccionConsulta() {
                           <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a' }} noWrap>
                             {ev.original_name}
                           </Typography>
-                          <Typography variant="caption" sx={{ color: '#64748b', fontSize: 11 }}>
-                            {formatBytes(ev.size_bytes)} · Radicado el {formatFecha(ev.created_at)}
-                            {ev.description ? ` · ${ev.description}` : ''}
-                          </Typography>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                            <Typography variant="caption" sx={{ color: '#64748b', fontSize: 11 }}>
+                              {formatBytes(ev.size_bytes)} · Radicado el {formatFecha(ev.created_at)}
+                              {ev.description ? ` · ${ev.description}` : ''}
+                            </Typography>
+                            {(ev.drive_file_id || ev.drive_url) && (
+                              <Chip
+                                size="small"
+                                icon={<CloudDoneIcon sx={{ fontSize: '12px !important', color: '#16a34a !important' }} />}
+                                label="En Drive"
+                                sx={{ bgcolor: '#f0fdf4', color: '#166534', fontWeight: 750, fontSize: 10, height: 18 }}
+                              />
+                            )}
+                          </Stack>
                         </Box>
                       </Stack>
-                      <Stack direction="row" spacing={0.5}>
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        {(ev.drive_url || ev.drive_file_id) && (
+                          <Tooltip title="Abrir archivo directamente en Google Drive" arrow>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="success"
+                              startIcon={<OpenInNewIcon sx={{ fontSize: 13 }} />}
+                              onClick={() => handleOpenDriveUrl(ev.drive_url || `https://drive.google.com/file/d/${ev.drive_file_id}/view`)}
+                              sx={{
+                                textTransform: 'none',
+                                fontWeight: 750,
+                                fontSize: 11,
+                                borderRadius: 1.5,
+                                borderColor: '#86efac',
+                                color: '#15803d',
+                                bgcolor: '#f0fdf4',
+                                py: 0.3,
+                                px: 1,
+                                '&:hover': { bgcolor: '#dcfce7', borderColor: '#4ade80' }
+                              }}
+                            >
+                              Drive
+                            </Button>
+                          </Tooltip>
+                        )}
                         <Button
                           size="small"
                           variant="text"
@@ -2367,14 +2440,26 @@ export default function PlanAccionConsulta() {
               </Typography>
             </Box>
           </Stack>
-          <IconButton
-            aria-label="cerrar"
-            onClick={() => setEvidenceModalOpen(false)}
-            size="small"
-            sx={{ color: '#64748b' }}
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Button
+              size="small"
+              variant="outlined"
+              color="primary"
+              startIcon={<FolderSharedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => handleOpenActivityFolder(evidenceItem)}
+              sx={{ textTransform: 'none', fontWeight: 800, fontSize: 11.5, borderRadius: 2 }}
+            >
+              Carpeta en Google Drive
+            </Button>
+            <IconButton
+              aria-label="cerrar"
+              onClick={() => setEvidenceModalOpen(false)}
+              size="small"
+              sx={{ color: '#64748b' }}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Stack>
         </DialogTitle>
 
         <DialogContent sx={{ px: 3, py: 2.5, bgcolor: '#f8fafc' }}>
@@ -2427,16 +2512,48 @@ export default function PlanAccionConsulta() {
                         <Typography variant="caption" sx={{ color: '#64748b' }}>
                           Radicado: {formatFecha(ev.created_at)}
                         </Typography>
+                        {(ev.drive_file_id || ev.drive_url) && (
+                          <>
+                            <Typography variant="caption" sx={{ color: '#94a3b8' }}>•</Typography>
+                            <Chip
+                              size="small"
+                              icon={<CloudDoneIcon sx={{ fontSize: '13px !important', color: '#16a34a !important' }} />}
+                              label="En Google Drive"
+                              sx={{ bgcolor: '#f0fdf4', color: '#166534', fontWeight: 750, fontSize: 10.5, height: 20 }}
+                            />
+                          </>
+                        )}
                       </Stack>
                     </Box>
                   </Stack>
 
                   <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignSelf: { xs: 'flex-end', sm: 'center' } }}>
+                    {(ev.drive_url || ev.drive_file_id) && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="success"
+                        startIcon={<OpenInNewIcon sx={{ fontSize: 15 }} />}
+                        onClick={() => handleOpenDriveUrl(ev.drive_url || `https://drive.google.com/file/d/${ev.drive_file_id}/view`)}
+                        sx={{
+                          borderRadius: 2,
+                          textTransform: 'none',
+                          fontWeight: 800,
+                          fontSize: 12,
+                          bgcolor: '#f0fdf4',
+                          borderColor: '#86efac',
+                          color: '#15803d',
+                          '&:hover': { bgcolor: '#dcfce7', borderColor: '#4ade80' }
+                        }}
+                      >
+                        Ver en Drive
+                      </Button>
+                    )}
                     <Button
                       size="small"
                       variant="outlined"
                       color="primary"
-                      startIcon={<OpenInNewIcon sx={{ fontSize: 15 }} />}
+                      startIcon={<VisibilityIcon sx={{ fontSize: 15 }} />}
                       onClick={() => handlePreviewEvidence(ev)}
                       sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, fontSize: 12 }}
                     >

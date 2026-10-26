@@ -71,6 +71,7 @@ const strategicPlanningService = {
   downloadMinuteWord: (minuteId) => api.get(`${root}/minutes/${minuteId}/word`, { responseType: 'blob', timeout: 60000 }).then((response) => response.data),
   downloadEvidence: (evidenceId, preview = false) => api.get(`${root}/evidence/${evidenceId}/download`, { params: preview ? { preview: true } : {}, responseType: 'blob', timeout: 60000 }).then((response) => response.data),
   uploadEvidence: (itemId, formData) => api.post(`${root}/action-items/${itemId}/evidence`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }).then(data),
+  getActionItemDriveFolder: (itemId) => api.get(`${root}/action-items/${itemId}/drive-folder`).then(data),
   reconcile: (termId) => api.post(`${root}/terms/${termId}/reconcile`).then(data),
   syncActionRepository: (termId) => api.post(`${root}/terms/${termId}/action-repository/sync`, {}, { timeout: 300000 }).then(data),
   closeTerm: (termId) => api.post(`${root}/terms/${termId}/close`).then(data),

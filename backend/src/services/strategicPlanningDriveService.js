@@ -46,7 +46,6 @@ const ensureEvidenceFolder = async (drive, evidence) => {
       { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }] }
     ]
   }] });
-  const period = await StrategicMonitoringPeriod.findByPk(evidence.monitoring_period_id);
   const plan = item?.actionPlan?.term?.strategicPlan;
   const rootId = plan?.drive_root_id || process.env.SIAC_PEI_DRIVE_ROOT_ID || process.env.SIAC_ACTION_REPOSITORY_ROOT_ID;
   if (!rootId) throw Object.assign(new Error('Falta SIAC_PEI_DRIVE_ROOT_ID o SIAC_ACTION_REPOSITORY_ROOT_ID en la configuración de Drive.'), { statusCode: 503 });
@@ -56,11 +55,34 @@ const ensureEvidenceFolder = async (drive, evidence) => {
   const unitName = item.actionPlan.organizationalUnit?.name || item.actionPlan.title;
   const planFolderName = compactFolderName(unitCode, unitName, 240);
   const actionFolder = await findOrCreateFolder(drive, { parentId: yearFolder, name: planFolderName, key: `action-plan:${item.actionPlan.id}` });
+  
+  // Carpeta de Drive organizada con el nombre y código oficial de la ACTIVIDAD
+  const actCode = item.code || 'ACTIVIDAD';
+  const actName = item.activity || item.description || 'ACTIVIDAD';
+  const activityFolderName = compactFolderName(actCode, actName, 240);
   return findOrCreateFolder(drive, {
     parentId: actionFolder,
-    name: `EVID-${safeName(period?.code || 'PERIODO', 20)}`,
-    key: `period:${evidence.monitoring_period_id}`
+    name: activityFolderName,
+    key: `action-item:${item.id}`
   });
+};
+
+const getActivityDriveFolder = async (actionItemId) => {
+  const item = await StrategicActionItem.findByPk(actionItemId, {
+    include: [{
+      model: StrategicActionPlan, as: 'actionPlan', include: [
+        { model: StrategicCatalogItem, as: 'organizationalUnit' },
+        { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }] }
+      ]
+    }]
+  });
+  if (!item) throw new Error('Actividad no encontrada.');
+  const drive = buildWritableDriveClient();
+  const folderId = await ensureEvidenceFolder(drive, { action_item_id: item.id });
+  return {
+    folderId,
+    folderUrl: `https://drive.google.com/drive/folders/${folderId}`
+  };
 };
 
 const ensureActionPlanFolder = async (drive, actionPlan) => {
@@ -91,12 +113,22 @@ const syncEvidence = async (evidenceId) => {
   const media = { mimeType: evidence.mime_type, body: fs.createReadStream(evidence.storage_key) };
   let file;
   if (evidence.drive_file_id) {
-    file = await drive.files.update({ fileId: evidence.drive_file_id, requestBody, media, fields: 'id,md5Checksum', supportsAllDrives: true });
+    file = await drive.files.update({ fileId: evidence.drive_file_id, requestBody, media, fields: 'id,md5Checksum,webViewLink,webContentLink', supportsAllDrives: true });
   } else {
-    file = await drive.files.create({ requestBody: { ...requestBody, parents: [folderId] }, media, fields: 'id,md5Checksum', supportsAllDrives: true });
+    file = await drive.files.create({ requestBody: { ...requestBody, parents: [folderId] }, media, fields: 'id,md5Checksum,webViewLink,webContentLink', supportsAllDrives: true });
   }
-  await evidence.update({ drive_folder_id: folderId, drive_file_id: file.data.id, drive_md5: file.data.md5Checksum || null, sync_status: 'synced', synced_at: new Date() });
-  return { id: file.data.id, folderId };
+  await evidence.update({
+    drive_folder_id: folderId,
+    drive_file_id: file.data.id,
+    drive_md5: file.data.md5Checksum || null,
+    sync_status: 'synced',
+    synced_at: new Date()
+  });
+  return {
+    id: file.data.id,
+    folderId,
+    webViewLink: file.data.webViewLink || `https://drive.google.com/file/d/${file.data.id}/view`
+  };
 };
 
 const syncMinute = async (minuteId, forceRegenerate = true) => {
@@ -304,4 +336,4 @@ const reconcileTerm = async (termId, createdBy) => {
   return { total: evidence.length, pending: pending.length };
 };
 
-module.exports = { buildWritableDriveClient, enqueueSync, enqueueActionRepositorySync, syncEvidence, syncMinute, reconcileTerm, processOneSyncJob, startStrategicPlanningSyncWorker, safeName };
+module.exports = { buildWritableDriveClient, enqueueSync, enqueueActionRepositorySync, syncEvidence, syncMinute, reconcileTerm, processOneSyncJob, startStrategicPlanningSyncWorker, safeName, getActivityDriveFolder };

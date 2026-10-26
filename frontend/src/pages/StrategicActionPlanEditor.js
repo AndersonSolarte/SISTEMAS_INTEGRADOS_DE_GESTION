@@ -10,7 +10,8 @@ import {
   Close, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Email,
   AccessTime, CalendarMonth, Folder, History, LockOutlined, MoreTime, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, OpenInNew,
   PersonSearch, PictureAsPdf as PdfIcon, PlayArrow, PriorityHigh, QrCode2, Refresh, Save, Search, Send,
-  HelpOutline, Sync, TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility
+  HelpOutline, Sync, TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility,
+  CloudDone as CloudDoneIcon, FolderShared as FolderSharedIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../context/AuthContext';
@@ -2084,6 +2085,35 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     } catch (err) {
       console.error('Error al descargar evidencia:', err);
       enqueueSnackbar('No fue posible descargar el archivo.', { variant: 'error' });
+    }
+  };
+
+  const handleOpenDriveUrl = (url) => {
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleOpenActivityFolder = async (item) => {
+    if (!item) return;
+    const directUrl = (item.evidence || []).find((e) => e.drive_folder_url)?.drive_folder_url
+      || ((item.evidence || []).find((e) => e.drive_folder_id) ? `https://drive.google.com/drive/folders/${item.evidence.find((e) => e.drive_folder_id).drive_folder_id}` : null);
+    
+    if (directUrl) {
+      window.open(directUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    try {
+      enqueueSnackbar('Localizando carpeta en Google Drive...', { variant: 'info' });
+      const res = await strategicPlanningService.getActionItemDriveFolder(item.id);
+      if (res?.folderUrl) {
+        window.open(res.folderUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        enqueueSnackbar('La carpeta de la actividad en Drive se habilitará al sincronizar el primer soporte.', { variant: 'warning' });
+      }
+    } catch (e) {
+      console.error('Error al obtener carpeta de Drive:', e);
+      enqueueSnackbar('No fue posible abrir la carpeta en Google Drive.', { variant: 'error' });
     }
   };
 
@@ -4946,14 +4976,26 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               </Typography>
             </Box>
           </Stack>
-          <IconButton
-            aria-label="cerrar"
-            onClick={() => setEvidenceModalOpen(false)}
-            size="small"
-            sx={{ color: '#64748b' }}
-          >
-            <Close fontSize="small" />
-          </IconButton>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Button
+              size="small"
+              variant="outlined"
+              color="primary"
+              startIcon={<FolderSharedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => handleOpenActivityFolder(evidenceItem)}
+              sx={{ textTransform: 'none', fontWeight: 800, fontSize: 11.5, borderRadius: 2 }}
+            >
+              Carpeta en Google Drive
+            </Button>
+            <IconButton
+              aria-label="cerrar"
+              onClick={() => setEvidenceModalOpen(false)}
+              size="small"
+              sx={{ color: '#64748b' }}
+            >
+              <Close fontSize="small" />
+            </IconButton>
+          </Stack>
         </DialogTitle>
 
         <DialogContent sx={{ px: 3, py: 2.5, bgcolor: '#f8fafc' }}>
@@ -5006,11 +5048,43 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                         <Typography variant="caption" sx={{ color: '#64748b' }}>
                           Radicado: {formatFecha(ev.created_at)}
                         </Typography>
+                        {(ev.drive_file_id || ev.drive_url) && (
+                          <>
+                            <Typography variant="caption" sx={{ color: '#94a3b8' }}>•</Typography>
+                            <Chip
+                              size="small"
+                              icon={<CloudDoneIcon sx={{ fontSize: '13px !important', color: '#16a34a !important' }} />}
+                              label="En Google Drive"
+                              sx={{ bgcolor: '#f0fdf4', color: '#166534', fontWeight: 750, fontSize: 10.5, height: 20 }}
+                            />
+                          </>
+                        )}
                       </Stack>
                     </Box>
                   </Stack>
 
                   <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignSelf: { xs: 'flex-end', sm: 'center' } }}>
+                    {(ev.drive_url || ev.drive_file_id) && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="success"
+                        startIcon={<OpenInNew sx={{ fontSize: 15 }} />}
+                        onClick={() => handleOpenDriveUrl(ev.drive_url || `https://drive.google.com/file/d/${ev.drive_file_id}/view`)}
+                        sx={{
+                          borderRadius: 2,
+                          textTransform: 'none',
+                          fontWeight: 800,
+                          fontSize: 12,
+                          bgcolor: '#f0fdf4',
+                          borderColor: '#86efac',
+                          color: '#15803d',
+                          '&:hover': { bgcolor: '#dcfce7', borderColor: '#4ade80' }
+                        }}
+                      >
+                        Ver en Drive
+                      </Button>
+                    )}
                     <Button
                       size="small"
                       variant="outlined"
