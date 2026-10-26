@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Autocomplete, Avatar, Badge, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, Grid, IconButton, InputAdornment, Menu, MenuItem, Paper, Stack, Tab, Tabs, Table, TableBody, TableCell,
+  DialogTitle, Fab, Grid, IconButton, InputAdornment, Menu, MenuItem, Paper, Stack, Tab, Tabs, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
 import {
@@ -42,10 +42,14 @@ const normalizeFieldText = (str) =>
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
-const LeaderFeedbackSnippet = ({ info, isCurrentStatus = false, onOpenChat }) => {
-  if (!info || !info.comment) return null;
-  const leaderName = info.requested_by_name || 'Líder de Dependencia';
+const LeaderFeedbackSnippet = ({ info, isCurrentStatus = false, chatCount = 0, leaderNameFallback = 'Líder de Dependencia', onOpenChat }) => {
+  const hasComment = Boolean(info && info.comment);
+  if (!hasComment && chatCount === 0) return null;
+  const leaderName = info?.requested_by_name || leaderNameFallback;
   const initials = leaderName.split(' ').filter(Boolean).map((n) => n[0]).slice(0, 2).join('').toUpperCase() || 'LD';
+  const subtitle = hasComment
+    ? `"${info.comment}"`
+    : `Canal de retroalimentación activo (${chatCount} mensaje${chatCount > 1 ? 's' : ''}). Clic para ver o responder.`;
 
   return (
     <Paper
@@ -56,41 +60,41 @@ const LeaderFeedbackSnippet = ({ info, isCurrentStatus = false, onOpenChat }) =>
         px: { xs: 1.5, sm: 2 },
         py: 0.85,
         borderRadius: 2.5,
-        bgcolor: isCurrentStatus ? '#fffdf5' : '#f8fafc',
+        bgcolor: isCurrentStatus ? '#fffdf5' : '#f0fdf4',
         border: '1.5px solid',
-        borderColor: isCurrentStatus ? '#fcd34d' : '#e2e8f0',
+        borderColor: isCurrentStatus ? '#fcd34d' : '#86efac',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: 1.5,
         mb: 2,
-        boxShadow: isCurrentStatus ? '0 2px 8px rgba(245, 158, 11, 0.08)' : 'none',
+        boxShadow: isCurrentStatus ? '0 2px 8px rgba(245, 158, 11, 0.08)' : '0 2px 8px rgba(16, 185, 129, 0.08)',
         transition: 'all 0.18s ease-in-out',
         '&:hover': {
-          borderColor: isCurrentStatus ? '#f59e0b' : '#cbd5e1',
-          bgcolor: isCurrentStatus ? '#fffbeb' : '#f1f5f9',
-          boxShadow: '0 4px 14px rgba(245, 158, 11, 0.14)',
+          borderColor: isCurrentStatus ? '#f59e0b' : '#10b981',
+          bgcolor: isCurrentStatus ? '#fffbeb' : '#dcfce7',
+          boxShadow: isCurrentStatus ? '0 4px 14px rgba(245, 158, 11, 0.14)' : '0 4px 14px rgba(16, 185, 129, 0.16)',
           transform: 'translateY(-1px)'
         }
       }}
     >
       <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
         <Badge
-          color="warning"
+          color={isCurrentStatus ? 'warning' : 'success'}
           variant="dot"
-          invisible={!isCurrentStatus}
+          invisible={!isCurrentStatus && chatCount === 0}
           overlap="circular"
         >
           <Avatar
             sx={{
               width: 32,
               height: 32,
-              bgcolor: isCurrentStatus ? '#fef3c7' : '#e2e8f0',
-              color: isCurrentStatus ? '#b45309' : '#475569',
+              bgcolor: isCurrentStatus ? '#fef3c7' : '#dcfce7',
+              color: isCurrentStatus ? '#b45309' : '#15803d',
               fontSize: 11.5,
               fontWeight: 900,
               border: '1px solid',
-              borderColor: isCurrentStatus ? '#fde68a' : '#cbd5e1'
+              borderColor: isCurrentStatus ? '#fde68a' : '#86efac'
             }}
           >
             {initials}
@@ -98,8 +102,8 @@ const LeaderFeedbackSnippet = ({ info, isCurrentStatus = false, onOpenChat }) =>
         </Badge>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="nowrap">
-            <Typography sx={{ fontWeight: 850, fontSize: 13, color: isCurrentStatus ? '#92400e' : '#1e293b', whiteSpace: 'nowrap' }}>
-              💬 Observación del Líder
+            <Typography sx={{ fontWeight: 850, fontSize: 13, color: isCurrentStatus ? '#92400e' : '#14532d', whiteSpace: 'nowrap' }}>
+              💬 {isCurrentStatus ? 'Observación del Líder' : 'Canal de Retroalimentación Directa'}
             </Typography>
             {isCurrentStatus && (
               <Chip
@@ -107,6 +111,13 @@ const LeaderFeedbackSnippet = ({ info, isCurrentStatus = false, onOpenChat }) =>
                 size="small"
                 color="warning"
                 sx={{ height: 19, fontSize: 10, fontWeight: 850, px: 0.5 }}
+              />
+            )}
+            {chatCount > 0 && !isCurrentStatus && (
+              <Chip
+                label={`${chatCount} msg`}
+                size="small"
+                sx={{ height: 19, fontSize: 10, fontWeight: 850, px: 0.5, bgcolor: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}
               />
             )}
             <Typography variant="caption" sx={{ color: '#64748b', whiteSpace: 'nowrap', display: { xs: 'none', sm: 'inline' } }}>
@@ -118,12 +129,12 @@ const LeaderFeedbackSnippet = ({ info, isCurrentStatus = false, onOpenChat }) =>
             sx={{
               fontSize: 12,
               color: '#334155',
-              fontStyle: 'italic',
+              fontStyle: hasComment ? 'italic' : 'normal',
               lineHeight: 1.25,
               mt: 0.2
             }}
           >
-            "{info.comment}"
+            {subtitle}
           </Typography>
         </Box>
       </Stack>
@@ -137,16 +148,16 @@ const LeaderFeedbackSnippet = ({ info, isCurrentStatus = false, onOpenChat }) =>
           fontWeight: 850,
           fontSize: 11.5,
           borderRadius: 2,
-          bgcolor: isCurrentStatus ? '#008069' : '#64748b',
+          bgcolor: '#008069',
           color: '#ffffff',
           flexShrink: 0,
           px: 1.6,
           py: 0.4,
           boxShadow: '0 2px 6px rgba(0, 128, 105, 0.25)',
-          '&:hover': { bgcolor: isCurrentStatus ? '#006a57' : '#475569' }
+          '&:hover': { bgcolor: '#006a57' }
         }}
       >
-        Abrir chat
+        Abrir chat {chatCount > 0 ? `(${chatCount})` : ''}
       </Button>
     </Paper>
   );
@@ -2499,7 +2510,24 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                 </Typography>
               )}
             </Box>
-            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ position: 'relative', zIndex: 1 }}>
+            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ position: 'relative', zIndex: 1 }} flexWrap="wrap">
+              <Button
+                variant="contained"
+                startIcon={<ChatBubbleOutline sx={{ fontSize: 18 }} />}
+                onClick={() => setFeedbackChatModalOpen(true)}
+                sx={{
+                  fontWeight: 850,
+                  fontSize: 12.5,
+                  textTransform: 'none',
+                  borderRadius: 2,
+                  bgcolor: '#008069',
+                  color: '#ffffff',
+                  boxShadow: '0 4px 12px rgba(0,128,105,.35)',
+                  '&:hover': { bgcolor: '#006a57' }
+                }}
+              >
+                💬 Chat con Líder {chatThread.length > 0 ? `(${chatThread.length})` : ''}
+              </Button>
               {detail && ['owner_validation', 'formulation', 'technical_review'].includes(detail.status) && (
                 <Button
                   variant="contained"
@@ -2609,7 +2637,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             </Paper>
 
             {/* BARRA SNIPPET ELEGANTE Y COMPACTA DE OBSERVACIONES DEL LÍDER (Abre ventana emergente tipo chat) */}
-            <LeaderFeedbackSnippet info={adjustmentInfo} isCurrentStatus={detail?.status === 'adjustments'} onOpenChat={() => setFeedbackChatModalOpen(true)} />
+            <LeaderFeedbackSnippet
+              info={adjustmentInfo}
+              isCurrentStatus={detail?.status === 'adjustments'}
+              chatCount={chatThread.length}
+              leaderNameFallback={detail.currentResponsibility?.responsibleUser?.nombre || detail.responsibleUser?.nombre || 'Líder'}
+              onOpenChat={() => setFeedbackChatModalOpen(true)}
+            />
 
             {/* TAB 1: PLAN Y ACTIVIDADES */}
             {tab === 'activities' && (
@@ -4460,7 +4494,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Stack>
 
                   {/* OBSERVACIONES DEL LÍDER EN EL FLUJO */}
-                  <LeaderFeedbackSnippet info={adjustmentInfo} isCurrentStatus={detail?.status === 'adjustments'} onOpenChat={() => setFeedbackChatModalOpen(true)} />
+                  <LeaderFeedbackSnippet
+                    info={adjustmentInfo}
+                    isCurrentStatus={detail?.status === 'adjustments'}
+                    chatCount={chatThread.length}
+                    leaderNameFallback={detail.currentResponsibility?.responsibleUser?.nombre || detail.responsibleUser?.nombre || 'Líder'}
+                    onOpenChat={() => setFeedbackChatModalOpen(true)}
+                  />
 
                   {/* SECCIÓN SINCRONIZACIÓN AUTOMÁTICA EN GOOGLE DRIVE */}
                   <Paper
@@ -6763,6 +6803,28 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         />
       )}
 
+      {/* BOTÓN FLOTANTE ESTILO WHATSAPP PARA ACCESO DIRECTO AL CHAT DE RETROALIMENTACIÓN */}
+      {detail?.id && (
+        <Tooltip title="Canal de retroalimentación directa con el Líder (estilo WhatsApp con copia a correo)" arrow placement="left">
+          <Fab
+            onClick={() => setFeedbackChatModalOpen(true)}
+            sx={{
+              position: 'fixed',
+              bottom: 28,
+              right: 32,
+              bgcolor: '#008069',
+              color: '#ffffff',
+              boxShadow: '0 8px 24px rgba(0,128,105,.45)',
+              '&:hover': { bgcolor: '#006a57' },
+              zIndex: 1300
+            }}
+          >
+            <Badge badgeContent={chatThread.length} color="error" max={99}>
+              <ChatBubbleOutline sx={{ fontSize: 28 }} />
+            </Badge>
+          </Fab>
+        </Tooltip>
+      )}
 
     </Dialog>
   );

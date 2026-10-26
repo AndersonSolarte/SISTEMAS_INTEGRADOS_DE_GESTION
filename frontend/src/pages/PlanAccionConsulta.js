@@ -134,6 +134,11 @@ export default function PlanAccionConsulta() {
   const [adjustmentComment, setAdjustmentComment] = useState('');
   const [sendingAdjustments, setSendingAdjustments] = useState(false);
 
+  // Modal para aprobar y concertar formalmente el plan a Ejecución Oficial
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [approvalComment, setApprovalComment] = useState('');
+  const [sendingApproval, setSendingApproval] = useState(false);
+
   // Retroalimentación o aceptación de nuevas actividades incorporadas en ejecución
   const [itemFeedbackModalOpen, setItemFeedbackModalOpen] = useState(false);
   const [selectedReviewItem, setSelectedReviewItem] = useState(null);
@@ -388,6 +393,31 @@ export default function PlanAccionConsulta() {
       enqueueSnackbar(msg, { variant: 'error' });
     } finally {
       setSendingAdjustments(false);
+    }
+  };
+
+  // Aprobar formalmente el plan para su ejecución oficial
+  const handleApprovePlanExecution = async () => {
+    if (!selectedPlan?.id) return;
+    setSendingApproval(true);
+    try {
+      await strategicPlanningService.transition(selectedPlan.id, {
+        action: 'activate',
+        comment: approvalComment.trim() || 'Plan de Acción concertado y aprobado a conformidad por el líder responsable para su inicio de ejecución oficial.'
+      });
+      enqueueSnackbar('¡Plan de Acción aprobado con éxito! Ha pasado formalmente a Ejecución Oficial.', { variant: 'success' });
+      setApprovalModalOpen(false);
+      setApprovalComment('');
+      const refreshed = await strategicPlanningService.getActionPlan(selectedPlan.id);
+      if (refreshed?.data) {
+        setSelectedPlan((prev) => ({ ...prev, ...refreshed.data }));
+      }
+      await cargarPlanes();
+    } catch (err) {
+      const msg = err?.response?.data?.message || 'No fue posible aprobar el Plan de Acción.';
+      enqueueSnackbar(msg, { variant: 'error' });
+    } finally {
+      setSendingApproval(false);
     }
   };
 
@@ -1181,7 +1211,7 @@ export default function PlanAccionConsulta() {
             '& .MuiAlert-message': { width: '100%' }
           }}
           action={
-            <Stack direction="row" spacing={1}>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ alignItems: 'center' }}>
               <Button
                 variant="contained"
                 size="small"
@@ -1218,6 +1248,25 @@ export default function PlanAccionConsulta() {
                 }}
               >
                 Devolver para ajustes
+              </Button>
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                startIcon={<CheckCircleIcon sx={{ fontSize: 16 }} />}
+                onClick={() => setApprovalModalOpen(true)}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 900,
+                  borderRadius: 2,
+                  fontSize: 12,
+                  bgcolor: '#16a34a',
+                  color: '#ffffff',
+                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.35)',
+                  '&:hover': { bgcolor: '#15803d' }
+                }}
+              >
+                ✓ Aprobar y Pasar a Ejecución
               </Button>
             </Stack>
           }
@@ -3040,6 +3089,76 @@ export default function PlanAccionConsulta() {
             sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900, px: 3 }}
           >
             {sendingAdjustments ? 'Enviando...' : 'Confirmar y Devolver a Planeación'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ==========================================
+          MODAL: APROBAR Y PASAR A EJECUCIÓN OFICIAL
+         ========================================== */}
+      <Dialog
+        open={approvalModalOpen}
+        onClose={() => !sendingApproval && setApprovalModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3.5 } }}
+      >
+        <DialogTitle sx={{ px: 3, pt: 3, pb: 1 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: '#dcfce7', color: '#15803d', display: 'grid', placeItems: 'center' }}>
+              <CheckCircleIcon sx={{ fontSize: 28 }} />
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 18, fontWeight: 900, color: '#0f172a' }}>
+                Aprobar y Concertar Plan de Acción
+              </Typography>
+              <Typography sx={{ fontSize: 12.5, color: '#64748b' }}>
+                Plan {selectedPlan?.code} · {selectedPlan?.organizationalUnit?.name || 'Dependencia'}
+              </Typography>
+            </Box>
+          </Stack>
+        </DialogTitle>
+
+        <DialogContent sx={{ px: 3, py: 2 }}>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="success" sx={{ borderRadius: 2.5, bgcolor: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+              <Typography sx={{ fontWeight: 800, fontSize: 13, color: '#166534', mb: 0.5 }}>
+                ¿Está de acuerdo con las actividades y compromisos concertados?
+              </Typography>
+              <Typography sx={{ fontSize: 12.5, color: '#15803d', lineHeight: 1.55 }}>
+                Al confirmar la aprobación, el Plan de Acción pasará al estado oficial <strong>"En Ejecución"</strong>, se formalizará el Acta COM-IF-FR-002, se consolidará el formato DIR-PE-FR-003 y se notificará de inmediato a Rectoría y a la Dirección de Planeación y Aseguramiento de la Calidad.
+              </Typography>
+            </Alert>
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              label="Observaciones o manifestación de aprobación (opcional)"
+              placeholder="Indique alguna nota adicional de concertación si lo considera necesario..."
+              value={approvalComment}
+              onChange={(e) => setApprovalComment(e.target.value)}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }}
+            />
+          </Stack>
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+          <Button
+            onClick={() => setApprovalModalOpen(false)}
+            disabled={sendingApproval}
+            sx={{ textTransform: 'none', fontWeight: 800 }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="success"
+            startIcon={sendingApproval ? <CircularProgress size={16} color="inherit" /> : <CheckCircleIcon />}
+            onClick={handleApprovePlanExecution}
+            disabled={sendingApproval}
+            sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900, px: 3, bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}
+          >
+            {sendingApproval ? 'Aprobando...' : 'Confirmar y Pasar a Ejecución'}
           </Button>
         </DialogActions>
       </Dialog>

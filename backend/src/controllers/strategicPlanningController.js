@@ -106,6 +106,34 @@ const parseDataUrl = (value) => {
   return { buffer, extension: match[1] === 'jpeg' ? 'jpg' : 'png' };
 };
 
+const notifyPlanningUsers = async ({ actionPlanId, type, title, message, link, metadata, excludeUserId }) => {
+  try {
+    const whereClause = {
+      role: ['planeacion_efectividad', 'planeacion_estrategica', 'administrador'],
+      estado: 'activo'
+    };
+    if (excludeUserId) {
+      whereClause.id = { [Op.ne]: excludeUserId };
+    }
+    const planningUsers = await User.findAll({ where: whereClause });
+    await Promise.all(
+      planningUsers.map((pu) =>
+        StrategicNotification.create({
+          user_id: pu.id,
+          action_plan_id: actionPlanId,
+          type,
+          title,
+          message,
+          link,
+          metadata
+        }).catch((err) => console.warn(`notifyPlanningUsers warning for user ${pu.id}:`, err.message))
+      )
+    );
+  } catch (err) {
+    console.warn('notifyPlanningUsers error:', err.message);
+  }
+};
+
 const planIncludes = [
   { model: StrategicLevel, as: 'levels', where: { active: true }, required: false, separate: true, order: [['position', 'ASC']] },
   {
@@ -1399,9 +1427,8 @@ const reviewExecutionActionItem = wrap(async (req, res) => {
   const reviewerName = req.user.nombre || req.user.username || 'Líder';
 
   if (decision === 'accepted') {
-    await StrategicNotification.create({
-      target_role: 'planeacion_estrategica',
-      action_plan_id: actionPlan.id,
+    await notifyPlanningUsers({
+      actionPlanId: actionPlan.id,
       type: 'activity_accepted',
       title: `Actividad Aceptada en Ejecución: ${item.code}`,
       message: `${reviewerName} (${orgUnit}) ha aceptado la ejecución de la actividad ${item.code}: "${item.activity}".`,
@@ -1410,12 +1437,12 @@ const reviewExecutionActionItem = wrap(async (req, res) => {
         action_plan_code: actionPlan.code,
         item_code: item.code,
         dependency: orgUnit
-      }
+      },
+      excludeUserId: req.user.id
     });
   } else {
-    await StrategicNotification.create({
-      target_role: 'planeacion_estrategica',
-      action_plan_id: actionPlan.id,
+    await notifyPlanningUsers({
+      actionPlanId: actionPlan.id,
       type: 'activity_feedback',
       title: `Retroalimentación a Actividad: ${item.code}`,
       message: `${reviewerName} (${orgUnit}) retroalimentó la actividad ${item.code}: "${String(comment || '').slice(0, 120)}"`,
@@ -1425,7 +1452,8 @@ const reviewExecutionActionItem = wrap(async (req, res) => {
         item_code: item.code,
         comment: String(comment || '').trim(),
         dependency: orgUnit
-      }
+      },
+      excludeUserId: req.user.id
     });
   }
 
@@ -1544,9 +1572,8 @@ const transitionActionPlan = wrap(async (req, res) => {
       }
 
       // 2. Notificación en campana para Planeación y Efectividad
-      await StrategicNotification.create({
-        target_role: 'planeacion_estrategica',
-        action_plan_id: actionPlan.id,
+      await notifyPlanningUsers({
+        actionPlanId: actionPlan.id,
         type: 'action_plan_adjustments',
         title: `Ajustes solicitados: ${actionPlan.code}`,
         message: `${leaderName} (${orgUnitName}) devolvió el plan con observaciones: "${commentText.slice(0, 120)}${commentText.length > 120 ? '...' : ''}"`,
@@ -1557,7 +1584,8 @@ const transitionActionPlan = wrap(async (req, res) => {
           requested_by_email: req.user.email,
           action_plan_code: actionPlan.code,
           dependency: orgUnitName
-        }
+        },
+        excludeUserId: req.user.id
       });
 
       // 3. Envío de correo a planeacionestrategica@unicesmag.edu.co
@@ -1920,11 +1948,21 @@ const transitionActionPlan = wrap(async (req, res) => {
           action_plan_id: actionPlan.id,
           type: 'action_plan_activated',
           title: `¡Plan de Acción en Ejecución Oficial!`,
-          message: `El Plan de Acción ${actionPlan.code} (${fullPlan?.organizationalUnit?.name || ''}) ha finalizado sus firmas y se encuentra formalizado en ejecución oficial.`,
+          message: `El Plan de Acción ${actionPlan.code} (${fullPlan?.organizationalUnit?.name || ''}) se encuentra formalizado en ejecución oficial.`,
           link: `/plan-accion-consulta`,
           metadata: { action_plan_code: actionPlan.code }
         }).catch((e) => console.warn('No se pudo crear StrategicNotification de activación para líder:', e.message));
       }
+
+      await notifyPlanningUsers({
+        actionPlanId: actionPlan.id,
+        type: 'action_plan_activated',
+        title: `Plan en Ejecución Oficial: ${actionPlan.code}`,
+        message: `El Plan de Acción ${actionPlan.code} (${fullPlan?.organizationalUnit?.name || ''}) fue aprobado e inicia su fase de Ejecución Oficial.`,
+        link: `/planeacion-estrategica/planes-accion/${actionPlan.id}`,
+        metadata: { action_plan_code: actionPlan.code },
+        excludeUserId: req.user.id
+      });
     } catch (errActivationNotify) {
       console.error('transitionActionPlan: Error en notificación de activación:', errActivationNotify);
     }
@@ -2084,7 +2122,7 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
   const orgUnitName = actionPlan.organizationalUnit?.name || 'Dependencia';
 
   if (senderType === 'planning') {
-    if (actionPlan.responsible_user_id) {
+    if (actionPlan.responsible_user_id && String(actionPlan.responsible_user_id) !== String(req.user.id)) {
       await StrategicNotification.create({
         user_id: actionPlan.responsible_user_id,
         action_plan_id: actionPlan.id,
@@ -2097,7 +2135,7 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
           dependency: orgUnitName,
           sender_name: senderName
         }
-      });
+      }).catch((e) => console.warn('Error creando StrategicNotification para líder:', e.message));
     }
 
     if (actionPlan.responsibleUser?.email) {
@@ -2138,24 +2176,19 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
       }).catch((e) => console.warn('Error enviando correo de chat al líder:', e.message));
     }
   } else {
-    const planningUsers = await User.findAll({
-      where: { role: ['planeacion_efectividad', 'planeacion_estrategica', 'administrador'], estado: 'activo' }
+    await notifyPlanningUsers({
+      actionPlanId: actionPlan.id,
+      type: 'action_plan_chat_message',
+      title: `Mensaje del Líder (${actionPlan.code})`,
+      message: `${senderName}: ${messageText.slice(0, 95)}${messageText.length > 95 ? '...' : ''}`,
+      link: `/planeacion-estrategica/planes-accion/${actionPlan.id}`,
+      metadata: {
+        action_plan_code: actionPlan.code,
+        dependency: orgUnitName,
+        sender_name: senderName
+      },
+      excludeUserId: req.user.id
     });
-    for (const pu of planningUsers) {
-      StrategicNotification.create({
-        user_id: pu.id,
-        action_plan_id: actionPlan.id,
-        type: 'action_plan_chat_message',
-        title: `Mensaje del Líder (${actionPlan.code})`,
-        message: `${senderName}: ${messageText.slice(0, 95)}${messageText.length > 95 ? '...' : ''}`,
-        link: `/planeacion-estrategica/planes-accion/${actionPlan.id}`,
-        metadata: {
-          action_plan_code: actionPlan.code,
-          dependency: orgUnitName,
-          sender_name: senderName
-        }
-      }).catch(() => {});
-    }
 
     const planEditorUrl = `${baseUrl}/planeacion-estrategica/planes-accion/${actionPlan.id}`;
     const emailSubject = `[CHAT PLAN DE ACCIÓN] Nuevo mensaje de ${senderName} (${orgUnitName}) - ${actionPlan.code}`;
@@ -3969,27 +4002,16 @@ const cancelPlanCalendarSchedule = wrap(async (req, res) => {
 
 const listStrategicNotifications = wrap(async (req, res) => {
   const userId = req.user.id;
-  const isPlanningStaff = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user.role);
-
-  const whereCondition = isPlanningStaff
-    ? {
-        [Op.or]: [
-          { user_id: userId },
-          { target_role: 'planeacion_estrategica' },
-          { target_role: req.user.role }
-        ]
-      }
-    : { user_id: userId };
 
   const notifications = await StrategicNotification.findAll({
-    where: whereCondition,
+    where: { user_id: userId },
     order: [['created_at', 'DESC']],
     limit: 50
   });
 
   const unreadCount = await StrategicNotification.count({
     where: {
-      ...whereCondition,
+      user_id: userId,
       read: false
     }
   });
@@ -4006,22 +4028,10 @@ const markStrategicNotificationRead = wrap(async (req, res) => {
 
 const markAllStrategicNotificationsRead = wrap(async (req, res) => {
   const userId = req.user.id;
-  const isPlanningStaff = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user.role);
-
-  const whereCondition = isPlanningStaff
-    ? {
-        [Op.or]: [
-          { user_id: userId },
-          { target_role: 'planeacion_estrategica' },
-          { target_role: req.user.role }
-        ],
-        read: false
-      }
-    : { user_id: userId, read: false };
 
   await StrategicNotification.update(
     { read: true, read_at: new Date() },
-    { where: whereCondition }
+    { where: { user_id: userId, read: false } }
   );
 
   ok(res, null, 'Todas las notificaciones han sido marcadas como leídas.');
