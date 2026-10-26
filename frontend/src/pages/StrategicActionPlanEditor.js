@@ -43,7 +43,7 @@ const normalizeFieldText = (str) =>
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
-const LeaderFeedbackCard = ({ info, isCurrentStatus = false, onSendToLeader = null }) => {
+const LeaderFeedbackCard = ({ info, isCurrentStatus = false }) => {
   if (!info || !info.comment) return null;
   return (
     <Paper
@@ -54,15 +54,15 @@ const LeaderFeedbackCard = ({ info, isCurrentStatus = false, onSendToLeader = nu
         bgcolor: isCurrentStatus ? '#fffbeb' : '#f8fafc',
         border: '2px solid',
         borderColor: isCurrentStatus ? '#f59e0b' : '#cbd5e1',
-        boxShadow: isCurrentStatus ? '0 6px 20px rgba(245, 158, 11, 0.15)' : 'none',
+        boxShadow: isCurrentStatus ? '0 4px 16px rgba(245, 158, 11, 0.12)' : 'none',
         mb: 2.5
       }}
     >
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
         <Box
           sx={{
-            width: 46,
-            height: 46,
+            width: 44,
+            height: 44,
             borderRadius: 2.5,
             bgcolor: isCurrentStatus ? '#fef3c7' : '#e2e8f0',
             border: '1px solid',
@@ -73,12 +73,12 @@ const LeaderFeedbackCard = ({ info, isCurrentStatus = false, onSendToLeader = nu
             flexShrink: 0
           }}
         >
-          <FeedbackIcon sx={{ fontSize: 26 }} />
+          <FeedbackIcon sx={{ fontSize: 24 }} />
         </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} sx={{ mb: 1 }}>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-              <Typography variant="subtitle1" sx={{ fontWeight: 950, color: isCurrentStatus ? '#92400e' : '#1e293b', fontSize: 15 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 900, color: isCurrentStatus ? '#92400e' : '#1e293b', fontSize: 14.5 }}>
                 {isCurrentStatus ? '⚠️ OBSERVACIONES Y AJUSTES SOLICITADOS POR EL LÍDER' : '📝 RETROALIMENTACIÓN REGISTRADA POR EL LÍDER'}
               </Typography>
               {isCurrentStatus && (
@@ -86,7 +86,7 @@ const LeaderFeedbackCard = ({ info, isCurrentStatus = false, onSendToLeader = nu
                   label="Pendiente de Ajuste en Planeación"
                   size="small"
                   color="warning"
-                  sx={{ fontWeight: 850, fontSize: 11, height: 22 }}
+                  sx={{ fontWeight: 800, fontSize: 11, height: 22 }}
                 />
               )}
             </Stack>
@@ -96,7 +96,7 @@ const LeaderFeedbackCard = ({ info, isCurrentStatus = false, onSendToLeader = nu
               </Typography>
             )}
           </Stack>
-          <Typography variant="body2" sx={{ color: '#475569', mb: 1.5, fontSize: 13 }}>
+          <Typography variant="body2" sx={{ color: '#475569', mb: 1.2, fontSize: 12.5 }}>
             Solicitado por: <strong style={{ color: '#0f172a' }}>{info.requested_by_name || 'Líder de Dependencia'}</strong>
             {info.requested_by_email && (
               <span style={{ color: '#64748b', marginLeft: 6 }}>({info.requested_by_email})</span>
@@ -104,47 +104,23 @@ const LeaderFeedbackCard = ({ info, isCurrentStatus = false, onSendToLeader = nu
           </Typography>
           <Box
             sx={{
-              p: 2,
+              p: 1.8,
               bgcolor: '#ffffff',
-              borderRadius: 2.5,
+              borderRadius: 2,
               border: '1px solid',
               borderColor: isCurrentStatus ? '#fde68a' : '#e2e8f0',
               fontFamily: 'inherit',
-              fontSize: 13.5,
+              fontSize: 13,
               color: '#1e293b',
-              lineHeight: 1.6,
-              whiteSpace: 'pre-wrap',
-              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.02)'
+              lineHeight: 1.55,
+              whiteSpace: 'pre-wrap'
             }}
           >
             {info.comment}
           </Box>
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} sx={{ mt: 1.5 }}>
-            <Typography variant="caption" sx={{ color: isCurrentStatus ? '#b45309' : '#64748b', fontWeight: 600 }}>
-              * Esta observación está integrada automáticamente en el desarrollo del Acta de Reunión COM-IF-FR-002.
-            </Typography>
-            {isCurrentStatus && onSendToLeader && (
-              <Button
-                variant="contained"
-                startIcon={<Send />}
-                onClick={onSendToLeader}
-                sx={{
-                  fontWeight: 850,
-                  textTransform: 'none',
-                  borderRadius: 2.5,
-                  bgcolor: '#2563eb',
-                  px: 2.5,
-                  py: 0.8,
-                  fontSize: 13,
-                  boxShadow: '0 4px 12px rgba(37,99,235,.25)',
-                  '&:hover': { bgcolor: '#1d4ed8' },
-                  alignSelf: { xs: 'flex-start', sm: 'center' }
-                }}
-              >
-                Enviar ajustes al Líder
-              </Button>
-            )}
-          </Stack>
+          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: isCurrentStatus ? '#b45309' : '#64748b', fontWeight: 600, fontSize: 11.5 }}>
+            * Esta observación está integrada automáticamente en el desarrollo del Acta de Reunión COM-IF-FR-002.
+          </Typography>
         </Box>
       </Stack>
     </Paper>
@@ -2412,15 +2388,16 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               )}
             </Box>
             <Stack direction="row" spacing={1.25} alignItems="center" sx={{ position: 'relative', zIndex: 1 }}>
-              {detail && ['owner_validation', 'formulation', 'adjustments', 'technical_review'].includes(detail.status) && (
+              {detail && ['owner_validation', 'formulation', 'technical_review'].includes(detail.status) && (
                 <Button
                   variant="contained"
                   startIcon={<PlayArrow />}
                   onClick={() => transition('activate')}
                   sx={{
-                    fontWeight: 900,
+                    fontWeight: 800,
+                    fontSize: 12.5,
                     textTransform: 'none',
-                    borderRadius: 2.5,
+                    borderRadius: 2,
                     bgcolor: '#10b981',
                     color: '#ffffff',
                     boxShadow: '0 4px 12px rgba(16,185,129,.35)',
@@ -2430,29 +2407,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   Ejecutar Plan de Acción
                 </Button>
               )}
-              {detail && detail.status === 'adjustments' && (
-                <Button
-                  variant="contained"
-                  startIcon={<Send />}
-                  onClick={() => transition('submit_owner_validation')}
-                  sx={{
-                    fontWeight: 900,
-                    textTransform: 'none',
-                    borderRadius: 2.5,
-                    bgcolor: '#2563eb',
-                    color: '#ffffff',
-                    boxShadow: '0 4px 12px rgba(37,99,235,.35)',
-                    '&:hover': { bgcolor: '#1d4ed8' }
-                  }}
-                >
-                  Enviar ajustes al Líder
-                </Button>
-              )}
               {detail && detail.status === 'active' && (
                 <Chip
                   icon={<CheckCircle sx={{ color: '#ffffff !important' }} />}
                   label="Plan en Ejecución Oficial"
-                  sx={{ bgcolor: '#059669', color: '#ffffff', fontWeight: 900, px: 1 }}
+                  sx={{ bgcolor: '#059669', color: '#ffffff', fontWeight: 800, fontSize: 12, px: 1 }}
                 />
               )}
               <Button
@@ -2538,11 +2497,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             </Paper>
 
             {/* RETROALIMENTACIÓN / OBSERVACIONES DEL LÍDER SI EL PLAN ESTÁ EN AJUSTES O TIENE COMENTARIOS */}
-            <LeaderFeedbackCard
-              info={adjustmentInfo}
-              isCurrentStatus={detail?.status === 'adjustments'}
-              onSendToLeader={() => transition('submit_owner_validation')}
-            />
+            <LeaderFeedbackCard info={adjustmentInfo} isCurrentStatus={detail?.status === 'adjustments'} />
 
             {/* TAB 1: PLAN Y ACTIVIDADES */}
             {tab === 'activities' && (
@@ -2754,69 +2709,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     </Table>
                   </TableContainer>
                 </Paper>
-
-                {/* BANNER INFERIOR PARA ENVIAR AL LÍDER TRAS TERMINAR AJUSTES */}
-                {detail?.status === 'adjustments' && (
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      mt: 3,
-                      p: 2.5,
-                      borderRadius: 3.5,
-                      bgcolor: '#eff6ff',
-                      border: '2px solid #93c5fd',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: 2,
-                      boxShadow: '0 6px 20px rgba(37,99,235,0.12)'
-                    }}
-                  >
-                    <Stack direction="row" spacing={2} alignItems="center">
-                      <Box
-                        sx={{
-                          width: 46,
-                          height: 46,
-                          borderRadius: 2.5,
-                          bgcolor: '#dbeafe',
-                          display: 'grid',
-                          placeItems: 'center',
-                          color: '#1d4ed8',
-                          flexShrink: 0
-                        }}
-                      >
-                        <Send sx={{ fontSize: 24 }} />
-                      </Box>
-                      <Box>
-                        <Typography sx={{ fontWeight: 950, color: '#1e40af', fontSize: 16 }}>
-                          ¿Finalizó los ajustes en las actividades?
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: '#475569', fontSize: 13.5 }}>
-                          Remita el Plan de Acción actualizado al líder de dependencia para su revisión y firmas del acta.
-                        </Typography>
-                      </Box>
-                    </Stack>
-                    <Button
-                      variant="contained"
-                      startIcon={<Send />}
-                      onClick={() => transition('submit_owner_validation')}
-                      sx={{
-                        fontWeight: 900,
-                        textTransform: 'none',
-                        borderRadius: 2.5,
-                        bgcolor: '#2563eb',
-                        px: 3.5,
-                        py: 1.1,
-                        fontSize: 14,
-                        boxShadow: '0 4px 14px rgba(37,99,235,.35)',
-                        '&:hover': { bgcolor: '#1d4ed8' }
-                      }}
-                    >
-                      Enviar ajustes al Líder
-                    </Button>
-                  </Paper>
-                )}
               </>
             )}
 
@@ -4456,11 +4348,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Stack>
 
                   {/* OBSERVACIONES DEL LÍDER EN EL FLUJO */}
-                  <LeaderFeedbackCard
-                    info={adjustmentInfo}
-                    isCurrentStatus={detail?.status === 'adjustments'}
-                    onSendToLeader={() => transition('submit_owner_validation')}
-                  />
+                  <LeaderFeedbackCard info={adjustmentInfo} isCurrentStatus={detail?.status === 'adjustments'} />
 
                   {/* SECCIÓN SINCRONIZACIÓN AUTOMÁTICA EN GOOGLE DRIVE */}
                   <Paper
@@ -6364,6 +6252,49 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             return res.data;
           }}
         />
+      )}
+
+      {/* BOTÓN FLOTANTE ÚNICO: ENVIAR AJUSTES AL LÍDER (Visible en cualquiera de las 4 etapas) */}
+      {detail?.status === 'adjustments' && (
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: { xs: 20, sm: 26 },
+            right: { xs: 20, sm: 30 },
+            zIndex: 1300
+          }}
+        >
+          <Tooltip title="Remitir el Plan de Acción al líder para su revisión y firmas" arrow placement="left">
+            <Button
+              variant="contained"
+              startIcon={<Send sx={{ fontSize: 16 }} />}
+              onClick={() => transition('submit_owner_validation')}
+              sx={{
+                bgcolor: '#2563eb',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: 13,
+                textTransform: 'none',
+                borderRadius: 50,
+                px: 2.8,
+                py: 1,
+                boxShadow: '0 8px 24px rgba(37,99,235,0.42), 0 2px 6px rgba(0,0,0,0.12)',
+                border: '1.5px solid rgba(255,255,255,0.25)',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                '&:hover': {
+                  bgcolor: '#1d4ed8',
+                  boxShadow: '0 10px 28px rgba(37,99,235,0.55)',
+                  transform: 'translateY(-2px)'
+                },
+                '&:active': {
+                  transform: 'translateY(0)'
+                }
+              }}
+            >
+              Enviar ajustes al Líder
+            </Button>
+          </Tooltip>
+        </Box>
       )}
     </Dialog>
   );
