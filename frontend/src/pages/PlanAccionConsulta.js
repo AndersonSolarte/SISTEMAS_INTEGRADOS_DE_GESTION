@@ -1070,11 +1070,17 @@ export default function PlanAccionConsulta() {
           boxShadow: '0 2px 12px rgba(15, 23, 42, 0.04)'
         }}
       >
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }}>
-          <Stack direction="row" spacing={1.2} alignItems="center" flexWrap="wrap">
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          spacing={1.5}
+          justifyContent="space-between"
+          alignItems={{ xs: 'stretch', md: 'center' }}
+        >
+          {/* Navegación y estado esencial (Solo lo verdaderamente importante) */}
+          <Stack direction="row" spacing={1.2} alignItems="center" sx={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
             <Button
               variant="outlined"
-              startIcon={<ArrowBackIcon />}
+              startIcon={<ArrowBackIcon sx={{ fontSize: 18 }} />}
               onClick={() => setSelectedPlan(null)}
               sx={{
                 textTransform: 'none',
@@ -1084,56 +1090,71 @@ export default function PlanAccionConsulta() {
                 bgcolor: '#f8fafc',
                 borderRadius: 2.2,
                 px: 1.8,
-                py: 0.6,
-                fontSize: 13,
+                py: 0.65,
+                fontSize: 12.5,
+                flexShrink: 0,
+                boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
                 '&:hover': { bgcolor: '#f1f5f9', borderColor: '#94a3b8' }
               }}
             >
               Volver a Mis Planes
             </Button>
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5, display: { xs: 'none', sm: 'block' } }} />
-            <Chip
-              size="small"
-              label={selectedPlan.code}
-              sx={{ bgcolor: '#e0e7ff', color: '#3730a3', fontWeight: 900, fontSize: 12, height: 26, borderRadius: 1.5 }}
-            />
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 26, alignSelf: 'center', display: { xs: 'none', sm: 'block' } }} />
+            <Tooltip title={selectedPlan.code} arrow>
+              <Chip
+                size="small"
+                label={selectedPlan.code}
+                sx={{
+                  bgcolor: '#e0e7ff',
+                  color: '#3730a3',
+                  fontWeight: 900,
+                  fontSize: 12,
+                  height: 28,
+                  borderRadius: 2,
+                  maxWidth: { xs: 150, sm: 240, md: 320, lg: 420 },
+                  '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                }}
+              />
+            </Tooltip>
             <Chip
               size="small"
               label={STATUS_CONFIG[selectedPlan.status]?.label || selectedPlan.status}
               sx={{
                 bgcolor: STATUS_CONFIG[selectedPlan.status]?.bg || '#f1f5f9',
                 color: STATUS_CONFIG[selectedPlan.status]?.fg || '#334155',
-                fontWeight: 850,
+                fontWeight: 900,
                 fontSize: 12,
-                height: 26,
-                borderRadius: 1.5
+                height: 28,
+                borderRadius: 2,
+                flexShrink: 0
               }}
             />
             <Chip
               size="small"
               icon={<CalendarMonthIcon sx={{ fontSize: '15px !important' }} />}
               label={`Vigencia ${selectedPlan.term?.year || '—'}`}
-              sx={{ bgcolor: '#f8fafc', color: '#475569', fontWeight: 750, fontSize: 12, height: 26, borderRadius: 1.5, border: '1px solid #e2e8f0' }}
+              sx={{
+                bgcolor: '#f8fafc',
+                color: '#475569',
+                fontWeight: 800,
+                fontSize: 12,
+                height: 28,
+                borderRadius: 2,
+                border: '1px solid #e2e8f0',
+                flexShrink: 0,
+                display: { xs: 'none', sm: 'inline-flex' }
+              }}
             />
-            {selectedPlan.status === 'active' && formalizationDate && (
-              <Chip
-                size="small"
-                icon={<VerifiedIcon sx={{ fontSize: '15px !important', color: '#15803d !important' }} />}
-                label={`Formalizado: ${formatFecha(formalizationDate)}`}
-                sx={{
-                  bgcolor: '#dcfce7',
-                  color: '#15803d',
-                  fontWeight: 800,
-                  fontSize: 12,
-                  height: 26,
-                  borderRadius: 1.5,
-                  border: '1px solid #bbf7d0'
-                }}
-              />
-            )}
           </Stack>
 
-          <Stack direction="row" spacing={1.25} flexWrap="wrap" sx={{ alignItems: 'center' }}>
+          {/* Botones de acción en UNA SOLA LÍNEA (ordenados, sin desbordes) */}
+          <Stack
+            direction="row"
+            spacing={1.25}
+            alignItems="center"
+            flexShrink={0}
+            sx={{ flexWrap: 'nowrap' }}
+          >
             <Button
               variant="outlined"
               startIcon={<ExcelIcon />}
@@ -1143,11 +1164,13 @@ export default function PlanAccionConsulta() {
                 textTransform: 'none',
                 fontWeight: 850,
                 fontSize: 12.5,
-                px: 1.8,
+                px: 2,
                 py: 0.65,
                 borderColor: '#86efac',
                 bgcolor: '#f0fdf4',
                 color: '#15803d',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
                 '&:hover': { bgcolor: '#dcfce7', borderColor: '#4ade80' },
                 boxShadow: 'none'
               }}
@@ -1163,10 +1186,12 @@ export default function PlanAccionConsulta() {
                 textTransform: 'none',
                 fontWeight: 850,
                 fontSize: 12.5,
-                px: 2,
+                px: 2.2,
                 py: 0.65,
                 bgcolor: '#008069',
                 color: '#ffffff',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
                 boxShadow: '0 2px 8px rgba(0, 128, 105, 0.22)',
                 '&:hover': { bgcolor: '#006a57' }
               }}
