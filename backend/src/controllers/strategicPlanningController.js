@@ -1501,6 +1501,9 @@ const transitionActionPlan = wrap(async (req, res) => {
         }
       }
 
+      // Sincronizar automáticamente el Excel oficial DIR-PE-FR-003 con Google Drive
+      syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) => console.warn('[Drive Auto-sync DIR-PE-FR-003 warning]:', err.message));
+
       // 2. Notificación en campana para el líder responsable
       if (actionPlan.responsible_user_id) {
         await StrategicNotification.create({

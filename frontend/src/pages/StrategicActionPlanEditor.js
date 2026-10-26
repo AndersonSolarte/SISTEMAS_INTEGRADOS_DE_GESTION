@@ -2301,9 +2301,14 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   };
 
   const handleConfirmSubmitValidation = async () => {
+    const comment = planningResponseComment.trim();
+    if (!comment) {
+      enqueueSnackbar('Por favor ingrese el detalle o resumen de los ajustes realizados en el plan y acta.', { variant: 'warning' });
+      return;
+    }
     setSubmittingValidation(true);
     try {
-      await transition('submit_owner_validation', planningResponseComment.trim() || 'Se ajustó para su revisión.');
+      await transition('submit_owner_validation', comment);
       setSubmitValidationModalOpen(false);
       setPlanningResponseComment('');
     } finally {
@@ -2434,7 +2439,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         </Box>
       </DialogTitle>
 
-      <DialogContent sx={{ p: { xs: 1.5, sm: 2.5, md: 3.5 }, pb: { xs: 14, sm: 16, md: 18 }, bgcolor: '#f7f8fc' }}>
+      <DialogContent sx={{ p: { xs: 1.5, sm: 2.5, md: 3.5 }, pb: { xs: 2.5, sm: 3 }, bgcolor: '#f7f8fc' }}>
         {loading ? (
           <Stack alignItems="center" py={10}><CircularProgress /></Stack>
         ) : !detail ? (
@@ -2659,7 +2664,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Alert>
                 )}
 
-                <Paper variant="outlined" sx={{ borderRadius: 3.5, overflow: 'hidden', borderColor: '#e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', mb: 3 }}>
+                <Paper variant="outlined" sx={{ borderRadius: 3.5, overflow: 'hidden', borderColor: '#e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                   <Box sx={{ px: 3, py: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                       <Typography variant="h6" fontWeight={900} color="#0f172a" sx={{ fontSize: 16 }}>
@@ -5068,8 +5073,44 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               </Stack>
             )}
 
-            {/* Margen inferior en blanco extendido para que el botón flotante no se superponga sobre tablas ni acciones */}
-            <Box sx={{ height: { xs: 80, sm: 100 }, width: '100%', pointerEvents: 'none' }} />
+            {/* BOTÓN ÚNICO: ENVIAR AJUSTES AL LÍDER (Visible en cualquiera de las 4 etapas, ubicado inmediatamente debajo del contenido a 4-8px) */}
+            {detail?.status === 'adjustments' && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  mt: -1.2,
+                  mb: 0.5
+                }}
+              >
+                <Tooltip title="Remitir el Plan de Acción al líder para su revisión y firmas" arrow placement="top">
+                  <Button
+                    variant="contained"
+                    startIcon={<Send sx={{ fontSize: 16 }} />}
+                    onClick={() => transition('submit_owner_validation')}
+                    sx={{
+                      bgcolor: '#2563eb',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      fontSize: 13,
+                      textTransform: 'none',
+                      borderRadius: 50,
+                      px: 2.8,
+                      py: 0.95,
+                      boxShadow: '0 4px 14px rgba(37,99,235,0.35)',
+                      transition: 'all 0.15s ease',
+                      '&:hover': {
+                        bgcolor: '#1d4ed8',
+                        boxShadow: '0 6px 18px rgba(37,99,235,0.45)',
+                        transform: 'translateY(-1px)'
+                      }
+                    }}
+                  >
+                    Enviar ajustes al Líder
+                  </Button>
+                </Tooltip>
+              </Box>
+            )}
           </Stack>
         )}
       </DialogContent>
@@ -6192,20 +6233,72 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
           <Typography variant="body2" sx={{ color: '#475569', mb: 2, lineHeight: 1.5 }}>
             El Plan de Acción y el Acta COM-IF-FR-002 serán remitidos al líder responsable{' '}
             <strong style={{ color: '#0f172a' }}>{detail?.currentResponsibility?.responsibleUser?.nombre || 'Líder de Dependencia'}</strong>{' '}
-            para su revisión y concertación. Se enviará una notificación por correo electrónico y a su campana de avisos en plataforma con el mensaje: <em>"Se ajustó para su revisión"</em>.
+            para su revisión y concertación. Se enviará una notificación a su campana de avisos y por correo institucional con el mensaje: <em>"Se ajustó para su revisión"</em>.
           </Typography>
+
+          {/* RECORDATORIO DE CORRECCIÓN DEL ACTA */}
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 1.8,
+              mb: 2.5,
+              borderRadius: 2.5,
+              bgcolor: '#f0fdf4',
+              borderColor: '#bbf7d0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 1.5
+            }}
+          >
+            <Box sx={{ flex: 1, minWidth: 230 }}>
+              <Typography sx={{ fontWeight: 850, color: '#166534', fontSize: 13 }}>
+                📝 Verificación del Acta COM-IF-FR-002
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#374151', display: 'block', mt: 0.3, lineHeight: 1.35 }}>
+                Si modificó actividades o lineamientos, verifique que los compromisos del acta concuerden antes de remitir.
+              </Typography>
+            </Box>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => {
+                setSubmitValidationModalOpen(false);
+                setTab('meeting');
+              }}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 800,
+                fontSize: 12,
+                borderRadius: 2,
+                color: '#15803d',
+                borderColor: '#86efac',
+                bgcolor: '#ffffff',
+                '&:hover': { bgcolor: '#dcfce7' }
+              }}
+            >
+              Revisar / Corregir Acta
+            </Button>
+          </Paper>
+
           <TextField
             fullWidth
             multiline
             rows={3}
-            label="Detalle de los ajustes realizados (opcional)"
-            placeholder="Ej: Se ajustaron las metas de las actividades conforme a sus observaciones y se actualizó la fecha límite..."
+            required
+            label="Detalle de los ajustes realizados en el Plan y Acta *"
+            placeholder="Describa los cambios aplicados en las actividades y en el acta de concertación..."
             value={planningResponseComment}
             onChange={(e) => setPlanningResponseComment(e.target.value)}
             disabled={submittingValidation}
             variant="outlined"
-            helperText="Este comentario quedará registrado formalmente en el desarrollo del Acta y en el correo de aviso."
+            helperText="Este comentario se registra automáticamente en el Acta de Concertación COM-IF-FR-002, en la campana y en el correo al líder."
           />
+
+          <Typography variant="caption" sx={{ display: 'block', mt: 1.5, color: '#047857', fontWeight: 700 }}>
+            ✓ Sincronización automática: Al enviar, se actualizan y sincronizan automáticamente el Acta COM-IF-FR-002 y el Plan Oficial DIR-PE-FR-003 en Google Drive.
+          </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2, pt: 1, gap: 1 }}>
           <Button
@@ -6257,48 +6350,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         />
       )}
 
-      {/* BOTÓN FLOTANTE ÚNICO: ENVIAR AJUSTES AL LÍDER (Visible en cualquiera de las 4 etapas) */}
-      {detail?.status === 'adjustments' && (
-        <Box
-          sx={{
-            position: 'fixed',
-            bottom: { xs: 20, sm: 26 },
-            right: { xs: 20, sm: 30 },
-            zIndex: 1300
-          }}
-        >
-          <Tooltip title="Remitir el Plan de Acción al líder para su revisión y firmas" arrow placement="left">
-            <Button
-              variant="contained"
-              startIcon={<Send sx={{ fontSize: 16 }} />}
-              onClick={() => transition('submit_owner_validation')}
-              sx={{
-                bgcolor: '#2563eb',
-                color: '#ffffff',
-                fontWeight: 800,
-                fontSize: 13,
-                textTransform: 'none',
-                borderRadius: 50,
-                px: 2.8,
-                py: 1,
-                boxShadow: '0 8px 24px rgba(37,99,235,0.42), 0 2px 6px rgba(0,0,0,0.12)',
-                border: '1.5px solid rgba(255,255,255,0.25)',
-                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                '&:hover': {
-                  bgcolor: '#1d4ed8',
-                  boxShadow: '0 10px 28px rgba(37,99,235,0.55)',
-                  transform: 'translateY(-2px)'
-                },
-                '&:active': {
-                  transform: 'translateY(0)'
-                }
-              }}
-            >
-              Enviar ajustes al Líder
-            </Button>
-          </Tooltip>
-        </Box>
-      )}
+
     </Dialog>
   );
 }

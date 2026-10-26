@@ -37,7 +37,20 @@ const audit = async (req, action, entityType, entityId, previousValue, newValue,
 
 const getWorkflow = (plan) => {
   const configured = plan?.settings?.workflow;
-  return configured?.states?.length && configured?.transitions?.length ? configured : DEFAULT_WORKFLOW;
+  if (!configured?.states?.length || !configured?.transitions?.length) {
+    return DEFAULT_WORKFLOW;
+  }
+  const configuredTransitions = Array.isArray(configured.transitions) ? [...configured.transitions] : [];
+  for (const defT of DEFAULT_WORKFLOW.transitions) {
+    if (!configuredTransitions.some((t) => t.action === defT.action && t.from === defT.from)) {
+      configuredTransitions.push(defT);
+    }
+  }
+  return {
+    ...configured,
+    states: Array.isArray(configured.states) && configured.states.length ? configured.states : DEFAULT_WORKFLOW.states,
+    transitions: configuredTransitions
+  };
 };
 
 const transitionPlan = async ({ req, actionPlan, action, comment = '', metadata = {} }) => {

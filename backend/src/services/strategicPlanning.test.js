@@ -21,6 +21,7 @@ test('workflow institucional contiene el recorrido completo y parametrizable', (
   assert.equal(DEFAULT_WORKFLOW.states.at(-1).key, 'closed');
   assert.ok(DEFAULT_WORKFLOW.transitions.some((item) => item.from === 'technical_review' && item.to === 'adjustments'));
   assert.ok(DEFAULT_WORKFLOW.transitions.some((item) => item.from === 'owner_validation' && item.to === 'rectorate_notification'));
+  assert.ok(DEFAULT_WORKFLOW.transitions.some((item) => item.from === 'adjustments' && item.action === 'submit_owner_validation' && item.to === 'owner_validation'));
 });
 
 test('instrumento inicial conserva campos tipados del DIR-PE-FR-003', () => {
