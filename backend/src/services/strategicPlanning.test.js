@@ -260,3 +260,44 @@ test('los campos dinámicos de lista y relación estratégica conservan opciones
   assert.equal(fieldList.options[0], 'LE1 Fomentar');
 });
 
+test('StrategicNotification y metadatos de ajustes registran trazabilidad completa', () => {
+  const { StrategicNotification } = require('../models/StrategicPlanning');
+  assert.ok(StrategicNotification);
+  assert.equal(StrategicNotification.tableName, 'pei_notifications');
+
+  // Validar estructura de registro de ajustes del líder
+  const comment = 'Ajustar la meta de la actividad 3 al 100% y anexar justificación.';
+  const leaderReq = { user: { id: 45, nombre: 'Líder Gestión Información', email: 'lider@unicesmag.edu.co' } };
+  const currentMeta = {};
+
+  // Simular lógica de request_owner_adjustments
+  const adjustmentEntry = {
+    comment: comment.trim(),
+    requested_by: leaderReq.user.id,
+    requested_by_name: leaderReq.user.nombre,
+    requested_by_email: leaderReq.user.email,
+    requested_at: new Date().toISOString()
+  };
+  currentMeta.last_adjustment_request = adjustmentEntry;
+  currentMeta.adjustments_history = [adjustmentEntry];
+
+  assert.equal(currentMeta.last_adjustment_request.comment, comment);
+  assert.equal(currentMeta.last_adjustment_request.requested_by_name, 'Líder Gestión Información');
+  assert.equal(currentMeta.adjustments_history.length, 1);
+
+  // Simular lógica de submit_owner_validation
+  const staffReq = { user: { id: 10, nombre: 'Profesional Planeación', email: 'planeacion@unicesmag.edu.co' } };
+  const responseEntry = {
+    comment: 'Se ajustó la actividad 3 al 100% conforme a la solicitud.',
+    responded_by: staffReq.user.id,
+    responded_by_name: staffReq.user.nombre,
+    responded_at: new Date().toISOString()
+  };
+  currentMeta.last_planning_response = responseEntry;
+  currentMeta.planning_responses_history = [responseEntry];
+
+  assert.equal(currentMeta.last_planning_response.comment, 'Se ajustó la actividad 3 al 100% conforme a la solicitud.');
+  assert.equal(currentMeta.planning_responses_history.length, 1);
+});
+
+

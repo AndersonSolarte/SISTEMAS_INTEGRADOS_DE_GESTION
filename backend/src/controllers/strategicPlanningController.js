@@ -13,7 +13,7 @@ const {
   StrategicMeeting, StrategicMeetingParticipant, StrategicMeetingSchedule, StrategicMinuteVersion, StrategicMinuteProposal,
   StrategicMinuteSignature, StrategicUserSignature, StrategicMonitoringResult, StrategicEvidence,
   StrategicSyncJob, StrategicBudgetImport, StrategicBudgetMovement, StrategicHistoricalImport,
-  StrategicAuditEvent, GoogleCalendarConnection, User
+  StrategicAuditEvent, StrategicNotification, GoogleCalendarConnection, User
 } = require('../models');
 const { formatPersonName } = require('../utils/formatPersonName');
 const { getOAuthConfiguration, createAuthorizationUrl, createConnectedOAuthClient } = require('../services/meetingCalendarOAuthService');
@@ -1354,6 +1354,214 @@ const transitionActionPlan = wrap(async (req, res) => {
     throw Object.assign(new Error('No tiene permisos para modificar el estado de este Plan de Acción.'), { statusCode: 403 });
   }
   const updated = await transitionPlan({ req, actionPlan, action: req.body.action, comment: req.body.comment, metadata: req.body.metadata });
+
+  if (req.body.action === 'request_owner_adjustments') {
+    try {
+      const fullPlan = await StrategicActionPlan.findByPk(actionPlan.id, {
+        include: [
+          { model: StrategicTerm, as: 'term' },
+          { model: StrategicCatalogItem, as: 'organizationalUnit' },
+          { model: User, as: 'responsibleUser' }
+        ]
+      });
+      const orgUnitName = fullPlan?.organizationalUnit?.name || 'Dependencia';
+      const leaderName = req.user.nombre || req.user.username || 'Líder de Dependencia';
+      const commentText = String(req.body.comment || '').trim();
+      const nowBogota = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+
+      // 1. Trazabilidad automática en el Acta COM-IF-FR-002
+      const latestMeeting = await StrategicMeeting.findOne({
+        where: { action_plan_id: actionPlan.id },
+        order: [['starts_at', 'DESC'], ['created_at', 'DESC']],
+        include: [{ model: StrategicMinuteVersion, as: 'minuteVersions' }]
+      });
+      if (latestMeeting) {
+        const note = `\n\n[OBSERVACIONES DEL LÍDER - ${leaderName} - ${nowBogota}]:\n${commentText}`;
+        const newDevelopment = `${latestMeeting.development || ''}${note}`.trim();
+        await latestMeeting.update({ development: newDevelopment, updated_by: req.user.id });
+
+        const latestMinute = (latestMeeting.minuteVersions || []).sort((a, b) => Number(b.version) - Number(a.version))[0];
+        if (latestMinute) {
+          const currentDes = Array.isArray(latestMinute.content?.desarrollo)
+            ? latestMinute.content.desarrollo.join('\n\n')
+            : String(latestMinute.content?.desarrollo || '');
+          const updatedContent = {
+            ...latestMinute.content,
+            desarrollo: [`${currentDes}${note}`.trim()]
+          };
+          await latestMinute.update({
+            content: updatedContent,
+            content_hash: hashObject(updatedContent)
+          });
+          syncMinute(latestMinute.id, true).catch((e) => console.warn('Auto-sync minute tras ajustes:', e.message));
+        }
+      }
+
+      // 2. Notificación en campana para Planeación y Efectividad
+      await StrategicNotification.create({
+        target_role: 'planeacion_estrategica',
+        action_plan_id: actionPlan.id,
+        type: 'action_plan_adjustments',
+        title: `Ajustes solicitados: ${actionPlan.code}`,
+        message: `${leaderName} (${orgUnitName}) devolvió el plan con observaciones: "${commentText.slice(0, 120)}${commentText.length > 120 ? '...' : ''}"`,
+        link: `/planeacion-estrategica/planes-accion/${actionPlan.id}`,
+        metadata: {
+          comment: commentText,
+          requested_by_name: leaderName,
+          requested_by_email: req.user.email,
+          action_plan_code: actionPlan.code,
+          dependency: orgUnitName
+        }
+      });
+
+      // 3. Envío de correo a planeacionestrategica@unicesmag.edu.co
+      const planningEmailSubject = `[OBSERVACIONES AL PLAN DE ACCIÓN] ${actionPlan.code} - ${orgUnitName}`;
+      const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
+      const planEditorUrl = `${baseUrl}/planeacion-estrategica/planes-accion/${actionPlan.id}`;
+
+      const introHtml = `
+        <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#d97706;">PLAN DE ACCIÓN DEVUELTO CON OBSERVACIONES</p>
+        <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado equipo de <strong>Planeación y Efectividad</strong>,</p>
+        <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">El líder <strong>${escapeHtml(leaderName)}</strong> ha devuelto el <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> correspondiente a <strong>${escapeHtml(orgUnitName)}</strong> con solicitud de ajustes y observaciones antes de continuar con la concertación.</p>
+      `;
+      const bodyHtml = `
+        <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;color:#1e293b;">
+            <tr><td style="padding:4px 0;width:140px;color:#64748b;"><strong>Plan de Acción:</strong></td><td style="padding:4px 0;font-weight:700;">${escapeHtml(actionPlan.code)}</td></tr>
+            <tr><td style="padding:4px 0;color:#64748b;"><strong>Dependencia:</strong></td><td style="padding:4px 0;font-weight:700;">${escapeHtml(orgUnitName)}</td></tr>
+            <tr><td style="padding:4px 0;color:#64748b;"><strong>Líder Responsable:</strong></td><td style="padding:4px 0;">${escapeHtml(leaderName)} (${escapeHtml(req.user.email || '')})</td></tr>
+            <tr><td style="padding:4px 0;color:#64748b;"><strong>Fecha de Envío:</strong></td><td style="padding:4px 0;">${escapeHtml(nowBogota)}</td></tr>
+          </table>
+        </div>
+        <div style="margin:18px 0;padding:16px;background:#fffbeb;border:2px solid #fde68a;border-radius:10px;">
+          <p style="margin:0 0 8px;font-weight:800;color:#92400e;font-size:13.5px;">📝 Observaciones y ajustes solicitados por el líder:</p>
+          <div style="padding:12px;background:#ffffff;border-radius:8px;border:1px solid #fde68a;font-size:13.5px;color:#1e293b;line-height:1.6;white-space:pre-wrap;">${escapeHtml(commentText)}</div>
+        </div>
+        <div style="text-align:center;margin:24px 0;">
+          <a href="${escapeHtml(planEditorUrl)}" style="display:inline-block;padding:13px 26px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Abrir Plan de Acción para Realizar Ajustes</a>
+        </div>
+        <p style="margin:0;font-size:12px;color:#64748b;text-align:center;">Estas observaciones han sido anexadas automáticamente al desarrollo del Acta de Concertación COM-IF-FR-002.</p>
+      `;
+      const html = renderInstitutionalTemplate({
+        title: `Observaciones al Plan de Acción ${actionPlan.code}`,
+        introHtml,
+        bodyHtml
+      });
+      await sendStrategicPlanningEmail({
+        to: 'planeacionestrategica@unicesmag.edu.co',
+        subject: planningEmailSubject,
+        text: `Plan de Acción devuelto con observaciones: ${actionPlan.code} - ${orgUnitName}.\nLíder: ${leaderName}\nObservaciones: ${commentText}\nEnlace: ${planEditorUrl}`,
+        html
+      });
+    } catch (errAdjustments) {
+      console.error('transitionActionPlan: Error en procesamiento de request_owner_adjustments:', errAdjustments);
+    }
+  }
+
+  if (req.body.action === 'submit_owner_validation') {
+    try {
+      const fullPlan = await StrategicActionPlan.findByPk(actionPlan.id, {
+        include: [
+          { model: StrategicTerm, as: 'term' },
+          { model: StrategicCatalogItem, as: 'organizationalUnit' },
+          { model: User, as: 'responsibleUser' }
+        ]
+      });
+      const orgUnitName = fullPlan?.organizationalUnit?.name || 'Dependencia';
+      const staffName = req.user.nombre || req.user.username || 'Planeación y Efectividad';
+      const commentText = String(req.body.comment || '').trim();
+      const nowBogota = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+
+      // 1. Registrar respuesta en el desarrollo del Acta
+      const latestMeeting = await StrategicMeeting.findOne({
+        where: { action_plan_id: actionPlan.id },
+        order: [['starts_at', 'DESC'], ['created_at', 'DESC']],
+        include: [{ model: StrategicMinuteVersion, as: 'minuteVersions' }]
+      });
+      if (latestMeeting) {
+        const respText = commentText || 'Se realizaron los ajustes solicitados y se remite nuevamente a revisión y firmas del líder.';
+        const note = `\n\n[AJUSTES REALIZADOS POR PLANEACIÓN - ${staffName} - ${nowBogota}]:\n${respText}`;
+        const newDevelopment = `${latestMeeting.development || ''}${note}`.trim();
+        await latestMeeting.update({ development: newDevelopment, updated_by: req.user.id });
+
+        const latestMinute = (latestMeeting.minuteVersions || []).sort((a, b) => Number(b.version) - Number(a.version))[0];
+        if (latestMinute) {
+          const currentDes = Array.isArray(latestMinute.content?.desarrollo)
+            ? latestMinute.content.desarrollo.join('\n\n')
+            : String(latestMinute.content?.desarrollo || '');
+          const updatedContent = {
+            ...latestMinute.content,
+            desarrollo: [`${currentDes}${note}`.trim()]
+          };
+          await latestMinute.update({
+            content: updatedContent,
+            content_hash: hashObject(updatedContent)
+          });
+          syncMinute(latestMinute.id, true).catch((e) => console.warn('Auto-sync minute tras respuesta de planeación:', e.message));
+        }
+      }
+
+      // 2. Notificación en campana para el líder responsable
+      if (actionPlan.responsible_user_id) {
+        await StrategicNotification.create({
+          user_id: actionPlan.responsible_user_id,
+          action_plan_id: actionPlan.id,
+          type: 'action_plan_review_submitted',
+          title: `Plan de Acción Ajustado: ${actionPlan.code}`,
+          message: `Se ajustó para su revisión. Por favor ingrese a verificar el plan y concertar el acta.`,
+          link: `/plan-accion-consulta`,
+          metadata: {
+            action_plan_code: actionPlan.code,
+            dependency: orgUnitName,
+            comment: commentText
+          }
+        });
+      }
+
+      // 3. Envío de correo electrónico al Líder
+      if (fullPlan?.responsibleUser?.email) {
+        const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
+        const consultationUrl = `${baseUrl}/plan-accion-consulta`;
+        const respEmailSubject = `Plan de Acción Ajustado para su Revisión - ${actionPlan.code} (${orgUnitName})`;
+
+        const introHtml = `
+          <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#2563eb;">PLAN DE ACCIÓN AJUSTADO PARA SU REVISIÓN</p>
+          <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) <strong>${escapeHtml(fullPlan.responsibleUser.nombre || 'Líder')}</strong>,</p>
+          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Efectividad</strong> le informa que su <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> (${escapeHtml(orgUnitName)}) ha sido ajustado y se encuentra listo para su revisión y concertación.</p>
+        `;
+        const bodyHtml = `
+          <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;color:#1e293b;">
+              <tr><td style="padding:4px 0;width:140px;color:#64748b;"><strong>Plan de Acción:</strong></td><td style="padding:4px 0;font-weight:700;">${escapeHtml(actionPlan.code)}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Dependencia:</strong></td><td style="padding:4px 0;font-weight:700;">${escapeHtml(orgUnitName)}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Estado en el flujo:</strong></td><td style="padding:4px 0;font-weight:700;color:#2563eb;">En revisión del Líder / Firmas</td></tr>
+            </table>
+          </div>
+          <div style="margin:18px 0;padding:16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;color:#1e40af;font-size:13.5px;">
+            <p style="margin:0 0 6px;font-weight:800;">✓ Se ajustó para su revisión</p>
+            <p style="margin:0;line-height:1.5;">${escapeHtml(commentText || 'Los cambios y precisiones solicitadas fueron aplicados en el Plan de Acción y en el Acta COM-IF-FR-002.')}</p>
+          </div>
+          <div style="text-align:center;margin:24px 0;">
+            <a href="${escapeHtml(consultationUrl)}" style="display:inline-block;padding:13px 26px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Ingresar a Revisar Plan de Acción</a>
+          </div>
+        `;
+        const html = renderInstitutionalTemplate({
+          title: `Plan de Acción Ajustado · ${actionPlan.code}`,
+          introHtml,
+          bodyHtml
+        });
+        await sendStrategicPlanningEmail({
+          to: fullPlan.responsibleUser.email,
+          subject: respEmailSubject,
+          text: `Estimado(a) ${fullPlan.responsibleUser.nombre}, su Plan de Acción ${actionPlan.code} ha sido ajustado para su revisión. Ingrese a: ${consultationUrl}`,
+          html
+        });
+      }
+    } catch (errSubmitValidation) {
+      console.error('transitionActionPlan: Error en submit_owner_validation:', errSubmitValidation);
+    }
+  }
+
   if (updated.status === 'active') {
     await refreshActionRepository(updated.term_id, req, 'plan_activated');
     try {
@@ -1547,6 +1755,18 @@ const transitionActionPlan = wrap(async (req, res) => {
         responsible_email: responsibleUser?.email || null,
         attachments_count: attachments.length
       }, 'Correos de activación enviados a Rectoría y Responsable con Acta PDF y Excel');
+
+      if (actionPlan.responsible_user_id) {
+        await StrategicNotification.create({
+          user_id: actionPlan.responsible_user_id,
+          action_plan_id: actionPlan.id,
+          type: 'action_plan_activated',
+          title: `¡Plan de Acción en Ejecución Oficial!`,
+          message: `El Plan de Acción ${actionPlan.code} (${fullPlan?.organizationalUnit?.name || ''}) ha finalizado sus firmas y se encuentra formalizado en ejecución oficial.`,
+          link: `/plan-accion-consulta`,
+          metadata: { action_plan_code: actionPlan.code }
+        }).catch((e) => console.warn('No se pudo crear StrategicNotification de activación para líder:', e.message));
+      }
     } catch (errActivationNotify) {
       console.error('transitionActionPlan: Error en notificación de activación:', errActivationNotify);
     }
@@ -2016,6 +2236,19 @@ const publishMinute = wrap(async (req, res) => {
         session_id: requestMeta(req).session_id
       });
       await audit(req, 'action_plan.submit_owner_validation', 'action_plan', actionPlan.id, { status: prevStatus }, { status: 'owner_validation' }, isRevision ? 'Reactivación de firmas por modificación del acta' : 'Envío automático a firmas y revisión del responsable');
+      if (actionPlan.responsible_user_id) {
+        await StrategicNotification.create({
+          user_id: actionPlan.responsible_user_id,
+          action_plan_id: actionPlan.id,
+          type: 'action_plan_review_submitted',
+          title: isRevision ? `Acta modificada: ${actionPlan.code}` : `Acta disponible para firma: ${actionPlan.code}`,
+          message: isRevision
+            ? 'El acta ha sido ajustada y se encuentra habilitada nuevamente para su revisión y firmas.'
+            : 'El acta de concertación ha sido remitida para revisión y firmas.',
+          link: '/plan-accion-consulta',
+          metadata: { action_plan_code: actionPlan.code }
+        }).catch((e) => console.warn('No se pudo crear StrategicNotification tras envío a firmas:', e.message));
+      }
     }
   }
   const invitees = (meeting?.participants || []).filter((participant) => (
@@ -3304,6 +3537,66 @@ const cancelPlanCalendarSchedule = wrap(async (req, res) => {
   }
 });
 
+const listStrategicNotifications = wrap(async (req, res) => {
+  const userId = req.user.id;
+  const isPlanningStaff = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user.role);
+
+  const whereCondition = isPlanningStaff
+    ? {
+        [Op.or]: [
+          { user_id: userId },
+          { target_role: 'planeacion_estrategica' },
+          { target_role: req.user.role }
+        ]
+      }
+    : { user_id: userId };
+
+  const notifications = await StrategicNotification.findAll({
+    where: whereCondition,
+    order: [['created_at', 'DESC']],
+    limit: 50
+  });
+
+  const unreadCount = await StrategicNotification.count({
+    where: {
+      ...whereCondition,
+      read: false
+    }
+  });
+
+  ok(res, { notifications, unreadCount });
+});
+
+const markStrategicNotificationRead = wrap(async (req, res) => {
+  const notification = await StrategicNotification.findByPk(req.params.id);
+  if (!notification) throw Object.assign(new Error('Notificación no encontrada.'), { statusCode: 404 });
+  await notification.update({ read: true, read_at: new Date() });
+  ok(res, notification, 'Notificación marcada como leída.');
+});
+
+const markAllStrategicNotificationsRead = wrap(async (req, res) => {
+  const userId = req.user.id;
+  const isPlanningStaff = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user.role);
+
+  const whereCondition = isPlanningStaff
+    ? {
+        [Op.or]: [
+          { user_id: userId },
+          { target_role: 'planeacion_estrategica' },
+          { target_role: req.user.role }
+        ],
+        read: false
+      }
+    : { user_id: userId, read: false };
+
+  await StrategicNotification.update(
+    { read: true, read_at: new Date() },
+    { where: whereCondition }
+  );
+
+  ok(res, null, 'Todas las notificaciones han sido marcadas como leídas.');
+});
+
 module.exports = {
   bootstrap, listPlans, createPlan, updatePlan, deletePlan, createLevel, updateLevel, deleteLevel,
   createElement, updateElement, deleteElement, listStructure, upsertCatalog, updateCatalog, deleteCatalog,
@@ -3317,5 +3610,6 @@ module.exports = {
   uploadEvidence, downloadEvidence, retrySync, getActionItemDriveFolder, getActionPlanMinutesDriveFolder, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
   previewHistorical, confirmHistorical, exportActionPlan, syncPlanDriveExcel, analytics, getPedLiveStatistics, listAudit, listSyncJobs,
   getPlanCalendarSchedule, listPlanUpcomingCalendar, startPlanCalendarConnect, disconnectPlanCalendar,
-  checkPlanCalendarAvailability, suggestPlanCalendarSlots, savePlanCalendarSchedule, cancelPlanCalendarSchedule
+  checkPlanCalendarAvailability, suggestPlanCalendarSlots, savePlanCalendarSchedule, cancelPlanCalendarSchedule,
+  listStrategicNotifications, markStrategicNotificationRead, markAllStrategicNotificationsRead
 };

@@ -475,6 +475,25 @@ const StrategicAuditEvent = sequelize.define('StrategicAuditEvent', {
   session_id: { type: DataTypes.STRING(160), allowNull: true }
 }, commonOptions('pei_audit_events', [{ fields: ['entity_type', 'entity_id'] }, { fields: ['created_at'] }]));
 
+const StrategicNotification = sequelize.define('StrategicNotification', {
+  id: uuidPk(),
+  user_id: userId(true),
+  target_role: { type: DataTypes.STRING(80), allowNull: true },
+  action_plan_id: { type: DataTypes.UUID, allowNull: true },
+  type: { type: DataTypes.STRING(60), allowNull: false },
+  title: { type: DataTypes.STRING(240), allowNull: false },
+  message: { type: DataTypes.TEXT, allowNull: false },
+  link: { type: DataTypes.STRING(500), allowNull: true },
+  read: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  read_at: { type: DataTypes.DATE, allowNull: true },
+  metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} }
+}, commonOptions('pei_notifications', [
+  { fields: ['user_id', 'read'] },
+  { fields: ['target_role', 'read'] },
+  { fields: ['action_plan_id'] },
+  { fields: ['created_at'] }
+]));
+
 const models = {
   StrategicPlan,
   StrategicLevel,
@@ -502,7 +521,8 @@ const models = {
   StrategicBudgetMovement,
   StrategicHistoricalImport,
   StrategicReferenceImport,
-  StrategicAuditEvent
+  StrategicAuditEvent,
+  StrategicNotification
 };
 
 const registerStrategicPlanningAssociations = ({ User }) => {
@@ -554,6 +574,8 @@ const registerStrategicPlanningAssociations = ({ User }) => {
   StrategicActionPlan.belongsTo(User, { foreignKey: 'responsible_user_id', as: 'responsibleUser' });
   StrategicMeetingParticipant.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
   StrategicUserSignature.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+  StrategicNotification.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+  StrategicNotification.belongsTo(StrategicActionPlan, { foreignKey: 'action_plan_id', as: 'actionPlan' });
 };
 
 module.exports = { ...models, strategicPlanningModels: Object.values(models), registerStrategicPlanningAssociations };

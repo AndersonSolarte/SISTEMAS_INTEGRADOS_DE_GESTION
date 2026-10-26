@@ -11,7 +11,8 @@ import {
   AccessTime, CalendarMonth, Folder, History, LockOutlined, MoreTime, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, OpenInNew,
   PersonSearch, PictureAsPdf as PdfIcon, PlayArrow, PriorityHigh, QrCode2, Refresh, Save, Search, Send,
   HelpOutline, Sync, TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility,
-  CloudDone as CloudDoneIcon, FolderShared as FolderSharedIcon
+  CloudDone as CloudDoneIcon, FolderShared as FolderSharedIcon,
+  Feedback as FeedbackIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../context/AuthContext';
@@ -41,6 +42,91 @@ const normalizeFieldText = (str) =>
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
+
+const LeaderFeedbackCard = ({ info, isCurrentStatus = false }) => {
+  if (!info || !info.comment) return null;
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        p: { xs: 2, sm: 2.5 },
+        borderRadius: 3.5,
+        bgcolor: isCurrentStatus ? '#fffbeb' : '#f8fafc',
+        border: '2px solid',
+        borderColor: isCurrentStatus ? '#f59e0b' : '#cbd5e1',
+        boxShadow: isCurrentStatus ? '0 6px 20px rgba(245, 158, 11, 0.15)' : 'none',
+        mb: 2.5
+      }}
+    >
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
+        <Box
+          sx={{
+            width: 46,
+            height: 46,
+            borderRadius: 2.5,
+            bgcolor: isCurrentStatus ? '#fef3c7' : '#e2e8f0',
+            border: '1px solid',
+            borderColor: isCurrentStatus ? '#fde68a' : '#cbd5e1',
+            display: 'grid',
+            placeItems: 'center',
+            color: isCurrentStatus ? '#b45309' : '#64748b',
+            flexShrink: 0
+          }}
+        >
+          <FeedbackIcon sx={{ fontSize: 26 }} />
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} sx={{ mb: 1 }}>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+              <Typography variant="subtitle1" sx={{ fontWeight: 950, color: isCurrentStatus ? '#92400e' : '#1e293b', fontSize: 15 }}>
+                {isCurrentStatus ? '⚠️ OBSERVACIONES Y AJUSTES SOLICITADOS POR EL LÍDER' : '📝 RETROALIMENTACIÓN REGISTRADA POR EL LÍDER'}
+              </Typography>
+              {isCurrentStatus && (
+                <Chip
+                  label="Pendiente de Ajuste en Planeación"
+                  size="small"
+                  color="warning"
+                  sx={{ fontWeight: 850, fontSize: 11, height: 22 }}
+                />
+              )}
+            </Stack>
+            {info.requested_at && (
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>
+                {new Date(info.requested_at).toLocaleString('es-CO')}
+              </Typography>
+            )}
+          </Stack>
+          <Typography variant="body2" sx={{ color: '#475569', mb: 1.5, fontSize: 13 }}>
+            Solicitado por: <strong style={{ color: '#0f172a' }}>{info.requested_by_name || 'Líder de Dependencia'}</strong>
+            {info.requested_by_email && (
+              <span style={{ color: '#64748b', marginLeft: 6 }}>({info.requested_by_email})</span>
+            )}
+          </Typography>
+          <Box
+            sx={{
+              p: 2,
+              bgcolor: '#ffffff',
+              borderRadius: 2.5,
+              border: '1px solid',
+              borderColor: isCurrentStatus ? '#fde68a' : '#e2e8f0',
+              fontFamily: 'inherit',
+              fontSize: 13.5,
+              color: '#1e293b',
+              lineHeight: 1.6,
+              whiteSpace: 'pre-wrap',
+              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.02)'
+            }}
+          >
+            {info.comment}
+          </Box>
+          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: isCurrentStatus ? '#b45309' : '#64748b', fontWeight: 600 }}>
+            * Esta observación está integrada automáticamente en el desarrollo del Acta de Reunión COM-IF-FR-002.
+          </Typography>
+        </Box>
+      </Stack>
+    </Paper>
+  );
+};
 
 const isCoResponsibleField = (field) => {
   if (!field) return false;
@@ -1244,6 +1330,27 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const isStage1Open = !isStage1Expired && !isStage1NotStarted;
   const daysRemainingStage1 = stage1EndsOn ? Math.ceil((new Date(stage1EndsOn + 'T23:59:59') - new Date()) / (1000 * 60 * 60 * 24)) : null;
 
+  const adjustmentInfo = useMemo(() => {
+    if (detail?.metadata?.last_adjustment_request?.comment) {
+      return detail.metadata.last_adjustment_request;
+    }
+    const events = detail?.workflowEvents || [];
+    const adjEvent = [...events].reverse().find((e) => e.action === 'request_owner_adjustments' || e.to_state === 'adjustments');
+    if (adjEvent && adjEvent.comment) {
+      return {
+        comment: adjEvent.comment,
+        requested_by_name: detail.currentResponsibility?.responsibleUser?.nombre || 'Líder de Dependencia',
+        requested_by_email: detail.currentResponsibility?.responsibleUser?.email || null,
+        requested_at: adjEvent.created_at
+      };
+    }
+    return null;
+  }, [detail]);
+
+  const [submitValidationModalOpen, setSubmitValidationModalOpen] = useState(false);
+  const [planningResponseComment, setPlanningResponseComment] = useState('');
+  const [submittingValidation, setSubmittingValidation] = useState(false);
+
   const handleOpenTimelineModal = () => {
     setTimelineForm({
       starts_on: stage1StartsOn,
@@ -2175,9 +2282,34 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
   };
 
-  const transition = async (action) => {
-    try { await strategicPlanningService.transition(planId, { action, comment: `Acción ejecutada desde el formulario: ${ACTION_LABELS[action] || action}` }); await load(); onChanged?.(); enqueueSnackbar('Estado actualizado.', { variant: 'success' }); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'La transición no fue permitida.', { variant: 'error' }); }
+  const transition = async (action, customComment = null) => {
+    if (action === 'submit_owner_validation' && customComment === null) {
+      setPlanningResponseComment('Se realizaron los ajustes solicitados en las actividades y acta conforme a sus observaciones.');
+      setSubmitValidationModalOpen(true);
+      return;
+    }
+    try {
+      await strategicPlanningService.transition(planId, {
+        action,
+        comment: customComment !== null ? customComment : `Acción ejecutada desde el formulario: ${ACTION_LABELS[action] || action}`
+      });
+      await load();
+      onChanged?.();
+      enqueueSnackbar('Estado actualizado.', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'La transición no fue permitida.', { variant: 'error' });
+    }
+  };
+
+  const handleConfirmSubmitValidation = async () => {
+    setSubmittingValidation(true);
+    try {
+      await transition('submit_owner_validation', planningResponseComment.trim() || 'Se ajustó para su revisión.');
+      setSubmitValidationModalOpen(false);
+      setPlanningResponseComment('');
+    } finally {
+      setSubmittingValidation(false);
+    }
   };
   const exportPlan = async () => {
     try { const blob = await strategicPlanningService.exportActionPlan(planId); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `DIR-PE-FR-003_${detail.code}_${detail.term?.year}.xlsx`; anchor.click(); URL.revokeObjectURL(url); }
@@ -2275,6 +2407,24 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   Ejecutar Plan de Acción
                 </Button>
               )}
+              {detail && detail.status === 'adjustments' && (
+                <Button
+                  variant="contained"
+                  startIcon={<Send />}
+                  onClick={() => transition('submit_owner_validation')}
+                  sx={{
+                    fontWeight: 900,
+                    textTransform: 'none',
+                    borderRadius: 2.5,
+                    bgcolor: '#2563eb',
+                    color: '#ffffff',
+                    boxShadow: '0 4px 12px rgba(37,99,235,.35)',
+                    '&:hover': { bgcolor: '#1d4ed8' }
+                  }}
+                >
+                  Enviar ajustes al Líder
+                </Button>
+              )}
               {detail && detail.status === 'active' && (
                 <Chip
                   icon={<CheckCircle sx={{ color: '#ffffff !important' }} />}
@@ -2363,6 +2513,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                 <Tab value="workflow" label={<WorkflowStepLabel number="4" title="Flujo y seguimientos S1/S2" />} />
               </Tabs>
             </Paper>
+
+            {/* RETROALIMENTACIÓN / OBSERVACIONES DEL LÍDER SI EL PLAN ESTÁ EN AJUSTES O TIENE COMENTARIOS */}
+            <LeaderFeedbackCard info={adjustmentInfo} isCurrentStatus={detail?.status === 'adjustments'} />
 
             {/* TAB 1: PLAN Y ACTIVIDADES */}
             {tab === 'activities' && (
@@ -4212,6 +4365,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     </Box>
                   </Stack>
 
+                  {/* OBSERVACIONES DEL LÍDER EN EL FLUJO */}
+                  <LeaderFeedbackCard info={adjustmentInfo} isCurrentStatus={detail?.status === 'adjustments'} />
+
                   {/* SECCIÓN SINCRONIZACIÓN AUTOMÁTICA EN GOOGLE DRIVE */}
                   <Paper
                     variant="outlined"
@@ -6032,6 +6188,63 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}
           >
             Cerrar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* DIÁLOGO ENVIAR PLAN AJUSTADO A REVISIÓN DEL LÍDER */}
+      <Dialog
+        open={submitValidationModalOpen}
+        onClose={() => !submittingValidation && setSubmitValidationModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3.5, p: 1 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 900, color: '#0f172a', pb: 1 }}>
+          Enviar Plan Ajustado a Revisión del Líder
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: '#475569', mb: 2, lineHeight: 1.5 }}>
+            El Plan de Acción y el Acta COM-IF-FR-002 serán remitidos al líder responsable{' '}
+            <strong style={{ color: '#0f172a' }}>{detail?.currentResponsibility?.responsibleUser?.nombre || 'Líder de Dependencia'}</strong>{' '}
+            para su revisión y concertación. Se enviará una notificación por correo electrónico y a su campana de avisos en plataforma con el mensaje: <em>"Se ajustó para su revisión"</em>.
+          </Typography>
+          <TextField
+            fullWidth
+            multiline
+            rows={3}
+            label="Detalle de los ajustes realizados (opcional)"
+            placeholder="Ej: Se ajustaron las metas de las actividades conforme a sus observaciones y se actualizó la fecha límite..."
+            value={planningResponseComment}
+            onChange={(e) => setPlanningResponseComment(e.target.value)}
+            disabled={submittingValidation}
+            variant="outlined"
+            helperText="Este comentario quedará registrado formalmente en el desarrollo del Acta y en el correo de aviso."
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 1, gap: 1 }}>
+          <Button
+            onClick={() => setSubmitValidationModalOpen(false)}
+            disabled={submittingValidation}
+            sx={{ textTransform: 'none', fontWeight: 750, color: '#64748b' }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmSubmitValidation}
+            disabled={submittingValidation}
+            startIcon={submittingValidation ? <CircularProgress size={18} color="inherit" /> : <Send />}
+            sx={{
+              borderRadius: 2.5,
+              fontWeight: 850,
+              textTransform: 'none',
+              bgcolor: '#2563eb',
+              px: 2.5,
+              '&:hover': { bgcolor: '#1d4ed8' }
+            }}
+          >
+            {submittingValidation ? 'Enviando...' : 'Enviar a Revisión del Líder'}
           </Button>
         </DialogActions>
       </Dialog>

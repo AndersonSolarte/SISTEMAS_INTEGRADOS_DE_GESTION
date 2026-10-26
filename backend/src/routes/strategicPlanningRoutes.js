@@ -90,6 +90,10 @@ router.get('/minutes/:minuteId/word', permit(), c.downloadMinuteWord);
 router.get('/minutes/:minuteId/pdf', permit(), c.downloadMinutePdf);
 router.post('/my-signature', permit(), c.registerUserSignature);
 
+router.get('/notifications', permit(), c.listStrategicNotifications);
+router.post('/notifications/:id/read', permit(), c.markStrategicNotificationRead);
+router.post('/notifications/read-all', permit(), c.markAllStrategicNotificationsRead);
+
 router.post('/action-items/:itemId/evidence', permit('pei_seguimiento'), upload.single('file'), c.uploadEvidence);
 router.get('/action-items/:itemId/drive-folder', permit(), c.getActionItemDriveFolder);
 router.get('/action-plans/:id/minutes-folder', permit(), c.getActionPlanMinutesDriveFolder);

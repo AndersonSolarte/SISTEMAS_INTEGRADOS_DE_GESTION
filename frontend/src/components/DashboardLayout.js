@@ -25,6 +25,7 @@ import strategicPlanningService from '../services/strategicPlanningService';
 import reporteSalidaService from '../services/reporteSalidaService';
 import { getEstadoLegalizacion } from '../services/legalizacionViaticosService';
 import oficinaJuridicaService from '../services/oficinaJuridicaService';
+import NotificationBell from './NotificationBell';
 
 const FIXED_SECTION_ORDER = [
   'planeacion_estrategica',
@@ -1218,7 +1219,8 @@ function DashboardLayout() {
           </Tooltip>
 
           <Box sx={{ flexGrow: 1 }} />
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <NotificationBell />
             <Tooltip title="Configuración">
               <IconButton size="small" sx={{ color: '#64748b' }}>
                 <SettingsIcon />

@@ -52,15 +52,44 @@ const transitionPlan = async ({ req, actionPlan, action, comment = '', metadata 
 
   await sequelize.transaction(async (transaction) => {
     const previous = actionPlan.toJSON();
+    const currentMeta = { ...(actionPlan.metadata || {}), ...metadata };
+    if (action === 'request_owner_adjustments') {
+      const adjustmentEntry = {
+        comment: String(comment || '').trim(),
+        requested_by: req.user.id,
+        requested_by_name: req.user.nombre || req.user.username || 'Líder de Dependencia',
+        requested_by_email: req.user.email || null,
+        requested_at: new Date().toISOString()
+      };
+      currentMeta.last_adjustment_request = adjustmentEntry;
+      currentMeta.adjustments_history = [
+        ...(Array.isArray(currentMeta.adjustments_history) ? currentMeta.adjustments_history : []),
+        adjustmentEntry
+      ];
+    } else if (action === 'submit_owner_validation') {
+      const responseEntry = {
+        comment: String(comment || 'Se ajustó para su revisión.').trim(),
+        responded_by: req.user.id,
+        responded_by_name: req.user.nombre || req.user.username || 'Planeación y Efectividad',
+        responded_at: new Date().toISOString()
+      };
+      currentMeta.last_planning_response = responseEntry;
+      currentMeta.planning_responses_history = [
+        ...(Array.isArray(currentMeta.planning_responses_history) ? currentMeta.planning_responses_history : []),
+        responseEntry
+      ];
+    }
+
     await actionPlan.update({
       status: transition.to,
+      metadata: currentMeta,
       updated_by: req.user.id,
       activated_at: transition.to === 'active' ? new Date() : actionPlan.activated_at,
       closed_at: transition.to === 'closed' ? new Date() : actionPlan.closed_at
     }, { transaction });
     await StrategicWorkflowEvent.create({
       action_plan_id: actionPlan.id, from_state: transition.from, to_state: transition.to,
-      action, comment: comment || null, metadata, performed_by: req.user.id,
+      action, comment: comment || null, metadata: currentMeta, performed_by: req.user.id,
       ip_address: requestMeta(req).ip_address, session_id: requestMeta(req).session_id
     }, { transaction });
     await audit(req, 'workflow.transition', 'action_plan', actionPlan.id, previous, actionPlan.toJSON(), comment, transaction);
