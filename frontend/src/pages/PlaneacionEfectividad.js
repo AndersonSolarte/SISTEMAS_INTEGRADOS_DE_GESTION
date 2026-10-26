@@ -2135,10 +2135,10 @@ function PlaneacionEfectividad() {
                           sx={{ mb: 1.2, fontWeight: 900, fontSize: 11 }}
                         />
                         <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f766e', mb: 1.8, fontSize: 20 }}>
-                          Estadística PED en Vivo
+                          Tablero de Control Estratégico
                         </Typography>
                         <Typography sx={{ color: '#64748b', fontSize: 14.5, mb: 4, flexGrow: 1, lineHeight: 1.6, px: 2 }}>
-                          Tablero de control en tiempo real: monitoreo automático de objetivos, lineamientos y planes de acción por cada vigencia del PED.
+                          Monitoreo institucional en tiempo real: seguimiento sistemático a objetivos, lineamientos y cumplimiento de metas del Plan Estratégico de Desarrollo (PED).
                         </Typography>
                         <Button
                           variant="contained"
@@ -2152,7 +2152,7 @@ function PlaneacionEfectividad() {
                             boxShadow: '0 4px 14px rgba(2,132,199,0.2)'
                           }}
                         >
-                          Ingresar a Estadísticas en Vivo
+                          Ingresar al Tablero de Control
                         </Button>
                       </Paper>
                     )}

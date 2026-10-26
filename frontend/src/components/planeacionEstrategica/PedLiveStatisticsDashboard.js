@@ -1088,7 +1088,7 @@ function EstadisticaTab({ rows, metrics }) {
   return (
     <Stack spacing={3}>
       <Box>
-        <SectionTitle title="Estadística Planes de Acción" subtitle="Resumen ejecutivo de estructura, avance y ejecución general del PED en vivo." />
+        <SectionTitle title="Estadística Planes de Acción" subtitle="Resumen ejecutivo de estructura, avance y ejecución general del Plan Estratégico de Desarrollo." />
         <Box sx={{ display: 'grid', gap: 2.2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,1fr)', xl: 'repeat(4,1fr)' } }}>
           {STRUCTURE_CARDS.map((card) => <MetricCard key={card.key} {...card} value={metrics[card.key]} />)}
         </Box>
@@ -1433,7 +1433,7 @@ function PlanesAccionTab({ rows }) {
           <Stack direction="row" spacing={1} alignItems="center">
             <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#10b981', boxShadow: '0 0 10px #10b981' }} />
             <Typography sx={{ fontSize: 12, color: 'rgba(255,255,255,.85)' }}>
-              UNICESMAG — Seguimiento del Plan Estratégico de Desarrollo en Vivo
+              UNICESMAG — Tablero de Control del Plan Estratégico de Desarrollo
             </Typography>
           </Stack>
           <Typography sx={{ fontSize: 11, color: 'rgba(255,255,255,.6)' }}>
@@ -1455,10 +1455,10 @@ function SeguimientoTabV2({ rows, filtersNode }) {
           title="Seguimiento Planes de Acción"
           subtitle={
             subTab === 'objetivos'
-              ? 'Monitoreo estratégico del PED en vivo por objetivos.'
+              ? 'Monitoreo estratégico del PED por objetivos.'
               : subTab === 'lineamientos'
-                ? 'Monitoreo estratégico del PED en vivo por lineamientos.'
-                : 'Monitoreo estratégico del PED en vivo por macroactividades.'
+                ? 'Monitoreo estratégico del PED por lineamientos.'
+                : 'Monitoreo estratégico del PED por macroactividades.'
           }
         />
         <Paper elevation={0} sx={{ p: 0.8, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#f8fafc', mt: 1 }}>
@@ -1653,7 +1653,7 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
       }
     } catch (err) {
       console.error('Error loading PED live statistics:', err);
-      enqueueSnackbar('No se pudieron cargar las estadísticas en vivo del PED.', { variant: 'error' });
+      enqueueSnackbar('No se pudo cargar el Tablero de Control Estratégico.', { variant: 'error' });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -1874,7 +1874,7 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
                 </Typography>
                 <Chip
                   icon={<FiberManualRecordIcon sx={{ fontSize: '10px !important', color: '#86efac !important' }} />}
-                  label="DATOS VIVOS"
+                  label="EN TIEMPO REAL"
                   size="small"
                   sx={{
                     bgcolor: 'rgba(34, 197, 94, 0.25)',
@@ -1892,7 +1892,7 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
             </Box>
 
             <Stack direction="row" spacing={1.5} alignItems="center" sx={{ alignSelf: { xs: 'flex-start', md: 'center' } }}>
-              <Tooltip title="Actualizar datos directamente desde las tablas en vivo del PED">
+              <Tooltip title="Actualizar datos en tiempo real desde el Plan Estratégico">
                 <span>
                   <Button
                     variant="contained"
@@ -1943,7 +1943,7 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
 
           <Stack direction="row" spacing={1.5} alignItems="center" mt={2} pt={1.5} sx={{ borderTop: '1px solid rgba(255,255,255,0.16)' }}>
             <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontSize: 11.5 }}>
-              Última sincronización en vivo: {lastUpdated.toLocaleTimeString('es-CO')}
+              Última sincronización en tiempo real: {lastUpdated.toLocaleTimeString('es-CO')}
             </Typography>
             <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)' }}>•</Typography>
             <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.95)', fontWeight: 800, fontSize: 11.5 }}>
@@ -2047,7 +2047,7 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
             <Stack spacing={1.5} alignItems="center">
               <CircularProgress />
               <Typography sx={{ color: '#64748b', fontWeight: 700 }}>
-                Cargando estadísticas en vivo del PED...
+                Cargando Tablero de Control Estratégico...
               </Typography>
             </Stack>
           </Paper>
