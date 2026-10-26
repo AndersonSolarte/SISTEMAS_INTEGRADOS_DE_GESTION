@@ -135,17 +135,14 @@ const NotificationBell = () => {
       return;
     }
 
-    // 2. Si es para el equipo de Planeación (devolución por ajustes del líder, chat a planeación)
+    // 2. Si es para el equipo de Planeación o Administrador (gestión y seguimiento del plan)
     const isPlanningStaff = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(user?.role);
     if (isPlanningStaff) {
-      const basePath = user?.role === 'planeacion_efectividad'
-        ? '/dashboard/planeacion-efectividad'
-        : '/dashboard/planeacion-estrategica';
       const params = new URLSearchParams();
       if (planId) params.set('planId', planId);
       if (isChat || isAdj) params.set('openChat', 'true');
       const q = params.toString();
-      navigate(q ? `${basePath}?${q}` : basePath);
+      navigate(`/dashboard/planeacion-efectividad${q ? `?${q}` : ''}`);
       return;
     }
 

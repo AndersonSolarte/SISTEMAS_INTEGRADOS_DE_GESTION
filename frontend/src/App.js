@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import { SnackbarProvider } from 'notistack';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -74,6 +74,15 @@ function AppContent({ children }) {
       {children}
     </>
   );
+}
+
+function ActionPlanDeepLinkRedirect() {
+  const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const q = new URLSearchParams(searchParams);
+  if (id) q.set('planId', id);
+  const qs = q.toString();
+  return <Navigate to={`/dashboard/planeacion-efectividad${qs ? `?${qs}` : ''}`} replace />;
 }
 
 function App() {
@@ -249,7 +258,8 @@ function App() {
                 </Route>
 
                 <Route path="/plan-accion-consulta" element={<Navigate to="/dashboard/plan-accion-mi-plan" replace />} />
-                <Route path="/planeacion-estrategica/planes-accion/:id" element={<Navigate to="/dashboard/planeacion-estrategica" replace />} />
+                <Route path="/planeacion-estrategica/planes-accion/:id" element={<ActionPlanDeepLinkRedirect />} />
+                <Route path="/dashboard/planeacion-estrategica/planes-accion/:id" element={<ActionPlanDeepLinkRedirect />} />
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Routes>

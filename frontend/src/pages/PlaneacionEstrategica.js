@@ -1,4 +1,4 @@
-﻿import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Box, Card, CardContent, Stack, Typography, Button, Fade, Chip, Paper, Alert } from '@mui/material';
 import {
@@ -22,6 +22,14 @@ function PlaneacionEstrategica() {
   const { user } = useAuth();
   const view = useMemo(() => new URLSearchParams(location.search).get('view') || '', [location.search]);
   const gpPanel = useMemo(() => new URLSearchParams(location.search).get('panel') || '', [location.search]);
+  const planIdParam = useMemo(() => new URLSearchParams(location.search).get('planId') || '', [location.search]);
+
+  // Si se ingresa con un planId específico (desde notificaciones), redirigir directamente al módulo de planes de acción
+  useEffect(() => {
+    if (planIdParam) {
+      navigate(`/dashboard/planeacion-efectividad${location.search}`, { replace: true });
+    }
+  }, [planIdParam, location.search, navigate]);
   const allowedViews = useMemo(() => {
     if (user?.role === ROLES.REGISTROS_CALIFICADOS) {
       return new Set(['registros-calificados']);
