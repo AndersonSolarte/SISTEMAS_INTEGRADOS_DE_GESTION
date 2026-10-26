@@ -43,7 +43,7 @@ const normalizeFieldText = (str) =>
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
-const LeaderFeedbackCard = ({ info, isCurrentStatus = false }) => {
+const LeaderFeedbackCard = ({ info, isCurrentStatus = false, onSendToLeader = null }) => {
   if (!info || !info.comment) return null;
   return (
     <Paper
@@ -119,9 +119,32 @@ const LeaderFeedbackCard = ({ info, isCurrentStatus = false }) => {
           >
             {info.comment}
           </Box>
-          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: isCurrentStatus ? '#b45309' : '#64748b', fontWeight: 600 }}>
-            * Esta observación está integrada automáticamente en el desarrollo del Acta de Reunión COM-IF-FR-002.
-          </Typography>
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} sx={{ mt: 1.5 }}>
+            <Typography variant="caption" sx={{ color: isCurrentStatus ? '#b45309' : '#64748b', fontWeight: 600 }}>
+              * Esta observación está integrada automáticamente en el desarrollo del Acta de Reunión COM-IF-FR-002.
+            </Typography>
+            {isCurrentStatus && onSendToLeader && (
+              <Button
+                variant="contained"
+                startIcon={<Send />}
+                onClick={onSendToLeader}
+                sx={{
+                  fontWeight: 850,
+                  textTransform: 'none',
+                  borderRadius: 2.5,
+                  bgcolor: '#2563eb',
+                  px: 2.5,
+                  py: 0.8,
+                  fontSize: 13,
+                  boxShadow: '0 4px 12px rgba(37,99,235,.25)',
+                  '&:hover': { bgcolor: '#1d4ed8' },
+                  alignSelf: { xs: 'flex-start', sm: 'center' }
+                }}
+              >
+                Enviar ajustes al Líder
+              </Button>
+            )}
+          </Stack>
         </Box>
       </Stack>
     </Paper>
@@ -2515,7 +2538,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             </Paper>
 
             {/* RETROALIMENTACIÓN / OBSERVACIONES DEL LÍDER SI EL PLAN ESTÁ EN AJUSTES O TIENE COMENTARIOS */}
-            <LeaderFeedbackCard info={adjustmentInfo} isCurrentStatus={detail?.status === 'adjustments'} />
+            <LeaderFeedbackCard
+              info={adjustmentInfo}
+              isCurrentStatus={detail?.status === 'adjustments'}
+              onSendToLeader={() => transition('submit_owner_validation')}
+            />
 
             {/* TAB 1: PLAN Y ACTIVIDADES */}
             {tab === 'activities' && (
@@ -2727,6 +2754,69 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     </Table>
                   </TableContainer>
                 </Paper>
+
+                {/* BANNER INFERIOR PARA ENVIAR AL LÍDER TRAS TERMINAR AJUSTES */}
+                {detail?.status === 'adjustments' && (
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      mt: 3,
+                      p: 2.5,
+                      borderRadius: 3.5,
+                      bgcolor: '#eff6ff',
+                      border: '2px solid #93c5fd',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 2,
+                      boxShadow: '0 6px 20px rgba(37,99,235,0.12)'
+                    }}
+                  >
+                    <Stack direction="row" spacing={2} alignItems="center">
+                      <Box
+                        sx={{
+                          width: 46,
+                          height: 46,
+                          borderRadius: 2.5,
+                          bgcolor: '#dbeafe',
+                          display: 'grid',
+                          placeItems: 'center',
+                          color: '#1d4ed8',
+                          flexShrink: 0
+                        }}
+                      >
+                        <Send sx={{ fontSize: 24 }} />
+                      </Box>
+                      <Box>
+                        <Typography sx={{ fontWeight: 950, color: '#1e40af', fontSize: 16 }}>
+                          ¿Finalizó los ajustes en las actividades?
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#475569', fontSize: 13.5 }}>
+                          Remita el Plan de Acción actualizado al líder de dependencia para su revisión y firmas del acta.
+                        </Typography>
+                      </Box>
+                    </Stack>
+                    <Button
+                      variant="contained"
+                      startIcon={<Send />}
+                      onClick={() => transition('submit_owner_validation')}
+                      sx={{
+                        fontWeight: 900,
+                        textTransform: 'none',
+                        borderRadius: 2.5,
+                        bgcolor: '#2563eb',
+                        px: 3.5,
+                        py: 1.1,
+                        fontSize: 14,
+                        boxShadow: '0 4px 14px rgba(37,99,235,.35)',
+                        '&:hover': { bgcolor: '#1d4ed8' }
+                      }}
+                    >
+                      Enviar ajustes al Líder
+                    </Button>
+                  </Paper>
+                )}
               </>
             )}
 
@@ -4366,7 +4456,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Stack>
 
                   {/* OBSERVACIONES DEL LÍDER EN EL FLUJO */}
-                  <LeaderFeedbackCard info={adjustmentInfo} isCurrentStatus={detail?.status === 'adjustments'} />
+                  <LeaderFeedbackCard
+                    info={adjustmentInfo}
+                    isCurrentStatus={detail?.status === 'adjustments'}
+                    onSendToLeader={() => transition('submit_owner_validation')}
+                  />
 
                   {/* SECCIÓN SINCRONIZACIÓN AUTOMÁTICA EN GOOGLE DRIVE */}
                   <Paper
