@@ -84,6 +84,7 @@ export default function PlanAccionConsulta() {
   const navigate = useNavigate();
   const { user: authUser } = useAuth();
   const userId = authUser?.id;
+  // eslint-disable-next-line no-unused-vars
   const isPlanningStaff = Boolean(authUser && [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.PLANEACION_EFECTIVIDAD].includes(authUser.role));
 
   const [loading, setLoading] = useState(false);
@@ -97,9 +98,10 @@ export default function PlanAccionConsulta() {
   const [targetItem, setTargetItem] = useState(null);
   const [monitoringForm, setMonitoringForm] = useState({
     period_id: '',
-    physical_progress: '',
+    description: '',
     file: null
   });
+  const [isDragging, setIsDragging] = useState(false);
   const [savingMonitoring, setSavingMonitoring] = useState(false);
 
   // Modal para ver evidencias cargadas de una actividad en ventana emergente
@@ -232,63 +234,62 @@ export default function PlanAccionConsulta() {
     }
 
     const defaultPeriodId = autoPeriod?.id || '';
-    const existingResult = (item.monitoringResults || []).find((r) => r.monitoring_period_id === defaultPeriodId);
     setMonitoringForm({
       period_id: defaultPeriodId,
-      physical_progress: existingResult?.physical_progress ?? '',
+      description: '',
       file: null
     });
+    setIsDragging(false);
     setMonitoringModalOpen(true);
   };
 
   // Cambio de período dentro del modal
   const handlePeriodChange = (newPeriodId) => {
-    if (!targetItem) return;
-    const existingResult = (targetItem.monitoringResults || []).find((r) => r.monitoring_period_id === newPeriodId);
     setMonitoringForm((prev) => ({
       ...prev,
-      period_id: newPeriodId,
-      physical_progress: existingResult?.physical_progress ?? ''
+      period_id: newPeriodId
     }));
   };
 
-  // Guardar avance y radicar documento de evidencia
+  // Radicar documento de evidencia de cumplimiento institucional
   const handleSaveMonitoring = async () => {
     if (!targetItem || !monitoringForm.period_id) {
-      enqueueSnackbar('Seleccione el semestre.', { variant: 'warning' });
+      enqueueSnackbar('Por favor seleccione el semestre o período de seguimiento.', { variant: 'warning' });
       return;
     }
-    // Si no es de Planeación, debe seleccionar el archivo de evidencia
-    if (!isPlanningStaff && !monitoringForm.file) {
-      enqueueSnackbar('Por favor adjunte el documento de evidencia a radicar.', { variant: 'warning' });
+    if (!monitoringForm.file) {
+      enqueueSnackbar('Por favor adjunte el documento de soporte o evidencia que desea radicar.', { variant: 'warning' });
       return;
     }
 
     setSavingMonitoring(true);
     try {
-      // 1. Guardar avance de seguimiento
-      const payload = {
-        status: isPlanningStaff ? 'approved' : 'submitted'
-      };
-      if (isPlanningStaff && monitoringForm.physical_progress !== '') {
-        payload.physical_progress = monitoringForm.physical_progress;
+      // 1. Subir documento de evidencia oficial
+      const formData = new FormData();
+      formData.append('file', monitoringForm.file);
+      formData.append('monitoring_period_id', monitoringForm.period_id);
+      if (monitoringForm.description?.trim()) {
+        formData.append('description', monitoringForm.description.trim());
       }
-      await strategicPlanningService.saveMonitoring(targetItem.id, monitoringForm.period_id, payload);
+      await strategicPlanningService.uploadEvidence(targetItem.id, formData);
 
-      // 2. Si adjuntó archivo, subirlo como evidencia
-      if (monitoringForm.file) {
-        const formData = new FormData();
-        formData.append('file', monitoringForm.file);
-        formData.append('monitoring_period_id', monitoringForm.period_id);
-        await strategicPlanningService.uploadEvidence(targetItem.id, formData);
+      // 2. Notificar actualización de estado como 'submitted' sin alterar la calificación de Planeación
+      try {
+        await strategicPlanningService.saveMonitoring(targetItem.id, monitoringForm.period_id, {
+          status: 'submitted'
+        });
+      } catch (errStatus) {
+        console.warn('Nota sobre sincronización de estado de seguimiento:', errStatus);
       }
 
-      enqueueSnackbar(isPlanningStaff ? 'Seguimiento y valoración actualizados correctamente.' : 'Documento de evidencia radicado correctamente.', { variant: 'success' });
+      enqueueSnackbar('Documento de evidencia radicado exitosamente. Queda disponible para revisión y valoración de Planeación y Efectividad.', { variant: 'success' });
       setMonitoringModalOpen(false);
       setTargetItem(null);
+      setMonitoringForm({ period_id: '', description: '', file: null });
+      setIsDragging(false);
       await cargarPlanes();
     } catch (err) {
-      const msg = err?.response?.data?.message || 'Error al radicar el documento o actualizar el seguimiento.';
+      const msg = err?.response?.data?.message || 'Error al radicar el documento de evidencia.';
       enqueueSnackbar(msg, { variant: 'error' });
     } finally {
       setSavingMonitoring(false);
@@ -590,6 +591,19 @@ export default function PlanAccionConsulta() {
       (it.parent_plan?.leader_name || '').toLowerCase().includes(term)
     );
   }, [coResponsibleItems, activitySearch]);
+
+  // Evidencias asociadas al período seleccionado en el modal de radicación
+  const targetPeriodEvidences = useMemo(() => {
+    if (!targetItem?.evidence) return [];
+    if (!monitoringForm.period_id) return targetItem.evidence;
+    return (targetItem.evidence || []).filter((e) => e.monitoring_period_id === monitoringForm.period_id);
+  }, [targetItem, monitoringForm.period_id]);
+
+  // Calificación / resultado de seguimiento emitido por Planeación para el período seleccionado
+  const targetPeriodResult = useMemo(() => {
+    if (!targetItem?.monitoringResults || !monitoringForm.period_id) return null;
+    return (targetItem.monitoringResults || []).find((r) => r.monitoring_period_id === monitoringForm.period_id) || null;
+  }, [targetItem, monitoringForm.period_id]);
 
   // ==========================================
   // RENDER: VISTA LISTADO DE PLANES
@@ -1398,20 +1412,25 @@ export default function PlanAccionConsulta() {
                         return (
                           <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
                             {prog !== null ? (
-                              <Chip
-                                size="small"
-                                label={`${prog}%`}
-                                sx={{
-                                  fontWeight: 800,
-                                  fontSize: 11,
-                                  height: 22,
-                                  borderRadius: 1,
-                                  bgcolor: prog >= 100 ? '#dcfce7' : (prog > 0 ? '#fef3c7' : '#f1f5f9'),
-                                  color: prog >= 100 ? '#15803d' : (prog > 0 ? '#b45309' : '#64748b')
-                                }}
-                              />
+                              <Tooltip title={`Valoración oficial de Planeación y Efectividad: ${prog}%`} arrow>
+                                <Chip
+                                  size="small"
+                                  label={`${prog}%`}
+                                  sx={{
+                                    fontWeight: 800,
+                                    fontSize: 11,
+                                    height: 22,
+                                    borderRadius: 1,
+                                    bgcolor: prog >= 100 ? '#dcfce7' : (prog > 0 ? '#fef3c7' : '#f1f5f9'),
+                                    color: prog >= 100 ? '#15803d' : (prog > 0 ? '#b45309' : '#64748b'),
+                                    cursor: 'help'
+                                  }}
+                                />
+                              </Tooltip>
                             ) : (
-                              <Typography sx={{ fontSize: 11.5, color: '#94a3b8' }}>—</Typography>
+                              <Tooltip title="Sin valoración registrada por Planeación y Efectividad para este período" arrow>
+                                <Typography sx={{ fontSize: 11.5, color: '#94a3b8', cursor: 'help' }}>—</Typography>
+                              </Tooltip>
                             )}
                           </TableCell>
                         );
@@ -1541,22 +1560,22 @@ export default function PlanAccionConsulta() {
                         <Button
                           size="small"
                           variant="contained"
-                          color="primary"
-                          startIcon={<CloudUploadIcon sx={{ fontSize: 15 }} />}
+                          startIcon={<CloudUploadIcon sx={{ fontSize: 16 }} />}
                           onClick={() => handleOpenMonitoringModal(it)}
                           sx={{
-                            borderRadius: 2,
+                            borderRadius: 2.2,
                             textTransform: 'none',
-                            fontWeight: 800,
-                            fontSize: 11.5,
-                            py: 0.5,
-                            px: 1.5,
-                            bgcolor: '#2563eb',
-                            boxShadow: '0 2px 6px rgba(37, 99, 235, 0.2)',
-                            '&:hover': { bgcolor: '#1d4ed8', boxShadow: '0 4px 10px rgba(37, 99, 235, 0.3)' }
+                            fontWeight: 850,
+                            fontSize: 12,
+                            py: 0.6,
+                            px: 1.8,
+                            bgcolor: '#0284c7',
+                            boxShadow: '0 2px 8px rgba(2, 132, 199, 0.22)',
+                            '&:hover': { bgcolor: '#0369a1', boxShadow: '0 4px 12px rgba(2, 132, 199, 0.32)' },
+                            whiteSpace: 'nowrap'
                           }}
                         >
-                          {isPlanningStaff ? 'Valorar' : 'Cargar'}
+                          Cargar Evidencia
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -1729,20 +1748,25 @@ export default function PlanAccionConsulta() {
                           return (
                             <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
                               {prog !== null ? (
-                                <Chip
-                                  size="small"
-                                  label={`${prog}%`}
-                                  sx={{
-                                    fontWeight: 800,
-                                    fontSize: 11,
-                                    height: 22,
-                                    borderRadius: 1,
-                                    bgcolor: prog >= 100 ? '#dcfce7' : prog > 0 ? '#e0f2fe' : '#f1f5f9',
-                                    color: prog >= 100 ? '#15803d' : prog > 0 ? '#0369a1' : '#64748b'
-                                  }}
-                                />
+                                <Tooltip title={`Valoración oficial de Planeación y Efectividad: ${prog}%`} arrow>
+                                  <Chip
+                                    size="small"
+                                    label={`${prog}%`}
+                                    sx={{
+                                      fontWeight: 800,
+                                      fontSize: 11,
+                                      height: 22,
+                                      borderRadius: 1,
+                                      bgcolor: prog >= 100 ? '#dcfce7' : prog > 0 ? '#e0f2fe' : '#f1f5f9',
+                                      color: prog >= 100 ? '#15803d' : prog > 0 ? '#0369a1' : '#64748b',
+                                      cursor: 'help'
+                                    }}
+                                  />
+                                </Tooltip>
                               ) : (
-                                <Typography sx={{ fontSize: 11, color: '#cbd5e1' }}>—</Typography>
+                                <Tooltip title="Sin valoración registrada por Planeación y Efectividad para este período" arrow>
+                                  <Typography sx={{ fontSize: 11, color: '#cbd5e1', cursor: 'help' }}>—</Typography>
+                                </Tooltip>
                               )}
                             </TableCell>
                           );
@@ -1843,22 +1867,22 @@ export default function PlanAccionConsulta() {
                           <Button
                             size="small"
                             variant="contained"
-                            color="warning"
-                            startIcon={<CloudUploadIcon sx={{ fontSize: 15 }} />}
+                            startIcon={<CloudUploadIcon sx={{ fontSize: 16 }} />}
                             onClick={() => handleOpenMonitoringModal(it)}
                             sx={{
-                              borderRadius: 2,
+                              borderRadius: 2.2,
                               textTransform: 'none',
-                              fontWeight: 800,
-                              fontSize: 11.5,
-                              py: 0.5,
-                              px: 1.5,
+                              fontWeight: 850,
+                              fontSize: 12,
+                              py: 0.6,
+                              px: 1.8,
                               bgcolor: '#d97706',
-                              boxShadow: '0 2px 6px rgba(217, 119, 6, 0.2)',
-                              '&:hover': { bgcolor: '#b45309', boxShadow: '0 4px 10px rgba(217, 119, 6, 0.3)' }
+                              boxShadow: '0 2px 8px rgba(217, 119, 6, 0.22)',
+                              '&:hover': { bgcolor: '#b45309', boxShadow: '0 4px 10px rgba(217, 119, 6, 0.32)' },
+                              whiteSpace: 'nowrap'
                             }}
                           >
-                            Aportar
+                            Aportar Evidencia
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -1872,44 +1896,65 @@ export default function PlanAccionConsulta() {
       </Paper>
 
       {/* ==========================================
-          MODAL: RADICAR DOCUMENTO DE EVIDENCIA (SIN CAMPOS DE TEXTO)
+          MODAL: RADICAR DOCUMENTO DE EVIDENCIA DE CUMPLIMIENTO
          ========================================== */}
       <Dialog
         open={monitoringModalOpen}
         onClose={() => !savingMonitoring && setMonitoringModalOpen(false)}
-        maxWidth="sm"
+        maxWidth="md"
         fullWidth
         PaperProps={{
           sx: {
-            borderRadius: 3,
+            borderRadius: 3.5,
             overflow: 'hidden',
-            boxShadow: '0 20px 45px rgba(15, 23, 42, 0.16)'
+            boxShadow: '0 25px 60px rgba(15, 23, 42, 0.18)'
           }
         }}
       >
-        {/* Cabecera limpia y ejecutiva */}
+        {/* Cabecera institucional limpia */}
         <DialogTitle
           sx={{
             m: 0,
             px: 3,
-            py: 2,
+            py: 2.2,
             borderBottom: '1px solid #e2e8f0',
             bgcolor: '#ffffff',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: 1.5
+            gap: 2
           }}
         >
           <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
-            <Chip
-              size="small"
-              label={targetItem?.code || 'Actividad'}
-              sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 800, fontSize: 12, flexShrink: 0 }}
-            />
-            <Typography sx={{ fontSize: 15.5, fontWeight: 800, color: '#0f172a' }} noWrap>
-              {targetItem?.activity || 'Radicar Evidencia'}
-            </Typography>
+            <Box
+              sx={{
+                width: 44,
+                height: 44,
+                borderRadius: 2.5,
+                bgcolor: '#eff6ff',
+                color: '#2563eb',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0
+              }}
+            >
+              <CloudUploadIcon sx={{ fontSize: 24 }} />
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                <Typography sx={{ fontSize: 16.5, fontWeight: 900, color: '#0f172a' }}>
+                  Radicación de Evidencias de Cumplimiento
+                </Typography>
+                <Chip
+                  size="small"
+                  label={targetItem?.code || 'Actividad'}
+                  sx={{ bgcolor: '#e0e7ff', color: '#3730a3', fontWeight: 850, fontSize: 11, height: 22 }}
+                />
+              </Stack>
+              <Typography variant="caption" sx={{ color: '#64748b', fontSize: 12 }}>
+                Soportes documentales para seguimiento y verificación institucional del Plan de Acción
+              </Typography>
+            </Box>
           </Stack>
           <IconButton
             aria-label="cerrar"
@@ -1922,40 +1967,69 @@ export default function PlanAccionConsulta() {
         </DialogTitle>
 
         <DialogContent sx={{ px: 3, py: 2.5, bgcolor: '#ffffff' }}>
-          <Stack spacing={2.2}>
-            {/* Resumen compacto de Indicador y Meta */}
-            <Box
+          <Stack spacing={2.5}>
+            {/* Tarjeta de Resumen de la Actividad Concertada */}
+            <Paper
+              variant="outlined"
               sx={{
-                p: 1.5,
-                borderRadius: 2,
+                p: 2,
+                borderRadius: 2.5,
                 bgcolor: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 2,
-                alignItems: 'center'
+                border: '1px solid #e2e8f0'
               }}
             >
-              <Typography sx={{ fontSize: 13, color: '#475569' }}>
-                <strong style={{ color: '#0f172a' }}>Indicador:</strong> {targetItem?.indicator || '—'}
+              <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a', lineHeight: 1.35, mb: 1 }}>
+                {targetItem?.activity || 'Actividad concertada'}
               </Typography>
-              <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
-              <Typography sx={{ fontSize: 13, color: '#475569' }}>
-                <strong style={{ color: '#059669' }}>Meta:</strong> {targetItem?.target || '—'}
-              </Typography>
-            </Box>
+              {targetItem?.macroactivity && (
+                <Typography sx={{ fontSize: 11.5, color: '#64748b', mb: 1.2 }}>
+                  <strong>Alineación PED:</strong> {targetItem.macroactivity}
+                </Typography>
+              )}
+              <Divider sx={{ my: 1, borderColor: '#e2e8f0' }} />
+              <Grid container spacing={1.5} alignItems="center">
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', fontSize: 11 }}>
+                    INDICADOR DE CUMPLIMIENTO
+                  </Typography>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b' }}>
+                    {targetItem?.indicator || 'Sin indicador asignado'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6} sm={3}>
+                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', fontSize: 11 }}>
+                    META PROGRAMADA
+                  </Typography>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 850, color: '#059669' }}>
+                    {targetItem?.target || '100%'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6} sm={3}>
+                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', fontSize: 11 }}>
+                    PLAZO DE EJECUCIÓN
+                  </Typography>
+                  <Typography sx={{ fontSize: 11.5, color: '#334155' }}>
+                    {formatFecha(targetItem?.starts_on)} - {formatFecha(targetItem?.ends_on)}
+                  </Typography>
+                </Grid>
+              </Grid>
+            </Paper>
 
-            {/* Período del informe y calificación */}
-            <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12} sm={isPlanningStaff ? 6 : 7}>
+            {/* Período de Seguimiento y Estado de Valoración por Planeación */}
+            <Grid container spacing={2} alignItems="stretch">
+              <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
                   select
                   size="small"
-                  label={periods.length === 2 ? 'Semestre *' : (periods.length === 4 ? 'Trimestre *' : (periods.length === 3 ? 'Cuatrimestre *' : 'Período de Seguimiento *'))}
+                  label={periods.length === 2 ? 'Semestre de Seguimiento *' : 'Período de Seguimiento *'}
                   value={monitoringForm.period_id}
                   onChange={(e) => handlePeriodChange(e.target.value)}
-                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                  helperText="Seleccione el período al que corresponde el soporte documental"
+                  sx={{
+                    '& .MuiOutlinedInput-root': { borderRadius: 2 },
+                    '& .MuiFormHelperText-root': { fontSize: 11 }
+                  }}
                 >
                   {periods.map((p) => {
                     const isS1 = (p.code || '').toUpperCase() === 'S1' || /1|prim/i.test(p.name || '');
@@ -1976,61 +2050,158 @@ export default function PlanAccionConsulta() {
                 </TextField>
               </Grid>
 
-              {isPlanningStaff ? (
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="number"
-                    inputProps={{ min: 0, max: 100, step: 1 }}
-                    label="Avance Físico (%) *"
-                    value={monitoringForm.physical_progress}
-                    onChange={(e) => setMonitoringForm({ ...monitoringForm, physical_progress: e.target.value })}
-                    placeholder="0 - 100"
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                  />
-                </Grid>
-              ) : (
-                <Grid item xs={12} sm={5}>
-                  {(() => {
-                    const currentResult = (targetItem?.monitoringResults || []).find((r) => r.monitoring_period_id === monitoringForm.period_id);
-                    const hasScore = currentResult?.physical_progress !== undefined && currentResult?.physical_progress !== null && currentResult?.physical_progress !== '';
-                    return (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography sx={{ fontSize: 13, color: '#64748b' }}>Avance Planeación:</Typography>
+              <Grid item xs={12} sm={6}>
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: 1.5,
+                    height: '100%',
+                    borderRadius: 2,
+                    bgcolor: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800, textTransform: 'uppercase', fontSize: 10.5, letterSpacing: 0.5, mb: 0.5 }}>
+                    Valoración de Planeación y Efectividad
+                  </Typography>
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                    {targetPeriodResult?.physical_progress !== null && targetPeriodResult?.physical_progress !== undefined && targetPeriodResult?.physical_progress !== '' ? (
+                      <>
                         <Chip
                           size="small"
-                          color={hasScore ? (Number(currentResult.physical_progress) >= 100 ? 'success' : 'primary') : 'default'}
-                          label={hasScore ? `${currentResult.physical_progress}%` : 'Pendiente'}
-                          sx={{ fontWeight: 800 }}
+                          label={`Avance Calificado: ${targetPeriodResult.physical_progress}%`}
+                          color={Number(targetPeriodResult.physical_progress) >= 100 ? 'success' : 'primary'}
+                          sx={{ fontWeight: 850, fontSize: 11.5 }}
                         />
-                      </Box>
-                    );
-                  })()}
-                </Grid>
-              )}
+                        <Chip
+                          size="small"
+                          label={targetPeriodResult.status === 'approved' ? 'Valoración Oficial Aprobada' : 'En Evaluación'}
+                          sx={{
+                            bgcolor: targetPeriodResult.status === 'approved' ? '#dcfce7' : '#fef3c7',
+                            color: targetPeriodResult.status === 'approved' ? '#15803d' : '#92400e',
+                            fontWeight: 750,
+                            fontSize: 10.5
+                          }}
+                        />
+                      </>
+                    ) : (
+                      <Chip
+                        size="small"
+                        label="Pendiente de valoración"
+                        sx={{ bgcolor: '#f1f5f9', color: '#64748b', fontWeight: 750, fontSize: 11 }}
+                      />
+                    )}
+                  </Stack>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: 10.5, mt: 0.6 }}>
+                    La calificación porcentual es asignada por Planeación tras verificar las evidencias.
+                  </Typography>
+                </Paper>
+              </Grid>
             </Grid>
 
-            {/* Adjuntar Únicamente el Documento de Evidencia */}
+            {/* Listado de Evidencias ya Radicadas para este Período */}
+            {targetPeriodEvidences.length > 0 && (
+              <Box
+                sx={{
+                  p: 1.8,
+                  borderRadius: 2.5,
+                  bgcolor: '#f8fafc',
+                  border: '1px solid #e2e8f0'
+                }}
+              >
+                <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 850, color: '#334155' }}>
+                    Soportes ya radicados para este período ({targetPeriodEvidences.length})
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    Puede anexar soportes adicionales abajo
+                  </Typography>
+                </Stack>
+                <Stack spacing={0.8}>
+                  {targetPeriodEvidences.map((ev) => (
+                    <Paper
+                      key={ev.id}
+                      variant="outlined"
+                      sx={{
+                        p: 1,
+                        px: 1.5,
+                        borderRadius: 2,
+                        bgcolor: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 1.5
+                      }}
+                    >
+                      <Stack direction="row" spacing={1.2} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+                        {getFileIcon(ev.original_name)}
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a' }} noWrap>
+                            {ev.original_name}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: '#64748b', fontSize: 11 }}>
+                            {formatBytes(ev.size_bytes)} · Radicado el {formatFecha(ev.created_at)}
+                            {ev.description ? ` · ${ev.description}` : ''}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                      <Stack direction="row" spacing={0.5}>
+                        <Button
+                          size="small"
+                          variant="text"
+                          startIcon={<VisibilityIcon sx={{ fontSize: 15 }} />}
+                          onClick={() => handlePreviewEvidence(ev)}
+                          sx={{ textTransform: 'none', fontWeight: 750, fontSize: 11.5, color: '#2563eb' }}
+                        >
+                          Ver
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="text"
+                          startIcon={<DownloadIcon sx={{ fontSize: 15 }} />}
+                          onClick={() => handleDownloadDirectEvidence(ev)}
+                          sx={{ textTransform: 'none', fontWeight: 750, fontSize: 11.5, color: '#475569' }}
+                        >
+                          Descargar
+                        </Button>
+                      </Stack>
+                    </Paper>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+
+            {/* Zona de Carga Profesional (Drag & Drop) */}
             <Box>
               <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#1e293b', mb: 1 }}>
-                Documento de Evidencia *
+                Adjuntar Documento de Soporte o Evidencia *
               </Typography>
               {!monitoringForm.file ? (
                 <Paper
                   component="label"
                   variant="outlined"
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const dropped = e.dataTransfer.files?.[0];
+                    if (dropped) setMonitoringForm((prev) => ({ ...prev, file: dropped }));
+                  }}
                   sx={{
-                    p: 2.5,
+                    p: 3,
                     borderRadius: 2.5,
-                    border: '2px dashed #93c5fd',
-                    bgcolor: '#f8fbff',
+                    border: isDragging ? '2px dashed #0284c7' : '2px dashed #93c5fd',
+                    bgcolor: isDragging ? '#eff6ff' : '#f8fbff',
                     cursor: 'pointer',
                     textAlign: 'center',
                     transition: 'all 0.15s ease',
                     display: 'block',
                     '&:hover': {
-                      borderColor: '#2563eb',
+                      borderColor: '#0284c7',
                       bgcolor: '#eff6ff'
                     }
                   }}
@@ -2040,12 +2211,12 @@ export default function PlanAccionConsulta() {
                     type="file"
                     onChange={(e) => setMonitoringForm({ ...monitoringForm, file: e.target.files?.[0] || null })}
                   />
-                  <CloudUploadIcon sx={{ fontSize: 36, color: '#2563eb', mb: 0.5 }} />
-                  <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: '#1e3a8a' }}>
-                    Haga clic aquí para seleccionar el archivo soporte
+                  <CloudUploadIcon sx={{ fontSize: 40, color: '#0284c7', mb: 0.8 }} />
+                  <Typography sx={{ fontSize: 14, fontWeight: 850, color: '#0369a1' }}>
+                    Arrastre y suelte su archivo aquí o haga clic para examinar
                   </Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.3 }}>
-                    Formatos: PDF, Excel, Word, Imágenes o ZIP (máx. 50 MB)
+                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.5, fontSize: 11.5 }}>
+                    Formatos admitidos: PDF, Excel (.xlsx, .xls), Word (.docx), Imágenes (.png, .jpg), ZIP (máx. 50 MB)
                   </Typography>
                 </Paper>
               ) : (
@@ -2055,19 +2226,19 @@ export default function PlanAccionConsulta() {
                     p: 2,
                     borderRadius: 2.5,
                     bgcolor: '#f0fdf4',
-                    borderColor: '#bbf7d0',
+                    borderColor: '#86efac',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     gap: 1.5
                   }}
                 >
-                  <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
-                    <Box sx={{ width: 40, height: 40, borderRadius: 2, bgcolor: '#dcfce7', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                  <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+                    <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: '#dcfce7', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                       {getFileIcon(monitoringForm.file.name)}
                     </Box>
                     <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: '#166534' }} noWrap>
+                      <Typography sx={{ fontSize: 13.5, fontWeight: 850, color: '#166534' }} noWrap>
                         {monitoringForm.file.name}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#15803d', fontWeight: 700 }}>
@@ -2087,14 +2258,44 @@ export default function PlanAccionConsulta() {
                 </Paper>
               )}
             </Box>
+
+            {/* Detalle o Descripción del Soporte (Opcional) */}
+            <TextField
+              fullWidth
+              size="small"
+              label="Detalle o descripción de la evidencia (opcional)"
+              placeholder="Ej: Acta de reunión No. 03 y listado de asistencia firmado con evidencias fotográficas..."
+              value={monitoringForm.description}
+              onChange={(e) => setMonitoringForm({ ...monitoringForm, description: e.target.value })}
+              sx={{
+                '& .MuiOutlinedInput-root': { borderRadius: 2 },
+                '& .MuiInputBase-input': { fontSize: 13 }
+              }}
+            />
+
+            {/* Alerta Institucional de Transparencia */}
+            <Alert
+              severity="info"
+              icon={<VerifiedIcon sx={{ fontSize: 22, color: '#0284c7' }} />}
+              sx={{
+                borderRadius: 2.5,
+                bgcolor: '#f0f9ff',
+                border: '1px solid #bae6fd',
+                fontSize: 12,
+                color: '#0369a1'
+              }}
+            >
+              Este documento será radicado en el repositorio institucional. La Oficina de Planeación y Efectividad revisará el soporte para calificar y asignar el porcentaje oficial de avance físico del plan.
+            </Alert>
           </Stack>
         </DialogContent>
 
-        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e2e8f0', gap: 1 }}>
+        <DialogActions sx={{ px: 3, py: 2, bgcolor: '#ffffff', borderTop: '1px solid #e2e8f0', justifyContent: 'space-between' }}>
           <Button
             onClick={() => setMonitoringModalOpen(false)}
             disabled={savingMonitoring}
-            sx={{ textTransform: 'none', fontWeight: 750, borderRadius: 2 }}
+            variant="outlined"
+            sx={{ textTransform: 'none', fontWeight: 750, borderRadius: 2, color: '#64748b', borderColor: '#cbd5e1' }}
           >
             Cancelar
           </Button>
@@ -2103,17 +2304,20 @@ export default function PlanAccionConsulta() {
             color="primary"
             startIcon={savingMonitoring ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
             onClick={handleSaveMonitoring}
-            disabled={savingMonitoring}
+            disabled={savingMonitoring || !monitoringForm.file}
             sx={{
-              borderRadius: 2,
+              borderRadius: 2.2,
               textTransform: 'none',
-              fontWeight: 800,
-              px: 3,
-              bgcolor: '#2563eb',
-              '&:hover': { bgcolor: '#1d4ed8' }
+              fontWeight: 850,
+              fontSize: 13,
+              px: 3.5,
+              py: 0.9,
+              bgcolor: '#0284c7',
+              boxShadow: '0 4px 14px rgba(2, 132, 199, 0.28)',
+              '&:hover': { bgcolor: '#0369a1' }
             }}
           >
-            {savingMonitoring ? 'Guardando...' : (isPlanningStaff ? 'Guardar Valoración' : 'Radicar Evidencia')}
+            {savingMonitoring ? 'Radicando...' : 'Radicar Evidencia'}
           </Button>
         </DialogActions>
       </Dialog>
