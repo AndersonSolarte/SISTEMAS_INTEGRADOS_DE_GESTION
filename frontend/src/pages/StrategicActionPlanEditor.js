@@ -137,16 +137,16 @@ const LeaderFeedbackSnippet = ({ info, isCurrentStatus = false, onOpenChat }) =>
           fontWeight: 850,
           fontSize: 11.5,
           borderRadius: 2,
-          bgcolor: isCurrentStatus ? '#f59e0b' : '#64748b',
+          bgcolor: isCurrentStatus ? '#008069' : '#64748b',
           color: '#ffffff',
           flexShrink: 0,
-          px: 1.5,
-          py: 0.35,
-          boxShadow: '0 2px 6px rgba(245, 158, 11, 0.25)',
-          '&:hover': { bgcolor: isCurrentStatus ? '#d97706' : '#475569' }
+          px: 1.6,
+          py: 0.4,
+          boxShadow: '0 2px 6px rgba(0, 128, 105, 0.25)',
+          '&:hover': { bgcolor: isCurrentStatus ? '#006a57' : '#475569' }
         }}
       >
-        Abrir chat ({1})
+        Abrir chat
       </Button>
     </Paper>
   );
@@ -1375,6 +1375,75 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [submitValidationModalOpen, setSubmitValidationModalOpen] = useState(false);
   const [planningResponseComment, setPlanningResponseComment] = useState('');
   const [submittingValidation, setSubmittingValidation] = useState(false);
+  const [sendingChatMessage, setSendingChatMessage] = useState(false);
+
+  const chatThread = useMemo(() => {
+    const meta = detail?.metadata || {};
+    if (Array.isArray(meta.chat_thread) && meta.chat_thread.length > 0) {
+      return meta.chat_thread;
+    }
+    const thread = [];
+    if (adjustmentInfo?.comment) {
+      thread.push({
+        id: 'adj-initial',
+        sender_type: 'leader',
+        sender_name: adjustmentInfo.requested_by_name || 'Líder de Dependencia',
+        sender_cargo: 'Líder Responsable',
+        sender_email: adjustmentInfo.requested_by_email || '',
+        message: adjustmentInfo.comment,
+        created_at: adjustmentInfo.requested_at || new Date().toISOString()
+      });
+    }
+    if (Array.isArray(meta.planning_responses_history)) {
+      meta.planning_responses_history.forEach((resp, idx) => {
+        thread.push({
+          id: `resp-legacy-${idx}`,
+          sender_type: 'planning',
+          sender_name: resp.responded_by_name || 'LUISA FERNANDA ORTEGA MUÑOZ',
+          sender_cargo: resp.responded_by_cargo || 'Analista de Planeación',
+          sender_email: 'lfortega@unicesmag.edu.co',
+          message: resp.comment,
+          created_at: resp.responded_at || new Date().toISOString()
+        });
+      });
+    }
+    return thread;
+  }, [detail?.metadata, adjustmentInfo]);
+
+  const handleSendChatMessage = async (isSubmittingValidation = false) => {
+    const comment = planningResponseComment.trim();
+    if (!comment) {
+      enqueueSnackbar('Por favor escribe un mensaje para el líder.', { variant: 'warning' });
+      return;
+    }
+    setSendingChatMessage(true);
+    try {
+      const resp = await strategicPlanningService.sendChatMessage(detail.id, {
+        message: comment,
+        submitValidation: isSubmittingValidation
+      });
+      setPlanningResponseComment('');
+      enqueueSnackbar(
+        isSubmittingValidation
+          ? 'Ajustes remitidos al Líder para firmas y notificados a su correo institucional.'
+          : 'Mensaje enviado y notificado por correo institucional al Líder.',
+        { variant: 'success' }
+      );
+      if (resp?.data?.actionPlan) {
+        setDetail((prev) => ({ ...prev, ...resp.data.actionPlan }));
+      } else {
+        await load();
+      }
+      if (onChanged) onChanged();
+      if (isSubmittingValidation) {
+        setFeedbackChatModalOpen(false);
+      }
+    } catch (err) {
+      enqueueSnackbar(err.response?.data?.message || err.message || 'Error al enviar mensaje.', { variant: 'error' });
+    } finally {
+      setSendingChatMessage(false);
+    }
+  };
 
   const handleOpenTimelineModal = () => {
     setTimelineForm({
@@ -6359,7 +6428,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         </DialogActions>
       </Dialog>
 
-      {/* VENTANA EMERGENTE INNOVADORA TIPO CHAT DE RETROALIMENTACIÓN Y AJUSTES */}
+      {/* ========================================================
+          CHAT DE RETROALIMENTACIÓN ESTILO WHATSAPP (FONDO VERDE/BEIGE)
+          CADA MENSAJE SE ENVÍA AUTOMÁTICAMENTE AL CORREO
+         ======================================================== */}
       <Dialog
         open={feedbackChatModalOpen}
         onClose={() => setFeedbackChatModalOpen(false)}
@@ -6369,280 +6441,297 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
           sx: {
             borderRadius: 3.5,
             overflow: 'hidden',
-            boxShadow: '0 25px 60px rgba(15, 23, 42, 0.25)'
+            height: '84vh',
+            maxHeight: 740,
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 60px rgba(15, 23, 42, 0.35)'
           }
         }}
       >
-        {/* Cabecera estilo Chat Moderno */}
+        {/* Cabecera Oficial WhatsApp Green */}
         <Box
           sx={{
-            p: 2,
-            px: 2.5,
-            background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+            p: 1.5,
+            px: 2,
+            bgcolor: '#075e54',
             color: '#ffffff',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between'
+            justifyContent: 'space-between',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+            zIndex: 2
           }}
         >
           <Stack direction="row" spacing={1.5} alignItems="center">
-            <Avatar
+            <Badge
+              overlap="circular"
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              variant="dot"
               sx={{
-                bgcolor: '#f59e0b',
-                color: '#ffffff',
-                width: 38,
-                height: 38,
-                fontWeight: 900,
-                fontSize: 16
+                '& .MuiBadge-badge': {
+                  bgcolor: '#25d366',
+                  color: '#25d366',
+                  boxShadow: '0 0 0 2px #075e54',
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%'
+                }
               }}
             >
-              💬
-            </Avatar>
+              <Avatar
+                sx={{
+                  bgcolor: '#128c7e',
+                  color: '#ffffff',
+                  width: 42,
+                  height: 42,
+                  fontWeight: 900,
+                  fontSize: 15,
+                  border: '1.5px solid rgba(255,255,255,0.35)'
+                }}
+              >
+                {((adjustmentInfo?.requested_by_name || detail?.responsibleUser?.nombre || 'Líder')
+                  .split(' ')
+                  .filter(Boolean)
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join('') || 'LD').toUpperCase()}
+              </Avatar>
+            </Badge>
             <Box>
-              <Typography sx={{ fontWeight: 900, fontSize: 15, lineHeight: 1.2 }}>
-                Chat de Retroalimentación y Ajustes
+              <Typography sx={{ fontWeight: 850, fontSize: 15, lineHeight: 1.2, color: '#ffffff' }}>
+                {adjustmentInfo?.requested_by_name || detail?.responsibleUser?.nombre || 'Líder Responsable'}
               </Typography>
-              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.75)' }}>
-                {detail?.code || 'Plan de Acción'} · {detail?.organizationalUnit?.name || 'Dependencia'}
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 0.6 }}>
+                <span>{detail?.organizationalUnit?.name || 'Dependencia'}</span>
+                <span>·</span>
+                <span style={{ color: '#86efac', fontWeight: 700 }}>Canal de Ajustes & Correo</span>
               </Typography>
             </Box>
           </Stack>
           <IconButton
             size="small"
             onClick={() => setFeedbackChatModalOpen(false)}
-            sx={{ color: 'rgba(255,255,255,0.8)', '&:hover': { color: '#ffffff', bgcolor: 'rgba(255,255,255,0.1)' } }}
+            sx={{ color: '#ffffff', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}
           >
-            <Close sx={{ fontSize: 20 }} />
+            <Close sx={{ fontSize: 22 }} />
           </IconButton>
         </Box>
 
-        {/* Cuerpo del Chat / Feed de Conversación */}
-        <DialogContent sx={{ p: 2.5, bgcolor: '#f8fafc', maxHeight: '60vh', overflowY: 'auto' }}>
-          <Stack spacing={2.5}>
-            {/* Timestamp pill centrado */}
-            {adjustmentInfo?.requested_at && (
-              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                <Chip
-                  size="small"
-                  label={new Date(adjustmentInfo.requested_at).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}
-                  sx={{ bgcolor: '#e2e8f0', color: '#475569', fontSize: 11, fontWeight: 700 }}
-                />
-              </Box>
-            )}
+        {/* Cuerpo del Chat con Fondo WhatsApp (Doodle Beige / Pattern) */}
+        <DialogContent
+          sx={{
+            flex: 1,
+            p: { xs: 1.5, sm: 2.2 },
+            bgcolor: '#efeae2',
+            backgroundImage: `radial-gradient(#d1d7db 0.85px, transparent 0.85px), radial-gradient(#d1d7db 0.85px, #efeae2 0.85px)`,
+            backgroundSize: '24px 24px',
+            backgroundPosition: '0 0, 12px 12px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          {/* Banner de Cifrado y Notificación a Correo Institucional */}
+          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+            <Paper
+              elevation={0}
+              sx={{
+                bgcolor: '#fff3c4',
+                color: '#54656f',
+                px: 2,
+                py: 0.9,
+                borderRadius: 2.5,
+                maxWidth: 500,
+                textAlign: 'center',
+                fontSize: 11.5,
+                lineHeight: 1.35,
+                boxShadow: '0 1px 1.5px rgba(0,0,0,0.08)',
+                border: '1px solid rgba(0,0,0,0.04)'
+              }}
+            >
+              🔒 <strong>Canal Oficial de Concertación:</strong> Cada mensaje enviado en este chat se remite automáticamente al correo institucional del destinatario y queda registrado con trazabilidad en el Acta COM-IF-FR-002.
+            </Paper>
+          </Box>
 
-            {/* MENSAJE DEL LÍDER (Burbuja estilo chat alineada a la izquierda) */}
-            <Stack direction="row" spacing={1.5} alignItems="flex-start">
-              <Avatar
+          {/* Listado de Mensajes en orden cronológico */}
+          {chatThread.map((msg, idx) => {
+            const isPlanningSender = msg.sender_type === 'planning';
+            const timeStr = msg.created_at
+              ? new Date(msg.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+              : '';
+
+            return (
+              <Box
+                key={msg.id || idx}
                 sx={{
-                  bgcolor: '#fef3c7',
-                  color: '#b45309',
-                  border: '1.5px solid #fde68a',
-                  width: 36,
-                  height: 36,
-                  fontWeight: 900,
-                  fontSize: 12.5,
-                  mt: 0.5
+                  display: 'flex',
+                  justifyContent: isPlanningSender ? 'flex-end' : 'flex-start',
+                  mb: 1.6
                 }}
               >
-                {(adjustmentInfo?.requested_by_name || 'Líder')
-                  .split(' ')
-                  .filter(Boolean)
-                  .map((n) => n[0])
-                  .slice(0, 2)
-                  .join('')
-                  .toUpperCase() || 'LD'}
-              </Avatar>
-              <Box sx={{ maxWidth: '85%' }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#334155', mb: 0.5 }}>
-                  {adjustmentInfo?.requested_by_name || 'Líder de Dependencia'}
-                  <span style={{ fontWeight: 500, color: '#64748b', marginLeft: 6 }}>
-                    ({adjustmentInfo?.requested_by_email || 'Líder'})
-                  </span>
-                </Typography>
                 <Paper
                   elevation={0}
                   sx={{
-                    p: 2,
-                    borderRadius: '4px 18px 18px 18px',
-                    bgcolor: '#fffdf5',
-                    border: '1.5px solid #fde68a',
-                    boxShadow: '0 2px 8px rgba(245, 158, 11, 0.08)'
+                    maxWidth: { xs: '88%', sm: '80%' },
+                    p: 1.3,
+                    px: 1.7,
+                    borderRadius: isPlanningSender ? '10px 0px 10px 10px' : '0px 10px 10px 10px',
+                    bgcolor: isPlanningSender ? '#d9fdd3' : '#ffffff',
+                    boxShadow: '0 1px 1px rgba(11,20,26,.14)',
+                    position: 'relative'
                   }}
                 >
-                  <Typography sx={{ fontSize: 13.5, color: '#1e293b', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                    {adjustmentInfo?.comment || 'Sin observaciones.'}
+                  <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#008069', mb: 0.4 }}>
+                    {msg.sender_name || (isPlanningSender ? 'LUISA FERNANDA ORTEGA MUÑOZ' : 'Líder')}
+                    <span style={{ fontSize: 11, fontWeight: 500, color: '#667781', marginLeft: 6 }}>
+                      ({msg.sender_cargo || (isPlanningSender ? 'Analista de Planeación · Planeación y Efectividad' : 'Líder Responsable')})
+                    </span>
                   </Typography>
-                </Paper>
-                <Typography variant="caption" sx={{ color: '#b45309', display: 'block', mt: 0.6, fontWeight: 600, fontSize: 11 }}>
-                  ✓ Integrado automáticamente en el Acta de Concertación COM-IF-FR-002
-                </Typography>
-              </Box>
-            </Stack>
 
-            {/* Historial previo de respuestas de Planeación si existen */}
-            {Array.isArray(detail?.metadata?.planning_responses_history) &&
-              detail.metadata.planning_responses_history.map((resp, idx) => (
-                <Stack key={idx} direction="row" spacing={1.5} justifyContent="flex-end" alignItems="flex-start">
-                  <Box sx={{ maxWidth: '85%', textAlign: 'right' }}>
-                    <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#1e40af', mb: 0.5 }}>
-                      {resp.responded_by_name || 'Planeación y Efectividad'}
+                  <Typography sx={{ fontSize: 13.5, color: '#111b21', lineHeight: 1.52, whiteSpace: 'pre-wrap' }}>
+                    {msg.message}
+                  </Typography>
+
+                  <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="flex-end" sx={{ mt: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontSize: 10.5, color: '#667781' }}>
+                      {timeStr}
                     </Typography>
-                    <Paper
-                      elevation={0}
-                      sx={{
-                        p: 2,
-                        borderRadius: '18px 4px 18px 18px',
-                        bgcolor: '#eff6ff',
-                        border: '1.5px solid #bfdbfe',
-                        boxShadow: '0 2px 8px rgba(37, 99, 235, 0.08)',
-                        textAlign: 'left'
-                      }}
-                    >
-                      <Typography sx={{ fontSize: 13.5, color: '#1e3a8a', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                        {resp.comment}
-                      </Typography>
-                    </Paper>
-                    {resp.responded_at && (
-                      <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.4 }}>
-                        {new Date(resp.responded_at).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
+                    {isPlanningSender ? (
+                      <span style={{ color: '#53bdeb', fontSize: 13, fontWeight: 900, lineHeight: 1 }}>✓✓</span>
+                    ) : (
+                      <Typography variant="caption" sx={{ fontSize: 10, color: '#008069', fontWeight: 700 }}>
+                        ✓ Acta COM-IF-FR-002
                       </Typography>
                     )}
-                  </Box>
-                  <Avatar
-                    sx={{
-                      bgcolor: '#dbeafe',
-                      color: '#1d4ed8',
-                      border: '1.5px solid #bfdbfe',
-                      width: 36,
-                      height: 36,
-                      fontWeight: 900,
-                      fontSize: 12.5,
-                      mt: 0.5
-                    }}
-                  >
-                    PE
-                  </Avatar>
-                </Stack>
-              ))}
-
-            {/* SECCIÓN DE RESPUESTA DIRECTA (Si el plan está en ajustes) */}
-            {detail?.status === 'adjustments' && (
-              <Box sx={{ mt: 1, pt: 2, borderTop: '1px dashed #cbd5e1' }}>
-                <Typography sx={{ fontWeight: 850, fontSize: 13, color: '#1e293b', mb: 1 }}>
-                  ✍️ Redactar Respuesta y Ajustes Realizados:
-                </Typography>
-                <TextField
-                  fullWidth
-                  multiline
-                  rows={3}
-                  value={planningResponseComment}
-                  onChange={(e) => setPlanningResponseComment(e.target.value)}
-                  placeholder="Ej: Se ajustaron las metas de las actividades y se actualizó el acta conforme a sus observaciones..."
-                  sx={{
-                    bgcolor: '#ffffff',
-                    borderRadius: 2,
-                    '& .MuiOutlinedInput-root': {
-                      fontSize: 13,
-                      borderRadius: 2
-                    }
-                  }}
-                  helperText="Este mensaje se notificará al líder, se enviará a su correo y quedará registrado en el acta."
-                />
-
-                {/* Accesos rápidos para revisar actividades o acta */}
-                <Stack direction="row" spacing={1} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => {
-                      setFeedbackChatModalOpen(false);
-                      setTab('activities');
-                    }}
-                    sx={{
-                      textTransform: 'none',
-                      fontWeight: 800,
-                      fontSize: 11.5,
-                      borderRadius: 2,
-                      color: '#2563eb',
-                      borderColor: '#bfdbfe',
-                      bgcolor: '#ffffff',
-                      '&:hover': { bgcolor: '#eff6ff' }
-                    }}
-                  >
-                    📋 Ir a Actividades
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => {
-                      setFeedbackChatModalOpen(false);
-                      setTab('meeting');
-                    }}
-                    sx={{
-                      textTransform: 'none',
-                      fontWeight: 800,
-                      fontSize: 11.5,
-                      borderRadius: 2,
-                      color: '#15803d',
-                      borderColor: '#bbf7d0',
-                      bgcolor: '#ffffff',
-                      '&:hover': { bgcolor: '#f0fdf4' }
-                    }}
-                  >
-                    📝 Ir a Corregir Acta
-                  </Button>
-                </Stack>
+                  </Stack>
+                </Paper>
               </Box>
-            )}
-          </Stack>
+            );
+          })}
         </DialogContent>
 
-        {/* Acciones del Chat Modal */}
-        <DialogActions sx={{ p: 2, px: 2.5, bgcolor: '#ffffff', borderTop: '1px solid #e2e8f0', justifyContent: 'space-between' }}>
-          <Button
-            onClick={() => setFeedbackChatModalOpen(false)}
-            disabled={submittingValidation}
-            sx={{ textTransform: 'none', fontWeight: 800, color: '#64748b' }}
-          >
-            Cerrar
-          </Button>
-
-          {detail?.status === 'adjustments' && (
-            <Button
-              variant="contained"
-              startIcon={submittingValidation ? <CircularProgress size={16} color="inherit" /> : <Send sx={{ fontSize: 16 }} />}
-              onClick={async () => {
-                const comment = planningResponseComment.trim();
-                if (!comment) {
-                  enqueueSnackbar('Por favor ingrese el detalle o resumen de los ajustes para el líder.', { variant: 'warning' });
-                  return;
-                }
-                setSubmittingValidation(true);
-                try {
-                  await transition('submit_owner_validation', comment);
+        {/* Barra de Entrada de Mensaje estilo WhatsApp con Enlace a Correo */}
+        <Box sx={{ p: 1.5, px: 2, bgcolor: '#f0f2f5', borderTop: '1px solid #d1d7db' }}>
+          {/* Accesos rápidos a actividades y botón para retornar plan si está en ajustes */}
+          <Stack direction="row" spacing={1} sx={{ mb: 1.2 }} alignItems="center" justifyContent="space-between" flexWrap="wrap">
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
                   setFeedbackChatModalOpen(false);
-                  setPlanningResponseComment('');
-                } finally {
-                  setSubmittingValidation(false);
+                  setTab('activities');
+                }}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 800,
+                  fontSize: 11,
+                  borderRadius: 2,
+                  color: '#008069',
+                  borderColor: '#86efac',
+                  bgcolor: '#ffffff',
+                  py: 0.35,
+                  px: 1.3,
+                  '&:hover': { bgcolor: '#f0fdf4' }
+                }}
+              >
+                📋 Ir a Actividades
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  setFeedbackChatModalOpen(false);
+                  setTab('meeting');
+                }}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 800,
+                  fontSize: 11,
+                  borderRadius: 2,
+                  color: '#15803d',
+                  borderColor: '#86efac',
+                  bgcolor: '#ffffff',
+                  py: 0.35,
+                  px: 1.3,
+                  '&:hover': { bgcolor: '#f0fdf4' }
+                }}
+              >
+                📝 Ir a Corregir Acta
+              </Button>
+            </Stack>
+
+            {detail?.status === 'adjustments' && (
+              <Button
+                size="small"
+                variant="contained"
+                disabled={sendingChatMessage || submittingValidation}
+                onClick={() => handleSendChatMessage(true)}
+                startIcon={submittingValidation ? <CircularProgress size={14} color="inherit" /> : <CheckCircle sx={{ fontSize: 15 }} />}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 900,
+                  fontSize: 11.5,
+                  borderRadius: 2,
+                  bgcolor: '#008069',
+                  color: '#ffffff',
+                  boxShadow: 'none',
+                  '&:hover': { bgcolor: '#006a57' }
+                }}
+              >
+                ✓ Enviar ajustes y retornar plan al Líder
+              </Button>
+            )}
+          </Stack>
+
+          {/* Input de Mensaje WhatsApp */}
+          <Stack direction="row" spacing={1.2} alignItems="center">
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Escribe un mensaje para el líder (se envía automáticamente a su correo)..."
+              value={planningResponseComment}
+              onChange={(e) => setPlanningResponseComment(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendChatMessage(false);
                 }
               }}
-              disabled={submittingValidation}
+              disabled={sendingChatMessage}
               sx={{
-                borderRadius: 50,
-                fontWeight: 850,
-                fontSize: 13,
-                textTransform: 'none',
-                bgcolor: '#2563eb',
-                px: 2.5,
-                py: 0.8,
-                boxShadow: '0 4px 12px rgba(37,99,235,0.3)',
-                '&:hover': { bgcolor: '#1d4ed8' }
+                bgcolor: '#ffffff',
+                borderRadius: 6,
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 6,
+                  fontSize: 13,
+                  bgcolor: '#ffffff',
+                  pr: 1
+                }
               }}
-            >
-              {submittingValidation ? 'Enviando...' : 'Enviar ajustes al Líder'}
-            </Button>
-          )}
-        </DialogActions>
+            />
+            <Tooltip title="Enviar mensaje y notificar al correo institucional del líder" arrow>
+              <span>
+                <IconButton
+                  disabled={sendingChatMessage || !planningResponseComment.trim()}
+                  onClick={() => handleSendChatMessage(false)}
+                  sx={{
+                    bgcolor: '#00a884',
+                    color: '#ffffff',
+                    width: 42,
+                    height: 42,
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.18)',
+                    '&:hover': { bgcolor: '#008f6f' },
+                    '&.Mui-disabled': { bgcolor: '#cbd5e1', color: '#94a3b8' }
+                  }}
+                >
+                  {sendingChatMessage ? <CircularProgress size={18} color="inherit" /> : <Send sx={{ fontSize: 18 }} />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Stack>
+        </Box>
       </Dialog>
 
       {/* DIÁLOGO GOOGLE CALENDAR PARA SEGUIMIENTO DEL PLAN DE ACCIÓN */}

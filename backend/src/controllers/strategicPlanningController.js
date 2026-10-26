@@ -1211,7 +1211,7 @@ const ensureCanModifyActionPlanItems = async (actionPlan, req) => {
     throw Object.assign(new Error(`El plazo de formulación de la Etapa 1 aún no ha iniciado (Inicia el ${startsOn}).`), { statusCode: 403 });
   }
   if (endsOn && today > endsOn) {
-    throw Object.assign(new Error(`El plazo de formulación de la Etapa 1 finalizó el ${endsOn}. Para solicitar una ampliación de tiempo o prórroga, comuníquese con la Dirección de Planeación y Efectividad.`), { statusCode: 403 });
+    throw Object.assign(new Error(`El plazo de formulación de la Etapa 1 finalizó el ${endsOn}. Para solicitar una ampliación de tiempo o prórroga, comuníquese con la Dirección de Planeación y Aseguramiento de la Calidad (Planeación y Efectividad).`), { statusCode: 403 });
   }
 
   return true;
@@ -1225,7 +1225,7 @@ const updateStage1Timeline = wrap(async (req, res) => {
 
   const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user?.role);
   if (!isPlanningAdmin) {
-    throw Object.assign(new Error('Solo la Dirección de Planeación y Efectividad o el Administrador pueden gestionar el plazo de formulación o conceder prórrogas.'), { statusCode: 403 });
+    throw Object.assign(new Error('Solo la Dirección de Planeación y Aseguramiento de la Calidad (Planeación y Efectividad) o el Administrador pueden gestionar el plazo de formulación o conceder prórrogas.'), { statusCode: 403 });
   }
 
   const { starts_on, ends_on, reason } = req.body;
@@ -1323,7 +1323,7 @@ const addActionItem = wrap(async (req, res) => {
         const introHtml = `
           <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#2563eb;">NUEVA ACTIVIDAD INCORPORADA EN EJECUCIÓN</p>
           <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) <strong>${escapeHtml(fullPlan.responsibleUser.nombre || 'Líder')}</strong>,</p>
-          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Efectividad</strong> le informa que se ha incorporado una nueva actividad al <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> (${escapeHtml(orgUnit)}) que se encuentra actualmente en ejecución.</p>
+          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Aseguramiento de la Calidad</strong> (desde el componente de <strong>Planeación y Efectividad</strong>) le informa que se ha incorporado una nueva actividad al <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> (${escapeHtml(orgUnit)}) que se encuentra actualmente en ejecución.</p>
         `;
         const bodyHtml = `
           <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
@@ -1673,10 +1673,14 @@ const transitionActionPlan = wrap(async (req, res) => {
         const consultationUrl = `${baseUrl}/plan-accion-consulta`;
         const respEmailSubject = `Plan de Acción Ajustado para su Revisión - ${actionPlan.code} (${orgUnitName})`;
 
+        const staffName = req.user.nombre || req.user.username || 'Luisa Fernanda Ortega Muñoz';
+        const staffCargo = req.user.cargo || 'Analista de Planeación';
+        const staffDep = req.user.dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad';
+
         const introHtml = `
           <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#2563eb;">PLAN DE ACCIÓN AJUSTADO PARA SU REVISIÓN</p>
           <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) <strong>${escapeHtml(fullPlan.responsibleUser.nombre || 'Líder')}</strong>,</p>
-          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Efectividad</strong> le informa que su <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> (${escapeHtml(orgUnitName)}) ha sido ajustado y se encuentra listo para su revisión y concertación.</p>
+          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Aseguramiento de la Calidad</strong> (desde el componente de <strong>Planeación y Efectividad</strong>) le informa que su <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> (${escapeHtml(orgUnitName)}) ha sido ajustado y se encuentra listo para su revisión y concertación.</p>
         `;
         const bodyHtml = `
           <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
@@ -1692,6 +1696,11 @@ const transitionActionPlan = wrap(async (req, res) => {
           </div>
           <div style="text-align:center;margin:24px 0;">
             <a href="${escapeHtml(consultationUrl)}" style="display:inline-block;padding:13px 26px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Ingresar a Revisar Plan de Acción</a>
+          </div>
+          <div style="margin-top:22px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:12.5px;color:#475569;">
+            <p style="margin:0;font-weight:800;color:#0f172a;">${escapeHtml(staffName)}</p>
+            <p style="margin:2px 0 0;color:#64748b;">${escapeHtml(staffCargo)} · Componente de Planeación y Efectividad</p>
+            <p style="margin:2px 0 0;color:#64748b;">${escapeHtml(staffDep)} - UNICESMAG</p>
           </div>
         `;
         const html = renderInstitutionalTemplate({
@@ -1830,7 +1839,7 @@ const transitionActionPlan = wrap(async (req, res) => {
         const rectorIntro = `
           <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#1e3a8a;">NOTIFICACIÓN A RECTORÍA · PLAN DE ACCIÓN APROBADO</p>
           <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) Señor(a) Rector(a),</p>
-          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Efectividad</strong> se complace en informarle que se ha formalizado y aprobado el <strong>Plan de Acción Institucional</strong> para su inicio de ejecución oficial.</p>
+          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Aseguramiento de la Calidad</strong> (desde el componente de <strong>Planeación y Efectividad</strong>) se complace en informarle que se ha formalizado y aprobado el <strong>Plan de Acción Institucional</strong> para su inicio de ejecución oficial.</p>
         `;
         const rectorBody = `
           <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
@@ -1866,7 +1875,7 @@ const transitionActionPlan = wrap(async (req, res) => {
         const respIntro = `
           <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#15803d;">PLAN DE ACCIÓN APROBADO · INICIO DE EJECUCIÓN OFICIAL</p>
           <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) <strong>${escapeHtml(responsibleUser.nombre || 'Líder')}</strong>,</p>
-          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Efectividad</strong> le informa que su <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> ha sido aprobado formalmente y ha pasado a la fase de <strong>Ejecución Oficial</strong>.</p>
+          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Aseguramiento de la Calidad</strong> (desde el componente de <strong>Planeación y Efectividad</strong>) le informa que su <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> ha sido aprobado formalmente y ha pasado a la fase de <strong>Ejecución Oficial</strong>.</p>
         `;
         const respBody = `
           <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
@@ -1922,6 +1931,278 @@ const transitionActionPlan = wrap(async (req, res) => {
   }
   syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
   ok(res, updated, 'Transición registrada.');
+});
+
+const sendActionPlanChatMessage = wrap(async (req, res) => {
+  const actionPlan = await StrategicActionPlan.findByPk(req.params.id, {
+    include: [
+      { model: StrategicTerm, as: 'term' },
+      { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      { model: User, as: 'responsibleUser' }
+    ]
+  });
+  if (!actionPlan) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+
+  const messageText = String(req.body.message || '').trim();
+  if (!messageText) {
+    throw Object.assign(new Error('El mensaje no puede estar vacío.'), { statusCode: 422 });
+  }
+
+  const isPlanningAdmin = ['administrador', 'planeacion_estrategica', 'planeacion_efectividad'].includes(req.user.role);
+  const isLeader = String(actionPlan.responsible_user_id) === String(req.user.id);
+  if (!isLeader && !isPlanningAdmin) {
+    throw Object.assign(new Error('No tiene permisos para participar en este canal de retroalimentación.'), { statusCode: 403 });
+  }
+
+  const senderType = isPlanningAdmin ? 'planning' : 'leader';
+  const senderName = req.user.nombre || req.user.username || (isPlanningAdmin ? 'LUISA FERNANDA ORTEGA MUÑOZ' : 'Líder de Dependencia');
+  const senderCargo = req.user.cargo || (isPlanningAdmin ? 'Analista de Planeación' : 'Líder Responsable');
+  const senderDep = isPlanningAdmin
+    ? 'Dirección de Planeación y Aseguramiento de la Calidad'
+    : (req.user.dependencia || actionPlan.organizationalUnit?.name || 'Dependencia');
+  const senderEmail = req.user.email || '';
+  const nowIso = new Date().toISOString();
+  const nowBogota = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+
+  const newMessage = {
+    id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    sender_type: senderType,
+    sender_id: req.user.id,
+    sender_name: senderName,
+    sender_cargo: senderCargo,
+    sender_dependencia: senderDep,
+    sender_email: senderEmail,
+    message: messageText,
+    created_at: nowIso
+  };
+
+  const currentMeta = { ...(actionPlan.metadata || {}) };
+  const existingThread = Array.isArray(currentMeta.chat_thread) ? [...currentMeta.chat_thread] : [];
+
+  if (existingThread.length === 0) {
+    if (currentMeta.last_adjustment_request) {
+      existingThread.push({
+        id: 'adj-legacy',
+        sender_type: 'leader',
+        sender_id: currentMeta.last_adjustment_request.requested_by,
+        sender_name: currentMeta.last_adjustment_request.requested_by_name || 'Líder de Dependencia',
+        sender_cargo: 'Líder Responsable',
+        sender_dependencia: actionPlan.organizationalUnit?.name || 'Dependencia',
+        sender_email: currentMeta.last_adjustment_request.requested_by_email || '',
+        message: currentMeta.last_adjustment_request.comment,
+        created_at: currentMeta.last_adjustment_request.requested_at || nowIso
+      });
+    }
+    if (Array.isArray(currentMeta.planning_responses_history)) {
+      currentMeta.planning_responses_history.forEach((resp, idx) => {
+        existingThread.push({
+          id: `resp-legacy-${idx}`,
+          sender_type: 'planning',
+          sender_id: resp.responded_by,
+          sender_name: resp.responded_by_name || 'LUISA FERNANDA ORTEGA MUÑOZ',
+          sender_cargo: resp.responded_by_cargo || 'Analista de Planeación',
+          sender_dependencia: resp.responded_by_dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
+          sender_email: 'lfortega@unicesmag.edu.co',
+          message: resp.comment,
+          created_at: resp.responded_at || nowIso
+        });
+      });
+    }
+  }
+
+  existingThread.push(newMessage);
+  currentMeta.chat_thread = existingThread;
+
+  if (senderType === 'planning') {
+    currentMeta.last_planning_response = {
+      comment: messageText,
+      responded_by: req.user.id,
+      responded_by_name: senderName,
+      responded_by_cargo: senderCargo,
+      responded_by_dependencia: senderDep,
+      responded_at: nowIso
+    };
+    currentMeta.planning_responses_history = [
+      ...(Array.isArray(currentMeta.planning_responses_history) ? currentMeta.planning_responses_history : []),
+      currentMeta.last_planning_response
+    ];
+  } else {
+    currentMeta.last_adjustment_request = {
+      comment: messageText,
+      requested_by: req.user.id,
+      requested_by_name: senderName,
+      requested_by_email: senderEmail,
+      requested_at: nowIso
+    };
+    currentMeta.adjustments_history = [
+      ...(Array.isArray(currentMeta.adjustments_history) ? currentMeta.adjustments_history : []),
+      currentMeta.last_adjustment_request
+    ];
+  }
+
+  await actionPlan.update({ metadata: currentMeta, updated_by: req.user.id });
+
+  if (req.body.submitValidation && actionPlan.status === 'adjustments') {
+    try {
+      await transitionPlan({ req, actionPlan, action: 'submit_owner_validation', comment: messageText });
+    } catch (eTrans) {
+      console.warn('sendActionPlanChatMessage: auto-transition submit_owner_validation:', eTrans.message);
+    }
+  }
+
+  const latestMeeting = await StrategicMeeting.findOne({
+    where: { action_plan_id: actionPlan.id },
+    order: [['starts_at', 'DESC'], ['created_at', 'DESC']],
+    include: [{ model: StrategicMinuteVersion, as: 'minuteVersions' }]
+  });
+  if (latestMeeting) {
+    const prefix = senderType === 'planning'
+      ? `[RETROALIMENTACIÓN DE PLANEACIÓN Y EFECTIVIDAD - ${senderName} - ${nowBogota}]:`
+      : `[OBSERVACIÓN DEL LÍDER - ${senderName} - ${nowBogota}]:`;
+    const note = `\n\n${prefix}\n${messageText}`;
+    const newDevelopment = `${latestMeeting.development || ''}${note}`.trim();
+    await latestMeeting.update({ development: newDevelopment, updated_by: req.user.id });
+
+    const latestMinute = (latestMeeting.minuteVersions || []).sort((a, b) => Number(b.version) - Number(a.version))[0];
+    if (latestMinute) {
+      const currentDes = Array.isArray(latestMinute.content?.desarrollo)
+        ? latestMinute.content.desarrollo.join('\n\n')
+        : String(latestMinute.content?.desarrollo || '');
+      const updatedContent = {
+        ...latestMinute.content,
+        desarrollo: [`${currentDes}${note}`.trim()]
+      };
+      await latestMinute.update({
+        content: updatedContent,
+        content_hash: hashObject(updatedContent)
+      });
+      syncMinute(latestMinute.id, true).catch((e) => console.warn('Auto-sync minute chat message:', e.message));
+    }
+  }
+
+  const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
+  const orgUnitName = actionPlan.organizationalUnit?.name || 'Dependencia';
+
+  if (senderType === 'planning') {
+    if (actionPlan.responsible_user_id) {
+      await StrategicNotification.create({
+        user_id: actionPlan.responsible_user_id,
+        action_plan_id: actionPlan.id,
+        type: 'action_plan_chat_message',
+        title: 'Mensaje de Planeación y Aseguramiento de la Calidad',
+        message: `${senderName}: ${messageText.slice(0, 95)}${messageText.length > 95 ? '...' : ''}`,
+        link: '/plan-accion-consulta',
+        metadata: {
+          action_plan_code: actionPlan.code,
+          dependency: orgUnitName,
+          sender_name: senderName
+        }
+      });
+    }
+
+    if (actionPlan.responsibleUser?.email) {
+      const consultationUrl = `${baseUrl}/plan-accion-consulta`;
+      const emailSubject = `[MENSAJE DE PLANEACIÓN Y CALIDAD] Plan de Acción ${actionPlan.code} - ${orgUnitName}`;
+      const introHtml = `
+        <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#008069;">CANAL INSTITUCIONAL DE RETROALIMENTACIÓN Y AJUSTES</p>
+        <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) <strong>${escapeHtml(actionPlan.responsibleUser.nombre || 'Líder')}</strong>,</p>
+        <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Aseguramiento de la Calidad</strong> (desde el componente de <strong>Planeación y Efectividad</strong>) le ha enviado un mensaje respecto a su <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> (${escapeHtml(orgUnitName)}):</p>
+      `;
+      const bodyHtml = `
+        <div style="margin:16px 0;padding:16px;background:#dcfce7;border:2px solid #86efac;border-radius:12px;">
+          <div style="margin-bottom:8px;">
+            <strong style="color:#065f46;font-size:13.5px;">💬 Mensaje de ${escapeHtml(senderName)}:</strong>
+            <span style="font-size:12px;color:#047857;margin-left:6px;">(${escapeHtml(senderCargo)})</span>
+          </div>
+          <div style="padding:14px;background:#ffffff;border-radius:8px;border:1px solid #bbf7d0;font-size:14px;color:#1e293b;line-height:1.6;white-space:pre-wrap;">${escapeHtml(messageText)}</div>
+        </div>
+        <div style="text-align:center;margin:24px 0;">
+          <a href="${escapeHtml(consultationUrl)}" style="display:inline-block;padding:13px 26px;background:#008069;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Ingresar al Plan de Acción y Responder</a>
+        </div>
+        <div style="margin-top:22px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:12.5px;color:#475569;">
+          <p style="margin:0;font-weight:800;color:#0f172a;">${escapeHtml(senderName)}</p>
+          <p style="margin:2px 0 0;color:#64748b;">${escapeHtml(senderCargo)} · Componente de Planeación y Efectividad</p>
+          <p style="margin:2px 0 0;color:#64748b;">${escapeHtml(senderDep)} - UNICESMAG</p>
+        </div>
+      `;
+      const html = renderInstitutionalTemplate({
+        title: `Mensaje de Planeación y Aseguramiento de la Calidad · ${actionPlan.code}`,
+        introHtml,
+        bodyHtml
+      });
+      sendStrategicPlanningEmail({
+        to: actionPlan.responsibleUser.email,
+        subject: emailSubject,
+        text: `Nuevo mensaje de Planeación y Calidad (${senderName}):\n\n${messageText}\n\nIngresar a: ${consultationUrl}`,
+        html
+      }).catch((e) => console.warn('Error enviando correo de chat al líder:', e.message));
+    }
+  } else {
+    const planningUsers = await User.findAll({
+      where: { role: ['planeacion_efectividad', 'planeacion_estrategica', 'administrador'], estado: 'activo' }
+    });
+    for (const pu of planningUsers) {
+      StrategicNotification.create({
+        user_id: pu.id,
+        action_plan_id: actionPlan.id,
+        type: 'action_plan_chat_message',
+        title: `Mensaje del Líder (${actionPlan.code})`,
+        message: `${senderName}: ${messageText.slice(0, 95)}${messageText.length > 95 ? '...' : ''}`,
+        link: `/planeacion-estrategica/planes-accion/${actionPlan.id}`,
+        metadata: {
+          action_plan_code: actionPlan.code,
+          dependency: orgUnitName,
+          sender_name: senderName
+        }
+      }).catch(() => {});
+    }
+
+    const planEditorUrl = `${baseUrl}/planeacion-estrategica/planes-accion/${actionPlan.id}`;
+    const emailSubject = `[CHAT PLAN DE ACCIÓN] Nuevo mensaje de ${senderName} (${orgUnitName}) - ${actionPlan.code}`;
+    const introHtml = `
+      <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#d97706;">MENSAJE RECIBIDO DEL LÍDER DE DEPENDENCIA</p>
+      <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado equipo de la <strong>Dirección de Planeación y Aseguramiento de la Calidad</strong> (Planeación y Efectividad),</p>
+      <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">El líder <strong>${escapeHtml(senderName)}</strong> ha enviado un nuevo mensaje en el canal de retroalimentación de su <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> (${escapeHtml(orgUnitName)}):</p>
+    `;
+    const bodyHtml = `
+      <div style="margin:16px 0;padding:16px;background:#fffbeb;border:2px solid #fde68a;border-radius:12px;">
+        <div style="margin-bottom:8px;">
+          <strong style="color:#92400e;font-size:13.5px;">💬 Mensaje de ${escapeHtml(senderName)}:</strong>
+          <span style="font-size:12px;color:#b45309;margin-left:6px;">(${escapeHtml(senderCargo)})</span>
+        </div>
+        <div style="padding:14px;background:#ffffff;border-radius:8px;border:1px solid #fde68a;font-size:14px;color:#1e293b;line-height:1.6;white-space:pre-wrap;">${escapeHtml(messageText)}</div>
+      </div>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${escapeHtml(planEditorUrl)}" style="display:inline-block;padding:13px 26px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Abrir Chat en el Plan de Acción</a>
+      </div>
+    `;
+    const html = renderInstitutionalTemplate({
+      title: `Mensaje del Líder · ${actionPlan.code}`,
+      introHtml,
+      bodyHtml
+    });
+    sendStrategicPlanningEmail({
+      to: ['planeacionestrategica@unicesmag.edu.co', 'lfortega@unicesmag.edu.co'],
+      subject: emailSubject,
+      text: `Nuevo mensaje de ${senderName} (${orgUnitName}) en el plan ${actionPlan.code}:\n\n${messageText}\n\nIngresar a: ${planEditorUrl}`,
+      html
+    }).catch((e) => console.warn('Error enviando correo de chat a planeación:', e.message));
+  }
+
+  const updatedPlan = await StrategicActionPlan.findByPk(actionPlan.id, {
+    include: [
+      { model: StrategicTerm, as: 'term' },
+      { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      { model: User, as: 'responsibleUser' }
+    ]
+  });
+
+  res.status(201);
+  ok(res, {
+    message: newMessage,
+    chat_thread: currentMeta.chat_thread,
+    actionPlan: updatedPlan
+  }, 'Mensaje enviado y notificado por correo institucional.');
 });
 
 const saveMonitoring = wrap(async (req, res) => {
@@ -3753,7 +4034,7 @@ module.exports = {
   downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, searchMeetingParticipants, termDependencies, downloadTermDependencyTemplate,
   termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
   listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, reviewExecutionActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
-  transitionActionPlan, saveMonitoring, createMeeting, updateMeeting,
+  transitionActionPlan, sendActionPlanChatMessage, saveMonitoring, createMeeting, updateMeeting,
   improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
   uploadEvidence, downloadEvidence, retrySync, getActionItemDriveFolder, getActionPlanMinutesDriveFolder, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
