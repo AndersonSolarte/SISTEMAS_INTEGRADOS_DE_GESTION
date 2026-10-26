@@ -274,7 +274,7 @@ const WorkflowStepLabel = ({ number, title, count }) => (
   </Stack>
 );
 
-export default function StrategicActionPlanEditor({ open, planId, platformPlan, workflow, onClose, onChanged, onPlanReplaced }) {
+export default function StrategicActionPlanEditor({ open, planId, platformPlan, workflow, onClose, onChanged, onPlanReplaced, initialOpenChat = false }) {
   const { enqueueSnackbar, closeSnackbar } = useSnackbar();
   const { user } = useAuth();
   const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(user?.role);
@@ -1376,6 +1376,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [planningResponseComment, setPlanningResponseComment] = useState('');
   const [submittingValidation, setSubmittingValidation] = useState(false);
   const [sendingChatMessage, setSendingChatMessage] = useState(false);
+
+  useEffect(() => {
+    if (open && initialOpenChat) {
+      setFeedbackChatModalOpen(true);
+    }
+  }, [open, initialOpenChat]);
 
   const chatThread = useMemo(() => {
     const meta = detail?.metadata || {};

@@ -226,6 +226,10 @@ function App() {
                     path="plan-accion-mi-plan"
                     element={<PlanAccionConsulta />}
                   />
+                  <Route
+                    path="plan-accion-consulta"
+                    element={<Navigate to="/dashboard/plan-accion-mi-plan" replace />}
+                  />
 
                   {/* Rutas de administración */}
                   <Route
@@ -244,6 +248,8 @@ function App() {
                   <Route path="mapa-procesos" element={<MapaProcesos />} />
                 </Route>
 
+                <Route path="/plan-accion-consulta" element={<Navigate to="/dashboard/plan-accion-mi-plan" replace />} />
+                <Route path="/planeacion-estrategica/planes-accion/:id" element={<Navigate to="/dashboard/planeacion-estrategica" replace />} />
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Routes>

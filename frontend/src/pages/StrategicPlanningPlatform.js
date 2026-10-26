@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Alert, Autocomplete, Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions,
   Checkbox, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, IconButton, LinearProgress, MenuItem, Paper, Stack, Switch,
@@ -122,7 +123,16 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [editingReferenceId, setEditingReferenceId] = useState(null);
   const [newCatalog, setNewCatalog] = useState({ code: '', name: '', scope: 'action_plans' });
   const [strategicPlanForm, setStrategicPlanForm] = useState(emptyStrategicPlanForm);
-  const [editorPlanId, setEditorPlanId] = useState(null);
+  const [searchParams] = useSearchParams();
+  const urlPlanId = searchParams.get('planId');
+  const urlOpenChat = searchParams.get('openChat') === 'true';
+  const [editorPlanId, setEditorPlanId] = useState(urlPlanId || null);
+
+  useEffect(() => {
+    if (urlPlanId) {
+      setEditorPlanId(urlPlanId);
+    }
+  }, [urlPlanId]);
   const [structure, setStructure] = useState([]);
   const [, setStructureLoading] = useState(false);
   const [openLevel, setOpenLevel] = useState(false);
@@ -3811,7 +3821,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
         </DialogActions>
       </Dialog>
 
-      <StrategicActionPlanEditor open={Boolean(editorPlanId)} planId={editorPlanId} platformPlan={plan} workflow={boot?.workflow} onClose={() => setEditorPlanId(null)} onChanged={load} onPlanReplaced={setEditorPlanId} />
+      <StrategicActionPlanEditor open={Boolean(editorPlanId)} planId={editorPlanId} platformPlan={plan} workflow={boot?.workflow} onClose={() => setEditorPlanId(null)} onChanged={load} onPlanReplaced={setEditorPlanId} initialOpenChat={urlOpenChat} />
     </Stack>
   );
 }

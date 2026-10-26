@@ -37,7 +37,7 @@ import {
   ChatBubbleOutline as ChatBubbleOutlineIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import strategicPlanningService from '../services/strategicPlanningService';
@@ -124,6 +124,11 @@ export default function PlanAccionConsulta() {
   // Filtro de búsqueda en la tabla de actividades
   const [activitySearch, setActivitySearch] = useState('');
 
+  // Parámetros de URL para redirección directa desde notificaciones de campana
+  const [searchParams] = useSearchParams();
+  const urlPlanId = searchParams.get('planId');
+  const urlOpenChat = searchParams.get('openChat') === 'true';
+
   // Modal para solicitar ajustes a Planeación y Efectividad
   const [adjustmentsModalOpen, setAdjustmentsModalOpen] = useState(false);
   const [adjustmentComment, setAdjustmentComment] = useState('');
@@ -201,8 +206,22 @@ export default function PlanAccionConsulta() {
       }
       setPeiPlans(visiblePei);
 
-      // Si teníamos un plan seleccionado, actualizarlo con la última data
-      if (selectedPlan?.id) {
+      // Si hay un planId en la URL (por redirección de notificación)
+      if (urlPlanId) {
+        let matchingPlan = visiblePei.find((p) => String(p.id) === String(urlPlanId));
+        if (!matchingPlan) {
+          try {
+            const respDirect = await strategicPlanningService.getActionPlan(urlPlanId);
+            if (respDirect?.data) matchingPlan = respDirect.data;
+          } catch (_) {}
+        }
+        if (matchingPlan) {
+          setSelectedPlan(matchingPlan);
+          if (urlOpenChat) {
+            setLeaderChatModalOpen(true);
+          }
+        }
+      } else if (selectedPlan?.id) {
         const refreshed = visiblePei.find((p) => p.id === selectedPlan.id);
         if (refreshed) {
           setSelectedPlan(refreshed);
@@ -236,6 +255,18 @@ export default function PlanAccionConsulta() {
   useEffect(() => {
     cargarPlanes();
   }, [cargarPlanes]);
+
+  useEffect(() => {
+    if (urlPlanId && peiPlans.length > 0) {
+      const match = peiPlans.find((p) => String(p.id) === String(urlPlanId));
+      if (match) {
+        setSelectedPlan(match);
+        if (urlOpenChat) {
+          setLeaderChatModalOpen(true);
+        }
+      }
+    }
+  }, [urlPlanId, urlOpenChat, peiPlans]);
 
   // Selección de plan
   const handleSelectPlan = (plan) => {

@@ -14,6 +14,7 @@ import {
   OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import strategicPlanningService from '../services/strategicPlanningService';
 
 const formatRelativeTime = (dateInput) => {
@@ -63,6 +64,7 @@ const getNotificationIcon = (type) => {
 
 const NotificationBell = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [anchorEl, setAnchorEl] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -114,9 +116,45 @@ const NotificationBell = () => {
       }
     }
     handleClose();
-    if (notif.link) {
-      navigate(notif.link);
+
+    const planId = notif.action_plan_id || notif.metadata?.action_plan_id || notif.metadata?.plan_id;
+    const isChat = notif.type === 'action_plan_chat_message';
+    const isAdj = notif.type === 'action_plan_adjustments';
+    const isLeaderNotification = [
+      'action_plan_review_submitted',
+      'action_plan_activity_added'
+    ].includes(notif.type) || (notif.link && notif.link.includes('plan-accion-'));
+
+    // 1. Si la notificación está dirigida al Líder de la dependencia (revisar ajustes, concertar, nueva actividad)
+    if (isLeaderNotification) {
+      const params = new URLSearchParams();
+      if (planId) params.set('planId', planId);
+      if (isChat) params.set('openChat', 'true');
+      const q = params.toString();
+      navigate(`/dashboard/plan-accion-mi-plan${q ? `?${q}` : ''}`);
+      return;
     }
+
+    // 2. Si es para el equipo de Planeación (devolución por ajustes del líder, chat a planeación)
+    const isPlanningStaff = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(user?.role);
+    if (isPlanningStaff) {
+      const basePath = user?.role === 'planeacion_efectividad'
+        ? '/dashboard/planeacion-efectividad'
+        : '/dashboard/planeacion-estrategica';
+      const params = new URLSearchParams();
+      if (planId) params.set('planId', planId);
+      if (isChat || isAdj) params.set('openChat', 'true');
+      const q = params.toString();
+      navigate(q ? `${basePath}?${q}` : basePath);
+      return;
+    }
+
+    // 3. Fallback general para cualquier usuario / líder
+    const params = new URLSearchParams();
+    if (planId) params.set('planId', planId);
+    if (isChat) params.set('openChat', 'true');
+    const q = params.toString();
+    navigate(`/dashboard/plan-accion-mi-plan${q ? `?${q}` : ''}`);
   };
 
   const handleMarkAllRead = async () => {

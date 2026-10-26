@@ -1,4 +1,5 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Autocomplete,
@@ -1789,7 +1790,15 @@ function PlaneacionEfectividad() {
     anio: '',
     responsable: ''
   });
-  const [section, setSection] = useState(null);
+  const [searchParams] = useSearchParams();
+  const urlPlanId = searchParams.get('planId');
+  const [section, setSection] = useState(urlPlanId ? 'accion' : null);
+
+  useEffect(() => {
+    if (urlPlanId) {
+      setSection('accion');
+    }
+  }, [urlPlanId]);
 
   useEffect(() => {
     if (section === null) {
