@@ -94,11 +94,50 @@ const improveStrategicMinuteText = async ({ field, text, context = {} }) => {
   }
 };
 
+const buildDeterministicSummary = (context, activities) => {
+  const count = activities.length;
+  const first = activities[0] || {};
+  const objective = count === 1
+    ? `Concertación y revisión de la actividad: ${first.actividad || ''}`.trim()
+    : `Concertación, articulación y validación del Plan de Acción Institucional (${count} actividades planificadas) para la vigencia ${context.term || ''}.`.trim();
+
+  const developmentLines = [
+    `En el marco de la formulación y concertación del Plan de Acción para la vigencia ${context.term || ''} correspondiente a ${context.responsible_area || 'la dependencia'}, se revisó y concertó la estructura de ${count} actividad(es) institucional(es):`
+  ];
+
+  activities.slice(0, 15).forEach((a, i) => {
+    developmentLines.push(
+      `${i + 1}. [${a.codigo || `ACT-${i + 1}`}] ${a.actividad || 'Actividad institucional'}: Indicador (${a.tipo_indicador || 'Resultado'}) "${a.indicador || 'Conforme a meta'}" con meta de ${a.meta || '1'}. Periodo: ${a.fecha_inicio || ''} al ${a.fecha_fin || ''}.`
+    );
+  });
+  if (count > 15) {
+    developmentLines.push(`(Se concertaron en total ${count} actividades institucionales registradas en el instrumento DIR-PE-FR-003).`);
+  }
+  developmentLines.push('Se verificó la coherencia con los objetivos y lineamientos estratégicos del Proyecto Educativo de Desarrollo (PED), estableciendo los criterios de seguimiento semestral y evidencias requeridas.');
+
+  const conclusionLines = [
+    '1. Desarrollar y ejecutar las actividades concertadas dentro de los plazos establecidos para la vigencia.',
+    '2. Registrar y cargar oportunamente las evidencias y soportes de cumplimiento en los periodos de reporte semestral (2026-1 y 2026-2) en la plataforma institucional.',
+    '3. Mantener articulación constante con la Dirección de Planeación y Aseguramiento de la Calidad para el seguimiento a las metas e indicadores establecidos.'
+  ];
+
+  return {
+    objective,
+    development: developmentLines.join('\n\n'),
+    conclusions: conclusionLines.join('\n'),
+    activities_analyzed: count,
+    model: 'deterministic_fallback'
+  };
+};
+
 const generateStrategicMinuteSummary = async ({ context = {}, activities = [] }) => {
-  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
-  if (!apiKey) throw Object.assign(new Error('La integración de OpenAI no está configurada en el servidor.'), { statusCode: 503 });
   if (!Array.isArray(activities) || !activities.length) {
     throw Object.assign(new Error('El Plan de Acción todavía no tiene actividades para analizar.'), { statusCode: 422 });
+  }
+
+  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  if (!apiKey) {
+    return buildDeterministicSummary(context, activities);
   }
 
   const controller = new AbortController();
@@ -113,10 +152,11 @@ const generateStrategicMinuteSummary = async ({ context = {}, activities = [] })
         store: false,
         instructions: [
           'Actúa como secretario técnico institucional de la Universidad CESMAG.',
-          'A partir exclusivamente de las actividades suministradas, redacta dos textos para un acta de concertación de un Plan de Acción.',
-          'El desarrollo debe ser un resumen analítico, claro y profesional de lo revisado: propósito común, líneas de trabajo, indicadores, metas, responsables y temporalidad cuando esos datos existan.',
+          'A partir exclusivamente de las actividades suministradas, redacta tres textos para un acta de concertación de un Plan de Acción: objetivo de la reunión, desarrollo y conclusiones/compromisos.',
+          'El objetivo de la reunión debe resumir de forma precisa la concertación y revisión de las actividades actuales.',
+          'El desarrollo debe ser un resumen analítico, claro y profesional de lo revisado: propósito común, líneas de trabajo, indicadores, metas, responsables y temporalidad.',
           'No afirmes que una actividad ya se ejecutó, aprobó o cumplió si los datos no lo indican.',
-          'Las conclusiones y compromisos deben derivarse de las actividades y expresar acciones verificables. Incluye responsables, fechas o metas solo cuando estén informados.',
+          'Las conclusiones y compromisos deben derivarse de las actividades y expresar acciones verificables.',
           'No inventes nombres, acuerdos, cifras, fechas, resultados ni decisiones. No uses títulos, saludos ni explicaciones externas.'
         ].join(' '),
         input: JSON.stringify({
@@ -138,8 +178,9 @@ const generateStrategicMinuteSummary = async ({ context = {}, activities = [] })
             schema: {
               type: 'object',
               additionalProperties: false,
-              required: ['development', 'conclusions'],
+              required: ['objective', 'development', 'conclusions'],
               properties: {
+                objective: { type: 'string' },
                 development: { type: 'string' },
                 conclusions: { type: 'string' }
               }
@@ -150,24 +191,26 @@ const generateStrategicMinuteSummary = async ({ context = {}, activities = [] })
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const statusCode = response.status === 429 ? 429 : 502;
-      const message = response.status === 429
-        ? 'OpenAI alcanzó temporalmente su límite de uso. Intente nuevamente en unos minutos.'
-        : 'No fue posible generar el resumen analítico del acta.';
-      throw Object.assign(new Error(message), { statusCode, cause: payload?.error?.message });
+      console.warn('OpenAI minute summary error, using deterministic fallback:', payload?.error?.message);
+      return buildDeterministicSummary(context, activities);
     }
     const raw = extractResponseText(payload);
     let parsed;
     try { parsed = JSON.parse(raw); } catch (_) { parsed = null; }
+    const objective = String(parsed?.objective || '').trim() || (activities.length === 1 ? `Concertación y revisión de la actividad: ${activities[0].actividad || ''}` : `Concertación del Plan de Acción Institucional (${activities.length} actividades).`);
     const development = String(parsed?.development || '').trim();
     const conclusions = String(parsed?.conclusions || '').trim();
     if (!development || !conclusions) {
-      throw Object.assign(new Error('OpenAI no devolvió un resumen completo del acta.'), { statusCode: 502 });
+      return buildDeterministicSummary(context, activities);
     }
-    return { development, conclusions, model: DEFAULT_MODEL, activities_analyzed: Math.min(activities.length, 100) };
+    return { objective, development, conclusions, model: DEFAULT_MODEL, activities_analyzed: Math.min(activities.length, 100) };
   } catch (error) {
-    if (error?.name === 'AbortError') throw Object.assign(new Error('OpenAI tardó demasiado en responder. Intente nuevamente.'), { statusCode: 504 });
-    throw error;
+    console.warn('generateStrategicMinuteSummary failed, falling back to deterministic generation:', error.message);
+    return buildDeterministicSummary(context, activities);
+  } finally {
+    clearTimeout(timeout);
+  }
+};
   } finally {
     clearTimeout(timeout);
   }

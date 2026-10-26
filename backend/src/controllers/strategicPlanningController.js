@@ -1283,7 +1283,153 @@ const addActionItem = wrap(async (req, res) => {
   const item = await saveActionItem({ req, actionPlan, payload: req.body });
   await refreshActionRepository(actionPlan.term_id, req, 'activity_created');
   syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
+
+  // Si el plan ya está en ejecución (active o monitoring), notificar al responsable
+  if (['active', 'monitoring'].includes(actionPlan.status)) {
+    const currentCustom = item.custom_values && typeof item.custom_values === 'object' ? item.custom_values : {};
+    await item.update({
+      custom_values: {
+        ...currentCustom,
+        execution_addition: true,
+        leader_review_status: 'pending',
+        added_in_execution_at: new Date().toISOString()
+      }
+    });
+
+    if (actionPlan.responsible_user_id) {
+      const fullPlan = await StrategicActionPlan.findByPk(actionPlan.id, {
+        include: [{ model: StrategicCatalogItem, as: 'organizationalUnit' }, { model: User, as: 'responsibleUser' }]
+      });
+      const orgUnit = fullPlan?.organizationalUnit?.name || 'Dependencia';
+      await StrategicNotification.create({
+        user_id: actionPlan.responsible_user_id,
+        action_plan_id: actionPlan.id,
+        type: 'action_plan_activity_added',
+        title: `Nueva actividad agregada en ejecución: ${actionPlan.code}`,
+        message: `Planeación y Efectividad incorporó la actividad ${item.code} ("${item.activity}"). Ingrese a verificar, dar retroalimentación o aceptar su ejecución.`,
+        link: '/plan-accion-consulta',
+        metadata: {
+          action_plan_code: actionPlan.code,
+          item_code: item.code,
+          activity: item.activity,
+          dependency: orgUnit
+        }
+      });
+
+      if (fullPlan?.responsibleUser?.email) {
+        const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
+        const consultationUrl = `${baseUrl}/plan-accion-consulta`;
+        const emailSubject = `[NUEVA ACTIVIDAD EN EJECUCIÓN] ${actionPlan.code} - ${orgUnit}`;
+        const introHtml = `
+          <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#2563eb;">NUEVA ACTIVIDAD INCORPORADA EN EJECUCIÓN</p>
+          <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) <strong>${escapeHtml(fullPlan.responsibleUser.nombre || 'Líder')}</strong>,</p>
+          <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Efectividad</strong> le informa que se ha incorporado una nueva actividad al <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> (${escapeHtml(orgUnit)}) que se encuentra actualmente en ejecución.</p>
+        `;
+        const bodyHtml = `
+          <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;color:#1e293b;">
+              <tr><td style="padding:4px 0;width:140px;color:#64748b;"><strong>Código:</strong></td><td style="padding:4px 0;font-weight:700;">${escapeHtml(item.code)}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Actividad:</strong></td><td style="padding:4px 0;font-weight:700;">${escapeHtml(item.activity)}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Indicador:</strong></td><td style="padding:4px 0;">${escapeHtml(item.indicator || 'N/A')}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;"><strong>Meta:</strong></td><td style="padding:4px 0;font-weight:700;">${escapeHtml(String(item.target || '1'))}</td></tr>
+            </table>
+          </div>
+          <p style="margin:16px 0;font-size:13px;color:#475569;">Puede ingresar a consultar el plan para dar retroalimentación sobre la actividad o aceptar formalmente su ejecución.</p>
+          <div style="text-align:center;margin:24px 0;">
+            <a href="${escapeHtml(consultationUrl)}" style="display:inline-block;padding:13px 26px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Ingresar a Revisar Actividad</a>
+          </div>
+        `;
+        const html = renderInstitutionalTemplate({
+          title: `Nueva Actividad · ${actionPlan.code}`,
+          introHtml,
+          bodyHtml
+        });
+        sendStrategicPlanningEmail({
+          to: fullPlan.responsibleUser.email,
+          subject: emailSubject,
+          text: `Nueva actividad agregada en ejecución al plan ${actionPlan.code}: ${item.activity}. Ingrese a ${consultationUrl}`,
+          html
+        }).catch((err) => console.warn('Error enviando correo de nueva actividad en ejecución:', err.message));
+      }
+    }
+  }
+
   res.status(201); ok(res, item);
+});
+
+const reviewExecutionActionItem = wrap(async (req, res) => {
+  const item = await StrategicActionItem.findByPk(req.params.itemId);
+  if (!item || String(item.action_plan_id) !== String(req.params.id)) {
+    throw Object.assign(new Error('Actividad no encontrada.'), { statusCode: 404 });
+  }
+  const actionPlan = await StrategicActionPlan.findByPk(item.action_plan_id, {
+    include: [{ model: StrategicCatalogItem, as: 'organizationalUnit' }]
+  });
+  if (!actionPlan) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
+
+  const isLeader = String(actionPlan.responsible_user_id) === String(req.user.id);
+  const isPlanning = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user.role);
+  if (!isLeader && !isPlanning) {
+    throw Object.assign(new Error('No tiene permisos para retroalimentar esta actividad.'), { statusCode: 403 });
+  }
+
+  const { decision, comment } = req.body;
+  const currentCustom = item.custom_values && typeof item.custom_values === 'object' ? item.custom_values : {};
+  const history = Array.isArray(currentCustom.leader_reviews_history) ? [...currentCustom.leader_reviews_history] : [];
+  const reviewEntry = {
+    decision: decision === 'accepted' ? 'accepted' : 'feedback',
+    comment: String(comment || '').trim(),
+    reviewed_by: req.user.id,
+    reviewed_by_name: req.user.nombre || req.user.username || 'Líder',
+    reviewed_at: new Date().toISOString()
+  };
+  history.push(reviewEntry);
+
+  await item.update({
+    custom_values: {
+      ...currentCustom,
+      leader_review_status: decision === 'accepted' ? 'accepted' : 'feedback',
+      last_leader_review: reviewEntry,
+      leader_reviews_history: history
+    },
+    updated_by: req.user.id
+  });
+
+  const orgUnit = actionPlan.organizationalUnit?.name || 'Dependencia';
+  const reviewerName = req.user.nombre || req.user.username || 'Líder';
+
+  if (decision === 'accepted') {
+    await StrategicNotification.create({
+      target_role: 'planeacion_estrategica',
+      action_plan_id: actionPlan.id,
+      type: 'activity_accepted',
+      title: `Actividad Aceptada en Ejecución: ${item.code}`,
+      message: `${reviewerName} (${orgUnit}) ha aceptado la ejecución de la actividad ${item.code}: "${item.activity}".`,
+      link: `/planeacion-estrategica/planes-accion/${actionPlan.id}`,
+      metadata: {
+        action_plan_code: actionPlan.code,
+        item_code: item.code,
+        dependency: orgUnit
+      }
+    });
+  } else {
+    await StrategicNotification.create({
+      target_role: 'planeacion_estrategica',
+      action_plan_id: actionPlan.id,
+      type: 'activity_feedback',
+      title: `Retroalimentación a Actividad: ${item.code}`,
+      message: `${reviewerName} (${orgUnit}) retroalimentó la actividad ${item.code}: "${String(comment || '').slice(0, 120)}"`,
+      link: `/planeacion-estrategica/planes-accion/${actionPlan.id}`,
+      metadata: {
+        action_plan_code: actionPlan.code,
+        item_code: item.code,
+        comment: String(comment || '').trim(),
+        dependency: orgUnit
+      }
+    });
+  }
+
+  ok(res, item, decision === 'accepted' ? 'Actividad aceptada para su ejecución.' : 'Retroalimentación enviada a Planeación y Efectividad.');
 });
 
 const downloadDynamicItemTemplate = wrap(async (req, res) => {
@@ -3606,7 +3752,7 @@ module.exports = {
   applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, reorderFieldDefinitions, previewFieldSchema, confirmFieldSchema,
   downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, searchMeetingParticipants, termDependencies, downloadTermDependencyTemplate,
   termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
-  listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
+  listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, reviewExecutionActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
   transitionActionPlan, saveMonitoring, createMeeting, updateMeeting,
   improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,

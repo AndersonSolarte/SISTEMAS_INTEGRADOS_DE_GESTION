@@ -128,6 +128,12 @@ export default function PlanAccionConsulta() {
   const [adjustmentComment, setAdjustmentComment] = useState('');
   const [sendingAdjustments, setSendingAdjustments] = useState(false);
 
+  // Retroalimentación o aceptación de nuevas actividades incorporadas en ejecución
+  const [itemFeedbackModalOpen, setItemFeedbackModalOpen] = useState(false);
+  const [selectedReviewItem, setSelectedReviewItem] = useState(null);
+  const [itemFeedbackComment, setItemFeedbackComment] = useState('');
+  const [submittingItemReview, setSubmittingItemReview] = useState(false);
+
   // Modal y descarga de actas
   const [actasModalOpen, setActasModalOpen] = useState(false);
   const [refreshingActas, setRefreshingActas] = useState(false);
@@ -374,6 +380,33 @@ export default function PlanAccionConsulta() {
       console.error('Error al exportar Excel:', error);
       enqueueSnackbar('No fue posible exportar el formato DIR-PE-FR-003.', { variant: 'error' });
     }
+  };
+
+  const handleReviewExecutionItem = async (itemId, decision, comment = '') => {
+    if (!selectedPlan?.id) return;
+    setSubmittingItemReview(true);
+    try {
+      await strategicPlanningService.reviewExecutionItem(selectedPlan.id, itemId, { decision, comment });
+      enqueueSnackbar(decision === 'accepted' ? 'Actividad aceptada para su ejecución.' : 'Retroalimentación enviada a Planeación y Efectividad.', { variant: 'success' });
+      const updatedPlanResp = await strategicPlanningService.getActionPlan(selectedPlan.id);
+      if (updatedPlanResp?.data) {
+        setSelectedPlan((prev) => ({ ...prev, ...updatedPlanResp.data }));
+      }
+      await cargarPlanes();
+      setItemFeedbackModalOpen(false);
+      setItemFeedbackComment('');
+      setSelectedReviewItem(null);
+    } catch (err) {
+      enqueueSnackbar(err.response?.data?.message || err.message || 'Error al procesar la revisión.', { variant: 'error' });
+    } finally {
+      setSubmittingItemReview(false);
+    }
+  };
+
+  const handleOpenItemFeedbackModal = (item) => {
+    setSelectedReviewItem(item);
+    setItemFeedbackComment('');
+    setItemFeedbackModalOpen(true);
   };
 
   // Previsualizar acta oficial en el visor interno de SIAC (sin salir a Drive)
@@ -1722,6 +1755,57 @@ export default function PlanAccionConsulta() {
                           >
                             PED: {it.macroactivity}
                           </Typography>
+                        )}
+                        {it.custom_values?.execution_addition && (
+                          <Box sx={{ mt: 0.8, display: 'flex', alignItems: 'center', gap: 0.7, flexWrap: 'wrap' }}>
+                            <Chip
+                              size="small"
+                              label="Nueva en ejecución"
+                              sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 850, fontSize: 10, height: 20 }}
+                            />
+                            {it.custom_values?.leader_review_status === 'accepted' ? (
+                              <Chip
+                                size="small"
+                                label="✓ Aceptada"
+                                color="success"
+                                variant="outlined"
+                                sx={{ fontWeight: 800, fontSize: 10, height: 20 }}
+                              />
+                            ) : it.custom_values?.leader_review_status === 'feedback' ? (
+                              <Tooltip title={it.custom_values?.last_leader_review?.comment || 'Retroalimentada por líder'}>
+                                <Chip
+                                  size="small"
+                                  label="💬 Observada"
+                                  color="warning"
+                                  variant="outlined"
+                                  sx={{ fontWeight: 800, fontSize: 10, height: 20 }}
+                                />
+                              </Tooltip>
+                            ) : (
+                              <Stack direction="row" spacing={0.6}>
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  color="success"
+                                  disabled={submittingItemReview}
+                                  onClick={() => handleReviewExecutionItem(it.id, 'accepted')}
+                                  sx={{ fontSize: 10.5, py: 0.2, px: 1, minWidth: 0, height: 22, textTransform: 'none', fontWeight: 850, borderRadius: 1.5 }}
+                                >
+                                  ✓ Aceptar
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  color="warning"
+                                  disabled={submittingItemReview}
+                                  onClick={() => handleOpenItemFeedbackModal(it)}
+                                  sx={{ fontSize: 10.5, py: 0.2, px: 1, minWidth: 0, height: 22, textTransform: 'none', fontWeight: 850, borderRadius: 1.5 }}
+                                >
+                                  💬 Retroalimentar
+                                </Button>
+                              </Stack>
+                            )}
+                          </Box>
                         )}
                       </TableCell>
 
@@ -3221,6 +3305,121 @@ export default function PlanAccionConsulta() {
             sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, color: '#475569', borderColor: '#cbd5e1' }}
           >
             Cerrar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal de Retroalimentación de Nueva Actividad en Ejecución */}
+      <Dialog
+        open={itemFeedbackModalOpen}
+        onClose={() => !submittingItemReview && setItemFeedbackModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, p: 1 } }}
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                bgcolor: '#eff6ff',
+                display: 'grid',
+                placeItems: 'center',
+                color: '#2563eb'
+              }}
+            >
+              <EditNoteIcon />
+            </Box>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                Retroalimentación a Planeación y Efectividad
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>
+                Enviar observaciones o ajustes propuestos sobre esta nueva actividad
+              </Typography>
+            </Box>
+            <IconButton
+              size="small"
+              onClick={() => setItemFeedbackModalOpen(false)}
+              disabled={submittingItemReview}
+              sx={{ color: '#94a3b8' }}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Stack>
+        </DialogTitle>
+
+        <DialogContent dividers sx={{ pt: 2, pb: 2 }}>
+          {selectedReviewItem && (
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 2,
+                mb: 2.5,
+                bgcolor: '#f8fafc',
+                borderRadius: 2,
+                borderColor: '#e2e8f0'
+              }}
+            >
+              <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', mb: 0.5 }}>
+                Actividad Propuesta:
+              </Typography>
+              <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>
+                {selectedReviewItem.description}
+              </Typography>
+              {selectedReviewItem.goal && (
+                <Typography sx={{ fontSize: 12, color: '#475569', mt: 0.5 }}>
+                  <strong>Meta:</strong> {selectedReviewItem.goal}
+                </Typography>
+              )}
+            </Paper>
+          )}
+
+          <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#334155', mb: 1 }}>
+            Comentarios, precisiones u observaciones para el equipo de Planeación:
+          </Typography>
+          <TextField
+            multiline
+            rows={4}
+            fullWidth
+            placeholder="Escriba aquí los comentarios, ajustes sugeridos de redacción, metas o fechas..."
+            value={itemFeedbackComment}
+            onChange={(e) => setItemFeedbackComment(e.target.value)}
+            disabled={submittingItemReview}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2,
+                fontSize: 13
+              }
+            }}
+          />
+        </DialogContent>
+
+        <DialogActions sx={{ px: 2.5, py: 2 }}>
+          <Button
+            onClick={() => setItemFeedbackModalOpen(false)}
+            disabled={submittingItemReview}
+            sx={{ textTransform: 'none', fontWeight: 700, color: '#64748b' }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            disabled={submittingItemReview || !itemFeedbackComment.trim()}
+            onClick={() => selectedReviewItem && handleReviewExecutionItem(selectedReviewItem.id, 'feedback', itemFeedbackComment)}
+            startIcon={submittingItemReview ? <CircularProgress size={16} color="inherit" /> : <SendIcon sx={{ fontSize: 16 }} />}
+            sx={{
+              borderRadius: 2,
+              textTransform: 'none',
+              fontWeight: 800,
+              px: 3,
+              boxShadow: 'none'
+            }}
+          >
+            {submittingItemReview ? 'Enviando...' : 'Enviar Retroalimentación'}
           </Button>
         </DialogActions>
       </Dialog>

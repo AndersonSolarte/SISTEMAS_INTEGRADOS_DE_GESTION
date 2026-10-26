@@ -57,6 +57,7 @@ const strategicPlanningService = {
   previewDynamicItems: (id, formData) => api.post(`${root}/action-plans/${id}/items-import/preview`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }).then(data),
   confirmDynamicItems: (importId) => api.post(`${root}/action-items-imports/${importId}/confirm`).then(data),
   updateItem: (id, itemId, payload) => api.patch(`${root}/action-plans/${id}/items/${itemId}`, payload, { timeout: 30000 }).then(data),
+  reviewExecutionItem: (planId, itemId, payload) => api.post(`${root}/action-plans/${planId}/items/${itemId}/leader-feedback`, payload).then(data),
   transition: (id, payload) => api.post(`${root}/action-plans/${id}/transitions`, payload).then(data),
   transferLeader: (id, payload) => api.post(`${root}/action-plans/${id}/transfer-leader`, payload).then(data),
   saveMonitoring: (itemId, periodId, payload) => api.put(`${root}/action-items/${itemId}/monitoring/${periodId}`, payload).then(data),

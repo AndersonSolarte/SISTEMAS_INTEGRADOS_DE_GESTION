@@ -1959,15 +1959,21 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     if (!detail?.items?.length) return enqueueSnackbar('Primero registre al menos una actividad en el Plan de Acción.', { variant: 'warning' });
     setGeneratingMinuteSummary(true);
     try {
+      const firstItem = detail.items[0] || {};
+      const targetObjective = detail.items.length === 1
+        ? `Concertación y revisión de la actividad: ${firstItem.activity || ''}`.trim()
+        : `Concertación y concertación del Plan de Acción Institucional (${detail.items.length} actividades) para la vigencia ${detail.term?.year || ''}.`.trim();
+
       const response = await strategicPlanningService.generateMinuteSummary(planId, {
-        objective: meeting.objective,
+        objective: targetObjective,
         audio_file_name: audioFile?.name || null
       });
+      const objective = String(response.data?.objective || targetObjective).trim();
       const development = String(response.data?.development || '').trim();
       const conclusions = String(response.data?.conclusions || '').trim();
       if (!development || !conclusions) throw new Error('No se recibió un resumen completo.');
-      setMeeting((previous) => ({ ...previous, development, conclusions }));
-      enqueueSnackbar(`Resumen generado desde ${response.data?.activities_analyzed || detail.items.length} actividades${audioFile ? ` y soporte de audio (${audioFile.name})` : ''}. Revíselo antes de guardar.`, { variant: 'success' });
+      setMeeting((previous) => ({ ...previous, objective, development, conclusions }));
+      enqueueSnackbar(`Acta actualizada desde ${response.data?.activities_analyzed || detail.items.length} actividades${audioFile ? ` y soporte de audio (${audioFile.name})` : ''}. Revísela antes de guardar.`, { variant: 'success' });
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || error.message || 'No fue posible generar el resumen del acta.', { variant: 'error' });
     } finally {
@@ -2800,8 +2806,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   gap: 2.5,
                   alignItems: 'stretch',
                   width: '100%',
-                  height: { lg: 'calc(100vh - 270px)' },
-                  maxHeight: { lg: 'calc(100vh - 270px)' }
+                  height: { lg: 'calc(100vh - 195px)' },
+                  maxHeight: { lg: 'calc(100vh - 190px)' }
                 }}>
                 <Box sx={{
                   width: meetingLayoutMode === 'form' ? '100%' : meetingLayoutMode === 'split' ? { xs: '100%', lg: '47%' } : '100%',
@@ -3265,7 +3271,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               setMeeting((previous) => ({ ...previous, [field.key]: value }));
                               if (meetingFieldErrors[field.key]) setMeetingFieldErrors((prev) => ({ ...prev, [field.key]: false }));
                             }}
-                            minHeight={field.rows >= 5 ? 190 : 135}
+                            minHeight={field.rows >= 5 ? 220 : 155}
                             error={Boolean(meetingFieldErrors[field.key]) || (field.required && !richTextPlain(meeting[field.key]))}
                           />
                           {meetingFieldErrors[field.key] && (
