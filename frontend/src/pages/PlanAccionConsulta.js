@@ -4,7 +4,7 @@ import {
   Table, TableHead, TableRow, TableCell, TableBody, TableContainer,
   TextField, CircularProgress, Divider, Tooltip, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions, MenuItem,
-  Grid, InputAdornment, Tabs, Tab, Avatar, Badge
+  Grid, InputAdornment, Avatar, Badge
 } from '@mui/material';
 import {
   AssignmentTurnedIn as AssignmentTurnedInIcon,
@@ -1155,26 +1155,6 @@ export default function PlanAccionConsulta() {
               Exportar DIR-PE-FR-003
             </Button>
             <Button
-              variant="outlined"
-              color="secondary"
-              startIcon={<DescriptionIcon />}
-              onClick={() => setActivityViewTab('minutes')}
-              sx={{
-                borderRadius: 2.2,
-                textTransform: 'none',
-                fontWeight: 800,
-                fontSize: 12.5,
-                px: 1.8,
-                py: 0.65,
-                borderColor: '#d8b4fe',
-                bgcolor: '#faf5ff',
-                color: '#7e22ce',
-                '&:hover': { bgcolor: '#f3e8ff', borderColor: '#c084fc' }
-              }}
-            >
-              Consultar Actas {planActas.length > 0 ? `(${planActas.length})` : ''}
-            </Button>
-            <Button
               variant="contained"
               startIcon={<ChatBubbleOutlineIcon />}
               onClick={() => setLeaderChatModalOpen(true)}
@@ -1489,111 +1469,269 @@ export default function PlanAccionConsulta() {
           />
         </Box>
 
-        {/* PESTAÑAS ESTILO HOJAS EXCEL Y BUSCADOR */}
-        <Box sx={{ bgcolor: '#f8fafc', borderBottom: '1px solid #cbd5e1', px: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-          <Tabs
-            value={activityViewTab}
-            onChange={(e, val) => setActivityViewTab(val)}
+        {/* TRES SEGMENTOS INSTITUCIONALES ADAPTABLES A PANTALLA COMPLETA */}
+        <Box sx={{ bgcolor: '#f8fafc', borderBottom: '1px solid #cbd5e1', p: { xs: 1.5, sm: 2 } }}>
+          <Box
             sx={{
-              minHeight: 44,
-              '& .MuiTabs-indicator': {
-                bgcolor: activityViewTab === 'responsible' ? '#1f3864' : (activityViewTab === 'co_responsible' ? '#800000' : '#7e22ce'),
-                height: 3
-              }
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' },
+              gap: 1.5,
+              width: '100%',
+              mb: 1.5
             }}
           >
-            <Tab
-              value="responsible"
-              label={
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Typography sx={{ fontSize: 13, fontWeight: activityViewTab === 'responsible' ? 900 : 700 }}>
-                    Hoja 1: PLAN DE ACCIÓN
-                  </Typography>
-                  <Chip
-                    size="small"
-                    label={filteredItems.length}
+            {/* Segmento 1: PLAN DE ACCIÓN */}
+            <Paper
+              elevation={0}
+              onClick={() => setActivityViewTab('responsible')}
+              sx={{
+                cursor: 'pointer',
+                p: { xs: 1.4, sm: 1.6 },
+                px: 2.2,
+                borderRadius: 2.5,
+                bgcolor: activityViewTab === 'responsible' ? '#eff6ff' : '#ffffff',
+                border: '2px solid',
+                borderColor: activityViewTab === 'responsible' ? '#2563eb' : '#e2e8f0',
+                boxShadow: activityViewTab === 'responsible' ? '0 4px 14px rgba(37,99,235,0.12)' : '0 1px 3px rgba(0,0,0,0.03)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'all 0.18s ease-in-out',
+                '&:hover': {
+                  borderColor: activityViewTab === 'responsible' ? '#1d4ed8' : '#cbd5e1',
+                  bgcolor: activityViewTab === 'responsible' ? '#ebf5ff' : '#f8fafc',
+                  transform: 'translateY(-1px)'
+                }
+              }}
+            >
+              <Stack direction="row" spacing={1.4} alignItems="center" sx={{ minWidth: 0 }}>
+                <Box
+                  sx={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 2,
+                    bgcolor: activityViewTab === 'responsible' ? '#dbeafe' : '#f1f5f9',
+                    color: activityViewTab === 'responsible' ? '#1e40af' : '#64748b',
+                    display: 'grid',
+                    placeItems: 'center',
+                    flexShrink: 0
+                  }}
+                >
+                  <AssignmentTurnedInIcon sx={{ fontSize: 20 }} />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography
                     sx={{
-                      bgcolor: activityViewTab === 'responsible' ? '#dbeafe' : '#f1f5f9',
-                      color: activityViewTab === 'responsible' ? '#1e40af' : '#64748b',
-                      fontWeight: 850,
-                      fontSize: 10.5,
-                      height: 20
+                      fontSize: 13.5,
+                      fontWeight: 900,
+                      color: activityViewTab === 'responsible' ? '#1e3a8a' : '#334155',
+                      letterSpacing: 0.3
                     }}
-                  />
-                </Stack>
-              }
-              sx={{ textTransform: 'none', px: 2, minHeight: 44, color: activityViewTab === 'responsible' ? '#1f3864' : '#64748b' }}
-            />
-            <Tab
-              value="co_responsible"
-              label={
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Typography sx={{ fontSize: 13, fontWeight: activityViewTab === 'co_responsible' ? 900 : 700 }}>
-                    Hoja 2: EN CORRESPONSABILIDAD
+                  >
+                    PLAN DE ACCIÓN
                   </Typography>
-                  <Chip
-                    size="small"
-                    label={filteredCoItems.length}
-                    sx={{
-                      bgcolor: activityViewTab === 'co_responsible' ? '#fee2e2' : '#f1f5f9',
-                      color: activityViewTab === 'co_responsible' ? '#991b1b' : '#64748b',
-                      fontWeight: 850,
-                      fontSize: 10.5,
-                      height: 20
-                    }}
-                  />
-                </Stack>
-              }
-              sx={{ textTransform: 'none', px: 2, minHeight: 44, color: activityViewTab === 'co_responsible' ? '#800000' : '#64748b' }}
-            />
-            <Tab
-              value="minutes"
-              label={
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Typography sx={{ fontSize: 13, fontWeight: activityViewTab === 'minutes' ? 900 : 700 }}>
-                    Hoja 3: ACTAS DE REUNIÓN
+                  <Typography variant="caption" sx={{ color: activityViewTab === 'responsible' ? '#2563eb' : '#64748b', fontWeight: 600 }}>
+                    Actividades propias de la dependencia
                   </Typography>
-                  <Chip
-                    size="small"
-                    label={planActas.length}
-                    sx={{
-                      bgcolor: activityViewTab === 'minutes' ? '#f3e8ff' : '#f1f5f9',
-                      color: activityViewTab === 'minutes' ? '#7e22ce' : '#64748b',
-                      fontWeight: 850,
-                      fontSize: 10.5,
-                      height: 20
-                    }}
-                  />
-                </Stack>
-              }
-              sx={{ textTransform: 'none', px: 2, minHeight: 44, color: activityViewTab === 'minutes' ? '#7e22ce' : '#64748b' }}
-            />
-          </Tabs>
+                </Box>
+              </Stack>
+              <Box
+                sx={{
+                  bgcolor: activityViewTab === 'responsible' ? '#2563eb' : '#f1f5f9',
+                  color: activityViewTab === 'responsible' ? '#ffffff' : '#475569',
+                  px: 1.4,
+                  py: 0.35,
+                  borderRadius: 2,
+                  fontSize: 12,
+                  fontWeight: 900,
+                  boxShadow: activityViewTab === 'responsible' ? '0 2px 6px rgba(37,99,235,0.35)' : 'none'
+                }}
+              >
+                {filteredItems.length}
+              </Box>
+            </Paper>
 
-          <TextField
-            size="small"
-            placeholder={
-              activityViewTab === 'responsible'
-                ? "Buscar por código, actividad..."
-                : (activityViewTab === 'co_responsible'
-                    ? "Buscar por código, actividad, dependencia..."
-                    : "Buscar acta por reunión, fecha...")
-            }
-            value={activitySearch}
-            onChange={(e) => setActivitySearch(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon sx={{ color: '#94a3b8', fontSize: 16 }} />
-                </InputAdornment>
-              )
-            }}
-            sx={{
-              width: { xs: '100%', sm: 260 },
-              py: 0.5,
-              '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff', fontSize: 12, height: 32 }
-            }}
-          />
+            {/* Segmento 2: EN CORRESPONSABILIDAD */}
+            <Paper
+              elevation={0}
+              onClick={() => setActivityViewTab('co_responsible')}
+              sx={{
+                cursor: 'pointer',
+                p: { xs: 1.4, sm: 1.6 },
+                px: 2.2,
+                borderRadius: 2.5,
+                bgcolor: activityViewTab === 'co_responsible' ? '#fff1f2' : '#ffffff',
+                border: '2px solid',
+                borderColor: activityViewTab === 'co_responsible' ? '#e11d48' : '#e2e8f0',
+                boxShadow: activityViewTab === 'co_responsible' ? '0 4px 14px rgba(225,29,72,0.12)' : '0 1px 3px rgba(0,0,0,0.03)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'all 0.18s ease-in-out',
+                '&:hover': {
+                  borderColor: activityViewTab === 'co_responsible' ? '#be123c' : '#cbd5e1',
+                  bgcolor: activityViewTab === 'co_responsible' ? '#ffe4e6' : '#f8fafc',
+                  transform: 'translateY(-1px)'
+                }
+              }}
+            >
+              <Stack direction="row" spacing={1.4} alignItems="center" sx={{ minWidth: 0 }}>
+                <Box
+                  sx={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 2,
+                    bgcolor: activityViewTab === 'co_responsible' ? '#ffe4e6' : '#f1f5f9',
+                    color: activityViewTab === 'co_responsible' ? '#e11d48' : '#64748b',
+                    display: 'grid',
+                    placeItems: 'center',
+                    flexShrink: 0
+                  }}
+                >
+                  <BusinessIcon sx={{ fontSize: 20 }} />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography
+                    sx={{
+                      fontSize: 13.5,
+                      fontWeight: 900,
+                      color: activityViewTab === 'co_responsible' ? '#9f1239' : '#334155',
+                      letterSpacing: 0.3
+                    }}
+                  >
+                    EN CORRESPONSABILIDAD
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: activityViewTab === 'co_responsible' ? '#e11d48' : '#64748b', fontWeight: 600 }}>
+                    Actividades articuladas con otras áreas
+                  </Typography>
+                </Box>
+              </Stack>
+              <Box
+                sx={{
+                  bgcolor: activityViewTab === 'co_responsible' ? '#e11d48' : '#f1f5f9',
+                  color: activityViewTab === 'co_responsible' ? '#ffffff' : '#475569',
+                  px: 1.4,
+                  py: 0.35,
+                  borderRadius: 2,
+                  fontSize: 12,
+                  fontWeight: 900,
+                  boxShadow: activityViewTab === 'co_responsible' ? '0 2px 6px rgba(225,29,72,0.35)' : 'none'
+                }}
+              >
+                {filteredCoItems.length}
+              </Box>
+            </Paper>
+
+            {/* Segmento 3: ACTAS DE REUNIÓN */}
+            <Paper
+              elevation={0}
+              onClick={() => setActivityViewTab('minutes')}
+              sx={{
+                cursor: 'pointer',
+                p: { xs: 1.4, sm: 1.6 },
+                px: 2.2,
+                borderRadius: 2.5,
+                bgcolor: activityViewTab === 'minutes' ? '#faf5ff' : '#ffffff',
+                border: '2px solid',
+                borderColor: activityViewTab === 'minutes' ? '#9333ea' : '#e2e8f0',
+                boxShadow: activityViewTab === 'minutes' ? '0 4px 14px rgba(147,51,234,0.12)' : '0 1px 3px rgba(0,0,0,0.03)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'all 0.18s ease-in-out',
+                '&:hover': {
+                  borderColor: activityViewTab === 'minutes' ? '#7e22ce' : '#cbd5e1',
+                  bgcolor: activityViewTab === 'minutes' ? '#f3e8ff' : '#f8fafc',
+                  transform: 'translateY(-1px)'
+                }
+              }}
+            >
+              <Stack direction="row" spacing={1.4} alignItems="center" sx={{ minWidth: 0 }}>
+                <Box
+                  sx={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 2,
+                    bgcolor: activityViewTab === 'minutes' ? '#f3e8ff' : '#f1f5f9',
+                    color: activityViewTab === 'minutes' ? '#9333ea' : '#64748b',
+                    display: 'grid',
+                    placeItems: 'center',
+                    flexShrink: 0
+                  }}
+                >
+                  <DescriptionIcon sx={{ fontSize: 20 }} />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography
+                    sx={{
+                      fontSize: 13.5,
+                      fontWeight: 900,
+                      color: activityViewTab === 'minutes' ? '#6b21a8' : '#334155',
+                      letterSpacing: 0.3
+                    }}
+                  >
+                    ACTAS DE REUNIÓN
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: activityViewTab === 'minutes' ? '#9333ea' : '#64748b', fontWeight: 600 }}>
+                    Actas de concertación y seguimiento
+                  </Typography>
+                </Box>
+              </Stack>
+              <Box
+                sx={{
+                  bgcolor: activityViewTab === 'minutes' ? '#9333ea' : '#f1f5f9',
+                  color: activityViewTab === 'minutes' ? '#ffffff' : '#475569',
+                  px: 1.4,
+                  py: 0.35,
+                  borderRadius: 2,
+                  fontSize: 12,
+                  fontWeight: 900,
+                  boxShadow: activityViewTab === 'minutes' ? '0 2px 6px rgba(147,51,234,0.35)' : 'none'
+                }}
+              >
+                {planActas.length}
+              </Box>
+            </Paper>
+          </Box>
+
+          {/* Barra de contexto y buscador dinámico */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+            <Typography sx={{ fontSize: 12.5, color: '#475569', fontWeight: 750 }}>
+              {activityViewTab === 'responsible' && (
+                <>Mostrando <strong style={{ color: '#1e3a8a' }}>{filteredItems.length}</strong> actividades del plan propio</>
+              )}
+              {activityViewTab === 'co_responsible' && (
+                <>Mostrando <strong style={{ color: '#9f1239' }}>{filteredCoItems.length}</strong> actividades en corresponsabilidad con otras áreas</>
+              )}
+              {activityViewTab === 'minutes' && (
+                <>Mostrando <strong style={{ color: '#6b21a8' }}>{planActas.length}</strong> actas oficiales COM-IF-FR-002 registradas</>
+              )}
+            </Typography>
+
+            <TextField
+              size="small"
+              placeholder={
+                activityViewTab === 'responsible'
+                  ? "Buscar por código, actividad..."
+                  : (activityViewTab === 'co_responsible'
+                      ? "Buscar por código, actividad, dependencia..."
+                      : "Buscar acta por reunión, fecha...")
+              }
+              value={activitySearch}
+              onChange={(e) => setActivitySearch(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ color: '#94a3b8', fontSize: 16 }} />
+                  </InputAdornment>
+                )
+              }}
+              sx={{
+                width: { xs: '100%', sm: 320 },
+                '& .MuiOutlinedInput-root': { borderRadius: 2.2, bgcolor: '#ffffff', fontSize: 12.5, height: 36 }
+              }}
+            />
+          </Stack>
         </Box>
 
         {/* TIRA INSTITUCIONAL (FILA 5 EXCEL) */}
@@ -1641,7 +1779,7 @@ export default function PlanAccionConsulta() {
               </Button>
             )}
             <Typography sx={{ fontSize: 11, fontWeight: 800, color: activityViewTab === 'responsible' ? '#2f5597' : (activityViewTab === 'co_responsible' ? '#b45309' : '#7e22ce') }}>
-              FORMATO OFICIAL DIR-PE-FR-003 · HOJA: {activityViewTab === 'responsible' ? 'PLAN DE ACCIÓN' : (activityViewTab === 'co_responsible' ? 'EN CORRESPONSABILIDAD' : 'ACTAS DE REUNIÓN')}
+              FORMATO OFICIAL DIR-PE-FR-003 · {activityViewTab === 'responsible' ? 'PLAN DE ACCIÓN' : (activityViewTab === 'co_responsible' ? 'EN CORRESPONSABILIDAD' : 'ACTAS DE REUNIÓN')}
             </Typography>
           </Stack>
         </Box>
