@@ -2288,6 +2288,24 @@ const finalizeAndSyncMinuteInternal = async (minuteId, { req = null, userId = nu
       attributes: ['id', 'code', 'term_id', 'responsible_user_id']
     }]
   });
+
+  // Activar automáticamente el Plan de Acción en Ejecución Oficial tras formalizarse el acta
+  if (meeting?.actionPlan) {
+    const fullPlan = await StrategicActionPlan.findByPk(meeting.actionPlan.id);
+    if (fullPlan && ['owner_validation', 'formulation', 'preliminary_minutes', 'technical_review'].includes(fullPlan.status)) {
+      const prevPlanStatus = fullPlan.status;
+      await fullPlan.update({ status: 'active', updated_by: userId });
+      await StrategicWorkflowEvent.create({
+        action_plan_id: fullPlan.id,
+        from_state: prevPlanStatus,
+        to_state: 'active',
+        action: 'activate',
+        actor_user_id: userId,
+        comment: 'Plan de Acción activado en Ejecución Oficial tras completarse la firma electrónica del Acta COM-IF-FR-002.'
+      });
+      syncSinglePlanOfficialWorkbook(fullPlan.id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
+    }
+  }
   const allMeetingParticipants = await StrategicMeetingParticipant.findAll({ where: { meeting_id: minute.meeting_id } });
   const responsibleEmails = new Set();
 

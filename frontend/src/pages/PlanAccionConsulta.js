@@ -580,6 +580,12 @@ export default function PlanAccionConsulta() {
     return selectedPlan?.co_responsible_items || [];
   }, [selectedPlan]);
 
+  // Fecha oficial de formalización del acta y activación del plan
+  const formalizationDate = useMemo(() => {
+    const finalizedActa = planActas.find((a) => a.status === 'finalized' && a.finalizedAt);
+    return finalizedActa?.finalizedAt || (selectedPlan?.status === 'active' ? selectedPlan?.updated_at : null);
+  }, [planActas, selectedPlan]);
+
   // Cálculos de métricas del plan seleccionado (Sumatoria institucional de seguimientos)
   const planMetrics = useMemo(() => {
     if (!selectedPlan) return { totalActivities: 0, avgProgress: '0.0', totalEvidences: 0, completedActivities: 0, inProgressActivities: 0, totalCoActivities: 0 };
@@ -947,6 +953,22 @@ export default function PlanAccionConsulta() {
               label={`Vigencia ${selectedPlan.term?.year || '—'}`}
               sx={{ bgcolor: '#f8fafc', color: '#475569', fontWeight: 750, fontSize: 12, height: 26, borderRadius: 1.5, border: '1px solid #e2e8f0' }}
             />
+            {selectedPlan.status === 'active' && formalizationDate && (
+              <Chip
+                size="small"
+                icon={<VerifiedIcon sx={{ fontSize: '15px !important', color: '#15803d !important' }} />}
+                label={`Formalizado: ${formatFecha(formalizationDate)}`}
+                sx={{
+                  bgcolor: '#dcfce7',
+                  color: '#15803d',
+                  fontWeight: 800,
+                  fontSize: 12,
+                  height: 26,
+                  borderRadius: 1.5,
+                  border: '1px solid #bbf7d0'
+                }}
+              />
+            )}
           </Stack>
 
           <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -1051,8 +1073,10 @@ export default function PlanAccionConsulta() {
           <Typography sx={{ fontWeight: 850, fontSize: 13.5, color: '#0369a1' }}>
             Plan de Acción Concertado · Ejecución Oficial
           </Typography>
-          <Typography sx={{ fontSize: 12, color: '#0c4a6e', mt: 0.2, lineHeight: 1.4 }}>
-            Actividades concertadas formalmente mediante el <strong>Acta COM-IF-FR-002</strong>. Como líder de dependencia, en este módulo puede registrar el avance físico semestral y radicar las evidencias de soporte de cada actividad.
+          <Typography sx={{ fontSize: 12, color: '#0c4a6e', mt: 0.2, lineHeight: 1.45 }}>
+            Actividades concertadas formalmente mediante el <strong>Acta COM-IF-FR-002</strong>
+            {formalizationDate ? ` formalizada el ${formatFecha(formalizationDate)}` : ''}.
+            Como líder de dependencia, en este módulo puede registrar el avance físico semestral y radicar las evidencias de soporte de cada actividad.
           </Typography>
         </Alert>
       )}
