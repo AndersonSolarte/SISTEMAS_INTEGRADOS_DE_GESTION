@@ -1133,9 +1133,9 @@ export default function PlanAccionConsulta() {
             )}
           </Stack>
 
-          <Stack direction="row" spacing={1} flexWrap="wrap">
+          <Stack direction="row" spacing={1.25} flexWrap="wrap" sx={{ alignItems: 'center' }}>
             <Button
-              variant="contained"
+              variant="outlined"
               startIcon={<ExcelIcon />}
               onClick={handleExportExcel}
               sx={{
@@ -1144,10 +1144,11 @@ export default function PlanAccionConsulta() {
                 fontWeight: 850,
                 fontSize: 12.5,
                 px: 1.8,
-                py: 0.6,
-                bgcolor: '#16a34a',
-                color: '#ffffff',
-                '&:hover': { bgcolor: '#15803d' },
+                py: 0.65,
+                borderColor: '#86efac',
+                bgcolor: '#f0fdf4',
+                color: '#15803d',
+                '&:hover': { bgcolor: '#dcfce7', borderColor: '#4ade80' },
                 boxShadow: 'none'
               }}
             >
@@ -1164,7 +1165,7 @@ export default function PlanAccionConsulta() {
                 fontWeight: 800,
                 fontSize: 12.5,
                 px: 1.8,
-                py: 0.6,
+                py: 0.65,
                 borderColor: '#d8b4fe',
                 bgcolor: '#faf5ff',
                 color: '#7e22ce',
@@ -1182,102 +1183,111 @@ export default function PlanAccionConsulta() {
                 textTransform: 'none',
                 fontWeight: 850,
                 fontSize: 12.5,
-                px: 1.8,
-                py: 0.6,
+                px: 2,
+                py: 0.65,
                 bgcolor: '#008069',
                 color: '#ffffff',
-                boxShadow: 'none',
+                boxShadow: '0 2px 8px rgba(0, 128, 105, 0.22)',
                 '&:hover': { bgcolor: '#006a57' }
               }}
             >
-              💬 Chat Planeación y Calidad {leaderChatThread.length > 0 ? `(${leaderChatThread.length})` : ''}
+              💬 Chat con Planeación {leaderChatThread.length > 0 ? `(${leaderChatThread.length})` : ''}
             </Button>
           </Stack>
         </Stack>
       </Paper>
 
-      {/* 2. Banner Institucional de Consulta y Seguimiento */}
+      {/* 2. Banner Institucional de Concertación y Aprobación */}
       {isOwnerValidation ? (
-        <Alert
-          severity="info"
-          icon={<DescriptionIcon sx={{ fontSize: 26, color: '#1d4ed8' }} />}
+        <Paper
+          elevation={0}
           sx={{
-            borderRadius: 3,
-            border: '1px solid #bfdbfe',
-            bgcolor: '#eff6ff',
-            alignItems: 'center',
-            py: 1.2,
-            px: 2.2,
-            '& .MuiAlert-message': { width: '100%' }
+            p: { xs: 2, md: 2.2 },
+            borderRadius: 3.5,
+            border: '1.5px solid #bfdbfe',
+            background: 'linear-gradient(135deg, #f0f7ff 0%, #e8f2fc 100%)',
+            boxShadow: '0 4px 16px rgba(37, 99, 235, 0.05)'
           }}
-          action={
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ alignItems: 'center' }}>
-              <Button
-                variant="contained"
-                size="small"
-                startIcon={<ChatBubbleOutlineIcon sx={{ fontSize: 16 }} />}
-                onClick={() => setLeaderChatModalOpen(true)}
+        >
+          <Stack
+            direction={{ xs: 'column', lg: 'row' }}
+            spacing={2}
+            justifyContent="space-between"
+            alignItems={{ xs: 'stretch', lg: 'center' }}
+          >
+            {/* Mensaje institucional y contexto */}
+            <Stack direction="row" spacing={1.8} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+              <Box
                 sx={{
-                  textTransform: 'none',
-                  fontWeight: 850,
-                  borderRadius: 2,
-                  fontSize: 12,
-                  bgcolor: '#008069',
-                  color: '#ffffff',
-                  boxShadow: 'none',
-                  '&:hover': { bgcolor: '#006a57' }
+                  width: 48,
+                  height: 48,
+                  borderRadius: 2.5,
+                  bgcolor: '#dbeafe',
+                  color: '#1e40af',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                  border: '1px solid #bfdbfe'
                 }}
               >
-                💬 Chat de Ajustes
-              </Button>
+                <DescriptionIcon sx={{ fontSize: 26 }} />
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontWeight: 900, fontSize: 15, color: '#1e3a8a', lineHeight: 1.3 }}>
+                  Plan de Acción en Revisión y Retroalimentación Institucional
+                </Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#334155', mt: 0.35, lineHeight: 1.45 }}>
+                  Revise las actividades concertadas y actas oficiales. Si está de acuerdo con los compromisos, apruebe el plan para iniciar su ejecución oficial; si requiere ajustes en metas o fechas, devuélvalo a Planeación y Efectividad.
+                </Typography>
+              </Box>
+            </Stack>
+
+            {/* Acciones de decisión: Distribución limpia, sin botones repetidos */}
+            <Stack direction="row" spacing={1.25} alignItems="center" flexShrink={0} sx={{ alignSelf: { xs: 'flex-end', lg: 'center' } }}>
               <Button
                 variant="outlined"
-                color="primary"
-                size="small"
                 startIcon={<EditNoteIcon />}
                 onClick={() => setAdjustmentsModalOpen(true)}
                 sx={{
                   textTransform: 'none',
                   fontWeight: 850,
-                  borderRadius: 2,
-                  fontSize: 12,
-                  borderColor: '#2563eb',
-                  color: '#1d4ed8',
+                  borderRadius: 2.2,
+                  fontSize: 12.5,
+                  px: 2,
+                  py: 0.75,
+                  borderColor: '#cbd5e1',
+                  color: '#334155',
                   bgcolor: '#ffffff',
-                  '&:hover': { bgcolor: '#f0f7ff', borderColor: '#1d4ed8' }
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                  whiteSpace: 'nowrap',
+                  '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8', color: '#0f172a' }
                 }}
               >
                 Devolver para ajustes
               </Button>
               <Button
                 variant="contained"
-                color="success"
-                size="small"
-                startIcon={<CheckCircleIcon sx={{ fontSize: 16 }} />}
+                startIcon={<CheckCircleIcon sx={{ fontSize: 17 }} />}
                 onClick={() => setApprovalModalOpen(true)}
                 sx={{
                   textTransform: 'none',
                   fontWeight: 900,
-                  borderRadius: 2,
-                  fontSize: 12,
+                  borderRadius: 2.2,
+                  fontSize: 12.5,
+                  px: 2.4,
+                  py: 0.75,
                   bgcolor: '#16a34a',
                   color: '#ffffff',
-                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.35)',
+                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.28)',
+                  whiteSpace: 'nowrap',
                   '&:hover': { bgcolor: '#15803d' }
                 }}
               >
                 ✓ Aprobar y Pasar a Ejecución
               </Button>
             </Stack>
-          }
-        >
-          <Typography sx={{ fontWeight: 850, fontSize: 14, color: '#1e3a8a' }}>
-            Plan de Acción en Revisión y Retroalimentación Institucional
-          </Typography>
-          <Typography sx={{ fontSize: 12.5, color: '#1e40af', mt: 0.2 }}>
-            Revise las actividades concertadas y las actas oficiales del plan. Recuerde que la formalización y firma electrónica del acta se realiza a través del enlace enviado a su correo institucional. Si requiere modificaciones en las actividades antes de continuar, puede remitirlas a Planeación y Efectividad.
-          </Typography>
-        </Alert>
+          </Stack>
+        </Paper>
       ) : (
         <Alert
           severity="info"
