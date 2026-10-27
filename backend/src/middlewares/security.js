@@ -156,6 +156,7 @@ const sqlInjectionGuard = (req, res, next) => {
     ['body.turnstileToken', 4096]
   ]);
   const isGoogleAuthRequest = /^(?:\/api\/auth\/google(?:\/redirect)?|\/api\/meeting-minutes\/public\/[^/]+\/google-access)(?:\?|$)/i.test(String(req.originalUrl || ''));
+  const isGoogleCalendarCallbackRequest = /^\/api\/meeting-minutes\/calendar-connection\/callback(?:\?|$)/i.test(String(req.originalUrl || ''));
   const isSignatureRequest = /^\/api\/(?:public\/strategic-planning\/minutes\/[^/]+\/sign|strategic-planning\/(?:minutes\/[^/]+\/sign-internal|my-signature)|meeting-minutes\/public\/[^/]+\/sign)(?:\?|$)/i
     .test(String(req.originalUrl || ''));
   const isMeetingMinuteDraftRequest = req.method === 'POST'
@@ -171,6 +172,21 @@ const sqlInjectionGuard = (req, res, next) => {
     if (value === null || value === undefined) continue;
 
     if (typeof value === 'string') {
+      if (isGoogleCalendarCallbackRequest && source === 'query') {
+        if (value.length > 8192) {
+          return res.status(413).json({
+            success: false,
+            message: 'Parametro de autorizacion demasiado grande'
+          });
+        }
+        // Son parametros de respuesta OAuth de Google (code, state cifrado con AES-GCM, scope, etc.)
+        // que son validados criptográficamente y con la API de Google, no contra SQL.
+        continue;
+      }
+      if (currentPath === 'params.token' && value.length <= 4096) {
+        // Tokens de ruta firmados/cifrados o identificadores opacos (AES-GCM, UUID, hex).
+        continue;
+      }
       if (isMeetingMinuteDraftRequest && unrestrictedMeetingMinuteFields.has(currentPath)) {
         // Estos campos son documentos enriquecidos de extensión libre. Se limpian
         // mediante una lista blanca de etiquetas en meetingMinuteController y se
