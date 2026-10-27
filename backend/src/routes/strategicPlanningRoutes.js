@@ -64,6 +64,7 @@ router.delete('/action-plans/:id/items/:itemId', permit('pei_formular'), c.delet
 router.post('/action-plans/:id/items/:itemId/leader-feedback', permit(), c.reviewExecutionActionItem);
 router.post('/action-plans/:id/transitions', permit(), c.transitionActionPlan);
 router.post('/action-plans/:id/chat-messages', permit(), c.sendActionPlanChatMessage);
+router.post('/action-plans/:id/chat-clear', permit(), c.clearActionPlanChat);
 router.post('/action-plans/:id/transfer-leader', permit('pei_formular'), c.transferLeader);
 router.get('/action-plans/:id/export', permit(), c.exportActionPlan);
 router.post('/action-plans/:id/sync-drive-excel', permit('pei_formular'), c.syncPlanDriveExcel);

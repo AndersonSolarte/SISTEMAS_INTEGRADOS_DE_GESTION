@@ -3,11 +3,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert, Autocomplete, Avatar, Badge, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, Fab, Grid, IconButton, InputAdornment, Menu, MenuItem, Paper, Stack, Tab, Tabs, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
+  TableContainer, TableHead, TablePagination, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
 import {
   Add, ArrowBack, AssignmentTurnedIn, AttachFile, AutoAwesome, CheckBox as CheckBoxIcon, CheckBoxOutlineBlank as CheckBoxOutlineBlankIcon, CheckCircle, CheckCircleOutline,
-  Close, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Email,
+  Close, CloudUpload, ContentCopy, DeleteOutline, DeleteSweep, Description, Download, Edit, EditNote, Email,
   AccessTime, CalendarMonth, ChatBubbleOutline, Folder, History, LockOutlined, MoreTime, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, OpenInNew,
   PersonSearch, PictureAsPdf as PdfIcon, PlayArrow, PriorityHigh, QrCode2, Refresh, Save, Search, Send,
   HelpOutline, Sync, TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility,
@@ -19,6 +19,7 @@ import strategicPlanningService from '../services/strategicPlanningService';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import RichTextEditor, { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
 import MeetingCalendarScheduler from '../components/meetingMinute/MeetingCalendarScheduler';
+import PlanAccionConsulta from './PlanAccionConsulta';
 
 const ACTION_LABELS = {
   schedule_meeting: 'Programar reunión', start_formulation: 'Iniciar formulación',
@@ -188,6 +189,33 @@ const isResponsibleField = (field) => {
   );
 };
 
+const isStartDateField = (field) => {
+  if (!field) return false;
+  const k = normalizeFieldText(field.key);
+  const l = normalizeFieldText(field.label);
+  const combined = `${k} ${l}`;
+  return (
+    k === 'starts_on' ||
+    k === 'fecha_inicio' ||
+    k === 'fecha_de_inicio' ||
+    (combined.includes('fecha') && (combined.includes('inicio') || combined.includes('desde') || combined.includes('empiez')))
+  );
+};
+
+const isEndDateField = (field) => {
+  if (!field) return false;
+  const k = normalizeFieldText(field.key);
+  const l = normalizeFieldText(field.label);
+  const combined = `${k} ${l}`;
+  return (
+    k === 'ends_on' ||
+    k === 'fecha_fin' ||
+    k === 'fecha_de_fin' ||
+    k === 'fecha_final' ||
+    (combined.includes('fecha') && (combined.includes('fin') || combined.includes('hasta') || combined.includes('termin') || combined.includes('limite')))
+  );
+};
+
 const parseCoResponsibles = (val) => {
   if (!val) return [];
   if (Array.isArray(val)) return val.filter(Boolean);
@@ -318,6 +346,17 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [generatingMinuteSummary, setGeneratingMinuteSummary] = useState(false);
   const [audioFile, setAudioFile] = useState(null);
   const [activitySearch, setActivitySearch] = useState('');
+  const [minuteSearch, setMinuteSearch] = useState('');
+  // Paginación de tablas (5 por defecto, con opciones 5, 10, 20, 50)
+  const [itemsPage, setItemsPage] = useState(0);
+  const [itemsRowsPerPage, setItemsRowsPerPage] = useState(5);
+  const [actasPage, setActasPage] = useState(0);
+  const [actasRowsPerPage, setActasRowsPerPage] = useState(5);
+  const [tab4Page, setTab4Page] = useState(0);
+  const [tab4RowsPerPage, setTab4RowsPerPage] = useState(5);
+
+  useEffect(() => { setActasPage(0); }, [minuteSearch]);
+  useEffect(() => { setTab4Page(0); }, [activitySearch]);
   const [evidenceModalOpen, setEvidenceModalOpen] = useState(false);
   const [evidenceItem, setEvidenceItem] = useState(null);
   const [evalModalOpen, setEvalModalOpen] = useState(false);
@@ -887,14 +926,54 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     return '';
   }, [planResponsiblePerson, detail?.organizationalUnit]);
 
+  const defaultStartDate = useMemo(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const defaultEndDate = useMemo(() => {
+    const fromMeta = detail?.metadata?.formulation_ends_on || detail?.term?.metadata?.formulation_ends_on;
+    if (fromMeta) return fromMeta;
+    if (detail?.term?.year) return `${detail.term.year}-12-31`;
+    return '';
+  }, [detail]);
+
   const getInitialItem = useCallback(() => {
     const respField = activityFields.find(isResponsibleField);
+    const startField = activityFields.find(isStartDateField);
+    const endField = activityFields.find(isEndDateField);
+
+    const customVals = {};
+    if (respField && defaultResponsibleText) {
+      customVals[respField.key] = defaultResponsibleText;
+    }
+    if (startField && defaultStartDate) {
+      customVals[startField.key] = defaultStartDate;
+    }
+    if (endField && defaultEndDate) {
+      customVals[endField.key] = defaultEndDate;
+    }
+
     return {
       ...emptyItem,
+      starts_on: defaultStartDate,
+      ends_on: defaultEndDate,
       co_responsibles: [],
-      custom_values: respField && defaultResponsibleText ? { [respField.key]: defaultResponsibleText } : {}
+      custom_values: customVals
     };
-  }, [activityFields, defaultResponsibleText]);
+  }, [activityFields, defaultResponsibleText, defaultStartDate, defaultEndDate]);
+
+  useEffect(() => {
+    if (detail && !editingItemId) {
+      setItem((curr) => {
+        if (curr.activity || (curr.starts_on && curr.starts_on !== defaultStartDate)) return curr;
+        return getInitialItem();
+      });
+    }
+  }, [detail, editingItemId, getInitialItem, defaultStartDate]);
 
   const recordValue = (row, field) => {
     if (isCoResponsibleField(field)) {
@@ -989,6 +1068,20 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       const custom = item.custom_values?.[field.key];
       return direct || custom || defaultResponsibleText;
     }
+    if (isStartDateField(field)) {
+      const direct = item.starts_on || item[field.key];
+      const custom = item.custom_values?.[field.key];
+      if (direct || custom) return direct || custom;
+      if (!editingItemId) return defaultStartDate;
+      return '';
+    }
+    if (isEndDateField(field)) {
+      const direct = item.ends_on || item[field.key];
+      const custom = item.custom_values?.[field.key];
+      if (direct || custom) return direct || custom;
+      if (!editingItemId) return defaultEndDate;
+      return '';
+    }
     if (isCoResponsibleField(field)) {
       const custom = item.custom_values?.[field.key];
       if (custom && (!Array.isArray(item.co_responsibles) || !item.co_responsibles.length)) {
@@ -1000,6 +1093,22 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     return Object.prototype.hasOwnProperty.call(direct, field.key) ? direct[field.key] : item.custom_values?.[field.key];
   };
   const setFieldValue = (field, value) => {
+    if (isStartDateField(field)) {
+      setItem((current) => ({
+        ...current,
+        starts_on: value,
+        custom_values: { ...(current.custom_values || {}), [field.key]: value }
+      }));
+      return;
+    }
+    if (isEndDateField(field)) {
+      setItem((current) => ({
+        ...current,
+        ends_on: value,
+        custom_values: { ...(current.custom_values || {}), [field.key]: value }
+      }));
+      return;
+    }
     if (isCoResponsibleField(field)) {
       const parsed = Array.isArray(value) ? value : parseCoResponsibles(value);
       setItem((current) => ({
@@ -1396,36 +1505,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const chatThread = useMemo(() => {
     const meta = detail?.metadata || {};
-    if (Array.isArray(meta.chat_thread) && meta.chat_thread.length > 0) {
+    if (Array.isArray(meta.chat_thread)) {
       return meta.chat_thread;
     }
-    const thread = [];
-    if (adjustmentInfo?.comment) {
-      thread.push({
-        id: 'adj-initial',
-        sender_type: 'leader',
-        sender_name: adjustmentInfo.requested_by_name || 'Líder de Dependencia',
-        sender_cargo: 'Líder Responsable',
-        sender_email: adjustmentInfo.requested_by_email || '',
-        message: adjustmentInfo.comment,
-        created_at: adjustmentInfo.requested_at || new Date().toISOString()
-      });
-    }
-    if (Array.isArray(meta.planning_responses_history)) {
-      meta.planning_responses_history.forEach((resp, idx) => {
-        thread.push({
-          id: `resp-legacy-${idx}`,
-          sender_type: 'planning',
-          sender_name: resp.responded_by_name || 'LUISA FERNANDA ORTEGA MUÑOZ',
-          sender_cargo: resp.responded_by_cargo || 'Analista de Planeación',
-          sender_email: 'lfortega@unicesmag.edu.co',
-          message: resp.comment,
-          created_at: resp.responded_at || new Date().toISOString()
-        });
-      });
-    }
-    return thread;
-  }, [detail?.metadata, adjustmentInfo]);
+    return [];
+  }, [detail?.metadata]);
 
   const handleSendChatMessage = async (isSubmittingValidation = false) => {
     const comment = planningResponseComment.trim();
@@ -1437,7 +1521,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     try {
       const resp = await strategicPlanningService.sendChatMessage(detail.id, {
         message: comment,
-        submitValidation: isSubmittingValidation
+        submitValidation: isSubmittingValidation,
+        senderType: 'planning'
       });
       setPlanningResponseComment('');
       enqueueSnackbar(
@@ -1460,6 +1545,28 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     } finally {
       setSendingChatMessage(false);
     }
+  };
+
+  const handleClearFeedbackChat = async () => {
+    if (!detail?.id) return;
+    try {
+      await strategicPlanningService.clearChatThread(detail.id);
+      setDetail((prev) => {
+        if (!prev) return prev;
+        const meta = { ...(prev.metadata || {}) };
+        meta.chat_thread = [];
+        return { ...prev, metadata: meta };
+      });
+      enqueueSnackbar('Chat limpiado. Los mensajes han sido archivados en la trazabilidad.', { variant: 'info' });
+      if (onChanged) onChanged();
+    } catch (e) {
+      console.warn('Error al limpiar chat:', e);
+      enqueueSnackbar('No se pudo limpiar el chat.', { variant: 'error' });
+    }
+  };
+
+  const handleCloseFeedbackChat = () => {
+    setFeedbackChatModalOpen(false);
   };
 
   const handleOpenTimelineModal = () => {
@@ -1526,6 +1633,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             }
           }
         }
+        if (isStartDateField(f)) {
+          const val = fieldValue(f) || defaultStartDate;
+          if (val) {
+            payloadCustomValues[f.key] = val;
+          }
+        }
+        if (isEndDateField(f)) {
+          const val = fieldValue(f) || defaultEndDate;
+          if (val) {
+            payloadCustomValues[f.key] = val;
+          }
+        }
         if (isCoResponsibleField(f)) {
           const val = (Array.isArray(item.co_responsibles) && item.co_responsibles.length)
             ? item.co_responsibles
@@ -1541,7 +1660,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         code: editingItemId ? detail.items.find((row) => String(row.id) === String(editingItemId))?.code : `ACT-${String((detail.items?.length || 0) + 1).padStart(3, '0')}`,
         strategic_element_id: [...levels].reverse().map((level) => item.custom_values?.[structureKey(level.id)]).find(Boolean) || null,
         activity: primaryActivity, indicator_type: item.indicator_type, indicator: item.indicator,
-        target: item.target, starts_on: item.starts_on || null, ends_on: item.ends_on || null,
+        target: item.target,
+        starts_on: item.starts_on || payloadCustomValues.starts_on || payloadCustomValues.fecha_inicio || defaultStartDate || null,
+        ends_on: item.ends_on || payloadCustomValues.ends_on || payloadCustomValues.fecha_fin || defaultEndDate || null,
         co_responsibles: coRespPayload,
         custom_values: payloadCustomValues,
         justification: editingItemId ? 'Actualización desde el formulario dinámico' : null
@@ -1584,14 +1705,21 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     const respField = activityFields.find(isResponsibleField);
     const initialResp = (respField && row.custom_values?.[respField.key]) || row.responsible || row.responsable_de_ejecucion || defaultResponsibleText;
 
+    const startField = activityFields.find(isStartDateField);
+    const endField = activityFields.find(isEndDateField);
+    const initialStartsOn = row.starts_on || (startField && row.custom_values?.[startField.key]) || '';
+    const initialEndsOn = row.ends_on || (endField && row.custom_values?.[endField.key]) || '';
+
     setItem({
       macroactivity: '', activity: row.activity || '', indicator_type: row.indicator_type || '',
-      starts_on: row.starts_on || '', ends_on: row.ends_on || '', indicator: row.indicator || '',
+      starts_on: initialStartsOn, ends_on: initialEndsOn, indicator: row.indicator || '',
       target: row.target || '', co_responsibles: parseCoResponsibles(initialCoResp), budget: '',
       custom_values: {
         ...(row.custom_values || {}),
         ...(respField ? { [respField.key]: initialResp } : {}),
-        ...(coRespField ? { [coRespField.key]: parseCoResponsibles(initialCoResp) } : {})
+        ...(coRespField ? { [coRespField.key]: parseCoResponsibles(initialCoResp) } : {}),
+        ...(startField ? { [startField.key]: initialStartsOn } : {}),
+        ...(endField ? { [endField.key]: initialEndsOn } : {})
       }
     });
     setTimeout(() => document.getElementById('activity-capture-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
@@ -2341,6 +2469,138 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
   };
 
+  const handleOpenMinutesFolder = async () => {
+    if (!detail?.id) return;
+    const directFolderUrl = detail.metadata?.drive_minutes_folder_url
+      || detail.metadata?.minutes_drive_folder_url
+      || (detail.meetings || []).find((m) => (m.minuteVersions || []).some((v) => v.content?.drive_folder_url))?.minuteVersions?.find((v) => v.content?.drive_folder_url)?.content?.drive_folder_url;
+    if (directFolderUrl) {
+      window.open(directFolderUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    try {
+      enqueueSnackbar('Localizando carpeta ACTAS DE REUNIÓN en Google Drive...', { variant: 'info' });
+      const res = await strategicPlanningService.getActionPlanMinutesDriveFolder(detail.id);
+      const url = res?.folderUrl || res?.data?.folderUrl;
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else {
+        enqueueSnackbar('La carpeta de Actas en Drive se habilitará al formalizar la primera acta.', { variant: 'warning' });
+      }
+    } catch (e) {
+      console.error('Error al obtener carpeta de actas en Drive:', e);
+      enqueueSnackbar('No fue posible abrir la carpeta de actas en Google Drive.', { variant: 'error' });
+    }
+  };
+
+  const handlePreviewMinute = async (minuteId, title = 'Acta Oficial COM-IF-FR-002') => {
+    if (!minuteId) return;
+    const cleanTitle = (title || 'Acta').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `${cleanTitle}_${detail?.code || 'Plan'}.pdf`;
+
+    setPreviewModal({
+      open: true,
+      url: '',
+      fileName,
+      isPdf: true,
+      isImage: false,
+      isOffice: false,
+      loading: true
+    });
+
+    try {
+      const blob = await strategicPlanningService.downloadMinutePdf(minuteId, 'original');
+      const blobUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      setPreviewModal((prev) => ({ ...prev, url: blobUrl, loading: false }));
+    } catch (err) {
+      console.error('Error al previsualizar acta:', err);
+      enqueueSnackbar('No se pudo cargar la vista previa del acta.', { variant: 'error' });
+      setPreviewModal((prev) => ({ ...prev, open: false, loading: false }));
+    }
+  };
+
+  const planActas = useMemo(() => {
+    if (!detail) return [];
+    const list = [];
+    const meetings = detail.meetings || [];
+
+    meetings.forEach((m) => {
+      const versions = m.minuteVersions || [];
+      if (versions.length > 0) {
+        const sortedVersions = [...versions].sort((a, b) => Number(b.version || 0) - Number(a.version || 0));
+        const v = sortedVersions[0];
+        const driveFileId = v.drive_file_id || v.content?.drive_file_id || null;
+        const driveUrl = v.drive_url || v.content?.drive_file_url || (driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : null);
+        const driveFolderId = v.content?.drive_folder_id || null;
+        const driveFolderUrl = v.content?.drive_folder_url || (driveFolderId ? `https://drive.google.com/drive/folders/${driveFolderId}` : null);
+
+        list.push({
+          id: v.id,
+          minuteId: v.id,
+          meetingId: m.id,
+          meetingTitle: m.title || 'Reunión de Concertación / Seguimiento',
+          meetingType: m.meeting_type || 'concertation',
+          meetingDate: m.starts_at || m.meeting_date || m.created_at,
+          version: v.version || 1,
+          status: v.status || 'draft',
+          finalizedAt: v.finalized_at || v.created_at,
+          driveFileId,
+          driveUrl,
+          driveFolderUrl,
+          signaturesCount: (v.signatures || []).length
+        });
+      } else if (m.status || m.title) {
+        list.push({
+          id: `m_${m.id}`,
+          minuteId: null,
+          meetingId: m.id,
+          meetingTitle: m.title || 'Reunión de Concertación',
+          meetingType: m.meeting_type || 'concertation',
+          meetingDate: m.starts_at || m.created_at,
+          version: 1,
+          status: m.status || 'draft',
+          finalizedAt: m.created_at,
+          driveFileId: null,
+          driveUrl: null,
+          driveFolderUrl: null,
+          signaturesCount: 0
+        });
+      }
+    });
+
+    if (list.length === 0 && detail.latest_minute_id) {
+      const driveFileId = detail.drive_file_id || null;
+      list.push({
+        id: detail.latest_minute_id,
+        minuteId: detail.latest_minute_id,
+        meetingId: null,
+        meetingTitle: 'Acta Oficial COM-IF-FR-002',
+        meetingType: 'concertation',
+        meetingDate: detail.created_at,
+        version: 1,
+        status: detail.latest_minute_status || 'finalized',
+        finalizedAt: detail.updated_at,
+        driveFileId,
+        driveUrl: driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : null,
+        driveFolderUrl: null,
+        signaturesCount: 1
+      });
+    }
+
+    return list.sort((a, b) => new Date(b.finalizedAt || b.meetingDate || 0) - new Date(a.finalizedAt || a.meetingDate || 0));
+  }, [detail]);
+
+  const filteredActas = useMemo(() => {
+    if (!minuteSearch.trim()) return planActas;
+    const term = minuteSearch.toLowerCase().trim();
+    return planActas.filter((a) =>
+      (a.meetingTitle || '').toLowerCase().includes(term) ||
+      (a.meetingType || '').toLowerCase().includes(term) ||
+      (a.status || '').toLowerCase().includes(term) ||
+      (a.version?.toString() || '').includes(term)
+    );
+  }, [planActas, minuteSearch]);
+
   const handleOpenEvidenceModal = (it) => {
     setEvidenceItem(it);
     setEvidenceModalOpen(true);
@@ -2491,7 +2751,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
           position: 'relative', overflow: 'hidden', px: { xs: 2.25, sm: 3, md: 4 }, py: { xs: 2, md: 2.5 },
           background: 'linear-gradient(115deg, #204698 0%, #2563eb 58%, #593cf0 100%)', color: '#ffffff'
         }}>
-          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            justifyContent="space-between"
+            alignItems={{ md: 'center' }}
+            gap={2}
+            sx={{ pr: { xs: 10, sm: 13 } }}
+          >
             <Box>
               <Stack direction="row" alignItems="center" spacing={1.5} mb={0.5} flexWrap="wrap" useFlexGap>
                 <Box sx={{ width: 9, height: 34, borderRadius: 4, bgcolor: '#cddcff', boxShadow: '0 3px 9px rgba(15,40,100,.24)', flexShrink: 0 }} />
@@ -2511,23 +2777,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               )}
             </Box>
             <Stack direction="row" spacing={1.25} alignItems="center" sx={{ position: 'relative', zIndex: 1 }} flexWrap="wrap">
-              <Button
-                variant="contained"
-                startIcon={<ChatBubbleOutline sx={{ fontSize: 18 }} />}
-                onClick={() => setFeedbackChatModalOpen(true)}
-                sx={{
-                  fontWeight: 850,
-                  fontSize: 12.5,
-                  textTransform: 'none',
-                  borderRadius: 2,
-                  bgcolor: '#008069',
-                  color: '#ffffff',
-                  boxShadow: '0 4px 12px rgba(0,128,105,.35)',
-                  '&:hover': { bgcolor: '#006a57' }
-                }}
-              >
-                💬 Chat con Líder {chatThread.length > 0 ? `(${chatThread.length})` : ''}
-              </Button>
               {detail && ['owner_validation', 'formulation', 'technical_review'].includes(detail.status) && (
                 <Button
                   variant="contained"
@@ -2554,22 +2803,65 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   sx={{ bgcolor: '#059669', color: '#ffffff', fontWeight: 800, fontSize: 12, px: 1 }}
                 />
               )}
-              <Button
-                variant="outlined"
-                onClick={load}
-                startIcon={<Refresh />}
-                sx={{ '&&': { color: '#ffffff', borderColor: 'rgba(255,255,255,.72)', bgcolor: 'rgba(255,255,255,.10)' }, '&&:hover': { color: '#ffffff', borderColor: '#ffffff', bgcolor: 'rgba(255,255,255,.20)' }, textTransform: 'none', fontWeight: 800, borderRadius: 2.5 }}
-              >
-                Actualizar
-              </Button>
-              <Button
-                variant="contained"
-                onClick={onClose}
-                sx={{ '&&': { color: '#ffffff', background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.40)' }, '&&:hover': { color: '#ffffff', background: 'rgba(255,255,255,.28)' }, fontWeight: 900, textTransform: 'none', borderRadius: 2.5, boxShadow: '0 5px 14px rgba(24,43,116,.18)' }}
-              >
-                Cerrar
-              </Button>
             </Stack>
+          </Stack>
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            sx={{
+              position: 'absolute',
+              top: { xs: 12, sm: 16 },
+              right: { xs: 12, sm: 18 },
+              zIndex: 10
+            }}
+          >
+            <Tooltip title="Actualizar">
+              <IconButton
+                aria-label="actualizar"
+                onClick={load}
+                sx={{
+                  color: '#ffffff',
+                  bgcolor: 'rgba(255,255,255,.16)',
+                  border: '1px solid rgba(255,255,255,.38)',
+                  borderRadius: 2,
+                  p: 0.85,
+                  boxShadow: '0 4px 12px rgba(15,23,42,.18)',
+                  '&:hover': {
+                    color: '#ffffff',
+                    bgcolor: 'rgba(255,255,255,.28)',
+                    borderColor: '#ffffff',
+                    transform: 'scale(1.05)'
+                  },
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Refresh sx={{ fontSize: 21 }} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Cerrar">
+              <IconButton
+                aria-label="cerrar"
+                onClick={onClose}
+                sx={{
+                  color: '#ffffff',
+                  bgcolor: 'rgba(255,255,255,.18)',
+                  border: '1px solid rgba(255,255,255,.40)',
+                  borderRadius: 2,
+                  p: 0.85,
+                  boxShadow: '0 4px 12px rgba(15,23,42,.18)',
+                  '&:hover': {
+                    color: '#ffffff',
+                    bgcolor: 'rgba(255,255,255,.28)',
+                    borderColor: '#ffffff',
+                    transform: 'scale(1.05)'
+                  },
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Close sx={{ fontSize: 22 }} />
+              </IconButton>
+            </Tooltip>
           </Stack>
         </Box>
       </DialogTitle>
@@ -2636,30 +2928,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               </Tabs>
             </Paper>
 
-            {/* BARRA SNIPPET ELEGANTE Y COMPACTA DE OBSERVACIONES DEL LÍDER (Abre ventana emergente tipo chat) */}
-            <LeaderFeedbackSnippet
-              info={adjustmentInfo}
-              isCurrentStatus={detail?.status === 'adjustments'}
-              chatCount={chatThread.length}
-              leaderNameFallback={detail.currentResponsibility?.responsibleUser?.nombre || detail.responsibleUser?.nombre || 'Líder'}
-              onOpenChat={() => setFeedbackChatModalOpen(true)}
-            />
-
             {/* TAB 1: PLAN Y ACTIVIDADES */}
             {tab === 'activities' && (
               <>
-                <Paper variant="outlined" sx={{ borderRadius: 4, p: { xs: 1.25, sm: 1.5 }, borderColor: '#d9e3ee', bgcolor: '#ffffff', boxShadow: '0 5px 18px rgba(80,105,135,.045)' }}>
-                  <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} sx={{ px: 0.25, pb: 1 }}><Typography fontWeight={950} color="#303a53">Información del Plan de Acción</Typography><Chip size="small" label={detail.schema_is_snapshot ? `Estructura guardada · V${formSchema?.configuration_version || detail.instrument_version}` : 'Estructura compatible'} sx={{ alignSelf: { xs: 'flex-start', sm: 'center' }, fontWeight: 850, bgcolor: detail.schema_is_snapshot ? '#ddf6e9' : '#fff1d8', color: detail.schema_is_snapshot ? '#277659' : '#9a641b', border: `1px solid ${detail.schema_is_snapshot ? '#bce8d3' : '#f3deb7'}` }} /></Stack>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))', lg: 'repeat(4,minmax(0,1fr))' }, gap: 1.25 }}>
-                    {[
-                      ['PED', detailPed?.name || activePed?.name || '—'],
-                      ['Vigencia', detail.term?.year || '—'],
-                      ['Dependencia', detail.organizationalUnit?.name || '—'],
-                      ['Responsable', detail.currentResponsibility?.responsibleUser?.nombre || '—']
-                    ].map(([label, value]) => <Box key={label} sx={{ px: 1.75, py: 1.1, bgcolor: '#f8fbff', border: '1px solid #e0e8f1', borderRadius: 2.5, minWidth: 0 }}><Typography variant="caption" color="#708096" fontWeight={850}>{label.toUpperCase()}</Typography><Typography fontWeight={900} color="#303a53" noWrap title={String(value)} sx={{ fontSize: 14.5 }}>{value}</Typography></Box>)}
-                  </Box>
-                </Paper>
-
                 {/* TARJETA DE VIGENCIA Y PLAZO DE FORMULACIÓN (ETAPA 1) */}
                 <Paper
                   variant="outlined"
@@ -2837,7 +3108,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             </TableCell>
                           </TableRow>
                         ) : (
-                          detail.items.map((row) => (
+                          detail.items.slice(itemsPage * itemsRowsPerPage, itemsPage * itemsRowsPerPage + itemsRowsPerPage).map((row) => (
                             <TableRow key={row.id} hover sx={{ '&:nth-of-type(even)': { bgcolor: '#f8fafc' } }}>
                               <TableCell sx={{ position: 'sticky', left: 0, bgcolor: 'inherit', fontWeight: 900, color: '#5688c7', zIndex: 1 }}>
                                 {row.code}
@@ -2854,6 +3125,26 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </TableBody>
                     </Table>
                   </TableContainer>
+                  <TablePagination
+                    component="div"
+                    count={detail.items?.length || 0}
+                    page={itemsPage}
+                    onPageChange={(_, newPage) => setItemsPage(newPage)}
+                    rowsPerPage={itemsRowsPerPage}
+                    onRowsPerPageChange={(e) => {
+                      setItemsRowsPerPage(parseInt(e.target.value, 10));
+                      setItemsPage(0);
+                    }}
+                    rowsPerPageOptions={[5, 10, 20, 50]}
+                    labelRowsPerPage="Filas por página:"
+                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} de ${count !== -1 ? count : `más de ${to}`}`}
+                    sx={{
+                      borderTop: '1px solid #e2e8f0',
+                      bgcolor: '#ffffff',
+                      '.MuiTablePagination-toolbar': { minHeight: 48, px: 2 },
+                      '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': { fontSize: 12.5, fontWeight: 700, color: '#475569' }
+                    }}
+                  />
                 </Paper>
               </>
             )}
@@ -4469,39 +4760,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     </Stack>
                   </Stack>
 
-                  {/* CHIPS RESUMEN METADATOS EN TIEMPO REAL */}
-                  <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2.5, border: '1px solid #e2e8f0', mb: 3 }}>
-                    <Box sx={{ minWidth: 160 }}>
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Actividades formuladas</Typography>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 16 }}>{detail?.items?.length || 0} registradas</Typography>
-                    </Box>
-                    <Box sx={{ minWidth: 180 }}>
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Dependencia / Unidad</Typography>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>{detail?.organizationalUnit?.name || detail?.title || '—'}</Typography>
-                    </Box>
-                    <Box sx={{ minWidth: 120 }}>
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Vigencia</Typography>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>{detail?.term?.year || '—'}</Typography>
-                    </Box>
-                    <Box sx={{ minWidth: 130 }}>
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Código</Typography>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>{detail?.code || '—'}</Typography>
-                    </Box>
-                    <Box sx={{ minWidth: 160 }}>
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Estado en el Flujo</Typography>
-                      <Typography sx={{ fontWeight: 900, color: '#2563eb', fontSize: 14 }}>{STATUS_LABELS[detail?.status] || detail?.status}</Typography>
-                    </Box>
-                  </Stack>
-
-                  {/* OBSERVACIONES DEL LÍDER EN EL FLUJO */}
-                  <LeaderFeedbackSnippet
-                    info={adjustmentInfo}
-                    isCurrentStatus={detail?.status === 'adjustments'}
-                    chatCount={chatThread.length}
-                    leaderNameFallback={detail.currentResponsibility?.responsibleUser?.nombre || detail.responsibleUser?.nombre || 'Líder'}
-                    onOpenChat={() => setFeedbackChatModalOpen(true)}
-                  />
-
                   {/* SECCIÓN SINCRONIZACIÓN AUTOMÁTICA EN GOOGLE DRIVE */}
                   <Paper
                     variant="outlined"
@@ -4629,6 +4887,278 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </Stack>
                     </Stack>
                   </Paper>
+                </Paper>
+
+                {/* TABLA DE ACTAS DE REUNIÓN VINCULADAS AL PLAN (CONSULTA DRIVE) */}
+                <Paper
+                  elevation={0}
+                  sx={{
+                    borderRadius: 3.5,
+                    bgcolor: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
+                    overflow: 'hidden'
+                  }}
+                >
+                  {/* BUSCADOR Y RESUMEN */}
+                  <Box sx={{ p: { xs: 1.5, sm: 2 }, borderBottom: '1px solid #f1f5f9' }}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+                      <Typography sx={{ fontWeight: 800, fontSize: 13, color: '#334155' }}>
+                        Mostrando <b>{filteredActas.length}</b> actas oficiales COM-IF-FR-002 registradas
+                      </Typography>
+                      <TextField
+                        size="small"
+                        placeholder="Buscar acta por reunión, fecha..."
+                        value={minuteSearch}
+                        onChange={(e) => setMinuteSearch(e.target.value)}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <Search sx={{ color: '#94a3b8', fontSize: 18 }} />
+                            </InputAdornment>
+                          )
+                        }}
+                        sx={{
+                          width: { xs: '100%', sm: 320 },
+                          '& .MuiOutlinedInput-root': { borderRadius: 2.2, bgcolor: '#ffffff', fontSize: 12.5, height: 36 }
+                        }}
+                      />
+                    </Stack>
+                  </Box>
+
+                  {/* TIRA INSTITUCIONAL (FILA 5 EXCEL) */}
+                  <Box
+                    sx={{
+                      p: 1.25,
+                      px: 2.5,
+                      bgcolor: '#f5f3ff',
+                      borderBottom: '2px solid #7e22ce',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 1
+                    }}
+                  >
+                    <Typography sx={{ fontWeight: 900, fontSize: 13, color: '#581c87', letterSpacing: 0.5 }}>
+                      {`ACTAS DE REUNIÓN · ${(detail?.organizationalUnit?.name || detail?.title || 'PLAN DE ACCIÓN').toUpperCase()}`}
+                    </Typography>
+                    <Stack direction="row" spacing={1.5} alignItems="center">
+                      <Button
+                        size="small"
+                        variant="contained"
+                        startIcon={<FolderSharedIcon sx={{ fontSize: 14 }} />}
+                        onClick={handleOpenMinutesFolder}
+                        sx={{
+                          textTransform: 'none',
+                          fontWeight: 850,
+                          fontSize: 11,
+                          borderRadius: 2,
+                          py: 0.3,
+                          px: 1.4,
+                          bgcolor: '#7e22ce',
+                          color: '#ffffff',
+                          boxShadow: 'none',
+                          '&:hover': { bgcolor: '#6b21a8' }
+                        }}
+                      >
+                        Carpeta en Google Drive
+                      </Button>
+                      <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#7e22ce' }}>
+                        FORMATO OFICIAL DIR-PE-FR-003 · ACTAS DE REUNIÓN
+                      </Typography>
+                    </Stack>
+                  </Box>
+
+                  <TableContainer sx={{ maxHeight: '65vh', overflowX: 'auto' }}>
+                    <Table stickyHeader size="small" sx={{ minWidth: 980 }}>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, textAlign: 'center', width: 55, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                            NO.
+                          </TableCell>
+                          <TableCell sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 140, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                            DOCUMENTO
+                          </TableCell>
+                          <TableCell sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, minWidth: 260, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                            REUNIÓN / ASUNTO
+                          </TableCell>
+                          <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 130, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                            TIPO
+                          </TableCell>
+                          <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 130, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                            FECHA
+                          </TableCell>
+                          <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 90, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                            VERSIÓN
+                          </TableCell>
+                          <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 180, py: 1.2, borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+                            ESTADO
+                          </TableCell>
+                          <TableCell align="center" sx={{ bgcolor: '#4c1d95', color: '#ffffff', fontWeight: 900, fontSize: 11, width: 220, py: 1.2 }}>
+                            CONSULTA EN REPOSITORIO
+                          </TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {filteredActas.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={8} sx={{ textAlign: 'center', py: 6, color: '#64748b' }}>
+                              <Stack spacing={1.5} alignItems="center" justifyContent="center">
+                                <Description sx={{ fontSize: 48, color: '#cbd5e1' }} />
+                                <Typography sx={{ fontWeight: 800, fontSize: 14, color: '#334155' }}>
+                                  No hay actas registradas para este plan de acción
+                                </Typography>
+                                <Typography sx={{ fontSize: 12, color: '#64748b', maxWidth: 480 }}>
+                                  Las actas generadas en la Etapa 2 (Concertación) o en las reuniones de seguimiento se sincronizan en Google Drive y aparecerán listadas aquí para su consulta directa.
+                                </Typography>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  startIcon={<FolderSharedIcon sx={{ fontSize: 15 }} />}
+                                  onClick={handleOpenMinutesFolder}
+                                  sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, mt: 1, borderColor: '#c084fc', color: '#7e22ce' }}
+                                >
+                                  Ver Carpeta de Actas en Google Drive
+                                </Button>
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          filteredActas.slice(actasPage * actasRowsPerPage, actasPage * actasRowsPerPage + actasRowsPerPage).map((acta, idx) => (
+                            <TableRow key={acta.id || idx} hover sx={{ '&:hover': { bgcolor: '#faf5ff' } }}>
+                              <TableCell align="center" sx={{ fontWeight: 800, color: '#475569', fontSize: 11.5, verticalAlign: 'middle', py: 1.2 }}>
+                                {actasPage * actasRowsPerPage + idx + 1}
+                              </TableCell>
+                              <TableCell sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                                <Chip
+                                  size="small"
+                                  label="COM-IF-FR-002"
+                                  sx={{ fontWeight: 850, fontSize: 10.5, bgcolor: '#f3e8ff', color: '#6b21a8', height: 22 }}
+                                />
+                              </TableCell>
+                              <TableCell sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                                <Typography sx={{ fontWeight: 800, fontSize: 12.5, color: '#0f172a' }}>
+                                  {acta.meetingTitle}
+                                </Typography>
+                              </TableCell>
+                              <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                                <Chip
+                                  size="small"
+                                  label={acta.meetingType === 'concertation' ? 'Concertación' : 'Seguimiento'}
+                                  sx={{
+                                    fontWeight: 750,
+                                    fontSize: 10,
+                                    height: 20,
+                                    bgcolor: acta.meetingType === 'concertation' ? '#eff6ff' : '#f0fdf4',
+                                    color: acta.meetingType === 'concertation' ? '#1d4ed8' : '#15803d'
+                                  }}
+                                />
+                              </TableCell>
+                              <TableCell align="center" sx={{ fontSize: 11.5, color: '#475569', verticalAlign: 'middle', py: 1.2 }}>
+                                {formatFecha(acta.finalizedAt || acta.meetingDate)}
+                              </TableCell>
+                              <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                                <Chip
+                                  size="small"
+                                  label={`v${acta.version}.0`}
+                                  sx={{ fontWeight: 800, fontSize: 10.5, height: 20, bgcolor: '#f1f5f9', color: '#334155' }}
+                                />
+                              </TableCell>
+                              <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                                <Chip
+                                  size="small"
+                                  icon={<CheckCircle sx={{ fontSize: '13px !important', color: (acta.status === 'finalized' ? '#15803d' : '#92400e') + ' !important' }} />}
+                                  label={acta.status === 'finalized' ? 'Formalizada en Repositorio' : (acta.status === 'signing' ? 'En Firma por Correo' : 'Borrador')}
+                                  sx={{
+                                    fontWeight: 800,
+                                    fontSize: 10.5,
+                                    height: 22,
+                                    bgcolor: acta.status === 'finalized' ? '#dcfce7' : '#fef3c7',
+                                    color: acta.status === 'finalized' ? '#15803d' : '#92400e'
+                                  }}
+                                />
+                              </TableCell>
+                              <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2 }}>
+                                <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
+                                  {(acta.driveUrl || acta.driveFileId) ? (
+                                    <Button
+                                      size="small"
+                                      variant="contained"
+                                      startIcon={<InsertDriveFile sx={{ fontSize: 14 }} />}
+                                      onClick={() => window.open(acta.driveUrl || `https://drive.google.com/file/d/${acta.driveFileId}/view`, '_blank', 'noopener,noreferrer')}
+                                      sx={{
+                                        textTransform: 'none',
+                                        fontWeight: 850,
+                                        fontSize: 11,
+                                        py: 0.4,
+                                        px: 1.2,
+                                        borderRadius: 2,
+                                        bgcolor: '#15803d',
+                                        boxShadow: 'none',
+                                        '&:hover': { bgcolor: '#166534' }
+                                      }}
+                                    >
+                                      Ver en Drive
+                                    </Button>
+                                  ) : (
+                                    <Chip size="small" label="Sin enlace" sx={{ fontSize: 10, color: '#94a3b8' }} />
+                                  )}
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<Visibility sx={{ fontSize: 14 }} />}
+                                    onClick={() => {
+                                      if (acta.minuteId) {
+                                        handlePreviewMinute(acta.minuteId, acta.meetingTitle);
+                                      } else if (acta.meetingId) {
+                                        setSelectedMeetingId(String(acta.meetingId));
+                                        setTab('meeting');
+                                        enqueueSnackbar('Abriendo borrador del acta en la Etapa 2.', { variant: 'info' });
+                                      }
+                                    }}
+                                    sx={{
+                                      textTransform: 'none',
+                                      fontWeight: 850,
+                                      fontSize: 11,
+                                      py: 0.4,
+                                      px: 1,
+                                      borderRadius: 2,
+                                      borderColor: '#cbd5e1',
+                                      color: '#334155',
+                                      '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8' }
+                                    }}
+                                  >
+                                    Visor
+                                  </Button>
+                                </Stack>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                  <TablePagination
+                    component="div"
+                    count={filteredActas.length}
+                    page={actasPage}
+                    onPageChange={(_, newPage) => setActasPage(newPage)}
+                    rowsPerPage={actasRowsPerPage}
+                    onRowsPerPageChange={(e) => {
+                      setActasRowsPerPage(parseInt(e.target.value, 10));
+                      setActasPage(0);
+                    }}
+                    rowsPerPageOptions={[5, 10, 20, 50]}
+                    labelRowsPerPage="Filas por página:"
+                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} de ${count !== -1 ? count : `más de ${to}`}`}
+                    sx={{
+                      borderTop: '1px solid #e2e8f0',
+                      bgcolor: '#ffffff',
+                      '.MuiTablePagination-toolbar': { minHeight: 48, px: 2 },
+                      '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': { fontSize: 12.5, fontWeight: 700, color: '#475569' }
+                    }}
+                  />
                 </Paper>
               </Stack>
             )}
@@ -4941,11 +5471,38 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           <TableCell align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 800, color: '#1e293b', width: 115, py: 1.2, px: 1, fontSize: 11.5 }}>
                             Plazo
                           </TableCell>
-                          {periods.map((p) => (
-                            <TableCell key={p.id} align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 800, color: '#1e293b', width: 90, py: 1.2, px: 0.5, fontSize: 11.5 }}>
-                              Avance {p.code || p.name}
-                            </TableCell>
-                          ))}
+                          {periods.map((p, pIdx) => {
+                            const isS1 = (p.code || '').toUpperCase() === 'S1' || /1|prim/i.test(p.name || '') || pIdx === 0;
+                            const isS2 = (p.code || '').toUpperCase() === 'S2' || /2|seg/i.test(p.name || '') || pIdx === 1;
+                            const title = isS1 ? 'AVANCE S1' : (isS2 ? 'AVANCE S2' : `AVANCE ${p.code || p.name}`);
+                            const subtitle = isS1 ? '(1 ENE - 31 JUL)' : (isS2 ? '(1 AGO - 31 DIC)' : '');
+                            return (
+                              <TableCell
+                                key={p.id}
+                                align="center"
+                                sx={{
+                                  bgcolor: '#f1f5f9',
+                                  color: '#1e293b',
+                                  width: 125,
+                                  minWidth: 115,
+                                  py: 0.8,
+                                  px: 0.5,
+                                  borderRight: '1px solid #cbd5e1'
+                                }}
+                              >
+                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                                  <Typography sx={{ fontWeight: 800, fontSize: 11, lineHeight: 1.2, color: '#1e293b' }}>
+                                    {title}
+                                  </Typography>
+                                  {subtitle && (
+                                    <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#64748b', lineHeight: 1.15, mt: 0.25, whiteSpace: 'nowrap' }}>
+                                      {subtitle}
+                                    </Typography>
+                                  )}
+                                </Box>
+                              </TableCell>
+                            );
+                          })}
                           <TableCell align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 800, color: '#1e293b', width: 125, minWidth: 115, py: 1.2, px: 1, fontSize: 11.5 }}>
                             Cumplimiento
                           </TableCell>
@@ -4965,7 +5522,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             </TableCell>
                           </TableRow>
                         ) : (
-                          tab4FilteredItems.map((it) => {
+                          tab4FilteredItems.slice(tab4Page * tab4RowsPerPage, tab4Page * tab4RowsPerPage + tab4RowsPerPage).map((it) => {
                             const evidences = it.evidence || [];
                             // Cálculo de cumplimiento de la actividad
                             const validResults = (it.monitoringResults || []).filter((r) => r.physical_progress !== null && r.physical_progress !== undefined && !isNaN(Number(r.physical_progress)));
@@ -5216,6 +5773,26 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </TableBody>
                     </Table>
                   </TableContainer>
+                  <TablePagination
+                    component="div"
+                    count={tab4FilteredItems.length}
+                    page={tab4Page}
+                    onPageChange={(_, newPage) => setTab4Page(newPage)}
+                    rowsPerPage={tab4RowsPerPage}
+                    onRowsPerPageChange={(e) => {
+                      setTab4RowsPerPage(parseInt(e.target.value, 10));
+                      setTab4Page(0);
+                    }}
+                    rowsPerPageOptions={[5, 10, 20, 50]}
+                    labelRowsPerPage="Filas por página:"
+                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} de ${count !== -1 ? count : `más de ${to}`}`}
+                    sx={{
+                      borderTop: '1px solid #e2e8f0',
+                      bgcolor: '#ffffff',
+                      '.MuiTablePagination-toolbar': { minHeight: 48, px: 2 },
+                      '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': { fontSize: 12.5, fontWeight: 700, color: '#475569' }
+                    }}
+                  />
                 </Paper>
               </Stack>
             )}
@@ -6088,7 +6665,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         </DialogContent>
       </Dialog>
 
-      {/* DIÁLOGO: PREVISUALIZACIÓN OFICIAL EN TIEMPO REAL DEL PLAN DE ACCIÓN */}
+      {/* DIÁLOGO: PREVISUALIZACIÓN OFICIAL EN TIEMPO REAL DEL PLAN DE ACCIÓN (VISTA DEL LÍDER EN MODO LECTURA) */}
       <Dialog
         open={previewPlanModalOpen}
         onClose={() => setPreviewPlanModalOpen(false)}
@@ -6097,272 +6674,19 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         PaperProps={{
           sx: {
             borderRadius: 3.5,
-            height: '90vh',
-            display: 'flex',
-            flexDirection: 'column',
-            bgcolor: '#f8fafc'
+            height: '92vh',
+            bgcolor: '#f8fafc',
+            p: { xs: 1.5, md: 2.5 },
+            overflow: 'auto'
           }
         }}
       >
-        <DialogTitle sx={{ p: 2.5, bgcolor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
-          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: '#ecfdf5', border: '1px solid #a7f3d0', display: 'grid', placeItems: 'center', color: '#059669', flexShrink: 0 }}>
-                <ExcelIcon sx={{ fontSize: 26 }} />
-              </Box>
-              <Box>
-                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                  <Typography variant="h6" fontWeight={900} color="#0f172a" sx={{ fontSize: 17 }}>
-                    Plan de Acción DIR-PE-FR-003 · Previsualización Oficial
-                  </Typography>
-                  <Chip
-                    label={`Vigencia ${detail?.term?.year || ''}`}
-                    size="small"
-                    sx={{ fontWeight: 800, bgcolor: '#dbeafe', color: '#1e40af', fontSize: 11 }}
-                  />
-                  <Chip
-                    label="Tiempo Real"
-                    size="small"
-                    sx={{ fontWeight: 800, bgcolor: '#dcfce7', color: '#15803d', fontSize: 11 }}
-                  />
-                </Stack>
-                <Typography variant="body2" color="#64748b" sx={{ fontSize: 13, mt: 0.25 }}>
-                  {detail?.organizationalUnit?.name || detail?.title} · Código: <strong>{detail?.code}</strong> · Total actividades: <strong>{detail?.items?.length || 0}</strong>
-                </Typography>
-              </Box>
-            </Stack>
-
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <TextField
-                size="small"
-                placeholder="Buscar actividad, indicador..."
-                value={previewPlanSearch}
-                onChange={(e) => setPreviewPlanSearch(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <Search sx={{ color: '#94a3b8', fontSize: 20 }} />
-                    </InputAdornment>
-                  ),
-                  sx: { borderRadius: 2, bgcolor: '#f8fafc', fontSize: 13, width: { xs: 200, sm: 260 } }
-                }}
-              />
-              <Button
-                variant="contained"
-                startIcon={<Download />}
-                onClick={exportPlan}
-                sx={{
-                  borderRadius: 2.5,
-                  fontWeight: 850,
-                  textTransform: 'none',
-                  bgcolor: '#16a34a',
-                  '&:hover': { bgcolor: '#15803d' },
-                  height: 38
-                }}
-              >
-                Exportar Excel
-              </Button>
-              <IconButton onClick={() => setPreviewPlanModalOpen(false)} sx={{ color: '#64748b' }}>
-                <Close />
-              </IconButton>
-            </Stack>
-          </Stack>
-        </DialogTitle>
-
-        {/* SELECTOR DE HOJA TIPO EXCEL (PLAN DE ACCIÓN vs EN CORRESPONSABILIDAD) */}
-        <Box sx={{ px: 2.5, bgcolor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
-          <Tabs
-            value={previewSheetTab}
-            onChange={(e, val) => setPreviewSheetTab(val)}
-            sx={{
-              minHeight: 40,
-              '& .MuiTabs-indicator': {
-                bgcolor: previewSheetTab === 0 ? '#1f3864' : '#800000',
-                height: 3,
-                borderRadius: 2
-              }
-            }}
-          >
-            <Tab
-              value={0}
-              label={
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Typography sx={{ fontSize: 13, fontWeight: previewSheetTab === 0 ? 900 : 700 }}>
-                    Hoja 1: PLAN DE ACCIÓN
-                  </Typography>
-                  <Chip
-                    size="small"
-                    label={detail?.items?.length || 0}
-                    sx={{
-                      bgcolor: previewSheetTab === 0 ? '#dbeafe' : '#f1f5f9',
-                      color: previewSheetTab === 0 ? '#1e40af' : '#64748b',
-                      fontWeight: 850,
-                      fontSize: 10.5,
-                      height: 20
-                    }}
-                  />
-                </Stack>
-              }
-              sx={{ textTransform: 'none', px: 2, minHeight: 40, color: previewSheetTab === 0 ? '#1f3864' : '#64748b' }}
-            />
-            <Tab
-              value={1}
-              label={
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Typography sx={{ fontSize: 13, fontWeight: previewSheetTab === 1 ? 900 : 700 }}>
-                    Hoja 2: EN CORRESPONSABILIDAD
-                  </Typography>
-                  <Chip
-                    size="small"
-                    label={coResponsiblePreviewItems.length}
-                    sx={{
-                      bgcolor: previewSheetTab === 1 ? '#fee2e2' : '#f1f5f9',
-                      color: previewSheetTab === 1 ? '#991b1b' : '#64748b',
-                      fontWeight: 850,
-                      fontSize: 10.5,
-                      height: 20
-                    }}
-                  />
-                </Stack>
-              }
-              sx={{ textTransform: 'none', px: 2, minHeight: 40, color: previewSheetTab === 1 ? '#800000' : '#64748b' }}
-            />
-          </Tabs>
-        </Box>
-
-        <DialogContent sx={{ p: 2.5, flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <Paper variant="outlined" sx={{ flex: 1, borderRadius: 3, bgcolor: '#ffffff', borderColor: '#b4c6e7', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {/* ENCABEZADO INSTITUCIONAL OFICIAL */}
-            <Box sx={{ bgcolor: '#ffffff', borderBottom: '1px solid #cbd5e1', py: 1, px: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-              <img
-                src="/Encabezado_correos.png"
-                alt="Universidad CESMAG"
-                style={{ maxHeight: 54, maxWidth: '100%', objectFit: 'contain' }}
-              />
-            </Box>
-
-            {/* TIRA INSTITUCIONAL FILA 5 EXCEL */}
-            <Box
-              sx={{
-                p: 1.25,
-                px: 2.5,
-                bgcolor: previewSheetTab === 0 ? '#d9e2f3' : '#fef3c7',
-                borderBottom: `2px solid ${previewSheetTab === 0 ? '#2f5597' : '#b45309'}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: 1
-              }}
-            >
-              <Typography sx={{ fontWeight: 900, fontSize: 13, color: previewSheetTab === 0 ? '#1f3864' : '#78350f', letterSpacing: 0.5 }}>
-                {previewSheetTab === 0
-                  ? `${detail?.code || 'RXX'}_ ${(detail?.organizationalUnit?.name || detail?.title || 'PLAN DE ACCIÓN').toUpperCase()}`
-                  : `ACTIVIDADES EN CORRESPONSABILIDAD · ${(detail?.organizationalUnit?.name || detail?.title || 'PLAN DE ACCIÓN').toUpperCase()}`}
-              </Typography>
-              <Typography sx={{ fontSize: 11, fontWeight: 800, color: previewSheetTab === 0 ? '#2f5597' : '#b45309' }}>
-                FORMATO OFICIAL DIR-PE-FR-003 · HOJA: {previewSheetTab === 0 ? 'PLAN DE ACCIÓN' : 'EN CORRESPONSABILIDAD'}
-              </Typography>
-            </Box>
-
-            <TableContainer sx={{ flex: 1, maxHeight: 'calc(90vh - 220px)' }}>
-              <Table stickyHeader size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ bgcolor: previewSheetTab === 0 ? '#2f5597' : '#78350f', color: '#ffffff', fontWeight: 900, fontSize: 12, minWidth: 80, zIndex: 3, position: 'sticky', left: 0, borderRight: '1px solid #ffffff' }}>
-                      No.
-                    </TableCell>
-                    {recordColumns.map((col) => {
-                      const isResp = col.key === 'responsables' || col.key === 'responsable';
-                      const isCorresp = col.key === 'corresponsables' || col.key === 'corresponsable';
-                      const headerBg = isResp ? '#c00000' : isCorresp ? '#800000' : (previewSheetTab === 0 ? '#2f5597' : '#78350f');
-                      return (
-                        <TableCell key={col.key} sx={{ bgcolor: headerBg, color: '#ffffff', fontWeight: 900, fontSize: 12, minWidth: 160, whiteSpace: 'nowrap', borderRight: '1px solid #ffffff' }}>
-                          {col.label?.toUpperCase() || col.key}
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {(previewSheetTab === 0 ? filteredPreviewItems : filteredCoPreviewItems).length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={recordColumns.length + 1} align="center" sx={{ py: 8 }}>
-                        <Typography color="#64748b" fontWeight={700}>
-                          {previewPlanSearch
-                            ? 'No se encontraron actividades que coincidan con la búsqueda.'
-                            : previewSheetTab === 0
-                              ? 'No hay actividades registradas en el Plan de Acción todavía.'
-                              : 'No hay actividades asignadas en corresponsabilidad para esta dependencia en esta vigencia.'}
-                        </Typography>
-                        <Typography variant="caption" color="#94a3b8">
-                          {previewSheetTab === 0
-                            ? 'Las actividades creadas en la Etapa 1 se reflejan aquí de forma inmediata.'
-                            : 'Cuando otras dependencias agreguen esta dependencia como corresponsable, aparecerán aquí.'}
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    (previewSheetTab === 0 ? filteredPreviewItems : filteredCoPreviewItems).map((row, idx) => (
-                      <TableRow key={row.id || idx} hover sx={{ '&:hover': { filter: 'brightness(0.97)' } }}>
-                        <TableCell sx={{ position: 'sticky', left: 0, bgcolor: previewSheetTab === 0 ? '#d9e2f3' : '#fef3c7', fontWeight: 900, color: previewSheetTab === 0 ? '#1f3864' : '#78350f', fontSize: 12.5, zIndex: 1, borderRight: '1px solid #b4c6e7', textAlign: 'center' }}>
-                          {idx + 1}
-                          {previewSheetTab === 1 && row.parent_plan && (
-                            <Box sx={{ mt: 0.5 }}>
-                              <Chip
-                                size="small"
-                                label={row.parent_plan.code}
-                                title={`${row.parent_plan.dependency_name} (Líder: ${row.parent_plan.leader_name})`}
-                                sx={{ fontSize: 9.5, height: 18, bgcolor: '#ffffff', color: '#78350f', border: '1px solid #d97706', fontWeight: 800 }}
-                              />
-                            </Box>
-                          )}
-                        </TableCell>
-                        {recordColumns.map((field) => {
-                          const isResp = field.key === 'responsables' || field.key === 'responsable';
-                          const isCorresp = field.key === 'corresponsables' || field.key === 'corresponsable';
-                          const isWhiteCol = isResp || isCorresp;
-                          return (
-                            <TableCell
-                              key={field.key}
-                              sx={{
-                                bgcolor: isWhiteCol ? '#ffffff' : (previewSheetTab === 0 ? '#edf3fc' : '#fffbeb'),
-                                maxWidth: 340,
-                                whiteSpace: 'normal',
-                                fontSize: 12.5,
-                                color: '#1e293b',
-                                verticalAlign: 'top',
-                                py: 1.25,
-                                borderRight: '1px solid #e2e8f0'
-                              }}
-                            >
-                              {recordValue(row, field)}
-                            </TableCell>
-                          );
-                        })}
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Paper>
-        </DialogContent>
-
-        <DialogActions sx={{ p: 2, px: 3, bgcolor: '#ffffff', borderTop: '1px solid #e2e8f0', justifyContent: 'space-between' }}>
-          <Typography variant="caption" color="#64748b" fontWeight={600}>
-            {previewSheetTab === 0
-              ? `Mostrando ${filteredPreviewItems.length} de ${detail?.items?.length || 0} actividades · Hoja: PLAN DE ACCIÓN · Universidad CESMAG`
-              : `Mostrando ${filteredCoPreviewItems.length} de ${coResponsiblePreviewItems.length} actividades · Hoja: EN CORRESPONSABILIDAD · Universidad CESMAG`}
-          </Typography>
-          <Button
-            onClick={() => setPreviewPlanModalOpen(false)}
-            variant="outlined"
-            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}
-          >
-            Cerrar
-          </Button>
-        </DialogActions>
+        <PlanAccionConsulta
+          initialPlanId={detail?.id}
+          initialPlanData={detail}
+          readOnly={true}
+          onClose={() => setPreviewPlanModalOpen(false)}
+        />
       </Dialog>
 
       {/* DIÁLOGO ENVIAR PLAN AJUSTADO A REVISIÓN DEL LÍDER */}
@@ -6480,7 +6804,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
          ======================================================== */}
       <Dialog
         open={feedbackChatModalOpen}
-        onClose={() => setFeedbackChatModalOpen(false)}
+        onClose={handleCloseFeedbackChat}
         maxWidth="sm"
         fullWidth
         PaperProps={{
@@ -6548,20 +6872,20 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               <Typography sx={{ fontWeight: 850, fontSize: 15, lineHeight: 1.2, color: '#ffffff' }}>
                 {adjustmentInfo?.requested_by_name || detail?.responsibleUser?.nombre || 'Líder Responsable'}
               </Typography>
-              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 0.6 }}>
-                <span>{detail?.organizationalUnit?.name || 'Dependencia'}</span>
-                <span>·</span>
-                <span style={{ color: '#86efac', fontWeight: 700 }}>Canal de Ajustes & Correo</span>
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>
+                {detail?.organizationalUnit?.name || 'Dependencia'}
               </Typography>
             </Box>
           </Stack>
-          <IconButton
-            size="small"
-            onClick={() => setFeedbackChatModalOpen(false)}
-            sx={{ color: '#ffffff', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}
-          >
-            <Close sx={{ fontSize: 22 }} />
-          </IconButton>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <IconButton
+              size="small"
+              onClick={handleCloseFeedbackChat}
+              sx={{ color: '#ffffff', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}
+            >
+              <Close sx={{ fontSize: 22 }} />
+            </IconButton>
+          </Stack>
         </Box>
 
         {/* Cuerpo del Chat con Fondo WhatsApp (Doodle Beige / Pattern) */}
@@ -6588,73 +6912,112 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                 px: 2,
                 py: 0.9,
                 borderRadius: 2.5,
-                maxWidth: 500,
+                maxWidth: 520,
                 textAlign: 'center',
                 fontSize: 11.5,
                 lineHeight: 1.35,
                 boxShadow: '0 1px 1.5px rgba(0,0,0,0.08)',
-                border: '1px solid rgba(0,0,0,0.04)'
+                border: '1px solid rgba(0,0,0,0.04)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 0.7
               }}
             >
-              🔒 <strong>Canal Oficial de Concertación:</strong> Cada mensaje enviado en este chat se remite automáticamente al correo institucional del destinatario y queda registrado con trazabilidad en el Acta COM-IF-FR-002.
+              <LockOutlined sx={{ fontSize: 14, color: '#713f12', flexShrink: 0 }} />
+              <span>
+                <strong>Canal de Comunicación Directa:</strong> Este espacio es exclusivamente informativo para concertación y seguimiento mutuo, sin alterar actas ni documentos oficiales.
+              </span>
             </Paper>
           </Box>
 
-          {/* Listado de Mensajes en orden cronológico */}
-          {chatThread.map((msg, idx) => {
-            const isPlanningSender = msg.sender_type === 'planning';
-            const timeStr = msg.created_at
-              ? new Date(msg.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
-              : '';
+          {/* Listado de Mensajes en orden cronológico (Una persona a la izquierda, la otra a la derecha) */}
+          {chatThread.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4, color: '#64748b' }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 700 }}>
+                No hay mensajes previos en este canal.
+              </Typography>
+              <Typography sx={{ fontSize: 12, mt: 0.5 }}>
+                Escriba a continuación para comunicarse directamente sobre el plan de acción a su cargo.
+              </Typography>
+            </Box>
+          ) : (
+            (() => {
+              const threadHasMe = chatThread.some((m) =>
+              user && (
+                (m.sender_id && String(m.sender_id) === String(user.id)) ||
+                (m.sender_email && user.email && m.sender_email.toLowerCase() === user.email.toLowerCase()) ||
+                (m.sender_name && user.nombre && m.sender_name.trim().toLowerCase() === user.nombre.trim().toLowerCase())
+              )
+            );
 
-            return (
-              <Box
-                key={msg.id || idx}
-                sx={{
-                  display: 'flex',
-                  justifyContent: isPlanningSender ? 'flex-end' : 'flex-start',
-                  mb: 1.6
-                }}
-              >
-                <Paper
-                  elevation={0}
+            return chatThread.map((msg, idx) => {
+              const isMe = Boolean(
+                user && (
+                  (msg.sender_id && String(msg.sender_id) === String(user.id)) ||
+                  (msg.sender_email && user.email && msg.sender_email.toLowerCase() === user.email.toLowerCase()) ||
+                  (msg.sender_name && user.nombre && msg.sender_name.trim().toLowerCase() === user.nombre.trim().toLowerCase())
+                )
+              );
+
+              // Si el usuario actual está en la conversación, sus mensajes van a la derecha (verde) y los de la otra persona a la izquierda (blanco).
+              // Si es un tercero, se ubica por rol: Planeación a la derecha y Líder a la izquierda.
+              const isRightSide = threadHasMe ? isMe : (msg.sender_type === 'planning');
+              const timeStr = msg.created_at
+                ? new Date(msg.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+                : '';
+
+              return (
+                <Box
+                  key={msg.id || idx}
                   sx={{
-                    maxWidth: { xs: '88%', sm: '80%' },
-                    p: 1.3,
-                    px: 1.7,
-                    borderRadius: isPlanningSender ? '10px 0px 10px 10px' : '0px 10px 10px 10px',
-                    bgcolor: isPlanningSender ? '#d9fdd3' : '#ffffff',
-                    boxShadow: '0 1px 1px rgba(11,20,26,.14)',
-                    position: 'relative'
+                    display: 'flex',
+                    justifyContent: isRightSide ? 'flex-end' : 'flex-start',
+                    mb: 1.6
                   }}
                 >
-                  <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#008069', mb: 0.4 }}>
-                    {msg.sender_name || (isPlanningSender ? 'LUISA FERNANDA ORTEGA MUÑOZ' : 'Líder')}
-                    <span style={{ fontSize: 11, fontWeight: 500, color: '#667781', marginLeft: 6 }}>
-                      ({msg.sender_cargo || (isPlanningSender ? 'Analista de Planeación · Planeación y Efectividad' : 'Líder Responsable')})
-                    </span>
-                  </Typography>
-
-                  <Typography sx={{ fontSize: 13.5, color: '#111b21', lineHeight: 1.52, whiteSpace: 'pre-wrap' }}>
-                    {msg.message}
-                  </Typography>
-
-                  <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="flex-end" sx={{ mt: 0.5 }}>
-                    <Typography variant="caption" sx={{ fontSize: 10.5, color: '#667781' }}>
-                      {timeStr}
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      maxWidth: { xs: '88%', sm: '80%' },
+                      p: 1.3,
+                      px: 1.7,
+                      borderRadius: isRightSide ? '10px 0px 10px 10px' : '0px 10px 10px 10px',
+                      bgcolor: isRightSide ? '#d9fdd3' : '#ffffff',
+                      border: isRightSide ? 'none' : '1px solid #e2e8f0',
+                      boxShadow: '0 1px 1px rgba(11,20,26,.14)',
+                      position: 'relative'
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 12, fontWeight: 800, color: isRightSide ? '#008069' : '#0369a1', mb: 0.4 }}>
+                      {msg.sender_name || (isRightSide ? 'Tú' : (msg.sender_type === 'planning' ? 'LUISA FERNANDA ORTEGA MUÑOZ' : 'Líder'))}
+                      <span style={{ fontSize: 11, fontWeight: 500, color: '#667781', marginLeft: 6 }}>
+                        ({msg.sender_cargo || (msg.sender_type === 'planning' ? 'Analista de Planeación · Planeación y Efectividad' : 'Líder Responsable')})
+                      </span>
                     </Typography>
-                    {isPlanningSender ? (
-                      <span style={{ color: '#53bdeb', fontSize: 13, fontWeight: 900, lineHeight: 1 }}>✓✓</span>
-                    ) : (
-                      <Typography variant="caption" sx={{ fontSize: 10, color: '#008069', fontWeight: 700 }}>
-                        ✓ Acta COM-IF-FR-002
+
+                    <Typography sx={{ fontSize: 13.5, color: '#111b21', lineHeight: 1.52, whiteSpace: 'pre-wrap' }}>
+                      {msg.message}
+                    </Typography>
+
+                    <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="flex-end" sx={{ mt: 0.5 }}>
+                      <Typography variant="caption" sx={{ fontSize: 10.5, color: '#667781' }}>
+                        {timeStr}
                       </Typography>
-                    )}
-                  </Stack>
-                </Paper>
-              </Box>
-            );
-          })}
+                      {isRightSide ? (
+                        <span style={{ color: '#53bdeb', fontSize: 13, fontWeight: 900, lineHeight: 1 }}>✓✓</span>
+                      ) : (
+                        <Typography variant="caption" sx={{ fontSize: 10, color: '#008069', fontWeight: 700 }}>
+                          ✓ Recibido
+                        </Typography>
+                      )}
+                    </Stack>
+                  </Paper>
+                </Box>
+              );
+            });
+          })()
+        )}
         </DialogContent>
 
         {/* Barra de Entrada de Mensaje estilo WhatsApp con Enlace a Correo */}
@@ -6665,14 +7028,15 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               <Button
                 size="small"
                 variant="outlined"
+                startIcon={<AssignmentTurnedIn sx={{ fontSize: 16 }} />}
                 onClick={() => {
                   setFeedbackChatModalOpen(false);
                   setTab('activities');
                 }}
                 sx={{
                   textTransform: 'none',
-                  fontWeight: 800,
-                  fontSize: 11,
+                  fontWeight: 700,
+                  fontSize: 11.5,
                   borderRadius: 2,
                   color: '#008069',
                   borderColor: '#86efac',
@@ -6682,19 +7046,20 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   '&:hover': { bgcolor: '#f0fdf4' }
                 }}
               >
-                📋 Ir a Actividades
+                Ir a Actividades
               </Button>
               <Button
                 size="small"
                 variant="outlined"
+                startIcon={<EditNote sx={{ fontSize: 18 }} />}
                 onClick={() => {
                   setFeedbackChatModalOpen(false);
                   setTab('meeting');
                 }}
                 sx={{
                   textTransform: 'none',
-                  fontWeight: 800,
-                  fontSize: 11,
+                  fontWeight: 700,
+                  fontSize: 11.5,
                   borderRadius: 2,
                   color: '#15803d',
                   borderColor: '#86efac',
@@ -6704,8 +7069,30 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   '&:hover': { bgcolor: '#f0fdf4' }
                 }}
               >
-                📝 Ir a Corregir Acta
+                Ir a Corregir Acta
               </Button>
+              {chatThread.length > 0 && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<DeleteSweep sx={{ fontSize: 17 }} />}
+                  onClick={handleClearFeedbackChat}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: 11.5,
+                    borderRadius: 2,
+                    color: '#dc2626',
+                    borderColor: '#fca5a5',
+                    bgcolor: '#ffffff',
+                    py: 0.35,
+                    px: 1.3,
+                    '&:hover': { bgcolor: '#fef2f2', borderColor: '#ef4444' }
+                  }}
+                >
+                  Limpiar Chat
+                </Button>
+              )}
             </Stack>
 
             {detail?.status === 'adjustments' && (
@@ -6731,16 +7118,19 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             )}
           </Stack>
 
-          {/* Input de Mensaje WhatsApp */}
-          <Stack direction="row" spacing={1.2} alignItems="center">
+          {/* Input de Mensaje WhatsApp con soporte Multilínea (Enter salta de línea, Ctrl+Enter o Botón envía) */}
+          <Stack direction="row" spacing={1.2} alignItems="flex-end">
             <TextField
               fullWidth
+              multiline
+              minRows={1}
+              maxRows={5}
               size="small"
-              placeholder="Escribe un mensaje para el líder (se envía automáticamente a su correo)..."
+              placeholder="Escribe un mensaje para el líder (Enter para nueva línea, clic en enviar o Ctrl+Enter)..."
               value={planningResponseComment}
               onChange={(e) => setPlanningResponseComment(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault();
                   handleSendChatMessage(false);
                 }
@@ -6748,16 +7138,17 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               disabled={sendingChatMessage}
               sx={{
                 bgcolor: '#ffffff',
-                borderRadius: 6,
+                borderRadius: 4,
                 '& .MuiOutlinedInput-root': {
-                  borderRadius: 6,
+                  borderRadius: 4,
                   fontSize: 13,
+                  lineHeight: 1.45,
                   bgcolor: '#ffffff',
-                  pr: 1
+                  p: 1.2
                 }
               }}
             />
-            <Tooltip title="Enviar mensaje y notificar al correo institucional del líder" arrow>
+            <Tooltip title="Enviar mensaje (Ctrl+Enter o clic) y notificar al correo institucional del líder" arrow>
               <span>
                 <IconButton
                   disabled={sendingChatMessage || !planningResponseComment.trim()}
@@ -6803,9 +7194,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         />
       )}
 
-      {/* BOTÓN FLOTANTE ESTILO WHATSAPP PARA ACCESO DIRECTO AL CHAT DE RETROALIMENTACIÓN */}
+      {/* BOTÓN FLOTANTE PARA ACCESO DIRECTO AL CANAL DE COMUNICACIÓN CON PLANEACIÓN Y EFECTIVIDAD */}
       {detail?.id && (
-        <Tooltip title="Canal de retroalimentación directa con el Líder (estilo WhatsApp con copia a correo)" arrow placement="left">
+        <Tooltip
+          title="Aquí podrá comunicarse directamente con el componente de Planeación y Efectividad para sugerencias, reclamos o consultas sobre el plan de acción a su cargo."
+          arrow
+          placement="left"
+        >
           <Fab
             onClick={() => setFeedbackChatModalOpen(true)}
             sx={{
@@ -6819,7 +7214,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               zIndex: 1300
             }}
           >
-            <Badge badgeContent={chatThread.length} color="error" max={99}>
+            <Badge badgeContent={chatThread.length} color="error" max={99} invisible={chatThread.length === 0}>
               <ChatBubbleOutline sx={{ fontSize: 28 }} />
             </Badge>
           </Fab>

@@ -290,6 +290,17 @@ const syncEvidence = async (evidenceId) => {
     sync_status: 'synced',
     synced_at: new Date()
   });
+
+  // Liberar el almacenamiento en disco del servidor: la evidencia física reside en Google Drive
+  // y en la base de datos se conserva la ruta/ID para su consulta directa o streaming sin llenar el servidor.
+  try {
+    if (evidence.storage_key && fs.existsSync(evidence.storage_key)) {
+      fs.unlinkSync(evidence.storage_key);
+    }
+  } catch (cleanErr) {
+    console.warn('[StrategicDrive] No se pudo eliminar la copia temporal local tras sincronizar a Drive:', cleanErr.message);
+  }
+
   return {
     id: file.data.id,
     folderId,

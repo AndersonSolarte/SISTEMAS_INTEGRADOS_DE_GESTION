@@ -25,7 +25,7 @@ const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailSe
 const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
 const { ensureStrategicPlanningDefaults, DEFAULT_WORKFLOW, DEFAULT_FIELDS } = require('../services/strategicPlanningBootstrap');
 const { sha256, cleanCode, requestMeta, audit, transitionPlan, saveActionItem, upsertMonitoring, findActionPlans } = require('../services/strategicPlanningDomainService');
-const { enqueueSync, enqueueActionRepositorySync, reconcileTerm, syncMinute, syncEvidence, getActivityDriveFolder, getMinutesDriveFolder } = require('../services/strategicPlanningDriveService');
+const { buildWritableDriveClient, enqueueSync, enqueueActionRepositorySync, reconcileTerm, syncMinute, syncEvidence, getActivityDriveFolder, getMinutesDriveFolder } = require('../services/strategicPlanningDriveService');
 const { buildReferenceWorkbook, previewReferenceImport, confirmReferenceImport } = require('../services/strategicReferenceService');
 const { buildPedSchedule, reconcilePlanTerms } = require('../services/strategicPlanSetupService');
 const { buildDynamicActionItemWorkbook, previewDynamicActionItems, confirmDynamicActionItems } = require('../services/strategicDynamicWorkbookService');
@@ -1999,10 +1999,12 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
     throw Object.assign(new Error('No tiene permisos para participar en este canal de retroalimentación.'), { statusCode: 403 });
   }
 
-  const senderType = isPlanningAdmin ? 'planning' : 'leader';
-  const senderName = req.user.nombre || req.user.username || (isPlanningAdmin ? 'LUISA FERNANDA ORTEGA MUÑOZ' : 'Líder de Dependencia');
-  const senderCargo = req.user.cargo || (isPlanningAdmin ? 'Analista de Planeación' : 'Líder Responsable');
-  const senderDep = isPlanningAdmin
+  const senderType = req.body.senderType
+    ? req.body.senderType
+    : (isLeader && !req.body.isPlanningStaff ? 'leader' : (isPlanningAdmin ? 'planning' : 'leader'));
+  const senderName = req.user.nombre || req.user.username || (senderType === 'planning' ? 'LUISA FERNANDA ORTEGA MUÑOZ' : 'Líder de Dependencia');
+  const senderCargo = req.user.cargo || (senderType === 'planning' ? 'Analista de Planeación' : 'Líder Responsable');
+  const senderDep = senderType === 'planning'
     ? 'Dirección de Planeación y Aseguramiento de la Calidad'
     : (req.user.dependencia || actionPlan.organizationalUnit?.name || 'Dependencia');
   const senderEmail = req.user.email || '';
@@ -2023,38 +2025,6 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
 
   const currentMeta = { ...(actionPlan.metadata || {}) };
   const existingThread = Array.isArray(currentMeta.chat_thread) ? [...currentMeta.chat_thread] : [];
-
-  if (existingThread.length === 0) {
-    if (currentMeta.last_adjustment_request) {
-      existingThread.push({
-        id: 'adj-legacy',
-        sender_type: 'leader',
-        sender_id: currentMeta.last_adjustment_request.requested_by,
-        sender_name: currentMeta.last_adjustment_request.requested_by_name || 'Líder de Dependencia',
-        sender_cargo: 'Líder Responsable',
-        sender_dependencia: actionPlan.organizationalUnit?.name || 'Dependencia',
-        sender_email: currentMeta.last_adjustment_request.requested_by_email || '',
-        message: currentMeta.last_adjustment_request.comment,
-        created_at: currentMeta.last_adjustment_request.requested_at || nowIso
-      });
-    }
-    if (Array.isArray(currentMeta.planning_responses_history)) {
-      currentMeta.planning_responses_history.forEach((resp, idx) => {
-        existingThread.push({
-          id: `resp-legacy-${idx}`,
-          sender_type: 'planning',
-          sender_id: resp.responded_by,
-          sender_name: resp.responded_by_name || 'LUISA FERNANDA ORTEGA MUÑOZ',
-          sender_cargo: resp.responded_by_cargo || 'Analista de Planeación',
-          sender_dependencia: resp.responded_by_dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
-          sender_email: 'lfortega@unicesmag.edu.co',
-          message: resp.comment,
-          created_at: resp.responded_at || nowIso
-        });
-      });
-    }
-  }
-
   existingThread.push(newMessage);
   currentMeta.chat_thread = existingThread;
 
@@ -2092,36 +2062,6 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
       await transitionPlan({ req, actionPlan, action: 'submit_owner_validation', comment: messageText });
     } catch (eTrans) {
       console.warn('sendActionPlanChatMessage: auto-transition submit_owner_validation:', eTrans.message);
-    }
-  }
-
-  const latestMeeting = await StrategicMeeting.findOne({
-    where: { action_plan_id: actionPlan.id },
-    order: [['starts_at', 'DESC'], ['created_at', 'DESC']],
-    include: [{ model: StrategicMinuteVersion, as: 'minuteVersions' }]
-  });
-  if (latestMeeting) {
-    const prefix = senderType === 'planning'
-      ? `[RETROALIMENTACIÓN DE PLANEACIÓN Y EFECTIVIDAD - ${senderName} - ${nowBogota}]:`
-      : `[OBSERVACIÓN DEL LÍDER - ${senderName} - ${nowBogota}]:`;
-    const note = `\n\n${prefix}\n${messageText}`;
-    const newDevelopment = `${latestMeeting.development || ''}${note}`.trim();
-    await latestMeeting.update({ development: newDevelopment, updated_by: req.user.id });
-
-    const latestMinute = (latestMeeting.minuteVersions || []).sort((a, b) => Number(b.version) - Number(a.version))[0];
-    if (latestMinute) {
-      const currentDes = Array.isArray(latestMinute.content?.desarrollo)
-        ? latestMinute.content.desarrollo.join('\n\n')
-        : String(latestMinute.content?.desarrollo || '');
-      const updatedContent = {
-        ...latestMinute.content,
-        desarrollo: [`${currentDes}${note}`.trim()]
-      };
-      await latestMinute.update({
-        content: updatedContent,
-        content_hash: hashObject(updatedContent)
-      });
-      syncMinute(latestMinute.id, true).catch((e) => console.warn('Auto-sync minute chat message:', e.message));
     }
   }
 
@@ -2243,6 +2183,20 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
     chat_thread: currentMeta.chat_thread,
     actionPlan: updatedPlan
   }, 'Mensaje enviado y notificado por correo institucional.');
+});
+
+const clearActionPlanChat = wrap(async (req, res) => {
+  const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
+  if (!actionPlan) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+  const meta = { ...(actionPlan.metadata || {}) };
+  meta.chat_archive = [...(meta.chat_archive || []), ...(meta.chat_thread || [])];
+  meta.chat_thread = [];
+  meta.chat_last_cleared_at = new Date().toISOString();
+  meta.chat_last_cleared_by = req.user.id;
+  meta.chat_last_cleared_by_name = req.user.nombre || req.user.username;
+  actionPlan.metadata = meta;
+  await actionPlan.save();
+  ok(res, { chat_thread: [], actionPlan }, 'Canal de retroalimentación revisado y limpiado.');
 });
 
 const saveMonitoring = wrap(async (req, res) => {
@@ -3320,14 +3274,6 @@ const downloadEvidence = wrap(async (req, res) => {
     return res.redirect(driveUrl);
   }
 
-  const fullPath = path.resolve(evidence.storage_key);
-  if (!fs.existsSync(fullPath)) {
-    if (driveUrl) {
-      return res.redirect(driveUrl);
-    }
-    throw Object.assign(new Error('El archivo físico de la evidencia no se encuentra en el servidor ni en Google Drive.'), { statusCode: 404 });
-  }
-
   const ext = path.extname(evidence.original_name || '').toLowerCase();
   const mimeMap = {
     '.pdf': 'application/pdf',
@@ -3345,12 +3291,42 @@ const downloadEvidence = wrap(async (req, res) => {
   };
   const mimeType = evidence.mime_type || mimeMap[ext] || 'application/octet-stream';
 
-  if (req.query.preview === 'true') {
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(evidence.original_name)}"`);
-    return res.sendFile(fullPath);
+  const fullPath = evidence.storage_key ? path.resolve(evidence.storage_key) : null;
+  // 1. Si aún existe la copia temporal en el servidor (ej. mientras se completa la sincronización), servirla localmente
+  if (fullPath && fs.existsSync(fullPath)) {
+    if (req.query.preview === 'true') {
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(evidence.original_name)}"`);
+      return res.sendFile(fullPath);
+    }
+    return res.download(fullPath, evidence.original_name);
   }
-  res.download(fullPath, evidence.original_name);
+
+  // 2. Si ya fue sincronizada a Google Drive y liberada del disco local para no llenar el servidor:
+  // Transmitir directamente el stream desde la API de Google Drive
+  if (evidence.drive_file_id) {
+    try {
+      const drive = buildWritableDriveClient();
+      const driveStream = await drive.files.get(
+        { fileId: evidence.drive_file_id, alt: 'media', supportsAllDrives: true },
+        { responseType: 'stream' }
+      );
+      res.setHeader('Content-Type', mimeType);
+      const disposition = req.query.preview === 'true' ? 'inline' : 'attachment';
+      res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(evidence.original_name)}"`);
+      return driveStream.data.pipe(res);
+    } catch (streamErr) {
+      console.warn('[downloadEvidence] Stream de Drive no disponible, redirigiendo al enlace web oficial:', streamErr.message);
+      if (driveUrl) {
+        return res.redirect(driveUrl);
+      }
+    }
+  }
+
+  if (driveUrl) {
+    return res.redirect(driveUrl);
+  }
+  throw Object.assign(new Error('El archivo físico de la evidencia no se encuentra en el servidor ni en Google Drive.'), { statusCode: 404 });
 });
 
 const retrySync = wrap(async (req, res) => {
@@ -4051,7 +4027,7 @@ module.exports = {
   downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, searchMeetingParticipants, termDependencies, downloadTermDependencyTemplate,
   termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
   listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, reviewExecutionActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
-  transitionActionPlan, sendActionPlanChatMessage, saveMonitoring, createMeeting, updateMeeting,
+  transitionActionPlan, sendActionPlanChatMessage, clearActionPlanChat, saveMonitoring, createMeeting, updateMeeting,
   improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
   uploadEvidence, downloadEvidence, retrySync, getActionItemDriveFolder, getActionPlanMinutesDriveFolder, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,

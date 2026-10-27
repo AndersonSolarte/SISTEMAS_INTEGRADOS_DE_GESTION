@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   Box, Paper, Stack, Typography, Chip, Button, Alert,
-  Table, TableHead, TableRow, TableCell, TableBody, TableContainer,
+  Table, TableHead, TableRow, TableCell, TableBody, TableContainer, TablePagination,
   TextField, CircularProgress, Divider, Tooltip, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions, MenuItem,
-  Grid, InputAdornment, Avatar, Badge
+  Grid, InputAdornment, Avatar, Badge, Fab
 } from '@mui/material';
 import {
   AssignmentTurnedIn as AssignmentTurnedInIcon,
@@ -82,7 +82,12 @@ const getFileIcon = (fileName) => {
   return <FileIcon sx={{ color: '#64748b', fontSize: 22 }} />;
 };
 
-export default function PlanAccionConsulta() {
+export default function PlanAccionConsulta({
+  initialPlanId = null,
+  initialPlanData = null,
+  readOnly = false,
+  onClose = null
+} = {}) {
   // eslint-disable-next-line no-unused-vars
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
@@ -93,7 +98,7 @@ export default function PlanAccionConsulta() {
 
   const [loading, setLoading] = useState(false);
   const [peiPlans, setPeiPlans] = useState([]);
-  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [selectedPlan, setSelectedPlan] = useState(initialPlanData || null);
   const [legacyPlans, setLegacyPlans] = useState([]);
   const [activityViewTab, setActivityViewTab] = useState('responsible'); // 'responsible' | 'co_responsible'
 
@@ -124,6 +129,20 @@ export default function PlanAccionConsulta() {
   // Filtro de búsqueda en la tabla de actividades
   const [activitySearch, setActivitySearch] = useState('');
 
+  // Paginación de tablas (5 por defecto, con opciones 5, 10, 20, 50)
+  const [respPage, setRespPage] = useState(0);
+  const [respRowsPerPage, setRespRowsPerPage] = useState(5);
+  const [coRespPage, setCoRespPage] = useState(0);
+  const [coRespRowsPerPage, setCoRespRowsPerPage] = useState(5);
+  const [actasPage, setActasPage] = useState(0);
+  const [actasRowsPerPage, setActasRowsPerPage] = useState(5);
+
+  useEffect(() => {
+    setRespPage(0);
+    setCoRespPage(0);
+    setActasPage(0);
+  }, [activitySearch]);
+
   // Parámetros de URL para redirección directa desde notificaciones de campana
   const [searchParams] = useSearchParams();
   const urlPlanId = searchParams.get('planId');
@@ -152,42 +171,35 @@ export default function PlanAccionConsulta() {
 
   const leaderChatThread = useMemo(() => {
     const meta = selectedPlan?.metadata || {};
-    if (Array.isArray(meta.chat_thread) && meta.chat_thread.length > 0) {
+    if (Array.isArray(meta.chat_thread)) {
       return meta.chat_thread;
     }
-    const thread = [];
-    if (meta.last_adjustment_request?.comment) {
-      thread.push({
-        id: 'adj-initial',
-        sender_type: 'leader',
-        sender_name: meta.last_adjustment_request.requested_by_name || 'Líder de Dependencia',
-        sender_cargo: 'Líder Responsable',
-        message: meta.last_adjustment_request.comment,
-        created_at: meta.last_adjustment_request.requested_at || new Date().toISOString()
-      });
-    }
-    if (Array.isArray(meta.planning_responses_history)) {
-      meta.planning_responses_history.forEach((resp, idx) => {
-        thread.push({
-          id: `resp-legacy-${idx}`,
-          sender_type: 'planning',
-          sender_name: resp.responded_by_name || 'LUISA FERNANDA ORTEGA MUÑOZ',
-          sender_cargo: resp.responded_by_cargo || 'Analista de Planeación',
-          message: resp.comment,
-          created_at: resp.responded_at || new Date().toISOString()
-        });
-      });
-    }
-    return thread;
-  }, [selectedPlan]);
+    return [];
+  }, [selectedPlan?.metadata]);
 
   // Modal y descarga de actas
   const [actasModalOpen, setActasModalOpen] = useState(false);
   const [refreshingActas, setRefreshingActas] = useState(false);
   const [downloadingMinute, setDownloadingMinute] = useState(null);
 
+  // Sincronizar datos iniciales para previsualización en tiempo real
+  useEffect(() => {
+    if (initialPlanData) {
+      setSelectedPlan(initialPlanData);
+    } else if (initialPlanId) {
+      setLoading(true);
+      strategicPlanningService.getActionPlan(initialPlanId)
+        .then((resp) => {
+          if (resp?.data) setSelectedPlan(resp.data);
+        })
+        .catch((err) => console.error('Error cargando plan para previsualización:', err))
+        .finally(() => setLoading(false));
+    }
+  }, [initialPlanId, initialPlanData]);
+
   // Cargar planes asignados
   const cargarPlanes = useCallback(async () => {
+    if (readOnly) return;
     if (!userId) return;
     setLoading(true);
     try {
@@ -432,7 +444,8 @@ export default function PlanAccionConsulta() {
     setSendingLeaderChat(true);
     try {
       const resp = await strategicPlanningService.sendChatMessage(selectedPlan.id, {
-        message: msg
+        message: msg,
+        senderType: 'leader'
       });
       setLeaderChatMessage('');
       enqueueSnackbar('Mensaje enviado al equipo de Planeación y notificado a su correo institucional.', { variant: 'success' });
@@ -448,6 +461,26 @@ export default function PlanAccionConsulta() {
     } finally {
       setSendingLeaderChat(false);
     }
+  };
+
+  const handleClearLeaderChat = async () => {
+    if (!selectedPlan?.id) return;
+    try {
+      await strategicPlanningService.clearChatThread(selectedPlan.id);
+      setSelectedPlan((prev) => {
+        if (!prev) return prev;
+        const meta = { ...(prev.metadata || {}) };
+        meta.chat_thread = [];
+        return { ...prev, metadata: meta };
+      });
+      enqueueSnackbar('Canal revisado: mensajes archivados.', { variant: 'info' });
+    } catch (e) {
+      console.warn('Error al limpiar chat:', e);
+    }
+  };
+
+  const handleCloseLeaderChat = () => {
+    setLeaderChatModalOpen(false);
   };
 
   // Descargar acta oficial COM-IF-FR-002 (Original o Copia Oficial)
@@ -836,6 +869,32 @@ export default function PlanAccionConsulta() {
   // RENDER: VISTA LISTADO DE PLANES
   // ==========================================
   if (!selectedPlan) {
+    if (readOnly) {
+      return (
+        <Box sx={{ p: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 320, flexDirection: 'column', gap: 2 }}>
+          {loading ? (
+            <>
+              <CircularProgress size={36} />
+              <Typography sx={{ color: '#64748b', fontSize: 13, fontWeight: 700 }}>
+                Cargando previsualización en tiempo real del Plan de Acción...
+              </Typography>
+            </>
+          ) : (
+            <>
+              <Typography sx={{ color: '#64748b', fontSize: 14, fontWeight: 700 }}>
+                No hay información disponible para previsualizar este plan de acción.
+              </Typography>
+              {onClose && (
+                <Button variant="outlined" onClick={onClose} sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}>
+                  Cerrar Previsualización
+                </Button>
+              )}
+            </>
+          )}
+        </Box>
+      );
+    }
+
     const pendingReviewPlans = peiPlans.filter((p) => p.status === 'owner_validation');
     const activeExecutionPlans = peiPlans.filter((p) => ['active', 'monitoring', 'closed'].includes(p.status));
 
@@ -1059,150 +1118,281 @@ export default function PlanAccionConsulta() {
 
   return (
     <Stack spacing={2.2}>
-      {/* 1. Header con Navegación y Acciones Rápidas */}
+      {/* 1. Encabezado del Plan de Acción con Diseño Institucional */}
       <Paper
         elevation={0}
         sx={{
-          p: { xs: 2, md: 2.2 },
+          p: { xs: 2, sm: 2.5, md: 3 },
           borderRadius: 3.5,
-          border: '1px solid #e2e8f0',
-          bgcolor: '#ffffff',
-          boxShadow: '0 2px 12px rgba(15, 23, 42, 0.04)'
+          border: '1px solid #dbeafe',
+          background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #4f46e5 100%)',
+          color: '#ffffff',
+          boxShadow: '0 6px 20px rgba(37,99,235,0.18)',
+          position: 'relative'
         }}
       >
+        {readOnly && (
+          <Tooltip title="Cerrar previsualización" arrow>
+            <IconButton
+              onClick={onClose}
+              size="small"
+              sx={{
+                position: 'absolute',
+                top: { xs: 12, sm: 14 },
+                right: { xs: 12, sm: 16 },
+                color: '#ffffff',
+                bgcolor: 'rgba(255, 255, 255, 0.18)',
+                border: '1px solid rgba(255, 255, 255, 0.35)',
+                borderRadius: 2,
+                p: 0.7,
+                zIndex: 2,
+                '&:hover': {
+                  bgcolor: 'rgba(255, 255, 255, 0.32)',
+                  transform: 'scale(1.06)'
+                },
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <CloseIcon sx={{ fontSize: 20 }} />
+            </IconButton>
+          </Tooltip>
+        )}
+
         <Stack
           direction={{ xs: 'column', md: 'row' }}
-          spacing={1.5}
+          spacing={2}
           justifyContent="space-between"
           alignItems={{ xs: 'stretch', md: 'center' }}
         >
-          {/* Navegación y estado esencial (Solo lo verdaderamente importante) */}
-          <Stack direction="row" spacing={1.2} alignItems="center" sx={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
-            <Button
-              variant="outlined"
-              startIcon={<ArrowBackIcon sx={{ fontSize: 18 }} />}
-              onClick={() => setSelectedPlan(null)}
-              sx={{
-                textTransform: 'none',
-                fontWeight: 850,
-                color: '#1e40af',
-                borderColor: '#cbd5e1',
-                bgcolor: '#f8fafc',
-                borderRadius: 2.2,
-                px: 1.8,
-                py: 0.65,
-                fontSize: 12.5,
-                flexShrink: 0,
-                boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                '&:hover': { bgcolor: '#f1f5f9', borderColor: '#94a3b8' }
-              }}
-            >
-              Volver a Mis Planes
-            </Button>
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 26, alignSelf: 'center', display: { xs: 'none', sm: 'block' } }} />
-            <Tooltip title={selectedPlan.code} arrow>
+          <Stack spacing={1} sx={{ minWidth: 0, flex: 1, pr: readOnly ? { xs: 5, md: 0 } : 0 }}>
+            <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap sx={{ pr: readOnly ? 5 : 0 }}>
+              {!readOnly && (
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<ArrowBackIcon sx={{ fontSize: 17 }} />}
+                  onClick={() => setSelectedPlan(null)}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 850,
+                    color: '#ffffff',
+                    bgcolor: 'rgba(255,255,255,0.18)',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    borderRadius: 2,
+                    px: 1.6,
+                    py: 0.5,
+                    fontSize: 12,
+                    boxShadow: 'none',
+                    '&:hover': { bgcolor: 'rgba(255,255,255,0.28)' }
+                  }}
+                >
+                  Volver a Mis Planes
+                </Button>
+              )}
+              {readOnly && (
+                <Chip
+                  size="small"
+                  icon={<LockIcon sx={{ fontSize: '13px !important', color: '#ffffff !important' }} />}
+                  label="Previsualización en Tiempo Real · Modo Lectura"
+                  sx={{
+                    bgcolor: 'rgba(255,255,255,0.25)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(255,255,255,0.45)',
+                    fontWeight: 900,
+                    fontSize: 11.5,
+                    height: 26,
+                    borderRadius: 2
+                  }}
+                />
+              )}
               <Chip
                 size="small"
-                label={selectedPlan.code}
+                label={STATUS_CONFIG[selectedPlan.status]?.label || selectedPlan.status}
                 sx={{
-                  bgcolor: '#e0e7ff',
-                  color: '#3730a3',
+                  bgcolor: 'rgba(255,255,255,0.22)',
+                  color: '#ffffff',
+                  border: '1px solid rgba(255,255,255,0.4)',
                   fontWeight: 900,
-                  fontSize: 12,
-                  height: 28,
-                  borderRadius: 2,
-                  maxWidth: { xs: 150, sm: 240, md: 320, lg: 420 },
-                  '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                  fontSize: 11.5,
+                  height: 26,
+                  borderRadius: 2
                 }}
               />
-            </Tooltip>
-            <Chip
-              size="small"
-              label={STATUS_CONFIG[selectedPlan.status]?.label || selectedPlan.status}
-              sx={{
-                bgcolor: STATUS_CONFIG[selectedPlan.status]?.bg || '#f1f5f9',
-                color: STATUS_CONFIG[selectedPlan.status]?.fg || '#334155',
-                fontWeight: 900,
-                fontSize: 12,
-                height: 28,
-                borderRadius: 2,
-                flexShrink: 0
-              }}
-            />
-            <Chip
-              size="small"
-              icon={<CalendarMonthIcon sx={{ fontSize: '15px !important' }} />}
-              label={`Vigencia ${selectedPlan.term?.year || '—'}`}
-              sx={{
-                bgcolor: '#f8fafc',
-                color: '#475569',
-                fontWeight: 800,
-                fontSize: 12,
-                height: 28,
-                borderRadius: 2,
-                border: '1px solid #e2e8f0',
-                flexShrink: 0,
-                display: { xs: 'none', sm: 'inline-flex' }
-              }}
-            />
+              <Chip
+                size="small"
+                icon={<CalendarMonthIcon sx={{ fontSize: '14px !important', color: '#ffffff !important' }} />}
+                label={`Vigencia ${selectedPlan.term?.year || '—'}`}
+                sx={{
+                  bgcolor: 'rgba(255,255,255,0.16)',
+                  color: '#ffffff',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  fontWeight: 800,
+                  fontSize: 11.5,
+                  height: 26,
+                  borderRadius: 2
+                }}
+              />
+            </Stack>
+
+            <Box>
+              <Typography variant="h5" sx={{ fontWeight: 950, color: '#ffffff', fontSize: { xs: 18, sm: 22 }, letterSpacing: '-0.02em', lineHeight: 1.25 }}>
+                {selectedPlan.title || 'Plan de Acción Institucional'}
+              </Typography>
+              <Typography sx={{ color: '#dbeafe', fontSize: 13, fontWeight: 600, mt: 0.4 }}>
+                Dependencia: <strong style={{ color: '#ffffff' }}>{selectedPlan.organizationalUnit?.name || 'Dependencia'}</strong> · Código: <strong style={{ color: '#ffffff' }}>{selectedPlan.code}</strong>
+              </Typography>
+            </Box>
           </Stack>
 
-          {/* Botones de acción en UNA SOLA LÍNEA (ordenados, sin desbordes) */}
-          <Stack
-            direction="row"
-            spacing={1.25}
-            alignItems="center"
-            flexShrink={0}
-            sx={{ flexWrap: 'nowrap' }}
-          >
+          <Stack direction="row" spacing={1.2} alignItems="center" flexShrink={0} sx={{ alignSelf: { xs: 'flex-start', md: 'center' } }}>
             <Button
-              variant="outlined"
+              variant="contained"
               startIcon={<ExcelIcon />}
               onClick={handleExportExcel}
               sx={{
                 borderRadius: 2.2,
                 textTransform: 'none',
-                fontWeight: 850,
+                fontWeight: 900,
                 fontSize: 12.5,
-                px: 2,
-                py: 0.65,
-                borderColor: '#86efac',
-                bgcolor: '#f0fdf4',
-                color: '#15803d',
+                px: 2.2,
+                py: 0.8,
+                bgcolor: '#10b981',
+                color: '#ffffff',
+                boxShadow: '0 4px 12px rgba(16,185,129,0.35)',
                 whiteSpace: 'nowrap',
-                flexShrink: 0,
-                '&:hover': { bgcolor: '#dcfce7', borderColor: '#4ade80' },
-                boxShadow: 'none'
+                '&:hover': { bgcolor: '#059669' }
               }}
             >
               Exportar DIR-PE-FR-003
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<ChatBubbleOutlineIcon />}
-              onClick={() => setLeaderChatModalOpen(true)}
-              sx={{
-                borderRadius: 2.2,
-                textTransform: 'none',
-                fontWeight: 850,
-                fontSize: 12.5,
-                px: 2.2,
-                py: 0.65,
-                bgcolor: '#008069',
-                color: '#ffffff',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-                boxShadow: '0 2px 8px rgba(0, 128, 105, 0.22)',
-                '&:hover': { bgcolor: '#006a57' }
-              }}
-            >
-              💬 Chat con Planeación {leaderChatThread.length > 0 ? `(${leaderChatThread.length})` : ''}
             </Button>
           </Stack>
         </Stack>
       </Paper>
 
-      {/* 2. Banner Institucional de Concertación y Aprobación */}
+      {/* 3. Métricas Rápidas (Tarjetas pastel institucionales al 100% del ancho) */}
+      <Box sx={{ width: '100%' }}>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+            gap: 2,
+            width: '100%'
+          }}
+        >
+          {/* Card 1: Actividades Concertadas (Azul Real Pastel) */}
+          <Paper
+            variant="outlined"
+            sx={{
+              p: { xs: 2, sm: 2.2, md: 2.5 },
+              minHeight: 96,
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              borderRadius: 3,
+              bgcolor: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              boxShadow: '0 2px 8px rgba(37,99,235,0.06)'
+            }}
+          >
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" sx={{ color: '#1e40af', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
+                  Actividades Concertadas
+                </Typography>
+                <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 0.2 }}>
+                  <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 900, color: '#1e3a8a' }}>
+                    {planMetrics.totalActivities}
+                  </Typography>
+                  {planMetrics.totalCoActivities > 0 && (
+                    <Chip
+                      size="small"
+                      label={`+${planMetrics.totalCoActivities} corresponsables`}
+                      sx={{ bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 800, fontSize: 10, height: 20 }}
+                    />
+                  )}
+                </Stack>
+                <Typography variant="caption" sx={{ color: '#3b82f6', fontWeight: 600, fontSize: 11.5 }}>
+                  {planMetrics.completedActivities} culminadas al 100%
+                </Typography>
+              </Box>
+              <Box sx={{ width: 48, height: 48, borderRadius: 2.5, bgcolor: '#dbeafe', color: '#2563eb', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                <AssignmentTurnedInIcon sx={{ fontSize: 26 }} />
+              </Box>
+            </Stack>
+          </Paper>
+
+          {/* Card 2: Avance Físico Promedio (Menta Pastel) */}
+          <Paper
+            variant="outlined"
+            sx={{
+              p: { xs: 2, sm: 2.2, md: 2.5 },
+              minHeight: 96,
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              borderRadius: 3,
+              bgcolor: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              boxShadow: '0 2px 8px rgba(16,185,129,0.06)'
+            }}
+          >
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" sx={{ color: '#15803d', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
+                  Cumplimiento Global
+                </Typography>
+                <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 900, color: '#064e3b', mt: 0.2 }}>
+                  {planMetrics.avgProgress}%
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#16a34a', fontWeight: 600, fontSize: 11.5 }}>
+                  {planMetrics.inProgressActivities} actividades en curso
+                </Typography>
+              </Box>
+              <Box sx={{ width: 48, height: 48, borderRadius: 2.5, bgcolor: '#dcfce7', color: '#16a34a', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                <TrendingUpIcon sx={{ fontSize: 26 }} />
+              </Box>
+            </Stack>
+          </Paper>
+
+          {/* Card 3: Evidencias Radicadas (Lavanda Pastel) */}
+          <Paper
+            variant="outlined"
+            sx={{
+              p: { xs: 2, sm: 2.2, md: 2.5 },
+              minHeight: 96,
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              borderRadius: 3,
+              bgcolor: '#faf5ff',
+              border: '1px solid #e9d5ff',
+              boxShadow: '0 2px 8px rgba(168,85,247,0.06)'
+            }}
+          >
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" sx={{ color: '#7e22ce', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
+                  Evidencias Radicadas
+                </Typography>
+                <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 900, color: '#581c87', mt: 0.2 }}>
+                  {planMetrics.totalEvidences}
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#9333ea', fontWeight: 600, fontSize: 11.5 }}>
+                  Soportes oficiales cargados
+                </Typography>
+              </Box>
+              <Box sx={{ width: 48, height: 48, borderRadius: 2.5, bgcolor: '#ede9fe', color: '#9333ea', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                <AttachFileIcon sx={{ fontSize: 26 }} />
+              </Box>
+            </Stack>
+          </Paper>
+        </Box>
+      </Box>
+
+      {/* 4. Banner Institucional de Concertación y Aprobación */}
       {isOwnerValidation ? (
         <Paper
           elevation={0}
@@ -1242,55 +1432,73 @@ export default function PlanAccionConsulta() {
                   Plan de Acción en Revisión y Retroalimentación Institucional
                 </Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#334155', mt: 0.35, lineHeight: 1.45 }}>
-                  Revise las actividades concertadas y actas oficiales. Si está de acuerdo con los compromisos, apruebe el plan para iniciar su ejecución oficial; si requiere ajustes en metas o fechas, devuélvalo a Planeación y Efectividad.
+                  {readOnly
+                    ? 'Vista en tiempo real del panel de concertación y compromisos del líder de dependencia. En modo previsualización (lectura) no se habilitan acciones de aprobación o devolución.'
+                    : 'Revise las actividades concertadas y actas oficiales. Si está de acuerdo con los compromisos, apruebe el plan para iniciar su ejecución oficial; si requiere ajustes en metas o fechas, devuélvalo a Planeación y Efectividad.'}
                 </Typography>
               </Box>
             </Stack>
 
-            {/* Acciones de decisión: Distribución limpia, sin botones repetidos */}
-            <Stack direction="row" spacing={1.25} alignItems="center" flexShrink={0} sx={{ alignSelf: { xs: 'flex-end', lg: 'center' } }}>
-              <Button
-                variant="outlined"
-                startIcon={<EditNoteIcon />}
-                onClick={() => setAdjustmentsModalOpen(true)}
+            {/* Acciones de decisión: Solo disponibles para el líder en modo interactivo */}
+            {readOnly ? (
+              <Chip
+                icon={<LockIcon sx={{ fontSize: '14px !important', color: '#0369a1 !important' }} />}
+                label="Solo Lectura · Sin Acciones de Aprobación"
                 sx={{
-                  textTransform: 'none',
+                  bgcolor: '#e0f2fe',
+                  color: '#0369a1',
                   fontWeight: 850,
-                  borderRadius: 2.2,
-                  fontSize: 12.5,
-                  px: 2,
-                  py: 0.75,
-                  borderColor: '#cbd5e1',
-                  color: '#334155',
-                  bgcolor: '#ffffff',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                  whiteSpace: 'nowrap',
-                  '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8', color: '#0f172a' }
+                  fontSize: 12,
+                  borderRadius: 2,
+                  py: 1.8,
+                  px: 1
                 }}
-              >
-                Devolver para ajustes
-              </Button>
-              <Button
-                variant="contained"
-                startIcon={<CheckCircleIcon sx={{ fontSize: 17 }} />}
-                onClick={() => setApprovalModalOpen(true)}
-                sx={{
-                  textTransform: 'none',
-                  fontWeight: 900,
-                  borderRadius: 2.2,
-                  fontSize: 12.5,
-                  px: 2.4,
-                  py: 0.75,
-                  bgcolor: '#16a34a',
-                  color: '#ffffff',
-                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.28)',
-                  whiteSpace: 'nowrap',
-                  '&:hover': { bgcolor: '#15803d' }
-                }}
-              >
-                ✓ Aprobar y Pasar a Ejecución
-              </Button>
-            </Stack>
+              />
+            ) : (
+              <Stack direction="row" spacing={1.25} alignItems="center" flexShrink={0} sx={{ alignSelf: { xs: 'flex-end', lg: 'center' } }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<EditNoteIcon />}
+                  onClick={() => setAdjustmentsModalOpen(true)}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 850,
+                    borderRadius: 2.2,
+                    fontSize: 12.5,
+                    px: 2,
+                    py: 0.75,
+                    borderColor: '#cbd5e1',
+                    color: '#334155',
+                    bgcolor: '#ffffff',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                    whiteSpace: 'nowrap',
+                    '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8', color: '#0f172a' }
+                  }}
+                >
+                  Devolver para ajustes
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<CheckCircleIcon sx={{ fontSize: 17 }} />}
+                  onClick={() => setApprovalModalOpen(true)}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 900,
+                    borderRadius: 2.2,
+                    fontSize: 12.5,
+                    px: 2.4,
+                    py: 0.75,
+                    bgcolor: '#16a34a',
+                    color: '#ffffff',
+                    boxShadow: '0 4px 12px rgba(22, 163, 74, 0.28)',
+                    whiteSpace: 'nowrap',
+                    '&:hover': { bgcolor: '#15803d' }
+                  }}
+                >
+                  ✓ Aprobar y Pasar a Ejecución
+                </Button>
+              </Stack>
+            )}
           </Stack>
         </Paper>
       ) : (
@@ -1316,165 +1524,7 @@ export default function PlanAccionConsulta() {
         </Alert>
       )}
 
-      {/* 3. Métricas Rápidas (Tarjetas pastel institucionales) */}
-      <Box sx={{ width: '100%' }}>
-        <Grid container spacing={2} alignItems="stretch" sx={{ width: '100%' }}>
-          {/* Card 1: Dependencia Responsable (Cielo Pastel) */}
-          <Grid item xs={12} sm={6} lg={3}>
-            <Paper
-              variant="outlined"
-              sx={{
-                p: { xs: 2, sm: 2.2, md: 2.5 },
-                minHeight: 96,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                borderRadius: 3,
-                bgcolor: '#f0f9ff',
-                border: '1px solid #bae6fd',
-                boxShadow: '0 2px 8px rgba(14,165,233,0.06)'
-              }}
-            >
-              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
-                <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Typography variant="caption" sx={{ color: '#0369a1', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
-                    Dependencia Responsable
-                  </Typography>
-                  <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#0c4a6e', mt: 0.2, lineHeight: 1.25 }} noWrap title={selectedPlan.organizationalUnit?.name}>
-                    {selectedPlan.organizationalUnit?.name || 'Dependencia'}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 600, fontSize: 11.5 }}>
-                    Plan {selectedPlan.code}
-                  </Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 2.5, bgcolor: '#e0f2fe', color: '#0284c7', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                  <BusinessIcon sx={{ fontSize: 26 }} />
-                </Box>
-              </Stack>
-            </Paper>
-          </Grid>
-
-          {/* Card 2: Actividades Concertadas (Azul Real Pastel) */}
-          <Grid item xs={12} sm={6} lg={3}>
-            <Paper
-              variant="outlined"
-              sx={{
-                p: { xs: 2, sm: 2.2, md: 2.5 },
-                minHeight: 96,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                borderRadius: 3,
-                bgcolor: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                boxShadow: '0 2px 8px rgba(37,99,235,0.06)'
-              }}
-            >
-              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="caption" sx={{ color: '#1e40af', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
-                    Actividades Concertadas
-                  </Typography>
-                  <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 0.2 }}>
-                    <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 900, color: '#1e3a8a' }}>
-                      {planMetrics.totalActivities}
-                    </Typography>
-                    {planMetrics.totalCoActivities > 0 && (
-                      <Chip
-                        size="small"
-                        label={`+${planMetrics.totalCoActivities} corresponsables`}
-                        sx={{ bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 800, fontSize: 10, height: 20 }}
-                      />
-                    )}
-                  </Stack>
-                  <Typography variant="caption" sx={{ color: '#3b82f6', fontWeight: 600, fontSize: 11.5 }}>
-                    {planMetrics.completedActivities} culminadas al 100%
-                  </Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 2.5, bgcolor: '#dbeafe', color: '#2563eb', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                  <AssignmentTurnedInIcon sx={{ fontSize: 26 }} />
-                </Box>
-              </Stack>
-            </Paper>
-          </Grid>
-
-          {/* Card 3: Avance Físico Promedio (Menta Pastel) */}
-          <Grid item xs={12} sm={6} lg={3}>
-            <Paper
-              variant="outlined"
-              sx={{
-                p: { xs: 2, sm: 2.2, md: 2.5 },
-                minHeight: 96,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                borderRadius: 3,
-                bgcolor: '#f0fdf4',
-                border: '1px solid #bbf7d0',
-                boxShadow: '0 2px 8px rgba(16,185,129,0.06)'
-              }}
-            >
-              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="caption" sx={{ color: '#15803d', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
-                    Cumplimiento Global
-                  </Typography>
-                  <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 900, color: '#064e3b', mt: 0.2 }}>
-                    {planMetrics.avgProgress}%
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#16a34a', fontWeight: 600, fontSize: 11.5 }}>
-                    {planMetrics.inProgressActivities} actividades en curso
-                  </Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 2.5, bgcolor: '#dcfce7', color: '#16a34a', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                  <TrendingUpIcon sx={{ fontSize: 26 }} />
-                </Box>
-              </Stack>
-            </Paper>
-          </Grid>
-
-          {/* Card 4: Evidencias Radicadas (Lavanda Pastel) */}
-          <Grid item xs={12} sm={6} lg={3}>
-            <Paper
-              variant="outlined"
-              sx={{
-                p: { xs: 2, sm: 2.2, md: 2.5 },
-                minHeight: 96,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                borderRadius: 3,
-                bgcolor: '#faf5ff',
-                border: '1px solid #e9d5ff',
-                boxShadow: '0 2px 8px rgba(168,85,247,0.06)'
-              }}
-            >
-              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="caption" sx={{ color: '#7e22ce', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
-                    Evidencias Radicadas
-                  </Typography>
-                  <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 900, color: '#581c87', mt: 0.2 }}>
-                    {planMetrics.totalEvidences}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#9333ea', fontWeight: 600, fontSize: 11.5 }}>
-                    Soportes oficiales cargados
-                  </Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 2.5, bgcolor: '#ede9fe', color: '#9333ea', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                  <AttachFileIcon sx={{ fontSize: 26 }} />
-                </Box>
-              </Stack>
-            </Paper>
-          </Grid>
-        </Grid>
-      </Box>
-
-      {/* 4. Tabla de Actividades y Evidencias de Cumplimiento */}
+      {/* 5. Tabla de Actividades y Evidencias de Cumplimiento */}
       <Paper
         elevation={0}
         sx={{
@@ -1485,15 +1535,6 @@ export default function PlanAccionConsulta() {
           boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
         }}
       >
-        {/* ENCABEZADO INSTITUCIONAL OFICIAL DIR-PE-FR-003 */}
-        <Box sx={{ bgcolor: '#ffffff', borderBottom: '1px solid #cbd5e1', py: 1, px: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <img
-            src="/Encabezado_correos.png"
-            alt="Universidad CESMAG"
-            style={{ maxHeight: 54, maxWidth: '100%', objectFit: 'contain' }}
-          />
-        </Box>
-
         {/* TRES SEGMENTOS INSTITUCIONALES ADAPTABLES A PANTALLA COMPLETA */}
         <Box sx={{ bgcolor: '#f8fafc', borderBottom: '1px solid #cbd5e1', p: { xs: 1.5, sm: 2 } }}>
           <Box
@@ -1810,7 +1851,8 @@ export default function PlanAccionConsulta() {
         </Box>
 
         {activityViewTab === 'minutes' ? (
-          <TableContainer sx={{ maxHeight: 560, overflowX: 'auto' }}>
+          <>
+          <TableContainer sx={{ maxHeight: '65vh', overflowX: 'auto' }}>
             <Table stickyHeader size="small" sx={{ minWidth: 980 }}>
               <TableHead>
                 <TableRow>
@@ -1865,10 +1907,10 @@ export default function PlanAccionConsulta() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredActas.map((acta, idx) => (
+                  filteredActas.slice(actasPage * actasRowsPerPage, actasPage * actasRowsPerPage + actasRowsPerPage).map((acta, idx) => (
                     <TableRow key={acta.minuteId || idx} hover sx={{ '&:hover': { bgcolor: '#faf5ff' } }}>
                       <TableCell align="center" sx={{ fontWeight: 800, color: '#475569', fontSize: 11.5, verticalAlign: 'middle', py: 1.2 }}>
-                        {idx + 1}
+                        {actasPage * actasRowsPerPage + idx + 1}
                       </TableCell>
                       <TableCell sx={{ verticalAlign: 'middle', py: 1.2 }}>
                         <Chip
@@ -1969,8 +2011,30 @@ export default function PlanAccionConsulta() {
               </TableBody>
             </Table>
           </TableContainer>
+          <TablePagination
+            component="div"
+            count={filteredActas.length}
+            page={actasPage}
+            onPageChange={(_, newPage) => setActasPage(newPage)}
+            rowsPerPage={actasRowsPerPage}
+            onRowsPerPageChange={(e) => {
+              setActasRowsPerPage(parseInt(e.target.value, 10));
+              setActasPage(0);
+            }}
+            rowsPerPageOptions={[5, 10, 20, 50]}
+            labelRowsPerPage="Filas por página:"
+            labelDisplayedRows={({ from, to, count }) => `${from}–${to} de ${count !== -1 ? count : `más de ${to}`}`}
+            sx={{
+              borderTop: '1px solid #e2e8f0',
+              bgcolor: '#ffffff',
+              '.MuiTablePagination-toolbar': { minHeight: 48, px: 2 },
+              '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': { fontSize: 12.5, fontWeight: 700, color: '#475569' }
+            }}
+          />
+          </>
         ) : activityViewTab === 'responsible' ? (
-          <TableContainer sx={{ maxHeight: 560, overflowX: 'auto' }}>
+          <>
+          <TableContainer sx={{ maxHeight: '65vh', overflowX: 'auto' }}>
           <Table stickyHeader size="small" sx={{ minWidth: 1040 }}>
             <TableHead>
               <TableRow>
@@ -1993,25 +2057,32 @@ export default function PlanAccionConsulta() {
                 {periods.map((p, pIdx) => {
                   const isS1 = (p.code || '').toUpperCase() === 'S1' || /1|prim/i.test(p.name || '') || pIdx === 0;
                   const isS2 = (p.code || '').toUpperCase() === 'S2' || /2|seg/i.test(p.name || '') || pIdx === 1;
-                  const label = isS1 ? 'AVANCE S1 (1 ENE - 31 JUL)' : (isS2 ? 'AVANCE S2 (1 AGO - 31 DIC)' : `AVANCE ${p.code || p.name}`);
+                  const title = isS1 ? 'AVANCE S1' : (isS2 ? 'AVANCE S2' : `AVANCE ${p.code || p.name}`);
+                  const subtitle = isS1 ? '(1 ENE - 31 JUL)' : (isS2 ? '(1 AGO - 31 DIC)' : '');
                   return (
                     <TableCell
                       key={p.id}
                       align="center"
                       sx={{
                         bgcolor: '#2f5597',
-                        fontWeight: 900,
                         color: '#ffffff',
-                        minWidth: 110,
-                        maxWidth: 140,
-                        py: 1.2,
+                        minWidth: 125,
+                        maxWidth: 155,
+                        py: 0.8,
                         px: 0.8,
-                        fontSize: 11,
-                        borderRight: '1px solid #ffffff',
-                        whiteSpace: 'nowrap'
+                        borderRight: '1px solid #ffffff'
                       }}
                     >
-                      {label}
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <Typography sx={{ fontWeight: 900, fontSize: 11, lineHeight: 1.2, color: '#ffffff', letterSpacing: '0.02em' }}>
+                          {title}
+                        </Typography>
+                        {subtitle && (
+                          <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#dbeafe', lineHeight: 1.15, mt: 0.35, whiteSpace: 'nowrap' }}>
+                            {subtitle}
+                          </Typography>
+                        )}
+                      </Box>
                     </TableCell>
                   );
                 })}
@@ -2034,7 +2105,7 @@ export default function PlanAccionConsulta() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredItems.map((it, idx) => {
+                filteredItems.slice(respPage * respRowsPerPage, respPage * respRowsPerPage + respRowsPerPage).map((it, idx) => {
                   const evidences = it.evidence || [];
 
                   // Cumplimiento consolidado: SUMATORIA institucional de los períodos de seguimiento
@@ -2059,7 +2130,7 @@ export default function PlanAccionConsulta() {
                     >
                       {/* NO. */}
                       <TableCell align="center" sx={{ position: 'sticky', left: 0, bgcolor: '#d9e2f3', fontWeight: 900, color: '#1f3864', fontSize: 12, zIndex: 1, borderRight: '1px solid #b4c6e7', verticalAlign: 'middle', width: 55 }}>
-                        {idx + 1}
+                        {respPage * respRowsPerPage + idx + 1}
                       </TableCell>
 
                       {/* Código */}
@@ -2140,28 +2211,30 @@ export default function PlanAccionConsulta() {
                                 />
                               </Tooltip>
                             ) : (
-                              <Stack direction="row" spacing={0.6}>
-                                <Button
-                                  size="small"
-                                  variant="contained"
-                                  color="success"
-                                  disabled={submittingItemReview}
-                                  onClick={() => handleReviewExecutionItem(it.id, 'accepted')}
-                                  sx={{ fontSize: 10.5, py: 0.2, px: 1, minWidth: 0, height: 22, textTransform: 'none', fontWeight: 850, borderRadius: 1.5 }}
-                                >
-                                  ✓ Aceptar
-                                </Button>
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  color="warning"
-                                  disabled={submittingItemReview}
-                                  onClick={() => handleOpenItemFeedbackModal(it)}
-                                  sx={{ fontSize: 10.5, py: 0.2, px: 1, minWidth: 0, height: 22, textTransform: 'none', fontWeight: 850, borderRadius: 1.5 }}
-                                >
-                                  💬 Retroalimentar
-                                </Button>
-                              </Stack>
+                              !readOnly && (
+                                <Stack direction="row" spacing={0.6}>
+                                  <Button
+                                    size="small"
+                                    variant="contained"
+                                    color="success"
+                                    disabled={submittingItemReview}
+                                    onClick={() => handleReviewExecutionItem(it.id, 'accepted')}
+                                    sx={{ fontSize: 10.5, py: 0.2, px: 1, minWidth: 0, height: 22, textTransform: 'none', fontWeight: 850, borderRadius: 1.5 }}
+                                  >
+                                    ✓ Aceptar
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="warning"
+                                    disabled={submittingItemReview}
+                                    onClick={() => handleOpenItemFeedbackModal(it)}
+                                    sx={{ fontSize: 10.5, py: 0.2, px: 1, minWidth: 0, height: 22, textTransform: 'none', fontWeight: 850, borderRadius: 1.5 }}
+                                  >
+                                    💬 Retroalimentar
+                                  </Button>
+                                </Stack>
+                              )
                             )}
                           </Box>
                         )}
@@ -2336,26 +2409,43 @@ export default function PlanAccionConsulta() {
 
                       {/* Acción */}
                       <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
-                        <Button
-                          size="small"
-                          variant="contained"
-                          startIcon={<CloudUploadIcon sx={{ fontSize: 16 }} />}
-                          onClick={() => handleOpenMonitoringModal(it)}
-                          sx={{
-                            borderRadius: 2.2,
-                            textTransform: 'none',
-                            fontWeight: 850,
-                            fontSize: 12,
-                            py: 0.6,
-                            px: 1.8,
-                            bgcolor: '#0284c7',
-                            boxShadow: '0 2px 8px rgba(2, 132, 199, 0.22)',
-                            '&:hover': { bgcolor: '#0369a1', boxShadow: '0 4px 12px rgba(2, 132, 199, 0.32)' },
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          Cargar Evidencia
-                        </Button>
+                        {readOnly ? (
+                          <Chip
+                            size="small"
+                            icon={<LockIcon sx={{ fontSize: '13px !important', color: '#64748b !important' }} />}
+                            label="Solo Lectura"
+                            sx={{
+                              fontWeight: 800,
+                              bgcolor: '#f1f5f9',
+                              color: '#64748b',
+                              border: '1px solid #cbd5e1',
+                              fontSize: 11.5,
+                              height: 26,
+                              borderRadius: 2
+                            }}
+                          />
+                        ) : (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<CloudUploadIcon sx={{ fontSize: 16 }} />}
+                            onClick={() => handleOpenMonitoringModal(it)}
+                            sx={{
+                              borderRadius: 2.2,
+                              textTransform: 'none',
+                              fontWeight: 850,
+                              fontSize: 12,
+                              py: 0.6,
+                              px: 1.8,
+                              bgcolor: '#0284c7',
+                              boxShadow: '0 2px 8px rgba(2, 132, 199, 0.22)',
+                              '&:hover': { bgcolor: '#0369a1', boxShadow: '0 4px 12px rgba(2, 132, 199, 0.32)' },
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            Cargar Evidencia
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -2364,9 +2454,31 @@ export default function PlanAccionConsulta() {
             </TableBody>
           </Table>
         </TableContainer>
+        <TablePagination
+          component="div"
+          count={filteredItems.length}
+          page={respPage}
+          onPageChange={(_, newPage) => setRespPage(newPage)}
+          rowsPerPage={respRowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRespRowsPerPage(parseInt(e.target.value, 10));
+            setRespPage(0);
+          }}
+          rowsPerPageOptions={[5, 10, 20, 50]}
+          labelRowsPerPage="Filas por página:"
+          labelDisplayedRows={({ from, to, count }) => `${from}–${to} de ${count !== -1 ? count : `más de ${to}`}`}
+          sx={{
+            borderTop: '1px solid #e2e8f0',
+            bgcolor: '#ffffff',
+            '.MuiTablePagination-toolbar': { minHeight: 48, px: 2 },
+            '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': { fontSize: 12.5, fontWeight: 700, color: '#475569' }
+          }}
+        />
+        </>
         ) : (
           /* TABLA DE ACTIVIDADES EN CORRESPONSABILIDAD */
-          <TableContainer sx={{ maxHeight: 560, overflowX: 'auto' }}>
+          <>
+          <TableContainer sx={{ maxHeight: '65vh', overflowX: 'auto' }}>
             <Table stickyHeader size="small" sx={{ minWidth: 1040 }}>
               <TableHead>
                 <TableRow>
@@ -2391,25 +2503,32 @@ export default function PlanAccionConsulta() {
                   {periods.map((p, pIdx) => {
                     const isS1 = (p.code || '').toUpperCase() === 'S1' || /1|prim/i.test(p.name || '') || pIdx === 0;
                     const isS2 = (p.code || '').toUpperCase() === 'S2' || /2|seg/i.test(p.name || '') || pIdx === 1;
-                    const label = isS1 ? 'AVANCE S1 (1 ENE - 31 JUL)' : (isS2 ? 'AVANCE S2 (1 AGO - 31 DIC)' : `AVANCE ${p.code || p.name}`);
+                    const title = isS1 ? 'AVANCE S1' : (isS2 ? 'AVANCE S2' : `AVANCE ${p.code || p.name}`);
+                    const subtitle = isS1 ? '(1 ENE - 31 JUL)' : (isS2 ? '(1 AGO - 31 DIC)' : '');
                     return (
                       <TableCell
                         key={p.id}
                         align="center"
                         sx={{
                           bgcolor: '#78350f',
-                          fontWeight: 900,
                           color: '#ffffff',
-                          minWidth: 110,
-                          maxWidth: 140,
-                          py: 1.2,
+                          minWidth: 125,
+                          maxWidth: 155,
+                          py: 0.8,
                           px: 0.8,
-                          fontSize: 11,
-                          borderRight: '1px solid #ffffff',
-                          whiteSpace: 'nowrap'
+                          borderRight: '1px solid #ffffff'
                         }}
                       >
-                        {label}
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                          <Typography sx={{ fontWeight: 900, fontSize: 11, lineHeight: 1.2, color: '#ffffff', letterSpacing: '0.02em' }}>
+                            {title}
+                          </Typography>
+                          {subtitle && (
+                            <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#fed7aa', lineHeight: 1.15, mt: 0.35, whiteSpace: 'nowrap' }}>
+                              {subtitle}
+                            </Typography>
+                          )}
+                        </Box>
                       </TableCell>
                     );
                   })}
@@ -2439,7 +2558,7 @@ export default function PlanAccionConsulta() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredCoItems.map((it, idx) => {
+                  filteredCoItems.slice(coRespPage * coRespRowsPerPage, coRespPage * coRespRowsPerPage + coRespRowsPerPage).map((it, idx) => {
                     const evidences = it.evidence || [];
                     const validResults = (it.monitoringResults || []).filter(
                       (r) => r.physical_progress !== null && r.physical_progress !== undefined && !isNaN(Number(r.physical_progress))
@@ -2462,7 +2581,7 @@ export default function PlanAccionConsulta() {
                       >
                         {/* NO. */}
                         <TableCell align="center" sx={{ position: 'sticky', left: 0, bgcolor: '#fef3c7', fontWeight: 900, color: '#78350f', fontSize: 12, zIndex: 1, borderRight: '1px solid #fde68a', verticalAlign: 'middle', width: 55 }}>
-                          {idx + 1}
+                          {coRespPage * coRespRowsPerPage + idx + 1}
                         </TableCell>
 
                         {/* Código */}
@@ -2659,26 +2778,43 @@ export default function PlanAccionConsulta() {
                           )}
                         </TableCell>
                         <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
-                          <Button
-                            size="small"
-                            variant="contained"
-                            startIcon={<CloudUploadIcon sx={{ fontSize: 16 }} />}
-                            onClick={() => handleOpenMonitoringModal(it)}
-                            sx={{
-                              borderRadius: 2.2,
-                              textTransform: 'none',
-                              fontWeight: 850,
-                              fontSize: 12,
-                              py: 0.6,
-                              px: 1.8,
-                              bgcolor: '#d97706',
-                              boxShadow: '0 2px 8px rgba(217, 119, 6, 0.22)',
-                              '&:hover': { bgcolor: '#b45309', boxShadow: '0 4px 10px rgba(217, 119, 6, 0.32)' },
-                              whiteSpace: 'nowrap'
-                            }}
-                          >
-                            Aportar Evidencia
-                          </Button>
+                          {readOnly ? (
+                            <Chip
+                              size="small"
+                              icon={<LockIcon sx={{ fontSize: '13px !important', color: '#92400e !important' }} />}
+                              label="Solo Lectura"
+                              sx={{
+                                fontWeight: 800,
+                                bgcolor: '#fef3c7',
+                                color: '#92400e',
+                                border: '1px solid #fde68a',
+                                fontSize: 11.5,
+                                height: 26,
+                                borderRadius: 2
+                              }}
+                            />
+                          ) : (
+                            <Button
+                              size="small"
+                              variant="contained"
+                              startIcon={<CloudUploadIcon sx={{ fontSize: 16 }} />}
+                              onClick={() => handleOpenMonitoringModal(it)}
+                              sx={{
+                                borderRadius: 2.2,
+                                textTransform: 'none',
+                                fontWeight: 850,
+                                fontSize: 12,
+                                py: 0.6,
+                                px: 1.8,
+                                bgcolor: '#d97706',
+                                boxShadow: '0 2px 8px rgba(217, 119, 6, 0.22)',
+                                '&:hover': { bgcolor: '#b45309', boxShadow: '0 4px 10px rgba(217, 119, 6, 0.32)' },
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              Aportar Evidencia
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -2687,6 +2823,27 @@ export default function PlanAccionConsulta() {
               </TableBody>
             </Table>
           </TableContainer>
+          <TablePagination
+            component="div"
+            count={filteredCoItems.length}
+            page={coRespPage}
+            onPageChange={(_, newPage) => setCoRespPage(newPage)}
+            rowsPerPage={coRespRowsPerPage}
+            onRowsPerPageChange={(e) => {
+              setCoRespRowsPerPage(parseInt(e.target.value, 10));
+              setCoRespPage(0);
+            }}
+            rowsPerPageOptions={[5, 10, 20, 50]}
+            labelRowsPerPage="Filas por página:"
+            labelDisplayedRows={({ from, to, count }) => `${from}–${to} de ${count !== -1 ? count : `más de ${to}`}`}
+            sx={{
+              borderTop: '1px solid #e2e8f0',
+              bgcolor: '#ffffff',
+              '.MuiTablePagination-toolbar': { minHeight: 48, px: 2 },
+              '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': { fontSize: 12.5, fontWeight: 700, color: '#475569' }
+            }}
+          />
+          </>
         )}
       </Paper>
 
@@ -3858,7 +4015,7 @@ export default function PlanAccionConsulta() {
          ======================================================== */}
       <Dialog
         open={leaderChatModalOpen}
-        onClose={() => setLeaderChatModalOpen(false)}
+        onClose={handleCloseLeaderChat}
         maxWidth="sm"
         fullWidth
         PaperProps={{
@@ -3921,20 +4078,20 @@ export default function PlanAccionConsulta() {
               <Typography sx={{ fontWeight: 850, fontSize: 14.5, lineHeight: 1.2, color: '#ffffff' }}>
                 Dirección de Planeación y Aseguramiento de la Calidad
               </Typography>
-              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.88)', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 0.6 }}>
-                <span>LUISA FERNANDA ORTEGA MUÑOZ (Analista de Planeación)</span>
-                <span>·</span>
-                <span style={{ color: '#86efac', fontWeight: 700 }}>Planeación y Efectividad</span>
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.88)', fontSize: 12 }}>
+                LUISA FERNANDA ORTEGA MUÑOZ (Analista de Planeación)
               </Typography>
             </Box>
           </Stack>
-          <IconButton
-            size="small"
-            onClick={() => setLeaderChatModalOpen(false)}
-            sx={{ color: '#ffffff', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}
-          >
-            <CloseIcon sx={{ fontSize: 22 }} />
-          </IconButton>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <IconButton
+              size="small"
+              onClick={handleCloseLeaderChat}
+              sx={{ color: '#ffffff', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}
+            >
+              <CloseIcon sx={{ fontSize: 22 }} />
+            </IconButton>
+          </Stack>
         </Box>
 
         {/* Cuerpo del Chat con Fondo WhatsApp (Doodle Beige / Pattern) */}
@@ -3961,97 +4118,126 @@ export default function PlanAccionConsulta() {
                 px: 2,
                 py: 0.9,
                 borderRadius: 2.5,
-                maxWidth: 500,
+                maxWidth: 520,
                 textAlign: 'center',
                 fontSize: 11.5,
                 lineHeight: 1.35,
                 boxShadow: '0 1px 1.5px rgba(0,0,0,0.08)',
-                border: '1px solid rgba(0,0,0,0.04)'
+                border: '1px solid rgba(0,0,0,0.04)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 0.7
               }}
             >
-              🔒 <strong>Canal Directo de Retroalimentación:</strong> Los mensajes enviados aquí notifican automáticamente a la Dirección de Planeación y Aseguramiento de la Calidad (Planeación y Efectividad) y a su correo institucional.
+              <LockIcon sx={{ fontSize: 14, color: '#713f12', flexShrink: 0 }} />
+              <span>
+                <strong>Canal de Comunicación Directa:</strong> Este espacio es exclusivamente informativo para concertación y seguimiento mutuo, sin alterar actas ni documentos oficiales.
+              </span>
             </Paper>
           </Box>
 
-          {/* Listado de Mensajes en orden cronológico */}
+          {/* Listado de Mensajes en orden cronológico (Una persona a la izquierda, la otra a la derecha) */}
           {leaderChatThread.length === 0 ? (
             <Box sx={{ textAlign: 'center', py: 4, color: '#64748b' }}>
               <Typography sx={{ fontSize: 13, fontWeight: 700 }}>
                 No hay mensajes previos en este canal.
               </Typography>
               <Typography sx={{ fontSize: 12, mt: 0.5 }}>
-                Escriba a continuación para comunicarse directamente con el equipo de Planeación.
+                Escriba a continuación para comunicarse directamente sobre el plan de acción a su cargo.
               </Typography>
             </Box>
           ) : (
-            leaderChatThread.map((msg, idx) => {
-              const isFromPlanning = msg.sender_type === 'planning';
-              const timeStr = msg.created_at
-                ? new Date(msg.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
-                : '';
+            (() => {
+              const threadHasMe = leaderChatThread.some((m) =>
+                authUser && (
+                  (m.sender_id && String(m.sender_id) === String(authUser.id)) ||
+                  (m.sender_email && authUser.email && m.sender_email.toLowerCase() === authUser.email.toLowerCase()) ||
+                  (m.sender_name && authUser.nombre && m.sender_name.trim().toLowerCase() === authUser.nombre.trim().toLowerCase())
+                )
+              );
 
-              return (
-                <Box
-                  key={msg.id || idx}
-                  sx={{
-                    display: 'flex',
-                    justifyContent: isFromPlanning ? 'flex-start' : 'flex-end',
-                    mb: 1.6
-                  }}
-                >
-                  <Paper
-                    elevation={0}
+              return leaderChatThread.map((msg, idx) => {
+                const isMe = Boolean(
+                  authUser && (
+                    (msg.sender_id && String(msg.sender_id) === String(authUser.id)) ||
+                    (msg.sender_email && authUser.email && msg.sender_email.toLowerCase() === authUser.email.toLowerCase()) ||
+                    (msg.sender_name && authUser.nombre && msg.sender_name.trim().toLowerCase() === authUser.nombre.trim().toLowerCase())
+                  )
+                );
+
+                const isRightSide = threadHasMe ? isMe : (msg.sender_type === 'leader');
+                const timeStr = msg.created_at
+                  ? new Date(msg.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+                  : '';
+
+                return (
+                  <Box
+                    key={msg.id || idx}
                     sx={{
-                      maxWidth: { xs: '88%', sm: '80%' },
-                      p: 1.3,
-                      px: 1.7,
-                      borderRadius: isFromPlanning ? '0px 10px 10px 10px' : '10px 0px 10px 10px',
-                      bgcolor: isFromPlanning ? '#d9fdd3' : '#ffffff',
-                      boxShadow: '0 1px 1px rgba(11,20,26,.14)',
-                      position: 'relative'
+                      display: 'flex',
+                      justifyContent: isRightSide ? 'flex-end' : 'flex-start',
+                      mb: 1.6
                     }}
                   >
-                    <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#008069', mb: 0.4 }}>
-                      {msg.sender_name || (isFromPlanning ? 'LUISA FERNANDA ORTEGA MUÑOZ' : 'Líder')}
-                      <span style={{ fontSize: 11, fontWeight: 500, color: '#667781', marginLeft: 6 }}>
-                        ({msg.sender_cargo || (isFromPlanning ? 'Analista de Planeación · Planeación y Efectividad' : 'Líder Responsable')})
-                      </span>
-                    </Typography>
-
-                    <Typography sx={{ fontSize: 13.5, color: '#111b21', lineHeight: 1.52, whiteSpace: 'pre-wrap' }}>
-                      {msg.message}
-                    </Typography>
-
-                    <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="flex-end" sx={{ mt: 0.5 }}>
-                      <Typography variant="caption" sx={{ fontSize: 10.5, color: '#667781' }}>
-                        {timeStr}
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        maxWidth: { xs: '88%', sm: '80%' },
+                        p: 1.3,
+                        px: 1.7,
+                        borderRadius: isRightSide ? '10px 0px 10px 10px' : '0px 10px 10px 10px',
+                        bgcolor: isRightSide ? '#d9fdd3' : '#ffffff',
+                        border: isRightSide ? 'none' : '1px solid #e2e8f0',
+                        boxShadow: '0 1px 1px rgba(11,20,26,.14)',
+                        position: 'relative'
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 12, fontWeight: 800, color: isRightSide ? '#008069' : '#0369a1', mb: 0.4 }}>
+                        {msg.sender_name || (isRightSide ? 'Tú' : (msg.sender_type === 'planning' ? 'LUISA FERNANDA ORTEGA MUÑOZ' : 'Líder'))}
+                        <span style={{ fontSize: 11, fontWeight: 500, color: '#667781', marginLeft: 6 }}>
+                          ({msg.sender_cargo || (msg.sender_type === 'planning' ? 'Analista de Planeación · Planeación y Efectividad' : 'Líder Responsable')})
+                        </span>
                       </Typography>
-                      {isFromPlanning ? (
-                        <span style={{ color: '#53bdeb', fontSize: 13, fontWeight: 900, lineHeight: 1 }}>✓✓</span>
-                      ) : (
-                        <Typography variant="caption" sx={{ fontSize: 10, color: '#008069', fontWeight: 700 }}>
-                          ✓ Notificado a Planeación
+
+                      <Typography sx={{ fontSize: 13.5, color: '#111b21', lineHeight: 1.52, whiteSpace: 'pre-wrap' }}>
+                        {msg.message}
+                      </Typography>
+
+                      <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="flex-end" sx={{ mt: 0.5 }}>
+                        <Typography variant="caption" sx={{ fontSize: 10.5, color: '#667781' }}>
+                          {timeStr}
                         </Typography>
-                      )}
-                    </Stack>
-                  </Paper>
-                </Box>
-              );
-            })
+                        {isRightSide ? (
+                          <span style={{ color: '#53bdeb', fontSize: 13, fontWeight: 900, lineHeight: 1 }}>✓✓</span>
+                        ) : (
+                          <Typography variant="caption" sx={{ fontSize: 10, color: '#008069', fontWeight: 700 }}>
+                            ✓ Recibido
+                          </Typography>
+                        )}
+                      </Stack>
+                    </Paper>
+                  </Box>
+                );
+              });
+            })()
           )}
         </DialogContent>
 
         {/* Barra de Entrada de Mensaje estilo WhatsApp con Enlace a Correo */}
         <Box sx={{ p: 1.5, px: 2, bgcolor: '#f0f2f5', borderTop: '1px solid #d1d7db' }}>
-          <Stack direction="row" spacing={1.2} alignItems="center">
+          <Stack direction="row" spacing={1.2} alignItems="flex-end">
             <TextField
               fullWidth
+              multiline
+              minRows={1}
+              maxRows={5}
               size="small"
-              placeholder="Escriba su mensaje u observación (se notifica automáticamente por correo institucional)..."
+              placeholder="Escriba su mensaje u observación (Enter para nueva línea, clic en enviar o Ctrl+Enter)..."
               value={leaderChatMessage}
               onChange={(e) => setLeaderChatMessage(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault();
                   handleSendLeaderChatMessage();
                 }
@@ -4059,16 +4245,17 @@ export default function PlanAccionConsulta() {
               disabled={sendingLeaderChat}
               sx={{
                 bgcolor: '#ffffff',
-                borderRadius: 6,
+                borderRadius: 4,
                 '& .MuiOutlinedInput-root': {
-                  borderRadius: 6,
+                  borderRadius: 4,
                   fontSize: 13,
+                  lineHeight: 1.45,
                   bgcolor: '#ffffff',
-                  pr: 1
+                  p: 1.2
                 }
               }}
             />
-            <Tooltip title="Enviar mensaje y remitir a correo institucional de Planeación" arrow>
+            <Tooltip title="Enviar mensaje (Ctrl+Enter o clic) y remitir a correo institucional de Planeación" arrow>
               <span>
                 <IconButton
                   disabled={sendingLeaderChat || !leaderChatMessage.trim()}
@@ -4090,6 +4277,42 @@ export default function PlanAccionConsulta() {
           </Stack>
         </Box>
       </Dialog>
+
+      {/* BOTÓN FLOTANTE PARA ACCESO DIRECTO AL CANAL DE COMUNICACIÓN CON PLANEACIÓN */}
+      {!readOnly && selectedPlan?.id && (
+        <Tooltip
+          title="Aquí podrá comunicarse directamente con el componente de Planeación y Efectividad para sugerencias, reclamos o consultas sobre el plan de acción a su cargo."
+          arrow
+          placement="left"
+        >
+          <Fab
+            onClick={() => setLeaderChatModalOpen(true)}
+            sx={{
+              position: 'fixed',
+              bottom: 28,
+              right: 32,
+              bgcolor: '#008069',
+              color: '#ffffff',
+              boxShadow: '0 6px 20px rgba(0,128,105,0.45)',
+              zIndex: 1300,
+              '&:hover': {
+                bgcolor: '#006a57',
+                transform: 'scale(1.08)'
+              },
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <Badge
+              badgeContent={leaderChatThread.length}
+              color="error"
+              overlap="circular"
+              invisible={leaderChatThread.length === 0}
+            >
+              <ChatBubbleOutlineIcon sx={{ fontSize: 26 }} />
+            </Badge>
+          </Fab>
+        </Tooltip>
+      )}
     </Stack>
   );
 }
