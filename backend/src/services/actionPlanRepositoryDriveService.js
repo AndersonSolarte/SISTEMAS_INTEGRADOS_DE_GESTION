@@ -270,11 +270,23 @@ const upsertFile = async (drive, { parentId, name, key, mimeType, buffer, hash }
   }
 };
 
+const parsePeriodDate = (val) => {
+  if (!val) return null;
+  if (typeof val === 'string') return val.slice(0, 10);
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  return null;
+};
+
 const intersectsPeriod = (item, period) => {
-  if (!item.starts_on && !item.ends_on) return true;
-  const starts = item.starts_on || item.ends_on;
-  const ends = item.ends_on || item.starts_on;
-  return starts <= period.ends_on && ends >= period.starts_on;
+  const itemStart = parsePeriodDate(item.starts_on || item.custom_values?.starts_on || item.custom_values?.fecha_inicio || item.fecha_inicio);
+  const itemEnd = parsePeriodDate(item.ends_on || item.custom_values?.ends_on || item.custom_values?.fecha_fin || item.fecha_fin || itemStart);
+  if (!itemStart && !itemEnd) return true;
+  const starts = itemStart || itemEnd;
+  const ends = itemEnd || itemStart;
+  const pStarts = parsePeriodDate(period.starts_on);
+  const pEnds = parsePeriodDate(period.ends_on);
+  if (!pStarts || !pEnds) return true;
+  return starts <= pEnds && ends >= pStarts;
 };
 
 const buildRepositoryPeriods = (term) => {

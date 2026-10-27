@@ -82,6 +82,41 @@ const getFileIcon = (fileName) => {
   return <FileIcon sx={{ color: '#64748b', fontSize: 22 }} />;
 };
 
+// Determina si un período de reporte / seguimiento aplica a una actividad según sus fechas de ejecución
+const isPeriodApplicableToItem = (item, period, allPeriods = []) => {
+  if (!item) return true;
+  const startRaw = item.starts_on || item.fecha_inicio || item.custom_values?.starts_on || item.custom_values?.fecha_inicio;
+  const endRaw = item.ends_on || item.fecha_fin || item.custom_values?.ends_on || item.custom_values?.fecha_fin;
+  if (!startRaw && !endRaw) return true;
+  const start = String(startRaw || endRaw).slice(0, 10);
+  const end = String(endRaw || startRaw).slice(0, 10);
+
+  let pStart = period.starts_on ? String(period.starts_on).slice(0, 10) : null;
+  let pEnd = period.ends_on ? String(period.ends_on).slice(0, 10) : null;
+  const year = (start || end).slice(0, 4) || new Date().getFullYear();
+  const isS1 = (period.code || '').toUpperCase() === 'S1' || /1|prim/i.test(period.name || '') || period.position === 1;
+  const isS2 = (period.code || '').toUpperCase() === 'S2' || /2|seg/i.test(period.name || '') || period.position === 2;
+
+  // Fechas oficiales institucionales:
+  // Primer Semestre: 1 de enero al 31 de julio
+  // Segundo Semestre: 1 de agosto al 31 de diciembre
+  if (!pStart || !pEnd) {
+    if (isS1) {
+      pStart = `${year}-01-01`;
+      pEnd = `${year}-07-31`;
+    } else if (isS2) {
+      pStart = `${year}-08-01`;
+      pEnd = `${year}-12-31`;
+    }
+  } else {
+    if (isS1 && pEnd.endsWith('-06-30')) pEnd = `${pEnd.slice(0, 4)}-07-31`;
+    if (isS2 && pStart.endsWith('-07-01')) pStart = `${pStart.slice(0, 4)}-08-01`;
+  }
+
+  if (!pStart || !pEnd) return true;
+  return start <= pEnd && end >= pStart;
+};
+
 export default function PlanAccionConsulta({
   initialPlanId = null,
   initialPlanData = null,
@@ -300,23 +335,12 @@ export default function PlanAccionConsulta({
     setTargetItem(item);
     const periodsList = [...(selectedPlan?.term?.monitoringPeriods || [])].sort((a, b) => (a.position || 0) - (b.position || 0));
 
-    // Parametrización estricta por fecha de calendario:
-    // Primer Reporte: 1 de enero al 31 de julio (meses 1 a 7)
-    // Segundo Reporte: 1 de agosto al 31 de diciembre (meses 8 a 12)
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1; // 1 = Enero ... 7 = Julio, 8 = Agosto ... 12 = Diciembre
-    const isFirstReportPeriod = currentMonth <= 7;
-
-    let autoPeriod = null;
-    if (isFirstReportPeriod) {
-      autoPeriod = periodsList.find((p) => (p.code || '').toUpperCase() === 'S1' || /1|prim/i.test(p.name || ''));
-    } else {
-      autoPeriod = periodsList.find((p) => (p.code || '').toUpperCase() === 'S2' || /2|seg/i.test(p.name || ''));
-    }
-
-    if (!autoPeriod) {
-      autoPeriod = periodsList[isFirstReportPeriod ? 0 : Math.min(1, periodsList.length - 1)] || periodsList[0] || null;
-    }
+    // Determinar período aplicable de forma automática según las fechas configuradas de la actividad:
+    // Primer Semestre: 1 de enero al 31 de julio
+    // Segundo Semestre: 1 de agosto al 31 de diciembre
+    const applicablePeriods = periodsList.filter((p) => isPeriodApplicableToItem(item, p, periodsList));
+    const effectivePeriods = applicablePeriods.length > 0 ? applicablePeriods : periodsList;
+    const autoPeriod = effectivePeriods[0] || periodsList[0] || null;
 
     const defaultPeriodId = autoPeriod?.id || '';
     setMonitoringForm({
@@ -664,7 +688,13 @@ export default function PlanAccionConsulta({
 
   const handleOpenActivityFolder = async (item, periodId = null) => {
     if (!item) return;
-    const targetPeriodId = periodId || monitoringForm?.period_id || null;
+    let targetPeriodId = periodId || monitoringForm?.period_id || null;
+    if (!targetPeriodId) {
+      const applicable = periods.filter((p) => isPeriodApplicableToItem(item, p, periods));
+      if (applicable.length > 0) {
+        targetPeriodId = applicable[0].id;
+      }
+    }
     const directUrl = (item.evidence || []).find((e) => targetPeriodId ? (String(e.monitoring_period_id) === String(targetPeriodId) && e.drive_folder_url) : e.drive_folder_url)?.drive_folder_url
       || ((item.evidence || []).find((e) => targetPeriodId ? (String(e.monitoring_period_id) === String(targetPeriodId) && e.drive_folder_id) : e.drive_folder_id)
           ? `https://drive.google.com/drive/folders/${item.evidence.find((e) => targetPeriodId ? (String(e.monitoring_period_id) === String(targetPeriodId) && e.drive_folder_id) : e.drive_folder_id).drive_folder_id}`
@@ -857,6 +887,13 @@ export default function PlanAccionConsulta({
       (a.status || '').toLowerCase().includes(term)
     );
   }, [planActas, activitySearch]);
+
+  // Períodos de seguimiento aplicables a la actividad seleccionada según sus fechas
+  const modalAvailablePeriods = useMemo(() => {
+    if (!targetItem || !periods || periods.length === 0) return periods;
+    const filtered = periods.filter((p) => isPeriodApplicableToItem(targetItem, p, periods));
+    return filtered.length > 0 ? filtered : periods;
+  }, [targetItem, periods]);
 
   // Evidencias asociadas al período seleccionado en el modal de radicación
   const targetPeriodEvidences = useMemo(() => {
@@ -2267,6 +2304,7 @@ export default function PlanAccionConsulta({
                       {periods.map((p) => {
                         const r = (it.monitoringResults || []).find((res) => res.monitoring_period_id === p.id);
                         const prog = r && r.physical_progress !== null && r.physical_progress !== undefined ? Number(r.physical_progress) : null;
+                        const applies = isPeriodApplicableToItem(it, p, periods);
                         return (
                           <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
                             {prog !== null ? (
@@ -2285,9 +2323,26 @@ export default function PlanAccionConsulta({
                                   }}
                                 />
                               </Tooltip>
-                            ) : (
+                            ) : applies ? (
                               <Tooltip title="Sin valoración registrada por Planeación y Efectividad para este período" arrow>
                                 <Typography sx={{ fontSize: 11.5, color: '#94a3b8', cursor: 'help' }}>—</Typography>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip title="Actividad no programada para este período según sus fechas de ejecución" arrow>
+                                <Chip
+                                  size="small"
+                                  label="N/A"
+                                  sx={{
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    height: 20,
+                                    borderRadius: 1,
+                                    bgcolor: '#f1f5f9',
+                                    color: '#94a3b8',
+                                    border: '1px dashed #cbd5e1',
+                                    cursor: 'help'
+                                  }}
+                                />
                               </Tooltip>
                             )}
                           </TableCell>
@@ -2665,6 +2720,7 @@ export default function PlanAccionConsulta({
                         {periods.map((p) => {
                           const r = (it.monitoringResults || []).find((res) => res.monitoring_period_id === p.id);
                           const prog = r && r.physical_progress !== null && r.physical_progress !== undefined ? Number(r.physical_progress) : null;
+                          const applies = isPeriodApplicableToItem(it, p, periods);
                           return (
                             <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
                               {prog !== null ? (
@@ -2683,9 +2739,26 @@ export default function PlanAccionConsulta({
                                     }}
                                   />
                                 </Tooltip>
-                              ) : (
+                              ) : applies ? (
                                 <Tooltip title="Sin valoración registrada por Planeación y Efectividad para este período" arrow>
                                   <Typography sx={{ fontSize: 11, color: '#cbd5e1', cursor: 'help' }}>—</Typography>
+                                </Tooltip>
+                              ) : (
+                                <Tooltip title="Actividad no programada para este período según sus fechas de ejecución" arrow>
+                                  <Chip
+                                    size="small"
+                                    label="N/A"
+                                    sx={{
+                                      fontSize: 10,
+                                      fontWeight: 700,
+                                      height: 20,
+                                      borderRadius: 1,
+                                      bgcolor: '#f1f5f9',
+                                      color: '#94a3b8',
+                                      border: '1px dashed #cbd5e1',
+                                      cursor: 'help'
+                                    }}
+                                  />
                                 </Tooltip>
                               )}
                             </TableCell>
@@ -2933,13 +3006,15 @@ export default function PlanAccionConsulta({
                 label="Período de Reporte *"
                 value={monitoringForm.period_id}
                 onChange={(e) => handlePeriodChange(e.target.value)}
+                disabled={modalAvailablePeriods.length <= 1}
+                helperText={modalAvailablePeriods.length <= 1 ? "Período asignado automáticamente según las fechas de ejecución de la actividad" : ""}
                 sx={{
                   flex: 1,
                   '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#f8fafc' }
                 }}
               >
-                {periods.map((p, idx) => {
-                  const isS1 = (p.code || '').toUpperCase() === 'S1' || /1|prim/i.test(p.name || '') || idx === 0;
+                {modalAvailablePeriods.map((p, idx) => {
+                  const isS1 = (p.code || '').toUpperCase() === 'S1' || /1|prim/i.test(p.name || '') || (p.position === 1);
                   const labelPeriod = isS1
                     ? 'Primer Reporte · 1 de enero al 31 de julio'
                     : 'Segundo Reporte · 1 de agosto al 31 de diciembre';

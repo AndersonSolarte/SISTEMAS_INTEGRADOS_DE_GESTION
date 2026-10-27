@@ -168,25 +168,42 @@ const ensureEvidenceFolder = async (drive, evidence) => {
   // 4. Período / Semestre (ej. "2026-1" o "2026-2")
   const periods = await StrategicMonitoringPeriod.findAll({
     where: { term_id: term.id },
-    order: [['order', 'ASC'], ['starts_on', 'ASC']]
+    order: [['position', 'ASC'], ['starts_on', 'ASC']]
+  });
+
+  const normalizedPeriods = periods.map((period, index) => {
+    const isS1 = (period.code || '').toUpperCase() === 'S1' || /1|prim/i.test(period.name || '') || index === 0;
+    return {
+      raw: period,
+      id: String(period.id),
+      code: period.code,
+      name: period.name,
+      starts_on: isS1 ? `${term.year}-01-01` : `${term.year}-08-01`,
+      ends_on: isS1 ? `${term.year}-07-31` : `${term.year}-12-31`,
+      index
+    };
   });
 
   let selectedPeriod = null;
   if (evidence.monitoring_period_id) {
-    selectedPeriod = periods.find((p) => String(p.id) === String(evidence.monitoring_period_id));
+    selectedPeriod = normalizedPeriods.find((p) => p.id === String(evidence.monitoring_period_id));
   }
   if (!selectedPeriod) {
-    // Si no se especifica período, deducir por la fecha de entrega de la actividad o la fecha actual
-    const checkDateStr = item.delivery_date || item.end_date || item.start_date || new Date().toISOString();
-    const checkMonth = new Date(checkDateStr).getMonth() + 1; // 1 a 12
-    const periodIdx = checkMonth <= 7 ? 0 : 1;
-    selectedPeriod = periods[periodIdx] || periods[0];
+    // Si no se especifica período, deducir automáticamente por la fecha configurada para la actividad
+    const itemStart = item.starts_on || item.custom_values?.starts_on || item.custom_values?.fecha_inicio || item.fecha_inicio;
+    const itemEnd = item.ends_on || item.custom_values?.ends_on || item.custom_values?.fecha_fin || item.fecha_fin || itemStart;
+    const dateToCheck = itemEnd || itemStart;
+    if (dateToCheck) {
+      const month = new Date(dateToCheck).getMonth() + 1; // 1 = Ene, 7 = Jul, 8 = Ago, 12 = Dic
+      const periodIdx = month <= 7 ? 0 : Math.min(1, normalizedPeriods.length - 1);
+      selectedPeriod = normalizedPeriods[periodIdx] || normalizedPeriods[0];
+    } else {
+      selectedPeriod = normalizedPeriods[0];
+    }
   }
 
-  const periodIndex = periods.findIndex((p) => String(p.id) === String(selectedPeriod?.id));
-  const periodFolderName = selectedPeriod
-    ? `${term.year}-${periodIndex >= 0 ? periodIndex + 1 : 1}`
-    : `${term.year}-1`;
+  const periodFolderIdx = selectedPeriod ? selectedPeriod.index + 1 : 1;
+  const periodFolderName = `${term.year}-${periodFolderIdx}`;
   const periodKey = selectedPeriod
     ? `action-repository:period:${unitScope}:${selectedPeriod.id}`
     : `action-repository:period:${unitScope}:default`;

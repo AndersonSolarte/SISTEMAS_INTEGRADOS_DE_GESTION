@@ -398,6 +398,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saved' | 'saving' | 'pending' | 'error'
   const hasUnsavedChangesRef = useRef(false);
   const isApplyingLoadRef = useRef(false);
+  const lastLoadedMeetingKeyRef = useRef(null);
 
   // Minute preview state (COM-IF-FR-002)
   const [editingActa, setEditingActa] = useState(false);
@@ -462,7 +463,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
   }, [planId, platformPlan?.id, enqueueSnackbar, onPlanReplaced]);
 
-  useEffect(() => { if (open) load(); }, [open, load]);
+  useEffect(() => {
+    if (open) {
+      load();
+    } else {
+      lastLoadedMeetingKeyRef.current = null;
+    }
+  }, [open, load]);
 
   useEffect(() => {
     if (tab === 'export' && planId && !autoSyncedTabRef.current) {
@@ -615,11 +622,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       if (response?.data?.driveSync) {
         setLastDriveSync(response.data.driveSync);
       }
-      await load();
+      await load(false);
       const hasDriveError = Boolean(response?.data?.driveError);
-      enqueueSnackbar(response?.message || 'Acta formalizada y sincronizada en Google Drive.', {
-        variant: hasDriveError ? 'warning' : 'success'
-      });
+      if (!silent) {
+        enqueueSnackbar(response?.message || 'Acta formalizada y sincronizada en Google Drive.', {
+          variant: hasDriveError ? 'warning' : 'success'
+        });
+      }
     } catch (error) {
       if (!silent) {
         enqueueSnackbar(error.response?.data?.message || 'No fue posible sincronizar el acta.', { variant: 'error' });
@@ -642,8 +651,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   useEffect(() => {
     if (detail) {
-      isApplyingLoadRef.current = true;
       const currentMeeting = activeMeeting || {};
+      const currentMeetingId = currentMeeting.id ? String(currentMeeting.id) : (selectedMeetingId || '__new__');
+      const meetingKey = `${detail.id}-${currentMeetingId}`;
+
+      // Si ya está cargada esta misma reunión en los inputs y el usuario ya está interactuando,
+      // no sobreescribir los campos locales para no interrumpir la escritura ni resetear el foco.
+      if (lastLoadedMeetingKeyRef.current === meetingKey) {
+        return;
+      }
+      lastLoadedMeetingKeyRef.current = meetingKey;
+
+      isApplyingLoadRef.current = true;
       if (!selectedMeetingId && currentMeeting.id) setSelectedMeetingId(String(currentMeeting.id));
       const firstItem = detail.items?.[0] || {};
       const defaultStart = currentMeeting.starts_at || firstItem.starts_on;
@@ -2230,6 +2249,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   };
   const startNewMeeting = () => {
     isApplyingLoadRef.current = true;
+    lastLoadedMeetingKeyRef.current = `${detail?.id || planId}-__new__`;
     const firstItem = detail?.items?.[0] || {};
     setSelectedMeetingId('__new__');
     setMeeting({
@@ -2300,7 +2320,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       if (!silent) enqueueSnackbar('Seleccione un Responsable principal para el acta.', { variant: 'warning' });
       return false;
     }
-    setSaving(true);
+    if (!silent) setSaving(true);
     setSaveStatus('saving');
     try {
       const payload = {
@@ -2313,14 +2333,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       const savedMeeting = activeMeetingId
         ? await strategicPlanningService.updateMeeting(activeMeetingId, payload)
         : await strategicPlanningService.createMeeting(planId, payload);
-      if (!activeMeetingId && savedMeeting?.data?.id) setSelectedMeetingId(String(savedMeeting.data.id));
+      
+      const newlyCreatedId = !activeMeetingId && savedMeeting?.data?.id ? String(savedMeeting.data.id) : null;
+      if (newlyCreatedId) {
+        lastLoadedMeetingKeyRef.current = `${detail?.id || planId}-${newlyCreatedId}`;
+        setSelectedMeetingId(newlyCreatedId);
+      }
       hasUnsavedChangesRef.current = false;
       setSaveStatus('saved');
-      isApplyingLoadRef.current = true;
-      await load();
-      window.setTimeout(() => {
-        isApplyingLoadRef.current = false;
-      }, 500);
+
+      // Actualizar silenciosamente en segundo plano: NUNCA activa spinner a pantalla completa
+      await load(false);
+
       const signaturesReset = Boolean(savedMeeting?.data?.signatures_reset);
       if (!silent) {
         if (signaturesReset) {
@@ -2340,7 +2364,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       }
       return false;
     }
-    finally { setSaving(false); }
+    finally {
+      if (!silent) setSaving(false);
+    }
   };
 
   // Seguimiento de cambios y autoguardado de reunión / acta
@@ -2351,7 +2377,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   }, [meeting, meetingParticipants]);
 
   useEffect(() => {
-    if (!open || tab !== 'meeting' || !hasUnsavedChangesRef.current || saving || isApplyingLoadRef.current) return undefined;
+    if (!open || tab !== 'meeting' || !hasUnsavedChangesRef.current || isApplyingLoadRef.current) return undefined;
     if (!meeting.title?.trim() || !meeting.starts_at || !richTextPlain(meeting.objective)) return undefined;
     if (!meetingParticipants.length || !meetingParticipants.some((p) => p.meeting_role === 'principal')) return undefined;
 
@@ -2360,7 +2386,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }, 1200);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meeting, meetingParticipants, open, tab, saving]);
+  }, [meeting, meetingParticipants, open, tab]);
   // eslint-disable-next-line no-unused-vars
   const generateMinute = async (meetingId) => {
     try {

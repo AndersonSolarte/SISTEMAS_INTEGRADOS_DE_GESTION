@@ -22,8 +22,8 @@ const buildPedSchedule = ({ startsOn, durationYears }) => {
     ends_on: `${year}-12-31`,
     status: index === 0 ? 'active' : 'planned',
     periods: [
-      { code: 'S1', name: 'Informe de gestión · Semestre 1', starts_on: `${year}-01-01`, ends_on: `${year}-06-30`, position: 1, weight: 0.5, status: index === 0 ? 'active' : 'planned' },
-      { code: 'S2', name: 'Informe de gestión · Semestre 2', starts_on: `${year}-07-01`, ends_on: `${year}-12-31`, position: 2, weight: 0.5, status: index === 0 ? 'active' : 'planned' }
+      { code: 'S1', name: 'Informe de gestión · Semestre 1', starts_on: `${year}-01-01`, ends_on: `${year}-07-31`, position: 1, weight: 0.5, status: index === 0 ? 'active' : 'planned' },
+      { code: 'S2', name: 'Informe de gestión · Semestre 2', starts_on: `${year}-08-01`, ends_on: `${year}-12-31`, position: 2, weight: 0.5, status: index === 0 ? 'active' : 'planned' }
     ]
   }));
 
@@ -70,8 +70,8 @@ const reconcilePlanTerms = async (plan, transaction = null) => {
         status: 'planned'
       }, { transaction });
       await StrategicMonitoringPeriod.bulkCreate([
-        { term_id: term.id, code: 'S1', name: 'Informe de gestión · Semestre 1', starts_on: `${year}-01-01`, ends_on: `${year}-06-30`, position: 1, weight: 0.5, status: 'planned' },
-        { term_id: term.id, code: 'S2', name: 'Informe de gestión · Semestre 2', starts_on: `${year}-07-01`, ends_on: `${year}-12-31`, position: 2, weight: 0.5, status: 'planned' }
+        { term_id: term.id, code: 'S1', name: 'Informe de gestión · Semestre 1', starts_on: `${year}-01-01`, ends_on: `${year}-07-31`, position: 1, weight: 0.5, status: 'planned' },
+        { term_id: term.id, code: 'S2', name: 'Informe de gestión · Semestre 2', starts_on: `${year}-08-01`, ends_on: `${year}-12-31`, position: 2, weight: 0.5, status: 'planned' }
       ], { transaction });
     }
   }
