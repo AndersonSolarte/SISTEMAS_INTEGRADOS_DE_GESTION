@@ -833,6 +833,38 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     return [...raw].sort((a, b) => (a.position || 0) - (b.position || 0));
   }, [detail?.term?.monitoringPeriods]);
 
+  // Determina si un período de seguimiento aplica a una actividad según sus fechas de ejecución
+  const isPeriodApplicableToItem = (item, period) => {
+    if (!item) return true;
+    const startRaw = item.starts_on || item.fecha_inicio || item.custom_values?.starts_on || item.custom_values?.fecha_inicio;
+    const endRaw = item.ends_on || item.fecha_fin || item.custom_values?.ends_on || item.custom_values?.fecha_fin;
+    if (!startRaw && !endRaw) return true;
+    const start = String(startRaw || endRaw).slice(0, 10);
+    const end = String(endRaw || startRaw).slice(0, 10);
+
+    let pStart = period.starts_on ? String(period.starts_on).slice(0, 10) : null;
+    let pEnd = period.ends_on ? String(period.ends_on).slice(0, 10) : null;
+    const year = (start || end).slice(0, 4) || new Date().getFullYear();
+    const isS1 = (period.code || '').toUpperCase() === 'S1' || /1|prim/i.test(period.name || '') || period.position === 1;
+    const isS2 = (period.code || '').toUpperCase() === 'S2' || /2|seg/i.test(period.name || '') || period.position === 2;
+
+    if (!pStart || !pEnd) {
+      if (isS1) {
+        pStart = `${year}-01-01`;
+        pEnd = `${year}-07-31`;
+      } else if (isS2) {
+        pStart = `${year}-08-01`;
+        pEnd = `${year}-12-31`;
+      }
+    } else {
+      if (isS1 && pEnd.endsWith('-06-30')) pEnd = `${pEnd.slice(0, 4)}-07-31`;
+      if (isS2 && pStart.endsWith('-07-01')) pStart = `${pStart.slice(0, 4)}-08-01`;
+    }
+
+    if (!pStart || !pEnd) return true;
+    return start <= pEnd && end >= pStart;
+  };
+
   const defaultPeriodId = useMemo(() => {
     if (!periods || periods.length === 0) return '';
     const now = new Date();
@@ -841,6 +873,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     const found = periods.find((p) => (p.code || '').toUpperCase() === targetCode);
     return found ? found.id : periods[0].id;
   }, [periods]);
+
+  const evalAvailablePeriods = useMemo(() => {
+    if (!evaluatingItem || !periods || periods.length === 0) return periods;
+    const filtered = periods.filter((p) => isPeriodApplicableToItem(evaluatingItem, p));
+    return filtered.length > 0 ? filtered : periods;
+  }, [evaluatingItem, periods]);
 
   const tab4FilteredItems = useMemo(() => {
     const items = detail?.items || [];
@@ -2668,9 +2706,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const handleOpenEvalModal = (it) => {
     setEvaluatingItem(it);
-    const existingResult = (it.monitoringResults || []).find((r) => r.monitoring_period_id === defaultPeriodId);
+    const applicablePeriods = periods.filter((p) => isPeriodApplicableToItem(it, p));
+    const targetPeriod = (applicablePeriods.length > 0 ? applicablePeriods[0] : null) || periods[0];
+    const targetPeriodId = targetPeriod ? targetPeriod.id : (defaultPeriodId || '');
+    const existingResult = (it.monitoringResults || []).find((r) => r.monitoring_period_id === targetPeriodId);
     setEvalForm({
-      period_id: defaultPeriodId,
+      period_id: targetPeriodId,
       physical_progress: existingResult ? (existingResult.physical_progress ?? '') : '',
       observations: existingResult ? (existingResult.observations ?? '') : ''
     });
@@ -5661,6 +5702,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                 {periods.map((p) => {
                                   const res = (it.monitoringResults || []).find((r) => r.monitoring_period_id === p.id);
                                   const prog = res ? Number(res.physical_progress || 0) : null;
+                                  const applies = isPeriodApplicableToItem(it, p);
                                   return (
                                     <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5 }}>
                                       {res && prog !== null ? (
@@ -5678,8 +5720,25 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                             }}
                                           />
                                         </Tooltip>
-                                      ) : (
+                                      ) : applies ? (
                                         <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>—</Typography>
+                                      ) : (
+                                        <Tooltip title="Actividad no programada para este período según sus fechas de ejecución" arrow>
+                                          <Chip
+                                            size="small"
+                                            label="N/A"
+                                            sx={{
+                                              fontSize: 10,
+                                              fontWeight: 700,
+                                              height: 20,
+                                              borderRadius: 1,
+                                              bgcolor: '#f1f5f9',
+                                              color: '#94a3b8',
+                                              border: '1px dashed #cbd5e1',
+                                              cursor: 'help'
+                                            }}
+                                          />
+                                        </Tooltip>
                                       )}
                                     </TableCell>
                                   );
@@ -6200,6 +6259,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   InputLabelProps={{ shrink: true }}
                   value={evalForm.period_id}
                   onChange={(e) => handleChangeEvalPeriod(e.target.value)}
+                  disabled={evalAvailablePeriods.length <= 1}
+                  helperText={evalAvailablePeriods.length <= 1 ? "Periodo determinado automáticamente por las fechas de ejecución" : ""}
                   SelectProps={{
                     sx: { fontSize: 13.5, fontWeight: 700, color: '#0f172a' }
                   }}
@@ -6208,11 +6269,17 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     '& .MuiInputLabel-root': { fontWeight: 700, color: '#475569' }
                   }}
                 >
-                  {periods.map((p) => (
-                    <MenuItem key={p.id} value={p.id} sx={{ fontSize: 13, fontWeight: 600 }}>
-                      {p.code} · {p.name}
-                    </MenuItem>
-                  ))}
+                  {evalAvailablePeriods.map((p) => {
+                    const isS1 = (p.code || '').toUpperCase() === 'S1' || /1|prim/i.test(p.name || '') || (p.position === 1);
+                    const labelPeriod = isS1
+                      ? 'Primer Semestre · 1 de enero al 31 de julio'
+                      : 'Segundo Semestre · 1 de agosto al 31 de diciembre';
+                    return (
+                      <MenuItem key={p.id} value={p.id} sx={{ fontSize: 13, fontWeight: 600 }}>
+                        {p.code} · {p.name || labelPeriod}
+                      </MenuItem>
+                    );
+                  })}
                 </TextField>
               </Grid>
               <Grid item xs={12} sm={5}>
