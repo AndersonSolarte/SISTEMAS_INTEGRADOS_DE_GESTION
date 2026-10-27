@@ -1608,6 +1608,67 @@ function DependenciesTab({ dependencies = [], search = '', onSearchChange }) {
   );
 }
 
+function DynamicFieldsSummary({ rows = [], fields = [] }) {
+  const summaries = useMemo(() => {
+    const directValue = (row, key) => ({
+      activity: row.actividad,
+      indicator: row.indicador,
+      target: row.meta,
+      strategic_objective: row.objetivo_estrategico,
+      strategic_guideline: row.lineamiento_estrategico,
+      guideline: row.lineamiento_estrategico,
+      macroactivity: row.macroactividad,
+      total_progress: row.avance_total,
+      progress_s1: row.avance_ip,
+      progress_s2: row.avance_iip
+    }[key]);
+    const isPresent = (value) => value !== null && value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0);
+
+    return fields.map((field) => {
+      const values = rows
+        .map((row) => row.campos_dinamicos?.[field.key] ?? directValue(row, field.key))
+        .filter(isPresent);
+      const frequencies = new Map();
+      values.flatMap((value) => Array.isArray(value) ? value : [value]).forEach((value) => {
+        const label = typeof value === 'object' ? JSON.stringify(value) : String(value);
+        frequencies.set(label, (frequencies.get(label) || 0) + 1);
+      });
+      const commonValues = Array.from(frequencies.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([label, count]) => `${label} (${count})`);
+      return { ...field, filled: values.length, empty: Math.max(0, rows.length - values.length), commonValues };
+    });
+  }, [rows, fields]);
+
+  if (!summaries.length) return null;
+  return (
+    <Paper elevation={0} sx={{ mt: 3, borderRadius: 3, border: '1px solid #dbeafe', overflow: 'hidden' }}>
+      <Box sx={{ px: 2.5, py: 2, bgcolor: '#f8fbff', borderBottom: '1px solid #dbeafe' }}>
+        <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>Cobertura de campos configurables del PED</Typography>
+        <Typography variant="body2" color="text.secondary">Se calcula con la estructura propia del PED seleccionado. Los campos desactivados conservan y muestran únicamente su información histórica.</Typography>
+      </Box>
+      <TableContainer sx={{ maxHeight: 430 }}>
+        <Table stickyHeader size="small">
+          <TableHead><TableRow><TableCell>Campo</TableCell><TableCell>Estado</TableCell><TableCell>Tipo</TableCell><TableCell align="right">Diligenciados</TableCell><TableCell align="right">Sin dato</TableCell><TableCell>Valores frecuentes</TableCell></TableRow></TableHead>
+          <TableBody>
+            {summaries.map((field) => (
+              <TableRow key={field.id || field.key} hover>
+                <TableCell><Typography fontWeight={800} fontSize={13.5}>{field.label}</Typography><Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{field.key}</Typography></TableCell>
+                <TableCell><Chip size="small" color={field.active === false ? 'default' : 'success'} label={field.active === false ? 'Histórico / desactivado' : 'Activo'} /></TableCell>
+                <TableCell>{field.data_type}</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 800 }}>{formatNumber(field.filled)}</TableCell>
+                <TableCell align="right">{formatNumber(field.empty)}</TableCell>
+                <TableCell>{field.commonValues.length ? field.commonValues.join(' · ') : '—'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Paper>
+  );
+}
+
 export default function PedLiveStatisticsDashboard({ onBack }) {
   const { enqueueSnackbar } = useSnackbar();
 
@@ -2057,7 +2118,10 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
           </Alert>
         ) : (
           <Box sx={{ mt: tab !== 'seguimiento' && tab !== 'dependencias' ? 3 : 0 }}>
-            {tab === 'estadistica' && <EstadisticaTab rows={deferredRows} metrics={metrics} />}
+            {tab === 'estadistica' && <>
+              <EstadisticaTab rows={deferredRows} metrics={metrics} />
+              <DynamicFieldsSummary rows={deferredRows} fields={statsData?.fieldDefinitions || []} />
+            </>}
             {tab === 'planes' && <PlanesAccionTab rows={deferredRows} />}
             {tab === 'seguimiento' && (
               <SeguimientoTabV2

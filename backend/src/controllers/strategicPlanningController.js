@@ -146,7 +146,9 @@ const planIncludes = [
     include: [{ model: StrategicMonitoringPeriod, as: 'monitoringPeriods' }]
   },
   { model: StrategicCatalogItem, as: 'catalogItems', separate: true, order: [['catalog_type', 'ASC'], ['name', 'ASC']] },
-  { model: StrategicFieldDefinition, as: 'fieldDefinitions', where: { active: true }, required: false, separate: true, order: [['position', 'ASC']] }
+  // La administración recibe también los campos inactivos para mostrarlos como
+  // históricos y permitir su reactivación. Los formularios filtran active.
+  { model: StrategicFieldDefinition, as: 'fieldDefinitions', required: false, separate: true, order: [['active', 'DESC'], ['position', 'ASC']] }
 ];
 
 const bootstrap = wrap(async (_req, res) => {
@@ -427,8 +429,8 @@ const deleteFieldDefinition = wrap(async (req, res) => {
   const field = await StrategicFieldDefinition.findOne({ where: { id: req.params.fieldId, strategic_plan_id: req.params.planId, active: true } });
   if (!field) throw Object.assign(new Error('Campo no encontrado.'), { statusCode: 404 });
   const previous = field.toJSON(); await field.update({ active: false });
-  await audit(req, 'field.delete', 'field_definition', field.id, previous, field.toJSON(), 'Eliminación lógica');
-  ok(res, { id: field.id }, 'Campo eliminado de forma lógica.');
+  await audit(req, 'field.deactivate', 'field_definition', field.id, previous, field.toJSON(), 'Desactivación con conservación histórica');
+  ok(res, { id: field.id }, 'Campo desactivado. Su definición y sus valores históricos permanecen conservados.');
 });
 
 const reorderFieldDefinitions = wrap(async (req, res) => {
@@ -907,11 +909,16 @@ const getActionPlan = wrap(async (req, res) => {
     throw error;
   }
   const freshSchema = await captureActionPlanSchema(actionPlan.term.strategic_plan_id);
+  const inactiveFieldRows = await StrategicFieldDefinition.findAll({
+    where: { strategic_plan_id: actionPlan.term.strategic_plan_id, active: false },
+    attributes: ['key']
+  });
+  const inactiveFieldKeys = new Set(inactiveFieldRows.map((field) => field.key));
   const existingFields = Array.isArray(actionPlan.metadata?.form_schema?.fields)
     ? actionPlan.metadata.form_schema.fields
     : [];
   const freshKeys = new Set(freshSchema.fields.map((f) => f.key));
-  const legacyFields = existingFields.filter((f) => !freshKeys.has(f.key));
+  const legacyFields = existingFields.filter((f) => !freshKeys.has(f.key) && !inactiveFieldKeys.has(f.key));
   const mergedFields = [...freshSchema.fields, ...legacyFields].map((f) => {
     if (['responsible', 'responsable_de_ejecucion', 'co_responsibles'].includes(f.key) && !f.validation_rules?.catalog_type) {
       return { ...f, validation_rules: { ...(f.validation_rules || {}), catalog_type: 'organizational_unit' } };

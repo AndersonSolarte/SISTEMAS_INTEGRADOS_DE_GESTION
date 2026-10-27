@@ -411,6 +411,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const annualLeaderDocument = String(termDependencyForm.document || '').replace(/\D/g, '');
   const selectedAnnualLeader = annualLeaderDocument ? leaders.find((item) => String(item.document || '').replace(/\D/g, '') === annualLeaderDocument) : null;
   const activeFieldDefinitions = (plan?.fieldDefinitions || []).filter((field) => field.active !== false);
+  const inactiveFieldDefinitions = (plan?.fieldDefinitions || []).filter((field) => field.active === false);
   const choiceFieldDefinitions = activeFieldDefinitions.filter((field) => ['list', 'catalog', 'catalog_multi'].includes(field.data_type));
   const managedListField = choiceFieldDefinitions.find((field) => String(field.id) === String(managedListFieldId));
   const managedCatalogType = managedListField?.validation_rules?.catalog_type || '';
@@ -659,10 +660,29 @@ export default function StrategicPlanningPlatform({ onBack }) {
     });
   };
 
-  const deleteField = async (field) => {
-    if (!window.confirm(`¿Eliminar el campo "${field.label}" de las nuevas versiones del Plan de Acción?`)) return;
-    try { await strategicPlanningService.deleteField(plan.id, field.id); await load(); enqueueSnackbar('Campo eliminado sin alterar planes anteriores.', { variant: 'success' }); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar el campo.', { variant: 'error' }); }
+  const deactivateField = async (field) => {
+    if (!window.confirm(`¿Desactivar el campo "${field.label}"? Dejará de mostrarse en los formularios de este PED, pero sus datos históricos se conservarán.`)) return;
+    try { await strategicPlanningService.deleteField(plan.id, field.id); await load(); enqueueSnackbar('Campo desactivado. La información histórica permanece conservada.', { variant: 'success' }); }
+    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible desactivar el campo.', { variant: 'error' }); }
+  };
+
+  const reactivateField = async (field) => {
+    try {
+      await strategicPlanningService.createField(plan.id, {
+        key: field.key,
+        label: field.label,
+        data_type: field.data_type,
+        required: field.required === true,
+        position: field.position,
+        validation_rules: field.validation_rules || {},
+        options: field.options || [],
+        formula: field.formula || null
+      });
+      await load();
+      enqueueSnackbar('Campo reactivado. Sus valores históricos vuelven a estar disponibles.', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible reactivar el campo.', { variant: 'error' });
+    }
   };
   const moveField = async (index, direction) => {
     const sorted = [...activeFieldDefinitions].sort((a, b) => (a.position || 0) - (b.position || 0));
@@ -1479,8 +1499,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
                               <Button size="small" onClick={() => openFieldEditor(field)} sx={{ textTransform: 'none', fontWeight: 700 }}>
                                 Editar
                               </Button>
-                              <Button size="small" color="error" onClick={() => deleteField(field)} sx={{ textTransform: 'none', fontWeight: 700 }}>
-                                Quitar
+                              <Button size="small" color="warning" onClick={() => deactivateField(field)} sx={{ textTransform: 'none', fontWeight: 700 }}>
+                                Desactivar
                               </Button>
                             </Stack>
                           </TableCell>
@@ -1493,6 +1513,35 @@ export default function StrategicPlanningPlatform({ onBack }) {
             </Box>
           )}
         </Paper>
+
+        {!!inactiveFieldDefinitions.length && (
+          <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden', mt: 2, borderColor: '#cbd5e1' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} sx={{ px: { xs: 2, md: 2.5 }, py: 1.75, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <Box>
+                <Typography variant="subtitle1" fontWeight={900} color="#334155">Campos desactivados ({inactiveFieldDefinitions.length})</Typography>
+                <Typography variant="caption" color="text.secondary">No aparecen en los formularios de este PED. Sus definiciones y valores históricos permanecen en la base de datos.</Typography>
+              </Box>
+              <Chip size="small" label="Histórico conservado" variant="outlined" sx={{ fontWeight: 800 }} />
+            </Stack>
+            <Stack divider={<Divider flexItem />}>
+              {[...inactiveFieldDefinitions]
+                .sort((a, b) => (a.position || 0) - (b.position || 0))
+                .map((field) => (
+                  <Stack key={field.id} direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} sx={{ px: { xs: 2, md: 2.5 }, py: 1.5 }}>
+                    <Box>
+                      <Typography fontWeight={800} color="#334155">{field.label}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{field.key}</Typography>
+                    </Box>
+                    <Stack direction="row" alignItems="center" gap={1}>
+                      <Chip size="small" label={FIELD_TYPE_LABEL[field.data_type] || field.data_type} variant="outlined" />
+                      <Chip size="small" label="Desactivado" color="default" />
+                      <Button size="small" variant="outlined" onClick={() => reactivateField(field)} sx={{ textTransform: 'none', fontWeight: 800 }}>Reactivar</Button>
+                    </Stack>
+                  </Stack>
+                ))}
+            </Stack>
+          </Paper>
+        )}
 
         {managedListField && managedCatalogType && (
           <Paper variant="outlined" sx={{ mt: 2, p: 2.25, borderRadius: 3, borderColor: '#c4b5fd', bgcolor: '#fcfbff' }}>

@@ -113,6 +113,19 @@ const transitionPlan = async ({ req, actionPlan, action, comment = '', metadata 
 const saveActionItem = async ({ req, actionPlan, payload, item = null }) => sequelize.transaction(async (transaction) => {
   const previous = item?.toJSON() || null;
   const code = cleanCode(payload.code || item?.code || `ACT-${Date.now()}`);
+  const incomingCustomValues = payload.custom_values
+    && typeof payload.custom_values === 'object'
+    && !Array.isArray(payload.custom_values)
+    ? payload.custom_values
+    : {};
+  // Los campos configurables viven en JSONB. En una edición se combinan con los
+  // valores persistidos para que una solicitud parcial nunca elimine claves
+  // históricas que no venían incluidas en el formulario o integración.
+  const preservedCustomValues = item?.custom_values
+    && typeof item.custom_values === 'object'
+    && !Array.isArray(item.custom_values)
+    ? item.custom_values
+    : {};
   const values = {
     action_plan_id: actionPlan.id,
     strategic_element_id: payload.strategic_element_id || null,
@@ -125,7 +138,7 @@ const saveActionItem = async ({ req, actionPlan, payload, item = null }) => sequ
     ends_on: payload.ends_on || null,
     responsible_catalog_item_id: payload.responsible_catalog_item_id || null,
     co_responsibles: Array.isArray(payload.co_responsibles) ? payload.co_responsibles : [],
-    custom_values: payload.custom_values && typeof payload.custom_values === 'object' ? payload.custom_values : {},
+    custom_values: { ...preservedCustomValues, ...incomingCustomValues },
     updated_by: req.user.id
   };
   if (!values.activity) {

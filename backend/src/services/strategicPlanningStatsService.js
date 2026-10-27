@@ -5,6 +5,7 @@ const {
   StrategicCatalogItem,
   StrategicActionPlan,
   StrategicActionItem,
+  StrategicFieldDefinition,
   StrategicElement,
   User
 } = require('../models');
@@ -54,6 +55,7 @@ const getPlanStatistics = async ({ planId = null, termId = null, year = null, ca
       objectives: [],
       termsProgress: [],
       dependenciesProgress: [],
+      fieldDefinitions: [],
       rows: []
     };
   }
@@ -105,6 +107,20 @@ const getPlanStatistics = async ({ planId = null, termId = null, year = null, ca
         order: [['code', 'ASC']]
       })
     : [];
+
+  // Cada PED conserva su propio diccionario de campos. Se incluyen activos e
+  // inactivos para que el tablero pueda mostrar cobertura actual e histórica
+  // sin mezclar la estructura de otros planes estratégicos.
+  const fieldRows = await StrategicFieldDefinition.findAll({
+    where: { strategic_plan_id: selectedPlan.id },
+    order: [['configuration_version', 'DESC'], ['updated_at', 'DESC'], ['position', 'ASC']],
+    raw: true
+  });
+  const fieldsByKey = new Map();
+  fieldRows.forEach((field) => {
+    if (!fieldsByKey.has(field.key)) fieldsByKey.set(field.key, field);
+  });
+  const fieldDefinitions = Array.from(fieldsByKey.values()).sort((a, b) => (a.position || 0) - (b.position || 0));
 
   // 6. Consolidar métricas y objetivos
   const objectivesMap = new Map();
@@ -225,7 +241,8 @@ const getPlanStatistics = async ({ planId = null, termId = null, year = null, ca
       avance_total: progressVal,
       avance_ip: custom.progress_s1 !== undefined ? custom.progress_s1 : null,
       avance_iip: custom.progress_s2 !== undefined ? custom.progress_s2 : null,
-      estado
+      estado,
+      campos_dinamicos: custom
     });
   });
 
@@ -344,6 +361,15 @@ const getPlanStatistics = async ({ planId = null, termId = null, year = null, ca
     objectives,
     termsProgress,
     dependenciesProgress,
+    fieldDefinitions: fieldDefinitions.map((field) => ({
+      id: field.id,
+      key: field.key,
+      label: field.label,
+      data_type: field.data_type,
+      required: field.required,
+      position: field.position,
+      active: field.active
+    })),
     rows
   };
 };
