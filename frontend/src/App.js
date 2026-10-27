@@ -82,7 +82,7 @@ function ActionPlanDeepLinkRedirect() {
   const q = new URLSearchParams(searchParams);
   if (id) q.set('planId', id);
   const qs = q.toString();
-  return <Navigate to={`/dashboard/planeacion-efectividad${qs ? `?${qs}` : ''}`} replace />;
+  return <Navigate to={`/dashboard/plan-accion-mi-plan${qs ? `?${qs}` : ''}`} replace />;
 }
 
 function App() {

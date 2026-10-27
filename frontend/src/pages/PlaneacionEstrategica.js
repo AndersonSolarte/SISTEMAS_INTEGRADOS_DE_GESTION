@@ -24,12 +24,14 @@ function PlaneacionEstrategica() {
   const gpPanel = useMemo(() => new URLSearchParams(location.search).get('panel') || '', [location.search]);
   const planIdParam = useMemo(() => new URLSearchParams(location.search).get('planId') || '', [location.search]);
 
-  // Si se ingresa con un planId específico (desde notificaciones), redirigir directamente al módulo de planes de acción
+  // Si se ingresa con un planId específico (desde notificaciones), redirigir directamente al módulo correspondiente
   useEffect(() => {
     if (planIdParam) {
-      navigate(`/dashboard/planeacion-efectividad${location.search}`, { replace: true });
+      const isInstitutionalPlanner = user?.role === 'planeacion_efectividad';
+      const target = isInstitutionalPlanner ? '/dashboard/planeacion-efectividad' : '/dashboard/plan-accion-mi-plan';
+      navigate(`${target}${location.search}`, { replace: true });
     }
-  }, [planIdParam, location.search, navigate]);
+  }, [planIdParam, location.search, navigate, user?.role]);
   const allowedViews = useMemo(() => {
     if (user?.role === ROLES.REGISTROS_CALIFICADOS) {
       return new Set(['registros-calificados']);

@@ -123,7 +123,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [editingReferenceId, setEditingReferenceId] = useState(null);
   const [newCatalog, setNewCatalog] = useState({ code: '', name: '', scope: 'action_plans' });
   const [strategicPlanForm, setStrategicPlanForm] = useState(emptyStrategicPlanForm);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const urlPlanId = searchParams.get('planId');
   const urlOpenChat = searchParams.get('openChat') === 'true';
   const [editorPlanId, setEditorPlanId] = useState(urlPlanId || null);
@@ -133,6 +133,16 @@ export default function StrategicPlanningPlatform({ onBack }) {
       setEditorPlanId(urlPlanId);
     }
   }, [urlPlanId]);
+
+  const handleCloseEditor = () => {
+    setEditorPlanId(null);
+    if (searchParams.get('planId') || searchParams.get('openChat')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('planId');
+      next.delete('openChat');
+      setSearchParams(next, { replace: true });
+    }
+  };
   const [structure, setStructure] = useState([]);
   const [, setStructureLoading] = useState(false);
   const [openLevel, setOpenLevel] = useState(false);
@@ -3870,7 +3880,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
         </DialogActions>
       </Dialog>
 
-      <StrategicActionPlanEditor open={Boolean(editorPlanId)} planId={editorPlanId} platformPlan={plan} workflow={boot?.workflow} onClose={() => setEditorPlanId(null)} onChanged={load} onPlanReplaced={setEditorPlanId} initialOpenChat={urlOpenChat} />
+      <StrategicActionPlanEditor open={Boolean(editorPlanId)} planId={editorPlanId} platformPlan={plan} workflow={boot?.workflow} onClose={handleCloseEditor} onChanged={load} onPlanReplaced={setEditorPlanId} initialOpenChat={urlOpenChat} />
     </Stack>
   );
 }

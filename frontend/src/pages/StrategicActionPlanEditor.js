@@ -1594,6 +1594,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const handleCloseFeedbackChat = () => {
     setFeedbackChatModalOpen(false);
+    if (typeof window !== 'undefined' && window.location.search.includes('openChat')) {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('openChat');
+        window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+      } catch (_) {}
+    }
   };
 
   const handleOpenTimelineModal = () => {

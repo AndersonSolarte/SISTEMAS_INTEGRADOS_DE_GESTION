@@ -225,18 +225,15 @@ export default function PlanAccionConsulta({
 
       // Si hay un planId en la URL (por redirección de notificación)
       if (urlPlanId) {
-        let matchingPlan = visiblePei.find((p) => String(p.id) === String(urlPlanId));
-        if (!matchingPlan) {
-          try {
-            const respDirect = await strategicPlanningService.getActionPlan(urlPlanId);
-            if (respDirect?.data) matchingPlan = respDirect.data;
-          } catch (_) {}
-        }
+        // Los planes son estrictamente personales: solo se permite cargar si pertenece a visiblePei
+        const matchingPlan = visiblePei.find((p) => String(p.id) === String(urlPlanId));
         if (matchingPlan) {
           setSelectedPlan(matchingPlan);
           if (urlOpenChat) {
             setLeaderChatModalOpen(true);
           }
+        } else if (visiblePei.length > 0 && !selectedPlan) {
+          setSelectedPlan(visiblePei[0]);
         }
       } else if (selectedPlan?.id) {
         const refreshed = visiblePei.find((p) => p.id === selectedPlan.id);
@@ -244,8 +241,10 @@ export default function PlanAccionConsulta({
           setSelectedPlan(refreshed);
         } else {
           // Si el plan ya no es visible (ej. pasó a ajustes), volver al listado
-          setSelectedPlan(null);
+          setSelectedPlan(visiblePei.length > 0 ? visiblePei[0] : null);
         }
+      } else if (visiblePei.length > 0) {
+        setSelectedPlan(visiblePei[0]);
       }
 
       // 2. Fallback: Planes legacy (si no hay planes PEI)
@@ -481,6 +480,13 @@ export default function PlanAccionConsulta({
 
   const handleCloseLeaderChat = () => {
     setLeaderChatModalOpen(false);
+    if (typeof window !== 'undefined' && window.location.search.includes('openChat')) {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('openChat');
+        window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+      } catch (_) {}
+    }
   };
 
   // Descargar acta oficial COM-IF-FR-002 (Original o Copia Oficial)

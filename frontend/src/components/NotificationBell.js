@@ -120,38 +120,21 @@ const NotificationBell = () => {
     const planId = notif.action_plan_id || notif.metadata?.action_plan_id || notif.metadata?.plan_id;
     const isChat = notif.type === 'action_plan_chat_message';
     const isAdj = notif.type === 'action_plan_adjustments';
-    const isLeaderNotification = [
-      'action_plan_review_submitted',
-      'action_plan_activity_added'
-    ].includes(notif.type) || (notif.link && notif.link.includes('plan-accion-'));
 
-    // 1. Si la notificación está dirigida al Líder de la dependencia (revisar ajustes, concertar, nueva actividad)
-    if (isLeaderNotification) {
-      const params = new URLSearchParams();
-      if (planId) params.set('planId', planId);
-      if (isChat) params.set('openChat', 'true');
-      const q = params.toString();
-      navigate(`/dashboard/plan-accion-mi-plan${q ? `?${q}` : ''}`);
-      return;
-    }
+    // ÚNICAMENTE el analista de Planeación y Efectividad (Luisa Fernanda) va a la plataforma global institucional.
+    // Todos los líderes de dependencias (incluyendo administradores, directores y docentes) van a su propio plan de acción.
+    const isInstitutionalPlanner = user?.role === 'planeacion_efectividad';
 
-    // 2. Si es para el equipo de Planeación o Administrador (gestión y seguimiento del plan)
-    const isPlanningStaff = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(user?.role);
-    if (isPlanningStaff) {
-      const params = new URLSearchParams();
-      if (planId) params.set('planId', planId);
-      if (isChat || isAdj) params.set('openChat', 'true');
-      const q = params.toString();
-      navigate(`/dashboard/planeacion-efectividad${q ? `?${q}` : ''}`);
-      return;
-    }
-
-    // 3. Fallback general para cualquier usuario / líder
     const params = new URLSearchParams();
     if (planId) params.set('planId', planId);
-    if (isChat) params.set('openChat', 'true');
+    if (isChat || isAdj) params.set('openChat', 'true');
     const q = params.toString();
-    navigate(`/dashboard/plan-accion-mi-plan${q ? `?${q}` : ''}`);
+
+    if (isInstitutionalPlanner) {
+      navigate(`/dashboard/planeacion-efectividad${q ? `?${q}` : ''}`);
+    } else {
+      navigate(`/dashboard/plan-accion-mi-plan${q ? `?${q}` : ''}`);
+    }
   };
 
   const handleMarkAllRead = async () => {

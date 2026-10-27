@@ -109,7 +109,7 @@ const parseDataUrl = (value) => {
 const notifyPlanningUsers = async ({ actionPlanId, type, title, message, link, metadata, excludeUserId }) => {
   try {
     const whereClause = {
-      role: ['planeacion_efectividad', 'planeacion_estrategica', 'administrador'],
+      role: 'planeacion_efectividad',
       estado: 'activo'
     };
     if (excludeUserId) {
@@ -741,7 +741,6 @@ const deleteTerm = wrap(async (req, res) => {
 
 const getMyActionPlans = wrap(async (req, res) => {
   const userId = req.user.id;
-  const userEmail = String(req.user.email || '').trim().toLowerCase();
 
   const directPlans = await StrategicActionPlan.findAll({
     where: { deleted_at: null, responsible_user_id: userId },
@@ -753,20 +752,9 @@ const getMyActionPlans = wrap(async (req, res) => {
     attributes: ['action_plan_id']
   });
 
-  const meetingParts = await StrategicMeetingParticipant.findAll({
-    where: {
-      [Op.or]: [
-        { user_id: userId },
-        ...(userEmail ? [{ email: { [Op.iLike]: userEmail } }] : [])
-      ]
-    },
-    include: [{ model: StrategicMeeting, as: 'meeting', attributes: ['action_plan_id'] }]
-  });
-
   const planIds = Array.from(new Set([
     ...directPlans.map((p) => p.id),
-    ...respAssignments.map((r) => r.action_plan_id).filter(Boolean),
-    ...meetingParts.map((m) => m.meeting?.action_plan_id).filter(Boolean)
+    ...respAssignments.map((r) => r.action_plan_id).filter(Boolean)
   ]));
 
   if (!planIds.length) {
