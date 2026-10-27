@@ -742,37 +742,29 @@ const deleteTerm = wrap(async (req, res) => {
 const getMyActionPlans = wrap(async (req, res) => {
   const userId = req.user.id;
 
-  const directPlans = await StrategicActionPlan.findAll({
-    where: { deleted_at: null, responsible_user_id: userId },
-    attributes: ['id']
-  });
-
-  const respAssignments = await StrategicResponsibility.findAll({
-    where: { user_id: userId, status: 'active' },
-    attributes: ['action_plan_id']
-  });
-
-  const planIds = Array.from(new Set([
-    ...directPlans.map((p) => p.id),
-    ...respAssignments.map((r) => r.action_plan_id).filter(Boolean)
-  ]));
-
-  if (!planIds.length) {
-    return ok(res, []);
-  }
-
-  const isPlanningStaff = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user?.role);
-
-  const whereClause = { id: { [Op.in]: planIds }, deleted_at: null };
-  if (!isPlanningStaff) {
-    whereClause[Op.or] = [
-      { status: { [Op.in]: ['owner_validation', 'active', 'monitoring', 'closed'] } },
+  // REGLA ESTRICTA DE AISLAMIENTO: Cada plan de acción es un mundo exclusivo.
+  // Solo se devuelven los planes donde el usuario es el líder responsable directo
+  // o tiene asignada la responsabilidad activa actual del plan.
+  const whereOwnership = {
+    deleted_at: null,
+    [Op.or]: [
+      { responsible_user_id: userId },
       sequelize.literal(`EXISTS (
-        SELECT 1 FROM pei_meetings pm
-        JOIN pei_minute_versions pmv ON pmv.meeting_id = pm.id
-        WHERE pm.action_plan_id = "StrategicActionPlan"."id" AND pmv.status = 'signing'
+        SELECT 1 FROM pei_responsibilities pr
+        WHERE pr.id = "StrategicActionPlan"."responsibility_id"
+          AND pr.user_id = ${Number(userId)}
+          AND pr.status = 'active'
       )`)
-    ];
+    ]
+  };
+
+  const isPlanningStaff = req.user?.role === 'planeacion_efectividad';
+
+  const whereClause = {
+    ...whereOwnership
+  };
+  if (!isPlanningStaff) {
+    whereClause.status = { [Op.in]: ['owner_validation', 'active', 'monitoring', 'closed'] };
   }
 
   const plans = await StrategicActionPlan.findAll({
@@ -3973,18 +3965,58 @@ const cancelPlanCalendarSchedule = wrap(async (req, res) => {
 
 const listStrategicNotifications = wrap(async (req, res) => {
   const userId = req.user.id;
+  const userRole = req.user.role;
+
+  // 1. Si el usuario tiene rol de Planeación y Efectividad (Luisa Fernanda),
+  // recibe las notificaciones de su bandeja de revisión institucional
+  if (userRole === 'planeacion_efectividad') {
+    const notifications = await StrategicNotification.findAll({
+      where: { user_id: userId },
+      order: [['created_at', 'DESC']],
+      limit: 50
+    });
+    const unreadCount = await StrategicNotification.count({
+      where: { user_id: userId, read: false }
+    });
+    return ok(res, { notifications, unreadCount });
+  }
+
+  // 2. Para cualquier otro usuario (incluyendo al Administrador del SIAC, directores, líderes y docentes):
+  // ÚNICAMENTE ve notificaciones de sus propios planes bajo su responsabilidad
+  const myPlans = await StrategicActionPlan.findAll({
+    where: {
+      deleted_at: null,
+      [Op.or]: [
+        { responsible_user_id: userId },
+        sequelize.literal(`EXISTS (
+          SELECT 1 FROM pei_responsibilities pr
+          WHERE pr.id = "StrategicActionPlan"."responsibility_id"
+            AND pr.user_id = ${Number(userId)}
+            AND pr.status = 'active'
+        )`)
+      ]
+    },
+    attributes: ['id']
+  });
+
+  const myPlanIds = myPlans.map((p) => p.id);
+  if (!myPlanIds.length) {
+    return ok(res, { notifications: [], unreadCount: 0 });
+  }
+
+  const whereClause = {
+    user_id: userId,
+    action_plan_id: { [Op.in]: myPlanIds }
+  };
 
   const notifications = await StrategicNotification.findAll({
-    where: { user_id: userId },
+    where: whereClause,
     order: [['created_at', 'DESC']],
     limit: 50
   });
 
   const unreadCount = await StrategicNotification.count({
-    where: {
-      user_id: userId,
-      read: false
-    }
+    where: { ...whereClause, read: false }
   });
 
   ok(res, { notifications, unreadCount });
