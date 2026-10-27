@@ -154,6 +154,7 @@ test('el repositorio prepara todas las dependencias del año sin crear planes pe
 });
 
 test('el repositorio genera el Excel oficial con las actividades del plan', async () => {
+  const ExcelJS = require('exceljs');
   const buffer = await buildOfficialWorkbook({
     code: '2026-R74',
     term: { year: 2026 },
@@ -166,12 +167,26 @@ test('el repositorio genera el Excel oficial con las actividades del plan', asyn
       indicator: 'Rúbricas implementadas',
       target: '1',
       co_responsibles: [],
-      custom_values: {},
+      custom_values: {
+        strategic_objective: 'OE-001 Diseñar e implementar estrategias integrales',
+        strategic_guideline: 'LE-002 Apropiación de la identidad institucional'
+      },
       monitoringResults: []
     }]
   });
   assert.ok(Buffer.isBuffer(buffer));
   assert.ok(buffer.length > 0);
+
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  const sheet = wb.getWorksheet('PLAN DE ACCION');
+  assert.ok(sheet, 'La hoja PLAN DE ACCION debe existir');
+  assert.equal(sheet.getCell('C7').value, 'OE-001 Diseñar e implementar estrategias integrales');
+  assert.equal(sheet.getCell('D7').value, 'LE-002 Apropiación de la identidad institucional');
+  assert.equal(sheet.getCell('E7').value, 'Diseñar rúbricas de evaluación');
+  // Asegurar que las columnas/filas no estén inmovilizadas
+  const hasFrozenViews = (sheet.views || []).some((v) => v.state === 'frozen');
+  assert.equal(hasFrozenViews, false, 'El archivo Excel no debe tener columnas ni filas inmovilizadas');
 });
 
 test('el OAuth del repositorio usa credenciales exclusivas de Planes de Acción', () => {

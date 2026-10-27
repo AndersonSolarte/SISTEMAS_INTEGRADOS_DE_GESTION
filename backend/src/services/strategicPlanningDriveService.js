@@ -339,7 +339,10 @@ const syncMinute = async (minuteId, forceRegenerate = true) => {
   const meetingDate = meeting.starts_at && !Number.isNaN(new Date(meeting.starts_at).getTime())
     ? new Date(meeting.starts_at).toISOString().slice(0, 10)
     : String(minute.finalized_at || minute.created_at || '').slice(0, 10);
-  const minuteFileName = `ACTA_${meetingDate || 'REUNION'}.pdf`;
+  const minuteTitle = String(meeting.title || minute.content?.title || minute.content?.header?.title || minute.content?.meeting?.title || '').trim();
+  const minuteFileName = minuteTitle
+    ? `${safeName(minuteTitle, 160)}.pdf`
+    : `ACTA_${meetingDate || 'REUNION'}.pdf`;
 
   const requestBody = {
     name: safeName(minuteFileName, 160),

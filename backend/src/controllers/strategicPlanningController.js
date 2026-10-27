@@ -1787,30 +1787,7 @@ const transitionActionPlan = wrap(async (req, res) => {
       // 4. Generar el archivo de Excel oficial DIR-PE-FR-003
       let excelBuffer = null;
       try {
-        const activities = (fullPlan?.items || []).map((item) => {
-          const sorted = [...(item.monitoringResults || [])].sort((a, b) => (a.period?.position || 0) - (b.period?.position || 0));
-          return {
-            objetivo_estrategico: item.custom_values?.strategic_objective || '',
-            lineamiento_estrategico: item.custom_values?.guideline || '',
-            actividad: item.activity,
-            tipo_indicador: item.indicator_type,
-            fecha_inicio: item.starts_on,
-            fecha_fin: item.ends_on,
-            indicador: item.indicator,
-            meta: item.target,
-            responsable: fullPlan?.organizationalUnit?.name,
-            corresponsable: (item.co_responsibles || []).join(', '),
-            avance_ip: sorted[0]?.physical_progress,
-            observaciones_ip: sorted[0]?.observations,
-            avance_iip: sorted[1]?.physical_progress,
-            observaciones_iip: sorted[1]?.observations
-          };
-        });
-        excelBuffer = await generatePlanAccionBuffer({
-          planData: { anio: fullPlan?.term?.year, codigoPlan: fullPlan?.code, responsable: fullPlan?.organizationalUnit?.name },
-          actividades: activities,
-          corresponsabilidades: []
-        });
+        excelBuffer = await buildOfficialWorkbook(fullPlan);
       } catch (errExcel) {
         console.warn('transitionActionPlan: No se pudo generar Excel del plan:', errExcel.message);
       }

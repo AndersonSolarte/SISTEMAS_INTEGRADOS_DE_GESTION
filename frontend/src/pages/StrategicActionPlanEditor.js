@@ -1058,11 +1058,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     const q = previewPlanSearch.toLowerCase();
     return items.filter((row) => {
       if (row.code?.toLowerCase().includes(q)) return true;
-      if (row.activity?.toLowerCase().includes(q)) return true;
-      if (row.indicator?.toLowerCase().includes(q)) return true;
-      if (row.target?.toLowerCase().includes(q)) return true;
-      if (row.parent_plan?.dependency_name?.toLowerCase().includes(q)) return true;
-      if (row.parent_plan?.leader_name?.toLowerCase().includes(q)) return true;
+      if ((row.activity || row.actividad)?.toLowerCase().includes(q)) return true;
+      if ((row.indicator || row.indicador)?.toLowerCase().includes(q)) return true;
+      if ((row.target || row.meta)?.toLowerCase().includes(q)) return true;
+      if ((row.parent_plan?.dependency_name || row.parent_plan_name || row.responsable)?.toLowerCase().includes(q)) return true;
+      if ((row.parent_plan?.leader_name || row.leader_name)?.toLowerCase().includes(q)) return true;
       return recordColumns.some((col) => {
         const val = recordValue(row, col);
         return String(val || '').toLowerCase().includes(q);

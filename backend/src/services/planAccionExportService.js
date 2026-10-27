@@ -137,7 +137,7 @@ const COLUMN_WIDTHS = [
 const setupPlanAccionSheet = (workbook, sheetName, planData = {}, activitiesList = [], isCoresponsibility = false) => {
   const sheet = workbook.addWorksheet(sheetName, {
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 },
-    views: [{ state: 'frozen', ySplit: HEADER_ROWS_BEFORE_DATA }]
+    views: [{ state: 'normal' }]
   });
 
   COLUMN_WIDTHS.forEach(({ col, w }) => {

@@ -839,11 +839,11 @@ export default function PlanAccionConsulta({
     const term = activitySearch.toLowerCase().trim();
     return list.filter((it) =>
       (it.code || '').toLowerCase().includes(term) ||
-      (it.activity || '').toLowerCase().includes(term) ||
-      (it.indicator || '').toLowerCase().includes(term) ||
+      (it.activity || it.actividad || '').toLowerCase().includes(term) ||
+      (it.indicator || it.indicador || '').toLowerCase().includes(term) ||
       (it.macroactivity || '').toLowerCase().includes(term) ||
-      (it.parent_plan?.dependency_name || '').toLowerCase().includes(term) ||
-      (it.parent_plan?.leader_name || '').toLowerCase().includes(term)
+      (it.parent_plan?.dependency_name || it.parent_plan_name || it.responsable || '').toLowerCase().includes(term) ||
+      (it.parent_plan?.leader_name || it.leader_name || '').toLowerCase().includes(term)
     );
   }, [coResponsibleItems, activitySearch]);
 
@@ -2606,7 +2606,7 @@ export default function PlanAccionConsulta({
                           />
                         </TableCell>
                         <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1, minWidth: 190, maxWidth: { xs: 230, sm: 280, md: 320 } }}>
-                          <Tooltip title={it.activity} arrow placement="top-start">
+                          <Tooltip title={it.activity || it.actividad || ''} arrow placement="top-start">
                             <Typography
                               sx={{
                                 fontSize: 12,
@@ -2621,10 +2621,10 @@ export default function PlanAccionConsulta({
                                 cursor: 'pointer'
                               }}
                             >
-                              {it.activity}
+                              {it.activity || it.actividad || '—'}
                             </Typography>
                           </Tooltip>
-                          {it.macroactivity && (
+                          {(it.macroactivity || it.custom_values?.macroactivity) && (
                             <Typography
                               sx={{
                                 fontSize: 10.5,
@@ -2637,29 +2637,29 @@ export default function PlanAccionConsulta({
                                 textOverflow: 'ellipsis'
                               }}
                             >
-                              PED: {it.macroactivity}
+                              PED: {it.macroactivity || it.custom_values?.macroactivity}
                             </Typography>
                           )}
                         </TableCell>
                         <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
                           <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: '#1e3a8a', lineHeight: 1.25 }}>
-                            {it.parent_plan?.dependency_name || 'Dependencia'}
+                            {it.parent_plan?.dependency_name || it.parent_plan_name || it.responsable || 'Dependencia'}
                           </Typography>
                           <Typography sx={{ fontSize: 10.5, color: '#64748b', mt: 0.2 }}>
-                            Plan {it.parent_plan?.code} · Líder: <strong>{it.parent_plan?.leader_name || '—'}</strong>
+                            Plan {it.parent_plan?.code || it.parent_plan_code || '—'} · Líder: <strong>{it.parent_plan?.leader_name || it.leader_name || '—'}</strong>
                           </Typography>
                         </TableCell>
                         <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
                           <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: '#334155', lineHeight: 1.25 }}>
-                            {it.indicator || 'Sin indicador'}
+                            {it.indicator || it.indicador || 'Sin indicador'}
                           </Typography>
                           <Typography sx={{ fontSize: 11, color: '#059669', fontWeight: 700, mt: 0.2 }}>
-                            Meta: {it.target || '100%'}
+                            Meta: {it.target || it.meta || '100%'}
                           </Typography>
                         </TableCell>
                         <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
                           <Typography sx={{ fontSize: 10.5, color: '#475569', lineHeight: 1.3 }}>
-                            {formatFecha(it.starts_on)} al {formatFecha(it.ends_on)}
+                            {formatFecha(it.starts_on || it.fecha_inicio)} al {formatFecha(it.ends_on || it.fecha_fin)}
                           </Typography>
                         </TableCell>
                         {periods.map((p) => {

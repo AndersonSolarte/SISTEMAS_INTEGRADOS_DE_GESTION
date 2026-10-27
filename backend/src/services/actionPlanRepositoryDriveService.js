@@ -295,13 +295,14 @@ const normalizeMatchText = (str) =>
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 
-const findCoResponsibleActivitiesForPlan = async (actionPlan, catalogMap = new Map(), elementMap = new Map()) => {
+const findCoResponsibleActivitiesForPlan = async (actionPlan, catalogMap = new Map(), elementMap = new Map(), options = {}) => {
   const termId = actionPlan.term_id || actionPlan.term?.id;
   if (!termId) return [];
 
   const unitName = actionPlan.organizationalUnit?.name;
   const unitCode = actionPlan.organizationalUnit?.code;
   const planCode = actionPlan.code;
+  const unitId = actionPlan.catalog_item_id || actionPlan.organizationalUnit?.id;
   const user = actionPlan.currentResponsibility?.responsibleUser || actionPlan.responsibleUser || actionPlan.owner;
   let userNombre = user?.nombre;
   let userUsername = user?.username;
@@ -324,16 +325,48 @@ const findCoResponsibleActivitiesForPlan = async (actionPlan, catalogMap = new M
     if (rMatch) normTokens.push(rMatch[0].toLowerCase());
   });
 
-  if (!normTokens.length) return [];
+  if (!normTokens.length && !unitId) return [];
+
+  // Resolver catalogMap y elementMap si no están cargados
+  let planId = actionPlan.term?.strategic_plan_id || actionPlan.term?.strategicPlan?.id;
+  if (!planId && termId) {
+    try {
+      const termRow = await StrategicTerm.findByPk(termId, { attributes: ['strategic_plan_id'] });
+      planId = termRow?.strategic_plan_id;
+    } catch (_) {}
+  }
+
+  if (planId && (catalogMap.size === 0 || elementMap.size === 0)) {
+    try {
+      const [catRows, elemRows] = await Promise.all([
+        StrategicCatalogItem.findAll({ where: { strategic_plan_id: planId }, attributes: ['id', 'code', 'name'], raw: true }),
+        StrategicElement.findAll({ where: { strategic_plan_id: planId }, attributes: ['id', 'code', 'name'], raw: true })
+      ]);
+      catRows.forEach((c) => catalogMap.set(String(c.id), c.name));
+      elemRows.forEach((e) => elementMap.set(String(e.id), `${e.code ? e.code + ' ' : ''}${e.name}`));
+    } catch (_) {}
+  }
+
+  const whereClause = {
+    term_id: termId,
+    id: { [Op.ne]: actionPlan.id },
+    deleted_at: null
+  };
+
+  // Solo planes aprobados/formalizados para ejecución (active, monitoring, closed)
+  if (options.onlyApproved !== false) {
+    whereClause.status = { [Op.in]: ['active', 'monitoring', 'closed'] };
+  }
 
   const otherPlans = await StrategicActionPlan.findAll({
-    where: {
-      term_id: termId,
-      id: { [Op.ne]: actionPlan.id },
-      deleted_at: null
-    },
+    where: whereClause,
     include: [
       { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false },
+      {
+        model: StrategicResponsibility, as: 'currentResponsibility', required: false,
+        include: [{ model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false }]
+      },
       {
         model: StrategicActionItem, as: 'items',
         where: { deleted_at: null },
@@ -357,6 +390,23 @@ const findCoResponsibleActivitiesForPlan = async (actionPlan, catalogMap = new M
   const coActivities = [];
 
   for (const otherPlan of otherPlans) {
+    let leaderUser = otherPlan.currentResponsibility?.responsibleUser || otherPlan.responsibleUser;
+    if (!leaderUser && otherPlan.responsible_user_id) {
+      leaderUser = await User.findByPk(otherPlan.responsible_user_id, {
+        attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username']
+      }).catch(() => null);
+    }
+    if (!leaderUser && otherPlan.catalog_item_id && otherPlan.term_id) {
+      const annual = await StrategicResponsibility.findOne({
+        where: { term_id: otherPlan.term_id, catalog_item_id: otherPlan.catalog_item_id, status: 'active' },
+        include: [{ model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'] }],
+        order: [['updated_at', 'DESC']]
+      }).catch(() => null);
+      if (annual?.responsibleUser) leaderUser = annual.responsibleUser;
+    }
+    const leaderName = leaderUser?.nombre || leaderUser?.username || '';
+    const depName = otherPlan.organizationalUnit?.name || otherPlan.title || 'Dependencia';
+
     for (const item of (otherPlan.items || [])) {
       const coList = Array.isArray(item.co_responsibles)
         ? item.co_responsibles
@@ -370,38 +420,61 @@ const findCoResponsibleActivitiesForPlan = async (actionPlan, catalogMap = new M
       const allCoEntries = [...coList, ...customList];
 
       const isMatch = allCoEntries.some((entry) => {
-        const normEntry = normalizeMatchText(entry);
-        if (!normEntry) return false;
-        return normTokens.some((tok) => normEntry.includes(tok) || (tok.length > 5 && tok.includes(normEntry)));
+        const strEntry = String(entry || '').trim();
+        if (!strEntry) return false;
+        if (unitId && String(strEntry) === String(unitId)) return true;
+        const normEntry = normalizeMatchText(strEntry);
+        const resolvedName = catalogMap.get(strEntry) || '';
+        const normResolved = normalizeMatchText(resolvedName);
+        return normTokens.some((tok) =>
+          (normEntry && (normEntry.includes(tok) || (tok.length > 5 && tok.includes(normEntry)))) ||
+          (normResolved && (normResolved.includes(tok) || (tok.length > 5 && tok.includes(normResolved))))
+        );
       });
 
       if (isMatch) {
         const sorted = [...(item.monitoringResults || [])].sort((a, b) => (a.period?.position || 0) - (b.period?.position || 0));
 
-        const rawObj = item.custom_values?.strategic_objective || item.custom_values?.objetivo_estrategico || '';
-        const objText = elementMap.get(String(rawObj)) || rawObj;
-
-        const rawGuide = item.custom_values?.strategic_guideline || item.custom_values?.guideline || item.custom_values?.lineamiento_estrategico || '';
-        const guideText = elementMap.get(String(rawGuide)) || rawGuide;
+        const { objText, guideText } = resolveItemStrategicObjectiveAndGuideline(item, elementMap);
 
         const resolvedCo = coList.map((val) => catalogMap.get(String(val)) || val).filter(Boolean).join(', ');
+
+        const macroactivityText = item.macroactivity || item.custom_values?.macroactivity || item.custom_values?.macroactividad || (item.strategic_element_id ? elementMap.get(String(item.strategic_element_id)) : '') || '';
 
         coActivities.push({
           id: item.id,
           code: item.code,
-          parent_plan_id: otherPlan.id,
-          parent_plan_code: otherPlan.code,
-          parent_plan_name: otherPlan.organizationalUnit?.name || otherPlan.name,
-          responsable: otherPlan.organizationalUnit?.name || otherPlan.code,
-          corresponsable: resolvedCo || unitName,
-          objetivo_estrategico: objText,
-          lineamiento_estrategico: guideText,
+          activity: item.activity,
           actividad: item.activity,
+          macroactivity: macroactivityText,
+          indicator_type: item.indicator_type,
           tipo_indicador: item.indicator_type,
+          indicator: item.indicator,
+          indicador: item.indicator,
+          target: item.target,
+          meta: item.target,
+          starts_on: item.starts_on,
+          ends_on: item.ends_on,
           fecha_inicio: item.starts_on,
           fecha_fin: item.ends_on,
-          indicador: item.indicator,
-          meta: item.target,
+          parent_plan: {
+            id: otherPlan.id,
+            code: otherPlan.code,
+            dependency_name: depName,
+            leader_name: leaderName,
+            status: otherPlan.status
+          },
+          parent_plan_id: otherPlan.id,
+          parent_plan_code: otherPlan.code,
+          parent_plan_name: depName,
+          responsable: depName,
+          leader_name: leaderName,
+          corresponsable: resolvedCo || unitName,
+          co_responsibles: coList,
+          objetivo_estrategico: objText,
+          lineamiento_estrategico: guideText,
+          custom_values: item.custom_values || {},
+          current_progress: item.current_progress,
           avance_ip: sorted[0]?.physical_progress,
           observaciones_ip: sorted[0]?.observations,
           avance_iip: sorted[1]?.physical_progress,
@@ -416,11 +489,94 @@ const findCoResponsibleActivitiesForPlan = async (actionPlan, catalogMap = new M
   return coActivities;
 };
 
+const resolveItemStrategicObjectiveAndGuideline = (item, elementMap, elements = []) => {
+  const custom = item?.custom_values && typeof item.custom_values === 'object' ? item.custom_values : {};
+
+  let rawObj = custom.strategic_objective
+    || custom.objetivo_estrategico
+    || custom.objetivos
+    || custom.objetivo
+    || custom.objetivo_general
+    || '';
+
+  let rawGuide = custom.strategic_guideline
+    || custom.guideline
+    || custom.lineamiento_estrategico
+    || custom.lineas_de_accion
+    || custom.linea_de_accion
+    || custom.lineamiento
+    || custom.lineamientos
+    || '';
+
+  if (!rawObj) {
+    const objKey = Object.keys(custom).find((k) => /objetiv/i.test(k));
+    if (objKey) rawObj = custom[objKey];
+  }
+  if (!rawGuide) {
+    const guideKey = Object.keys(custom).find((k) => /linea|guide/i.test(k));
+    if (guideKey) rawGuide = custom[guideKey];
+  }
+
+  if (!rawObj || !rawGuide) {
+    for (const [k, v] of Object.entries(custom)) {
+      if (k.startsWith('structure_level_') && v) {
+        const matchedEl = elements.find((e) => String(e.id) === String(v));
+        if (matchedEl) {
+          if (matchedEl.parent_id && !rawGuide) {
+            rawGuide = v;
+          } else if (!matchedEl.parent_id && !rawObj) {
+            rawObj = v;
+          }
+        }
+      }
+    }
+  }
+
+  if ((!rawObj || !rawGuide) && item?.strategic_element_id) {
+    const matchedEl = elements.find((e) => String(e.id) === String(item.strategic_element_id));
+    if (matchedEl) {
+      if (matchedEl.parent_id) {
+        if (!rawGuide) rawGuide = matchedEl.id;
+        if (!rawObj) rawObj = matchedEl.parent_id;
+      } else {
+        if (!rawObj) rawObj = matchedEl.id;
+      }
+    }
+  }
+
+  const resolveText = (val) => {
+    if (!val) return '';
+    const strVal = String(val).trim();
+    if (elementMap && elementMap.has(strVal)) return elementMap.get(strVal);
+    const byCode = (elements || []).find((e) => e.code && e.code.toLowerCase() === strVal.toLowerCase());
+    if (byCode) return `${byCode.code ? byCode.code + ' ' : ''}${byCode.name}`;
+    return strVal;
+  };
+
+  return {
+    objText: resolveText(rawObj),
+    guideText: resolveText(rawGuide)
+  };
+};
+
 const buildOfficialWorkbook = async (actionPlan) => {
-  const planId = actionPlan.term?.strategic_plan_id || actionPlan.term?.strategicPlan?.id;
+  let planId = actionPlan.term?.strategic_plan_id || actionPlan.term?.strategicPlan?.id;
+  if (!planId && actionPlan.term_id) {
+    try {
+      const termRow = await StrategicTerm.findByPk(actionPlan.term_id, { attributes: ['strategic_plan_id'] });
+      planId = termRow?.strategic_plan_id;
+    } catch (_) {}
+  }
+  if (!planId) {
+    try {
+      const activePed = await StrategicPlan.findOne({ where: { status: 'active' }, attributes: ['id'] });
+      planId = activePed?.id;
+    } catch (_) {}
+  }
+
   const [catalogItems, elements] = await Promise.all([
     planId ? StrategicCatalogItem.findAll({ where: { strategic_plan_id: planId }, attributes: ['id', 'code', 'name'], raw: true }).catch(() => []) : [],
-    planId ? StrategicElement.findAll({ where: { strategic_plan_id: planId }, attributes: ['id', 'code', 'name'], raw: true }).catch(() => []) : []
+    planId ? StrategicElement.findAll({ where: { strategic_plan_id: planId }, attributes: ['id', 'code', 'name', 'level_id', 'parent_id'], raw: true }).catch(() => []) : []
   ]);
   const catalogMap = new Map(catalogItems.map((c) => [String(c.id), c.name]));
   const elementMap = new Map(elements.map((e) => [String(e.id), `${e.code ? e.code + ' ' : ''}${e.name}`]));
@@ -428,11 +584,7 @@ const buildOfficialWorkbook = async (actionPlan) => {
   const activities = (actionPlan.items || []).map((item) => {
     const sorted = [...(item.monitoringResults || [])].sort((a, b) => (a.period?.position || 0) - (b.period?.position || 0));
 
-    const rawObj = item.custom_values?.strategic_objective || item.custom_values?.objetivo_estrategico || '';
-    const objText = elementMap.get(String(rawObj)) || rawObj;
-
-    const rawGuide = item.custom_values?.strategic_guideline || item.custom_values?.guideline || item.custom_values?.lineamiento_estrategico || '';
-    const guideText = elementMap.get(String(rawGuide)) || rawGuide;
+    const { objText, guideText } = resolveItemStrategicObjectiveAndGuideline(item, elementMap, elements);
 
     const rawCo = item.co_responsibles || [];
     const coList = Array.isArray(rawCo) ? rawCo : (typeof rawCo === 'string' && rawCo.trim() ? [rawCo] : []);
@@ -456,10 +608,10 @@ const buildOfficialWorkbook = async (actionPlan) => {
     };
   });
 
-  const coActivities = await findCoResponsibleActivitiesForPlan(actionPlan, catalogMap, elementMap);
+  const coActivities = await findCoResponsibleActivitiesForPlan(actionPlan, catalogMap, elementMap, elements);
 
   return generatePlanAccionBuffer({
-    planData: { anio: actionPlan.term.year, codigoPlan: actionPlan.code, responsable: actionPlan.organizationalUnit?.name },
+    planData: { anio: actionPlan.term?.year || new Date().getFullYear(), codigoPlan: actionPlan.code, responsable: actionPlan.organizationalUnit?.name },
     actividades: activities,
     corresponsabilidades: coActivities
   });
@@ -632,6 +784,7 @@ const syncActionPlanRepositoryTerm = async (termId) => {
       buffer: workbook, hash: contentHash(workbook)
     }, counters);
 
+    const usedMinuteNames = new Set();
     for (const meeting of actionPlan.meetings || []) {
       for (const minute of meeting.minuteVersions || []) {
         const buffer = await ensureMinuteFinalPdfBuffer(minute);
@@ -639,7 +792,19 @@ const syncActionPlanRepositoryTerm = async (termId) => {
         const meetingDate = meeting.starts_at && !Number.isNaN(new Date(meeting.starts_at).getTime())
           ? new Date(meeting.starts_at).toISOString().slice(0, 10)
           : String(minute.finalized_at || minute.created_at || '').slice(0, 10);
-        const minuteLabel = `ACTA_${meetingDate || term.year}.pdf`;
+        const minuteTitle = String(meeting.title || minute.content?.title || minute.content?.header?.title || minute.content?.meeting?.title || '').trim();
+        const baseMinuteLabel = minuteTitle
+          ? `${repositoryName(minuteTitle, 160)}.pdf`
+          : `ACTA_${meetingDate || term.year}.pdf`;
+        let minuteLabel = baseMinuteLabel;
+        let dup = 2;
+        while (usedMinuteNames.has(minuteLabel.toLowerCase())) {
+          const ext = path.extname(baseMinuteLabel);
+          const baseNoExt = baseMinuteLabel.slice(0, -ext.length);
+          minuteLabel = `${baseNoExt} (${dup})${ext}`;
+          dup += 1;
+        }
+        usedMinuteNames.add(minuteLabel.toLowerCase());
         const driveFileId = await upsertFile(drive, {
           parentId: minutesFolder, name: minuteLabel,
           key: `action-repository:minute:${minute.id}`, mimeType: 'application/pdf', buffer,
