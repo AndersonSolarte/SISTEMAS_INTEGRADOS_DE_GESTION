@@ -35,6 +35,15 @@ const STATUS_LABELS = {
   active: 'En Ejecución Oficial', monitoring: 'En Seguimiento Semestral', closed: 'Cerrado'
 };
 const emptyItem = { macroactivity: '', activity: '', indicator_type: '', starts_on: '', ends_on: '', indicator: '', target: '', co_responsibles: [], budget: '', custom_values: {} };
+const DEFAULT_ACTIVITY_FIELDS = [
+  { id: 'def-activity', key: 'activity', label: 'Nombre o descripción de la Actividad', data_type: 'long_text', required: true, position: 1 },
+  { id: 'def-indicator-type', key: 'indicator_type', label: 'Tipo de Indicador', data_type: 'list', required: false, position: 2, options: ['Gestión','Resultado','Producto','Impacto'] },
+  { id: 'def-indicator', key: 'indicator', label: 'Indicador', data_type: 'text', required: false, position: 3 },
+  { id: 'def-target', key: 'target', label: 'Meta', data_type: 'text', required: false, position: 4 },
+  { id: 'def-starts-on', key: 'starts_on', label: 'Fecha de inicio', data_type: 'date', required: false, position: 5 },
+  { id: 'def-ends-on', key: 'ends_on', label: 'Fecha de fin', data_type: 'date', required: false, position: 6 },
+  { id: 'def-co-responsibles', key: 'co_responsibles', label: 'Corresponsable(s)', data_type: 'text', required: false, position: 7 }
+];
 const ACTIVITY_FORM_EXCLUDED_KEYS = new Set(['progress_s1','observations_s1','progress_s2','observations_s2','total_progress','avance_a_ip_2026','avance_a_iip_2026','observaciones','observaciones_2','total']);
 const normalizeFieldText = (str) =>
   String(str || '')
@@ -863,52 +872,44 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     };
   }, [detail?.items]);
 
-  const schemaFields = (Array.isArray(formSchema?.fields) ? formSchema.fields : []).filter((f) => f && f.active !== false);
-  const pedFields = (activePed?.fieldDefinitions || platformPlan?.fieldDefinitions || []).filter((f) => f && f.active !== false);
+  const schemaFields = useMemo(() => (Array.isArray(formSchema?.fields) ? formSchema.fields : []).filter((f) => f && f.active !== false), [formSchema?.fields]);
+  const pedFields = useMemo(() => (activePed?.fieldDefinitions || platformPlan?.fieldDefinitions || []).filter((f) => f && f.active !== false), [activePed?.fieldDefinitions, platformPlan?.fieldDefinitions]);
 
-  const mergedFieldsMap = new Map();
-  // 1. Agregar campos del esquema guardado
-  schemaFields.forEach((f) => mergedFieldsMap.set(f.key, { ...f }));
-  // 2. Complementar o actualizar con los campos configurados en el PED (que contienen los últimos cambios y opciones del administrador)
-  pedFields.forEach((f) => {
-    const existing = mergedFieldsMap.get(f.key);
-    if (!existing) {
-      mergedFieldsMap.set(f.key, { ...f });
-    } else {
-      const pedOptions = Array.isArray(f.options) && f.options.length > 0 ? f.options : null;
-      mergedFieldsMap.set(f.key, {
-        ...existing,
-        ...f,
-        // Usar opciones del PED si están definidas, de lo contrario mantener las existentes
-        options: pedOptions || existing.options || [],
-        validation_rules: { ...(existing.validation_rules || {}), ...(f.validation_rules || {}) }
-      });
-    }
-  });
+  const activityFields = useMemo(() => {
+    const mergedFieldsMap = new Map();
+    // 1. Agregar campos del esquema guardado
+    schemaFields.forEach((f) => mergedFieldsMap.set(f.key, { ...f }));
+    // 2. Complementar o actualizar con los campos configurados en el PED
+    pedFields.forEach((f) => {
+      const existing = mergedFieldsMap.get(f.key);
+      if (!existing) {
+        mergedFieldsMap.set(f.key, { ...f });
+      } else {
+        const pedOptions = Array.isArray(f.options) && f.options.length > 0 ? f.options : null;
+        mergedFieldsMap.set(f.key, {
+          ...existing,
+          ...f,
+          options: pedOptions || existing.options || [],
+          validation_rules: { ...(existing.validation_rules || {}), ...(f.validation_rules || {}) }
+        });
+      }
+    });
 
-  const rawFields = (mergedFieldsMap.size > 0 ? Array.from(mergedFieldsMap.values()) : (schemaFields.length > 0 ? schemaFields : pedFields))
-    .sort((a, b) => (a.position || 0) - (b.position || 0));
+    const rawFields = (mergedFieldsMap.size > 0 ? Array.from(mergedFieldsMap.values()) : (schemaFields.length > 0 ? schemaFields : pedFields))
+      .sort((a, b) => (a.position || 0) - (b.position || 0));
+
+    const active = rawFields.length > 0 ? rawFields : DEFAULT_ACTIVITY_FIELDS;
+    return active.filter((field) => field.data_type !== 'formula' && !ACTIVITY_FORM_EXCLUDED_KEYS.has(field.key));
+  }, [schemaFields, pedFields]);
+
+  const recordColumns = activityFields;
+
   const formElements = formSchema?.elements || structure;
   const formCatalogs = (formSchema?.catalogs && formSchema.catalogs.length > 0)
     ? formSchema.catalogs
     : ((activePed?.catalogItems && activePed.catalogItems.length > 0)
       ? activePed.catalogItems
       : (platformPlan?.catalogItems || []));
-
-  const DEFAULT_ACTIVITY_FIELDS = [
-    { id: 'def-activity', key: 'activity', label: 'Nombre o descripción de la Actividad', data_type: 'long_text', required: true, position: 1 },
-    { id: 'def-indicator-type', key: 'indicator_type', label: 'Tipo de Indicador', data_type: 'list', required: false, position: 2, options: ['Gestión','Resultado','Producto','Impacto'] },
-    { id: 'def-indicator', key: 'indicator', label: 'Indicador', data_type: 'text', required: false, position: 3 },
-    { id: 'def-target', key: 'target', label: 'Meta', data_type: 'text', required: false, position: 4 },
-    { id: 'def-starts-on', key: 'starts_on', label: 'Fecha de inicio', data_type: 'date', required: false, position: 5 },
-    { id: 'def-ends-on', key: 'ends_on', label: 'Fecha de fin', data_type: 'date', required: false, position: 6 },
-    { id: 'def-co-responsibles', key: 'co_responsibles', label: 'Corresponsable(s)', data_type: 'text', required: false, position: 7 }
-  ];
-
-  const activeFields = rawFields.length > 0 ? rawFields : DEFAULT_ACTIVITY_FIELDS;
-
-  const activityFields = activeFields.filter((field) => field.data_type !== 'formula' && !ACTIVITY_FORM_EXCLUDED_KEYS.has(field.key));
-  const recordColumns = activeFields;
 
   const planResponsiblePerson =
     detail?.currentResponsibility?.responsibleUser ||
@@ -966,14 +967,21 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     };
   }, [activityFields, defaultResponsibleText, defaultStartDate, defaultEndDate]);
 
+  const initializedPlanRef = useRef(null);
+
   useEffect(() => {
-    if (detail && !editingItemId) {
-      setItem((curr) => {
-        if (curr.activity || (curr.starts_on && curr.starts_on !== defaultStartDate)) return curr;
-        return getInitialItem();
-      });
+    if (!open) {
+      initializedPlanRef.current = null;
+      setEditingItemId(null);
     }
-  }, [detail, editingItemId, getInitialItem, defaultStartDate]);
+  }, [open]);
+
+  useEffect(() => {
+    if (detail?.id && initializedPlanRef.current !== detail.id) {
+      initializedPlanRef.current = detail.id;
+      setItem(getInitialItem());
+    }
+  }, [detail?.id, getInitialItem]);
 
   const recordValue = (row, field) => {
     if (isCoResponsibleField(field)) {
@@ -1063,6 +1071,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   }, [coResponsiblePreviewItems, previewPlanSearch, recordColumns]);
 
   const fieldValue = (field) => {
+    if (!field) return '';
     if (isResponsibleField(field)) {
       const direct = item[field.key];
       const custom = item.custom_values?.[field.key];
@@ -1089,8 +1098,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       }
       return parseCoResponsibles(item.co_responsibles);
     }
-    const direct = { activity: item.activity, indicator_type: item.indicator_type, starts_on: item.starts_on, ends_on: item.ends_on, indicator: item.indicator, target: item.target, co_responsibles: item.co_responsibles };
-    return Object.prototype.hasOwnProperty.call(direct, field.key) ? direct[field.key] : item.custom_values?.[field.key];
+    if (item.custom_values && item.custom_values[field.key] !== undefined && item.custom_values[field.key] !== null) {
+      return item.custom_values[field.key];
+    }
+    if (item[field.key] !== undefined && item[field.key] !== null) {
+      return item[field.key];
+    }
+    return '';
   };
   const setFieldValue = (field, value) => {
     if (isStartDateField(field)) {
@@ -1127,9 +1141,16 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       return;
     }
     if (['activity','indicator_type','starts_on','ends_on','indicator','target','co_responsibles'].includes(field.key)) {
-      setItem((current) => ({ ...current, [field.key]: value }));
+      setItem((current) => ({
+        ...current,
+        [field.key]: value,
+        custom_values: { ...(current.custom_values || {}), [field.key]: value }
+      }));
     } else {
-      setItem((current) => ({ ...current, custom_values: { ...(current.custom_values || {}), [field.key]: value } }));
+      setItem((current) => ({
+        ...current,
+        custom_values: { ...(current.custom_values || {}), [field.key]: value }
+      }));
     }
   };
   const renderConfiguredField = (field) => {
@@ -1396,6 +1417,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       });
     } else {
       currentValue = rawValue ?? '';
+      if (select && options.length > 0 && currentValue !== '') {
+        const matched = options.find((opt) => String(opt.value) === String(currentValue));
+        if (matched) {
+          currentValue = matched.value;
+        }
+      }
     }
     const wide = field.data_type === 'long_text' || field.key === 'activity' || field.data_type === 'file';
     const isCompact = ['date','number','percentage','currency'].includes(field.data_type);
