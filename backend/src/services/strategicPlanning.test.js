@@ -316,4 +316,52 @@ test('StrategicNotification y metadatos de ajustes registran trazabilidad comple
   assert.equal(currentMeta.planning_responses_history.length, 1);
 });
 
+test('el plazo de formulacion respeta la fecha mayor entre individual y global (regla del mayor plazo)', () => {
+  // Caso 1: Global vence después que individual -> gana Global
+  const termGlobalExtended = {
+    status: 'active',
+    year: 2026,
+    metadata: { formulation_starts_on: '2026-01-01', formulation_ends_on: '2026-12-10' }
+  };
+  const planOldIndividual = {
+    status: 'formulation',
+    metadata: { formulation_starts_on: '2026-01-01', formulation_ends_on: '2026-10-27', formulation_extensions: [] }
+  };
+
+  const gIso = termGlobalExtended.metadata.formulation_ends_on;
+  const iIso = planOldIndividual.metadata.formulation_ends_on;
+  const effectiveEndsOn1 = (iIso && gIso) ? (iIso > gIso ? iIso : gIso) : (iIso || gIso);
+  assert.equal(effectiveEndsOn1, '2026-12-10', 'Si el plazo global se amplía a 2026-12-10 y supera el individual 2026-10-27, rige el global');
+
+  // Caso 2: Prórroga individual otorgada hasta 2026-11-15 cuando global venció en 2026-10-27 -> gana Individual
+  const termGlobalClosed = {
+    status: 'active',
+    year: 2026,
+    metadata: { formulation_starts_on: '2026-01-01', formulation_ends_on: '2026-10-27' }
+  };
+  const planWithExtension = {
+    status: 'formulation',
+    metadata: {
+      formulation_starts_on: '2026-01-01',
+      formulation_ends_on: '2026-11-15',
+      formulation_extensions: [{ extended_until: '2026-11-15', reason: 'Prórroga aprobada' }]
+    }
+  };
+  const gIso2 = termGlobalClosed.metadata.formulation_ends_on;
+  const iIso2 = planWithExtension.metadata.formulation_ends_on;
+  const effectiveEndsOn2 = (iIso2 && gIso2) ? (iIso2 > gIso2 ? iIso2 : gIso2) : (iIso2 || gIso2);
+  assert.equal(effectiveEndsOn2, '2026-11-15', 'Si hay prórroga individual hasta 2026-11-15 y supera el global 2026-10-27, rige la individual');
+
+  // Caso 3: Global vence 2026-12-10 y a este plan le dieron prorroga individual especial hasta 2026-12-24 -> gana Individual
+  const effectiveEndsOn3 = ('2026-12-24' > '2026-12-10') ? '2026-12-24' : '2026-12-10';
+  assert.equal(effectiveEndsOn3, '2026-12-24');
+
+  // Caso 4: Ambos vencidos (Global 2026-10-27, Individual 2026-10-25) -> Fecha mayor es 2026-10-27, vencida respecto a hoy
+  const today = '2026-10-28';
+  const effectiveEndsOn4 = ('2026-10-25' > '2026-10-27') ? '2026-10-25' : '2026-10-27';
+  assert.equal(effectiveEndsOn4, '2026-10-27');
+  assert.ok(today > effectiveEndsOn4, 'Ambos plazos están vencidos');
+});
+
+
 

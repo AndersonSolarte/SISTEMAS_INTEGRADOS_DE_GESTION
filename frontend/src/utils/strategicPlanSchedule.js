@@ -1,72 +1,153 @@
 /**
  * Utilidades para determinar la vigencia y plazos programados de Planes de Acción
+ *
+ * REGLAS INSTITUCIONALES:
+ * 1. Plazo Global (Vigencia): Es el plazo general de formulación definido por Planeación y Efectividad para todos los planes.
+ * 2. Plazo Individual: Es el plazo específico o prórroga otorgada a un plan en particular.
+ * 3. Si no hay plazo individual, el plan se rige por el plazo global.
+ * 4. REGLA DE MAYOR PLAZO (MAX DATE):
+ *    Siempre prevalece la fecha que otorgue mayor tiempo (la mayor entre el plazo individual y el plazo global).
+ *    - Si el plazo global se amplía y supera al individual, rige el plazo global para ese plan.
+ *    - Si el plazo individual es mayor al global (ej. prórroga concedida), se respeta y rige el plazo individual.
+ * 5. Hasta que no se venza esa fecha mayor (o mientras la vigencia no esté formalmente cerrada),
+ *    el usuario líder mantiene visualización y acceso a su Plan de Acción.
+ *    Al vencerse la fecha mayor, el módulo se oculta y restringe automáticamente.
  */
 
 /**
- * Determina si un plan de acción se encuentra dentro de su vigencia programada y activa para el usuario líder.
- * Regla:
- * - Si el plan o su vigencia están cerrados ('closed', 'inactive', 'archived') -> false.
- * - Si tiene prórroga individual vigente -> true.
- * - Si el plazo de la vigencia (Plazo General configurado por Planeación o plazo del plan) ya venció (today > endsOn) -> false.
- * - Si el plazo aún no ha iniciado (today < startsOn) -> false.
+ * Resuelve y calcula el cronograma efectivo y plazos para un Plan de Acción.
+ * @param {Object} plan - Objeto del plan de acción (con term y metadata).
+ * @returns {Object} Detalle completo del cronograma y plazos calculados.
  */
-export const isPlanWithinActiveSchedule = (plan) => {
-  if (!plan) return false;
-  if (plan.status === 'closed') return false;
-  if (typeof plan.is_within_schedule === 'boolean') {
-    return plan.is_within_schedule;
+export const getPlanEffectiveSchedule = (plan) => {
+  if (!plan) {
+    return {
+      isWithinSchedule: false,
+      isScheduleExpired: true,
+      isScheduleNotStarted: false,
+      isTermClosed: false,
+      effectiveEndsOn: null,
+      effectiveStartsOn: null,
+      globalEndsOn: null,
+      individualEndsOn: null,
+      activeDeadlineType: 'global',
+      hasActiveIndividualExtension: false,
+      daysRemaining: null
+    };
   }
 
+  // Si el plan está cerrado formalmente
+  const isPlanClosed = plan.status === 'closed';
+
   const term = plan.term;
-  if (!term || ['closed', 'inactive', 'archived'].includes(term.status)) return false;
+  const isTermClosed = Boolean(!term || ['closed', 'inactive', 'archived'].includes(term?.status) || isPlanClosed);
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  // 1. Revisar prórrogas individuales activas otorgadas por Planeación
-  const extensions = Array.isArray(plan.metadata?.formulation_extensions)
-    ? plan.metadata.formulation_extensions
-    : [];
+  // 1. Plazo Global de la Vigencia
+  const termMeta = term?.metadata || {};
+  const globalEndsOn = termMeta.formulation_ends_on || term?.ends_on || (term?.year ? `${term.year}-12-31` : null);
+  const globalStartsOn = termMeta.formulation_starts_on || term?.starts_on || (term?.year ? `${term.year}-01-01` : null);
 
-  let activeExtensionDate = null;
+  // 2. Plazo Individual del Plan (prórrogas u override individual en metadata)
+  const planMeta = plan.metadata || {};
+  const extensions = Array.isArray(planMeta.formulation_extensions) ? planMeta.formulation_extensions : [];
+
+  let latestExtensionDate = null;
   for (const ext of extensions) {
     const extDate = ext.extended_until || ext.ends_on || ext.fecha_limite;
     if (extDate) {
       const extIso = String(extDate).slice(0, 10);
-      if (extIso >= todayIso) {
-        if (!activeExtensionDate || extIso > activeExtensionDate) {
-          activeExtensionDate = extIso;
-        }
+      if (!latestExtensionDate || extIso > latestExtensionDate) {
+        latestExtensionDate = extIso;
       }
     }
   }
 
-  // Si tiene una prórroga individual vigente, la prórroga manda y está dentro de plazo
-  if (activeExtensionDate) {
-    return true;
+  // La fecha individual es la mayor entre la última prórroga registrada y el formulation_ends_on del plan
+  const planEndsOn = planMeta.formulation_ends_on ? String(planMeta.formulation_ends_on).slice(0, 10) : null;
+  let individualEndsOn = null;
+  if (latestExtensionDate && planEndsOn) {
+    individualEndsOn = latestExtensionDate > planEndsOn ? latestExtensionDate : planEndsOn;
+  } else {
+    individualEndsOn = latestExtensionDate || planEndsOn || null;
   }
 
-  // 2. Si la vigencia tiene un Plazo General configurado por Planeación (ej. 2026-10-27)
-  const termEndsOn = term.metadata?.formulation_ends_on;
-  const planEndsOn = plan.metadata?.formulation_ends_on;
-  const effectiveEndsOn = termEndsOn || planEndsOn || term.ends_on || (term.year ? `${term.year}-12-31` : null);
+  const individualStartsOn = planMeta.formulation_starts_on ? String(planMeta.formulation_starts_on).slice(0, 10) : null;
 
-  const termStartsOn = term.metadata?.formulation_starts_on;
-  const planStartsOn = plan.metadata?.formulation_starts_on;
-  const effectiveStartsOn = termStartsOn || planStartsOn || term.starts_on || (term.year ? `${term.year}-01-01` : null);
+  // 3. REGLA DE ORO: PREVALECE LA FECHA MAYOR ENTRE GLOBAL E INDIVIDUAL
+  let effectiveEndsOn = null;
+  let activeDeadlineType = 'global';
 
-  if (effectiveEndsOn) {
-    const endsIso = String(effectiveEndsOn).slice(0, 10);
-    if (todayIso > endsIso) {
-      return false; // Plazo vencido / cerrado
+  const gIso = globalEndsOn ? String(globalEndsOn).slice(0, 10) : null;
+  const iIso = individualEndsOn ? String(individualEndsOn).slice(0, 10) : null;
+
+  if (gIso && iIso) {
+    if (iIso > gIso) {
+      effectiveEndsOn = iIso;
+      activeDeadlineType = 'individual';
+    } else {
+      effectiveEndsOn = gIso;
+      activeDeadlineType = 'global';
     }
+  } else if (iIso) {
+    effectiveEndsOn = iIso;
+    activeDeadlineType = 'individual';
+  } else if (gIso) {
+    effectiveEndsOn = gIso;
+    activeDeadlineType = 'global';
   }
 
-  if (effectiveStartsOn) {
-    const startsIso = String(effectiveStartsOn).slice(0, 10);
-    if (todayIso < startsIso) {
-      return false; // Aún no inicia
-    }
+  // Fecha de inicio: la menor para no bloquear accesos tempranos concedidos
+  const gStartIso = globalStartsOn ? String(globalStartsOn).slice(0, 10) : null;
+  const iStartIso = individualStartsOn ? String(individualStartsOn).slice(0, 10) : null;
+  let effectiveStartsOn = null;
+  if (gStartIso && iStartIso) {
+    effectiveStartsOn = iStartIso < gStartIso ? iStartIso : gStartIso;
+  } else {
+    effectiveStartsOn = gStartIso || iStartIso || null;
   }
 
-  return true;
+  // Estado de vencimiento
+  const isScheduleExpired = isTermClosed || Boolean(effectiveEndsOn && todayIso > effectiveEndsOn);
+  const isScheduleNotStarted = Boolean(effectiveStartsOn && todayIso < effectiveStartsOn);
+  const isWithinSchedule = !isTermClosed && !isScheduleExpired && !isScheduleNotStarted;
+
+  // Prórroga activa: si el plazo que rige es individual y está vigente
+  const hasActiveIndividualExtension = Boolean(
+    activeDeadlineType === 'individual' &&
+    effectiveEndsOn &&
+    effectiveEndsOn >= todayIso &&
+    (!gIso || effectiveEndsOn > gIso)
+  );
+
+  // Días restantes
+  const daysRemaining = effectiveEndsOn
+    ? Math.ceil((new Date(`${effectiveEndsOn}T23:59:59`) - new Date()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  return {
+    isWithinSchedule,
+    isScheduleExpired,
+    isScheduleNotStarted,
+    isTermClosed,
+    effectiveEndsOn,
+    effectiveStartsOn,
+    globalEndsOn: gIso,
+    individualEndsOn: iIso,
+    activeDeadlineType,
+    hasActiveIndividualExtension,
+    daysRemaining
+  };
+};
+
+/**
+ * Determina si un plan de acción se encuentra dentro de su vigencia y plazo programado activo para el usuario.
+ */
+export const isPlanWithinActiveSchedule = (plan) => {
+  if (!plan) return false;
+  if (plan.status === 'closed') return false;
+
+  const schedule = getPlanEffectiveSchedule(plan);
+  return schedule.isWithinSchedule;
 };

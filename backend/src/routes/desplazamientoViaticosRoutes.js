@@ -8,6 +8,7 @@ const { publicLimiter } = require('../middlewares/security');
 const {
   abrirAccionAdmin,
   abrirAccionAdminPorReporte,
+  actualizarSolicitudAdmin,
   descargarFormato,
   descargarPdf,
   mostrarAccion,
@@ -19,7 +20,8 @@ const {
   procesarDemoLiquidacion,
   procesarDemoTesoreria,
   radicarSolicitud,
-  reenviarAprobacion
+  reenviarAprobacion,
+  verSoporteSolicitud
 } = require('../controllers/desplazamientoViaticosController');
 
 const router = express.Router();
@@ -58,5 +60,7 @@ router.post('/adjuntos', auth, upload.single('adjunto'), (req, res) => {
 });
 router.get('/solicitudes/:id/formato', auth, descargarFormato);
 router.get('/solicitudes/:id/formato.pdf', auth, descargarPdf);
+router.get('/solicitudes/:id/soporte', auth, verSoporteSolicitud);
+router.put('/solicitudes/:id/admin', auth, express.json(), actualizarSolicitudAdmin);
 
 module.exports = router;

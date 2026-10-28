@@ -736,6 +736,103 @@ const deleteTerm = wrap(async (req, res) => {
   ok(res, { id: term.id }, 'Año eliminado de forma lógica.');
 });
 
+/**
+ * Resuelve y calcula el cronograma efectivo y plazos para un Plan de Acción en backend.
+ * Regla de Oro: Prevalece la fecha que mayor plazo otorgue (MAX entre global e individual).
+ */
+const resolvePlanEffectiveSchedule = (plan, term = null) => {
+  const resolvedTerm = term || plan?.term || null;
+  const termMeta = resolvedTerm?.metadata || {};
+  const planMeta = plan?.metadata || {};
+
+  const isTermClosed = Boolean(resolvedTerm && ['closed', 'inactive', 'archived'].includes(resolvedTerm.status)) || plan?.status === 'closed';
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  // 1. Plazo Global de la Vigencia
+  const globalEndsOn = termMeta.formulation_ends_on || resolvedTerm?.ends_on || (resolvedTerm?.year ? `${resolvedTerm.year}-12-31` : null);
+  const globalStartsOn = termMeta.formulation_starts_on || resolvedTerm?.starts_on || (resolvedTerm?.year ? `${resolvedTerm.year}-01-01` : null);
+
+  // 2. Plazo Individual del Plan (prórrogas u override individual en metadata)
+  const extensions = Array.isArray(planMeta.formulation_extensions) ? planMeta.formulation_extensions : [];
+  let latestExtensionDate = null;
+  for (const ext of extensions) {
+    const extDate = ext.extended_until || ext.ends_on || ext.fecha_limite;
+    if (extDate) {
+      const extIso = String(extDate).slice(0, 10);
+      if (!latestExtensionDate || extIso > latestExtensionDate) {
+        latestExtensionDate = extIso;
+      }
+    }
+  }
+
+  const planEndsOn = planMeta.formulation_ends_on ? String(planMeta.formulation_ends_on).slice(0, 10) : null;
+  let individualEndsOn = null;
+  if (latestExtensionDate && planEndsOn) {
+    individualEndsOn = latestExtensionDate > planEndsOn ? latestExtensionDate : planEndsOn;
+  } else {
+    individualEndsOn = latestExtensionDate || planEndsOn || null;
+  }
+
+  const individualStartsOn = planMeta.formulation_starts_on ? String(planMeta.formulation_starts_on).slice(0, 10) : null;
+
+  // 3. Regla del Mayor Plazo (MAX DATE):
+  // Si la fecha global supera la fecha individual, nos quedamos con la fecha que más tenga plazo (la mayor).
+  let effectiveEndsOn = null;
+  let activeDeadlineType = 'global';
+
+  const gIso = globalEndsOn ? String(globalEndsOn).slice(0, 10) : null;
+  const iIso = individualEndsOn ? String(individualEndsOn).slice(0, 10) : null;
+
+  if (gIso && iIso) {
+    if (iIso > gIso) {
+      effectiveEndsOn = iIso;
+      activeDeadlineType = 'individual';
+    } else {
+      effectiveEndsOn = gIso;
+      activeDeadlineType = 'global';
+    }
+  } else if (iIso) {
+    effectiveEndsOn = iIso;
+    activeDeadlineType = 'individual';
+  } else if (gIso) {
+    effectiveEndsOn = gIso;
+    activeDeadlineType = 'global';
+  }
+
+  const gStartIso = globalStartsOn ? String(globalStartsOn).slice(0, 10) : null;
+  const iStartIso = individualStartsOn ? String(individualStartsOn).slice(0, 10) : null;
+  let effectiveStartsOn = null;
+  if (gStartIso && iStartIso) {
+    effectiveStartsOn = iStartIso < gStartIso ? iStartIso : gStartIso;
+  } else {
+    effectiveStartsOn = gStartIso || iStartIso || null;
+  }
+
+  const isScheduleExpired = isTermClosed || Boolean(effectiveEndsOn && todayIso > effectiveEndsOn);
+  const isScheduleNotStarted = Boolean(effectiveStartsOn && todayIso < effectiveStartsOn);
+  const isWithinSchedule = !isTermClosed && !isScheduleExpired && !isScheduleNotStarted;
+
+  const hasActiveIndividualExtension = Boolean(
+    activeDeadlineType === 'individual' &&
+    effectiveEndsOn &&
+    effectiveEndsOn >= todayIso &&
+    (!gIso || effectiveEndsOn > gIso)
+  );
+
+  return {
+    isWithinSchedule,
+    isScheduleExpired,
+    isScheduleNotStarted,
+    isTermClosed,
+    effectiveEndsOn,
+    effectiveStartsOn,
+    globalEndsOn: gIso,
+    individualEndsOn: iIso,
+    activeDeadlineType,
+    hasActiveIndividualExtension
+  };
+};
+
 const getMyActionPlans = wrap(async (req, res) => {
   const userId = req.user.id;
   const userEmail = String(req.user?.email || '').trim().toLowerCase();
@@ -814,33 +911,7 @@ const getMyActionPlans = wrap(async (req, res) => {
     const isActive = effectiveStatus === 'active' || effectiveStatus === 'monitoring';
     const isOwnerValidation = effectiveStatus === 'owner_validation' || isSigning;
 
-    const todayIso = new Date().toISOString().slice(0, 10);
-    const term = plain.term;
-    const termMeta = term?.metadata || {};
-    const planMeta = plain.metadata || {};
-
-    const isTermClosed = Boolean(term && ['closed', 'inactive', 'archived'].includes(term.status)) || plain.status === 'closed';
-
-    const extensions = Array.isArray(planMeta.formulation_extensions) ? planMeta.formulation_extensions : [];
-    let activeExtensionDate = null;
-    for (const ext of extensions) {
-      const extDate = ext.extended_until || ext.ends_on || ext.fecha_limite;
-      if (extDate) {
-        const extIso = String(extDate).slice(0, 10);
-        if (extIso >= todayIso) {
-          if (!activeExtensionDate || extIso > activeExtensionDate) {
-            activeExtensionDate = extIso;
-          }
-        }
-      }
-    }
-
-    const effectiveEndsOn = activeExtensionDate || termMeta.formulation_ends_on || planMeta.formulation_ends_on || term?.ends_on || (term?.year ? `${term.year}-12-31` : null);
-    const effectiveStartsOn = termMeta.formulation_starts_on || planMeta.formulation_starts_on || term?.starts_on || (term?.year ? `${term.year}-01-01` : null);
-
-    const isScheduleExpired = isTermClosed || Boolean(effectiveEndsOn && todayIso > String(effectiveEndsOn).slice(0, 10));
-    const isScheduleNotStarted = Boolean(effectiveStartsOn && todayIso < String(effectiveStartsOn).slice(0, 10));
-    const isWithinSchedule = !isTermClosed && !isScheduleExpired && !isScheduleNotStarted;
+    const schedule = resolvePlanEffectiveSchedule(plain, plain.term);
 
     const myParticipant = (latestMeeting?.participants || []).find((p) => (
       String(p.user_id) === String(userId) ||
@@ -857,11 +928,13 @@ const getMyActionPlans = wrap(async (req, res) => {
       can_execute: isActive,
       needs_review: isOwnerValidation && !mySignature,
       my_signed: Boolean(mySignature || myParticipant?.status === 'signed'),
-      is_within_schedule: isWithinSchedule,
-      is_schedule_expired: isScheduleExpired,
-      is_term_closed: isTermClosed,
-      effective_schedule_ends_on: effectiveEndsOn ? String(effectiveEndsOn).slice(0, 10) : null,
-      effective_schedule_starts_on: effectiveStartsOn ? String(effectiveStartsOn).slice(0, 10) : null,
+      is_within_schedule: schedule.isWithinSchedule,
+      is_schedule_expired: schedule.isScheduleExpired,
+      is_term_closed: schedule.isTermClosed,
+      effective_schedule_ends_on: schedule.effectiveEndsOn,
+      effective_schedule_starts_on: schedule.effectiveStartsOn,
+      active_deadline_type: schedule.activeDeadlineType,
+      has_active_extension: schedule.hasActiveIndividualExtension,
       latest_minute_id: latestMinute?.id || null,
       latest_minute_status: latestMinute?.status || null,
       drive_file_id: latestMinute?.drive_file_id || null,
@@ -1243,21 +1316,18 @@ const ensureCanModifyActionPlanItems = async (actionPlan, req) => {
     throw Object.assign(new Error('El Plan de Acción se encuentra en ejecución. Para adicionar, modificar o eliminar actividades, comuníquese con la Dirección de Planeación y Aseguramiento de la Calidad.'), { statusCode: 403 });
   }
 
-  // Verificación de vigencia y plazo de la Etapa 1 para usuarios no administradores
-  const today = new Date().toISOString().slice(0, 10);
-  let termMetadata = {};
-  if (actionPlan?.term_id) {
-    const term = actionPlan.term || await StrategicTerm.findByPk(actionPlan.term_id, { attributes: ['metadata', 'year'] });
-    termMetadata = term?.metadata || {};
+  // Verificación de vigencia y plazo de la Etapa 1 para usuarios no administradores (Regla del Mayor Plazo)
+  let term = actionPlan.term;
+  if (!term && actionPlan?.term_id) {
+    term = await StrategicTerm.findByPk(actionPlan.term_id, { attributes: ['id', 'metadata', 'year', 'status', 'starts_on', 'ends_on'] });
   }
-  const startsOn = actionPlan?.metadata?.formulation_starts_on || termMetadata.formulation_starts_on;
-  const endsOn = actionPlan?.metadata?.formulation_ends_on || termMetadata.formulation_ends_on;
+  const schedule = resolvePlanEffectiveSchedule(actionPlan, term);
 
-  if (startsOn && today < startsOn) {
-    throw Object.assign(new Error(`El plazo de formulación de la Etapa 1 aún no ha iniciado (Inicia el ${startsOn}).`), { statusCode: 403 });
+  if (schedule.isScheduleNotStarted) {
+    throw Object.assign(new Error(`El plazo de formulación de la Etapa 1 aún no ha iniciado (Inicia el ${schedule.effectiveStartsOn}).`), { statusCode: 403 });
   }
-  if (endsOn && today > endsOn) {
-    throw Object.assign(new Error(`El plazo de formulación de la Etapa 1 finalizó el ${endsOn}. Para solicitar una ampliación de tiempo o prórroga, comuníquese con la Dirección de Planeación y Aseguramiento de la Calidad (Planeación y Efectividad).`), { statusCode: 403 });
+  if (schedule.isScheduleExpired) {
+    throw Object.assign(new Error(`El plazo de formulación de la Etapa 1 finalizó el ${schedule.effectiveEndsOn}. Para solicitar una ampliación de tiempo o prórroga, comuníquese con la Dirección de Planeación y Aseguramiento de la Calidad (Planeación y Efectividad).`), { statusCode: 403 });
   }
 
   return true;

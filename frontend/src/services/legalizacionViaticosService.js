@@ -12,6 +12,17 @@ export const reenviarAprobacionViaticos = (id) => api.post(`/desplazamientos-via
 export const getAccionAdministrativaViaticosPorReporte = (reporteId) => api.post(`/desplazamientos-viaticos/solicitudes/reporte/${reporteId}/accion-admin`).then((response) => response.data);
 export const attachmentUrl = (legalizacionId, fileId) => `${api.defaults.baseURL}/legalizacion-viaticos/${legalizacionId}/adjuntos/${fileId}`;
 export const legalizacionPdfUrl = (legalizacionId) => `${api.defaults.baseURL}/legalizacion-viaticos/${legalizacionId}/pdf`;
+const openBlob = async (request) => {
+  const response = await request;
+  const url = URL.createObjectURL(response.data);
+  window.open(url, '_blank', 'noopener,noreferrer');
+  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+};
+export const abrirFormatoViaticos = (id) => openBlob(api.get(`/desplazamientos-viaticos/solicitudes/${id}/formato.pdf`, { responseType: 'blob', timeout: 60000 }));
+export const abrirSoporteSolicitudViaticos = (id) => openBlob(api.get(`/desplazamientos-viaticos/solicitudes/${id}/soporte`, { responseType: 'blob', timeout: 60000 }));
+export const abrirReporteSalidaViaticos = (reporteId) => openBlob(api.get(`/reporte-salida/solicitudes/${reporteId}/documento-temporal`, { responseType: 'blob', timeout: 60000 }));
+export const actualizarSolicitudViaticosAdmin = (id, payload) => api.put(`/desplazamientos-viaticos/solicitudes/${id}/admin`, payload).then((response) => response.data);
+export const eliminarSolicitudViaticosAdmin = (reporteId) => api.delete(`/reporte-salida/solicitudes/${reporteId}`).then((response) => response.data);
 export const abrirAdjuntoLegalizacion = async (legalizacionId, fileId) => {
   const response = await api.get(`/legalizacion-viaticos/${legalizacionId}/adjuntos/${fileId}`, { responseType: 'blob', timeout: 60000 });
   const url = URL.createObjectURL(response.data);

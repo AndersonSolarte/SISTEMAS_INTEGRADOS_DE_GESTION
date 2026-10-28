@@ -2715,7 +2715,10 @@ const procesarAccion = async (req, res) => {
 };
 
 const descargarFormato = async (req, res) => {
-  const solicitud = await DesplazamientoViaticosSolicitud.findOne({ where: { id: req.params.id, user_id: req.user.id } });
+  const solicitud = await DesplazamientoViaticosSolicitud.findByPk(req.params.id);
+  const owner = Number(solicitud?.user_id) === Number(req.user.id);
+  const manager = solicitud && await canManageViaticos(req.user) && canActOnSolicitud(req.user, solicitud);
+  if (!owner && !manager) return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
   if (!solicitud) return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
   const hasLiquidation = Array.isArray(solicitud.liquidacion?.detalles);
   const attachment = await buildXlsxAttachment(solicitud, { includeFinancial: hasLiquidation });
@@ -2725,7 +2728,10 @@ const descargarFormato = async (req, res) => {
 };
 
 const descargarPdf = async (req, res) => {
-  const solicitud = await DesplazamientoViaticosSolicitud.findOne({ where: { id: req.params.id, user_id: req.user.id } });
+  const solicitud = await DesplazamientoViaticosSolicitud.findByPk(req.params.id);
+  const owner = Number(solicitud?.user_id) === Number(req.user.id);
+  const manager = solicitud && await canManageViaticos(req.user) && canActOnSolicitud(req.user, solicitud);
+  if (!owner && !manager) return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
   if (!solicitud) return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
   let attachment;
   if (Array.isArray(solicitud.liquidacion?.detalles)) {
@@ -2739,6 +2745,77 @@ const descargarPdf = async (req, res) => {
   res.setHeader('Content-Type', attachment.contentType);
   res.setHeader('Content-Disposition', `attachment; filename="${attachment.filename}"`);
   return res.send(attachment.content || await fs.promises.readFile(attachment.path));
+};
+
+const verSoporteSolicitud = async (req, res) => {
+  const solicitud = await DesplazamientoViaticosSolicitud.findByPk(req.params.id);
+  const owner = Number(solicitud?.user_id) === Number(req.user.id);
+  const manager = solicitud && await canManageViaticos(req.user) && canActOnSolicitud(req.user, solicitud);
+  if (!solicitud || (!owner && !manager)) return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
+  const support = solicitud.datos_viaticos?.soporteAdjunto || {};
+  const filename = path.basename(clean(support.filename, 240));
+  const root = path.resolve(__dirname, '../../uploads/desplazamientos_viaticos');
+  const filepath = filename ? path.resolve(root, filename) : '';
+  if (!filename || !filepath.startsWith(`${root}${path.sep}`) || !fs.existsSync(filepath)) {
+    return res.status(404).json({ success: false, message: 'La solicitud no tiene un soporte adjunto disponible.' });
+  }
+  res.setHeader('Content-Type', clean(support.mimetype, 120) || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(path.basename(clean(support.originalName, 240)) || filename)}"`);
+  return res.sendFile(filepath);
+};
+
+const actualizarSolicitudAdmin = async (req, res) => {
+  try {
+    if (req.user?.role !== ROLES.ADMINISTRADOR) {
+      return res.status(403).json({ success: false, message: 'Solo el administrador puede editar solicitudes de viáticos.' });
+    }
+    const solicitud = await DesplazamientoViaticosSolicitud.findByPk(req.params.id);
+    if (!solicitud) return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
+    if (['pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(solicitud.estado)) {
+      return res.status(409).json({ success: false, message: 'La solicitud ya fue autorizada por Tesorería y no admite cambios en sus datos base.' });
+    }
+    const observacion = clean(req.body?.observacion, 600);
+    if (observacion.length < 8) return res.status(400).json({ success: false, message: 'Registre un motivo de edición de al menos 8 caracteres.' });
+
+    const currentSalida = solicitud.datos_salida || {};
+    const currentViaticos = solicitud.datos_viaticos || {};
+    const inputSalida = req.body?.datos_salida || {};
+    const inputViaticos = req.body?.datos_viaticos || {};
+    const pick = (source, keys, base) => keys.reduce((result, key) => {
+      if (Object.prototype.hasOwnProperty.call(source, key)) result[key] = clean(source[key], key === 'objetoComision' || key === 'observacionesEspeciales' ? 3000 : 500);
+      return result;
+    }, { ...base });
+    let datosSalida = pick(inputSalida, ['fecha', 'fechaRegreso', 'horaInicio', 'horaFin', 'municipio'], currentSalida);
+    const datosViaticos = pick(inputViaticos, ['lugarVisitar', 'fechaEvento', 'objetoComision', 'observacionesEspeciales', 'centroCosto', 'alojamiento', 'transporte', 'tipoCuenta', 'entidadBancaria', 'numeroCuenta'], currentViaticos);
+    if (Object.prototype.hasOwnProperty.call(inputViaticos, 'numeroDiasSolicitados')) {
+      const days = Number(inputViaticos.numeroDiasSolicitados);
+      if (!Number.isInteger(days) || days < 1 || days > 365) return res.status(400).json({ success: false, message: 'El número de días debe estar entre 1 y 365.' });
+      datosViaticos.numeroDiasSolicitados = days;
+    }
+    datosSalida = normalizeViaticosSalidaDuration(datosSalida, datosViaticos);
+    const actor = { id: req.user.id, nombre: req.user.nombre || req.user.name || 'Administrador SIAC', email: req.user.email, role: req.user.role };
+    await solicitud.update({
+      datos_salida: datosSalida,
+      datos_viaticos: datosViaticos,
+      trazabilidad: appendTrace(solicitud, 'solicitud_editada_admin', actor, { observacion })
+    });
+
+    const linkedReport = await getLinkedNormalReport(solicitud);
+    if (linkedReport) {
+      await linkedReport.update({
+        datos_formulario: {
+          ...(linkedReport.datos_formulario || {}),
+          salida: { ...(linkedReport.datos_formulario?.salida || {}), ...datosSalida },
+          viaticos: { ...(linkedReport.datos_formulario?.viaticos || {}), ...datosViaticos }
+        },
+        trazabilidad: appendTrace(linkedReport, 'solicitud_editada_admin', actor, { observacion, origen: 'panel_viaticos' })
+      });
+    }
+    return res.json({ success: true, message: 'Solicitud y Reporte de Salida vinculados actualizados correctamente.' });
+  } catch (error) {
+    console.error('[desplazamientos-viaticos] Error editando solicitud:', error);
+    return res.status(500).json({ success: false, message: 'No fue posible actualizar la solicitud.' });
+  }
 };
 
 const canManageViaticos = async (user) => user?.role === ROLES.ADMINISTRADOR || Boolean(await UserModulePermission.count({
@@ -2875,6 +2952,7 @@ module.exports = {
   _internals: { approvalForm, buildApprovalPlan, buildNormalReportData, getEffectiveViaticosDays, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, normalizeViaticosSalidaDuration, parseLiquidationBody, summarizeStageEmailResult, treasuryForm, validatePayload },
   abrirAccionAdmin,
   abrirAccionAdminPorReporte,
+  actualizarSolicitudAdmin,
   descargarFormato,
   descargarPdf,
   mostrarAccion,
@@ -2887,6 +2965,7 @@ module.exports = {
   procesarDemoTesoreria,
   radicarSolicitud,
   reenviarAprobacion,
+  verSoporteSolicitud,
   syncAdminViaticosApproval,
   syncAdminViaticosRejection
 };

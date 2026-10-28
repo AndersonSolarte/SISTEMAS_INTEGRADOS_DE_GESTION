@@ -20,6 +20,7 @@ import logoFormatos from '../assets/logo_formatos.jpg';
 import RichTextEditor, { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
 import MeetingCalendarScheduler from '../components/meetingMinute/MeetingCalendarScheduler';
 import PlanAccionConsulta from './PlanAccionConsulta';
+import { getPlanEffectiveSchedule } from '../utils/strategicPlanSchedule';
 
 const ACTION_LABELS = {
   schedule_meeting: 'Programar reunión', start_formulation: 'Iniciar formulación',
@@ -1547,16 +1548,16 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     );
   };
 
-  // Cálculos de vigencia y plazos de la Etapa 1
-  const stage1StartsOn = detail?.metadata?.formulation_starts_on || detail?.term?.metadata?.formulation_starts_on || (detail?.term?.year ? `${detail.term.year}-01-01` : '');
-  const stage1EndsOn = detail?.metadata?.formulation_ends_on || detail?.term?.metadata?.formulation_ends_on || (detail?.term?.year ? `${detail.term.year}-03-31` : '');
+  // Cálculos de vigencia y plazos de la Etapa 1 (Regla: mayor plazo entre individual y global)
+  const stage1Schedule = useMemo(() => getPlanEffectiveSchedule(detail), [detail]);
+  const stage1StartsOn = stage1Schedule.effectiveStartsOn || (detail?.term?.year ? `${detail.term.year}-01-01` : '');
+  const stage1EndsOn = stage1Schedule.effectiveEndsOn || (detail?.term?.year ? `${detail.term.year}-03-31` : '');
   const stage1Extensions = Array.isArray(detail?.metadata?.formulation_extensions) ? detail.metadata.formulation_extensions : [];
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const isStage1Expired = Boolean(stage1EndsOn && todayIso > stage1EndsOn);
-  const isStage1NotStarted = Boolean(stage1StartsOn && todayIso < stage1StartsOn);
-  const isStage1Extended = Boolean(stage1Extensions.length > 0 && stage1EndsOn >= todayIso);
-  const isStage1Open = !isStage1Expired && !isStage1NotStarted;
-  const daysRemainingStage1 = stage1EndsOn ? Math.ceil((new Date(stage1EndsOn + 'T23:59:59') - new Date()) / (1000 * 60 * 60 * 24)) : null;
+  const isStage1Expired = stage1Schedule.isScheduleExpired;
+  const isStage1NotStarted = stage1Schedule.isScheduleNotStarted;
+  const isStage1Extended = stage1Schedule.hasActiveIndividualExtension;
+  const isStage1Open = stage1Schedule.isWithinSchedule;
+  const daysRemainingStage1 = stage1Schedule.daysRemaining;
 
   const adjustmentInfo = useMemo(() => {
     if (detail?.metadata?.last_adjustment_request?.comment) {

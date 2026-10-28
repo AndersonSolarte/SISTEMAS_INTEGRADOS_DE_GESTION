@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, LinearProgress, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, LinearProgress, Menu, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
@@ -16,8 +16,14 @@ import CancelRoundedIcon from '@mui/icons-material/CancelRounded';
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import VerifiedRoundedIcon from '@mui/icons-material/VerifiedRounded';
+import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
+import GavelRoundedIcon from '@mui/icons-material/GavelRounded';
 import { useSnackbar } from 'notistack';
-import { abrirAdjuntoLegalizacion, getAccionAdministrativaViaticos, getEstadisticasViaticos, getSolicitudesViaticos, reenviarAprobacionViaticos, validarLegalizacion } from '../../services/legalizacionViaticosService';
+import { abrirAdjuntoLegalizacion, abrirFormatoViaticos, abrirReporteSalidaViaticos, abrirSoporteSolicitudViaticos, actualizarSolicitudViaticosAdmin, eliminarSolicitudViaticosAdmin, getAccionAdministrativaViaticos, getEstadisticasViaticos, getSolicitudesViaticos, reenviarAprobacionViaticos, validarLegalizacion } from '../../services/legalizacionViaticosService';
 import LegalizacionViaticosFormat from './LegalizacionViaticosFormat';
 
 const currency = (value) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -119,6 +125,14 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
   const [saving, setSaving] = useState(false);
   const [resending, setResending] = useState(false);
   const [confirmValidationOpen, setConfirmValidationOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const [menuRow, setMenuRow] = useState(null);
+  const [adminEditRow, setAdminEditRow] = useState(null);
+  const [adminEdit, setAdminEdit] = useState({});
+  const [adminEditReason, setAdminEditReason] = useState('');
+  const [deleteRow, setDeleteRow] = useState(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [adminSaving, setAdminSaving] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
 
   const load = async () => {
@@ -239,6 +253,54 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
     } finally {
       setResending(false);
     }
+  };
+
+  const closeRowMenu = () => { setMenuAnchor(null); setMenuRow(null); };
+  const openDocument = async (action, unavailableMessage) => {
+    try { await action(); }
+    catch (error) { enqueueSnackbar(error.response?.data?.message || unavailableMessage, { variant: 'error' }); }
+  };
+  const openAdminEdit = (row) => {
+    setAdminEditRow(row);
+    setAdminEditReason('');
+    setAdminEdit({
+      fecha: row.datos_salida?.fecha || '', fechaRegreso: row.datos_salida?.fechaRegreso || '',
+      horaInicio: row.datos_salida?.horaInicio || '', horaFin: row.datos_salida?.horaFin || '',
+      lugarVisitar: row.datos_viaticos?.lugarVisitar || '', fechaEvento: row.datos_viaticos?.fechaEvento || '',
+      numeroDiasSolicitados: row.datos_viaticos?.numeroDiasSolicitados || '', objetoComision: row.datos_viaticos?.objetoComision || '',
+      observacionesEspeciales: row.datos_viaticos?.observacionesEspeciales || '', centroCosto: row.datos_viaticos?.centroCosto || '',
+      alojamiento: row.datos_viaticos?.alojamiento || '', transporte: row.datos_viaticos?.transporte || ''
+    });
+  };
+  const saveAdminEdit = async () => {
+    if (adminEditReason.trim().length < 8) return enqueueSnackbar('Escriba un motivo de edición de al menos 8 caracteres.', { variant: 'warning' });
+    setAdminSaving(true);
+    try {
+      await actualizarSolicitudViaticosAdmin(adminEditRow.id, {
+        observacion: adminEditReason,
+        datos_salida: { fecha: adminEdit.fecha, fechaRegreso: adminEdit.fechaRegreso, horaInicio: adminEdit.horaInicio, horaFin: adminEdit.horaFin },
+        datos_viaticos: {
+          lugarVisitar: adminEdit.lugarVisitar, fechaEvento: adminEdit.fechaEvento, numeroDiasSolicitados: Number(adminEdit.numeroDiasSolicitados),
+          objetoComision: adminEdit.objetoComision, observacionesEspeciales: adminEdit.observacionesEspeciales,
+          centroCosto: adminEdit.centroCosto, alojamiento: adminEdit.alojamiento, transporte: adminEdit.transporte
+        }
+      });
+      enqueueSnackbar('Solicitud actualizada. El cambio también quedó reflejado en el Reporte de Salida.', { variant: 'success' });
+      setAdminEditRow(null); setDetailRow(null); await load();
+    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible actualizar la solicitud.', { variant: 'error' }); }
+    finally { setAdminSaving(false); }
+  };
+  const confirmDelete = async () => {
+    const reportId = deleteRow?.datos_viaticos?.reporteSalidaSolicitudId;
+    if (!reportId) return enqueueSnackbar('Esta solicitud no tiene un Reporte de Salida vinculado para ejecutar la eliminación integral.', { variant: 'error' });
+    if (deleteReason.trim().length < 8) return enqueueSnackbar('Escriba un motivo de eliminación de al menos 8 caracteres.', { variant: 'warning' });
+    setAdminSaving(true);
+    try {
+      const result = await eliminarSolicitudViaticosAdmin(reportId);
+      enqueueSnackbar(result.message || 'Solicitud y registros vinculados eliminados.', { variant: 'success' });
+      setDeleteRow(null); setDetailRow(null); setDeleteReason(''); await load();
+    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar la solicitud.', { variant: 'error' }); }
+    finally { setAdminSaving(false); }
   };
 
   const segments = [
