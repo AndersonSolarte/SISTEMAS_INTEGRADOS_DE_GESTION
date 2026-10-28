@@ -156,6 +156,15 @@ const NORMAL_PENDING_STATE_BY_STAGE = {
   gestion_humana: 'pendiente_aprobacion_gestion_humana'
 };
 
+const LINKED_REPORT_PENDING_STATE_BY_STAGE = {
+  ...NORMAL_PENDING_STATE_BY_STAGE,
+  financiera_previa: 'pendiente_aprobacion_financiera_previa',
+  tecnico_contable: 'pendiente_tecnico_contable',
+  tesoreria: 'pendiente_tesoreria'
+};
+
+const getPendingLinkedReportStateForStage = (stageKey) => LINKED_REPORT_PENDING_STATE_BY_STAGE[stageKey] || null;
+
 const getLinkedReportStateForStage = (stageKey, { paymentAuthorized = false } = {}) => {
   if (stageKey === 'tesoreria' && paymentAuthorized) return 'finalizada';
   return ({
@@ -226,8 +235,9 @@ const syncNormalReportApproval = async (solicitud, step, actor, detail = {}) => 
   const report = await getLinkedNormalReport(solicitud);
   if (!report) return null;
   const at = new Date();
-  const traceEntries = [{ event, actor, detail, at: at.toISOString() }];
-  if (step.key === 'rectoria' && step.fulfillsImmediateBoss) {
+  const alreadyRegistered = (report.trazabilidad || []).some((entry) => entry.event === event);
+  const traceEntries = alreadyRegistered ? [] : [{ event, actor, detail, at: at.toISOString() }];
+  if (!alreadyRegistered && step.key === 'rectoria' && step.fulfillsImmediateBoss) {
     traceEntries.unshift({ event: 'aprobada_jefe', actor, detail: { aprobacionUnificadaConRectoria: true }, at: at.toISOString() });
   }
   const values = { trazabilidad: [...(report.trazabilidad || []), ...traceEntries] };
@@ -1221,15 +1231,8 @@ const advance = async (solicitud, actor, detail = {}) => {
   }
 
   if (linkedReport && next) {
-    const reportStateMap = {
-      jefe: 'pendiente_aprobacion_jefe',
-      financiera_previa: 'pendiente_aprobacion_financiera_previa',
-      sst: 'pendiente_aprobacion_sst',
-      gestion_humana: 'pendiente_aprobacion_gestion_humana',
-      tecnico_contable: 'pendiente_tecnico_contable',
-      tesoreria: 'pendiente_tesoreria'
-    };
-    const nextReportState = reportStateMap[next.key] || `pendiente_${next.key}`;
+    const nextReportState = getPendingLinkedReportStateForStage(next.key);
+    if (!nextReportState) throw new Error(`La etapa ${next.key} no tiene un estado compatible con Reporte de Salida.`);
     await linkedReport.update({
       estado: nextReportState,
       trazabilidad: appendTrace(linkedReport, `etapa_${next.key}`, actor, { via: 'viaticos_flujo' })
@@ -2963,7 +2966,7 @@ const abrirAccionAdminPorReporte = async (req, res) => {
 };
 
 module.exports = {
-  _internals: { approvalForm, buildApprovalPlan, buildNormalReportData, getEffectiveViaticosDays, getLinkedReportStateForStage, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, normalizeViaticosSalidaDuration, parseLiquidationBody, summarizeStageEmailResult, treasuryForm, validatePayload },
+  _internals: { approvalForm, buildApprovalPlan, buildNormalReportData, getEffectiveViaticosDays, getLinkedReportStateForStage, getPendingLinkedReportStateForStage, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, normalizeViaticosSalidaDuration, parseLiquidationBody, summarizeStageEmailResult, treasuryForm, validatePayload },
   abrirAccionAdmin,
   abrirAccionAdminPorReporte,
   actualizarSolicitudAdmin,
