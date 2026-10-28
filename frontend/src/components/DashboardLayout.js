@@ -177,6 +177,12 @@ function DashboardLayout() {
   }, [refrescarBadgeReposicion]);
 
   useEffect(() => {
+    const handleLegalizacionUpdated = () => refrescarLegalizaciones();
+    window.addEventListener('legalizacion:updated', handleLegalizacionUpdated);
+    return () => window.removeEventListener('legalizacion:updated', handleLegalizacionUpdated);
+  }, [refrescarLegalizaciones]);
+
+  useEffect(() => {
     const handleJuridicaPermsUpdated = async () => {
       setJuridicaForbidden(false);
       if (typeof refreshProfile === 'function') {

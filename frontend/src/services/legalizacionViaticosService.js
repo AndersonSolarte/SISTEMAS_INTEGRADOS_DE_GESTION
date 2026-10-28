@@ -6,6 +6,8 @@ export const presentarLegalizacion = (id, formData) => api.post(`/legalizacion-v
 export const getSolicitudesViaticos = (params = {}) => api.get('/legalizacion-viaticos/gestion/solicitudes', { params }).then((response) => response.data);
 export const getSolicitudViaticos = (id) => api.get(`/legalizacion-viaticos/gestion/solicitudes/${id}`).then((response) => response.data);
 export const validarLegalizacion = (id, payload) => api.post(`/legalizacion-viaticos/gestion/${id}/validar`, payload, { timeout: 120000 }).then((response) => response.data);
+export const ejecutarRecordatoriosLegalizacion = () => api.post('/legalizacion-viaticos/gestion/recordatorios/ejecutar').then((response) => response.data);
+export const enviarRecordatorioIndividualLegalizacion = (id) => api.post(`/legalizacion-viaticos/gestion/${id}/recordatorio`).then((response) => response.data);
 export const getEstadisticasViaticos = () => api.get('/legalizacion-viaticos/estadisticas/resumen').then((response) => response.data);
 export const getAccionAdministrativaViaticos = (id) => api.post(`/desplazamientos-viaticos/solicitudes/${id}/accion-admin`).then((response) => response.data);
 export const reenviarAprobacionViaticos = (id) => api.post(`/desplazamientos-viaticos/solicitudes/${id}/reenviar-aprobacion`).then((response) => response.data);

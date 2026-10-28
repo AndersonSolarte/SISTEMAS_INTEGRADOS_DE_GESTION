@@ -14,6 +14,7 @@ const ViaticosLegalizacion = sequelize.define('viaticos_legalizaciones', {
   adjuntos: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
   trazabilidad: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
   presentado_at: { type: DataTypes.DATE, allowNull: true },
+  notificacion_retorno_at: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
   revisado_at: { type: DataTypes.DATE, allowNull: true },
   revisado_por: { type: DataTypes.INTEGER, allowNull: true },
   finalizado_at: { type: DataTypes.DATE, allowNull: true }
@@ -25,7 +26,9 @@ const ViaticosLegalizacion = sequelize.define('viaticos_legalizaciones', {
     { fields: ['solicitud_id'], unique: true },
     { fields: ['user_id'] },
     { fields: ['estado'] },
-    { fields: ['fecha_limite'] }
+    { fields: ['fecha_habilitacion'] },
+    { fields: ['fecha_limite'] },
+    { fields: ['notificacion_retorno_at'] }
   ]
 });
 

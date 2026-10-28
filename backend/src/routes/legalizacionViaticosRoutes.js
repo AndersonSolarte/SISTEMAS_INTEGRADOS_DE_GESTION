@@ -28,6 +28,8 @@ router.post('/:id/presentar', auth, upload.any(), controller.presentar);
 router.get('/:id/adjuntos/:fileId', auth, controller.verAdjunto);
 router.get('/:id/pdf', auth, controller.descargarPdf);
 router.get('/gestion/solicitudes', auth, controller.listarGestion);
+router.post('/gestion/recordatorios/ejecutar', auth, controller.ejecutarRecordatorios);
+router.post('/gestion/:id/recordatorio', auth, controller.enviarRecordatorioIndividual);
 router.get('/gestion/solicitudes/:solicitudId', auth, controller.obtenerGestion);
 router.post('/gestion/:id/validar', auth, express.json(), controller.validar);
 router.get('/estadisticas/resumen', auth, controller.estadisticas);

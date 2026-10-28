@@ -105,10 +105,11 @@ export default function LegalizacionViaticos() {
   // Statistics counts
   const stats = useMemo(() => {
     const total = rows.length;
-    const pendientes = rows.filter((r) => ['pendiente_legalizacion', 'legalizacion_vencida', 'pendiente_habilitacion'].includes(r.legalizacion?.estado)).length;
+    const pendientes = rows.filter((r) => ['pendiente_legalizacion', 'legalizacion_vencida'].includes(r.legalizacion?.estado)).length;
+    const enViaje = rows.filter((r) => r.legalizacion?.estado === 'pendiente_habilitacion').length;
     const enRevision = rows.filter((r) => r.legalizacion?.estado === 'en_revision').length;
     const finalizadas = rows.filter((r) => r.legalizacion?.estado === 'finalizada').length;
-    return { total, pendientes, enRevision, finalizadas };
+    return { total, pendientes, enViaje, enRevision, finalizadas };
   }, [rows]);
 
   const handleOpenRow = (row) => {
@@ -146,6 +147,7 @@ export default function LegalizacionViaticos() {
       const result = await presentarLegalizacion(selectedRow.legalizacion.id, form);
       enqueueSnackbar(result.message || 'Legalización enviada con éxito.', { variant: 'success' });
       setSelectedRow(null);
+      window.dispatchEvent(new CustomEvent('legalizacion:updated'));
       await load();
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'No fue posible presentar la legalización.', { variant: 'error' });
@@ -167,7 +169,7 @@ export default function LegalizacionViaticos() {
   // -------------------------------------------------------------
   if (selectedRow) {
     const active = selectedRow;
-    const editable = ['pendiente_legalizacion', 'legalizacion_vencida', 'pendiente_habilitacion'].includes(active.legalizacion.estado);
+    const editable = ['pendiente_legalizacion', 'legalizacion_vencida'].includes(active.legalizacion.estado);
     const cfg = stateConfigs[active.legalizacion.estado] || {};
 
     return (
@@ -368,6 +370,12 @@ export default function LegalizacionViaticos() {
         </Grid>
       </Paper>
 
+      {stats.pendientes === 0 && rows.length > 0 && (
+        <Alert severity="success" sx={{ mb: 3, borderRadius: '10px', border: '1px solid #bbf7d0', bgcolor: '#f0fdf4' }}>
+          <strong>No tiene legalizaciones pendientes:</strong> No registra comisiones pendientes por legalizar. El módulo en el menú lateral se activará automáticamente a las 7:00 a. m. de la fecha de regreso de sus próximas comisiones autorizadas.
+        </Alert>
+      )}
+
       {/* Main Table */}
       {filteredRows.length === 0 ? (
         <Alert severity="info" sx={{ borderRadius: '10px' }}>
@@ -392,7 +400,8 @@ export default function LegalizacionViaticos() {
               {filteredRows.map((row) => {
                 const sol = row.solicitud || {};
                 const leg = row.legalizacion || {};
-                const editable = ['pendiente_legalizacion', 'legalizacion_vencida', 'pendiente_habilitacion'].includes(leg.estado);
+                const editable = ['pendiente_legalizacion', 'legalizacion_vencida'].includes(leg.estado);
+                const isFuture = leg.estado === 'pendiente_habilitacion';
                 const cfg = stateConfigs[leg.estado] || {};
                 const total = Number(sol.liquidacion?.totalAnticipo) || (leg.detalles || []).reduce((s, i) => s + Number(i.valorAnticipo || 0), 0);
 
@@ -447,6 +456,29 @@ export default function LegalizacionViaticos() {
                         >
                           Legalizar
                         </Button>
+                      ) : isFuture ? (
+                        <Tooltip title={`Se habilitará el ${sol.datos_salida?.fechaRegreso || leg.fecha_habilitacion} tras el regreso del viaje`}>
+                          <span>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              startIcon={<HourglassEmptyIcon />}
+                              onClick={() => handleOpenRow(row)}
+                              sx={{
+                                borderRadius: '8px',
+                                textTransform: 'none',
+                                fontWeight: 700,
+                                fontSize: 12,
+                                borderColor: '#fdba74',
+                                color: '#c2410c',
+                                bgcolor: '#fff7ed',
+                                '&:hover': { bgcolor: '#ffedd5', borderColor: '#fb923c' }
+                              }}
+                            >
+                              En comisión
+                            </Button>
+                          </span>
+                        </Tooltip>
                       ) : (
                         <Tooltip title="Ver detalle de la legalización">
                           <Button

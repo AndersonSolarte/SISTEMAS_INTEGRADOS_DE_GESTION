@@ -221,11 +221,22 @@ const listarPropias = async (req, res) => {
 const estadoPropio = async (req, res) => {
   try {
     const legalizaciones = await ViaticosLegalizacion.findAll({ where: { user_id: req.user.id } });
-    const active = legalizaciones.map(safeLegalizacion).filter((item) => !['finalizada', 'en_revision'].includes(item.estado));
-    return res.json({ success: true, active: active.length, overdue: active.filter((item) => item.estado === 'legalizacion_vencida').length });
+    const safeList = legalizaciones.map(safeLegalizacion);
+    const active = safeList.filter((item) => ['pendiente_legalizacion', 'legalizacion_vencida'].includes(item.estado));
+    const inReview = safeList.filter((item) => item.estado === 'en_revision');
+    const future = safeList.filter((item) => item.estado === 'pendiente_habilitacion');
+    const finalized = safeList.filter((item) => item.estado === 'finalizada');
+    return res.json({
+      success: true,
+      active: active.length,
+      overdue: active.filter((item) => item.estado === 'legalizacion_vencida').length,
+      inReview: inReview.length,
+      future: future.length,
+      finalized: finalized.length
+    });
   } catch (error) {
     console.error('Error en estadoPropio:', error);
-    return res.json({ success: true, active: 0, overdue: 0 });
+    return res.json({ success: true, active: 0, overdue: 0, inReview: 0, future: 0, finalized: 0 });
   }
 };
 
@@ -239,7 +250,13 @@ const presentar = async (req, res) => {
     include: [{ model: DesplazamientoViaticosSolicitud, as: 'solicitud', required: true }]
   });
   if (!legalizacion) return rejectUpload(404, 'Legalización no encontrada.');
-  if (['en_revision', 'finalizada'].includes(effectiveState(legalizacion))) return rejectUpload(409, 'La legalización ya fue enviada o finalizada.');
+  const state = effectiveState(legalizacion);
+  if (state === 'pendiente_habilitacion') {
+    return rejectUpload(400, `La legalización solo se habilitará a partir de la fecha de regreso (${legalizacion.fecha_habilitacion}).`);
+  }
+  if (['en_revision', 'finalizada'].includes(state)) {
+    return rejectUpload(409, 'La legalización ya fue enviada o finalizada.');
+  }
 
   let submitted;
   try {
@@ -519,4 +536,82 @@ const descargarPdf = async (req, res) => {
   return res.send(pdf);
 };
 
-module.exports = { descargarPdf, estadoPropio, estadisticas, listarGestion, listarPropias, obtenerGestion, presentar, validar, verAdjunto, verificar };
+const ejecutarRecordatorios = async (req, res) => {
+  if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) {
+    return res.status(403).json({ success: false, message: 'No tiene permiso para ejecutar recordatorios de legalización.' });
+  }
+  try {
+    const { runLegalizacionReturnReminders } = require('../services/desplazamientoViaticos/legalizacionReminderScheduler');
+    const result = await runLegalizacionReturnReminders({ force: true });
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Error ejecutando recordatorios masivos:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const enviarRecordatorioIndividual = async (req, res) => {
+  if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) {
+    return res.status(403).json({ success: false, message: 'No tiene permiso para enviar recordatorios.' });
+  }
+  try {
+    const legalizacion = await ViaticosLegalizacion.findByPk(req.params.id, {
+      include: [
+        { model: DesplazamientoViaticosSolicitud, as: 'solicitud', required: true },
+        { model: User, as: 'colaborador', required: false }
+      ]
+    });
+    if (!legalizacion) return res.status(404).json({ success: false, message: 'Legalización no encontrada.' });
+    if (['finalizada', 'en_revision'].includes(legalizacion.estado)) {
+      return res.status(409).json({ success: false, message: 'Esta legalización ya fue presentada o finalizada.' });
+    }
+    const { buildReminderEmail, getRecipientsForLegalizacion } = require('../services/desplazamientoViaticos/legalizacionReminderScheduler');
+    const recipients = getRecipientsForLegalizacion(legalizacion);
+    if (!recipients.length) return res.status(400).json({ success: false, message: 'El colaborador no tiene correo electrónico registrado.' });
+
+    const emailData = buildReminderEmail(legalizacion);
+    const result = await sendInstitutionalEmail({
+      to: recipients,
+      subject: emailData.subject,
+      messageId: emailData.messageId,
+      text: emailData.text,
+      html: emailData.html
+    });
+    if (!result.success) {
+      return res.status(502).json({ success: false, message: 'No fue posible enviar el recordatorio por correo.', error: result.error });
+    }
+    const nowIso = new Date().toISOString();
+    await legalizacion.update({
+      notificacion_retorno_at: new Date(),
+      estado: legalizacion.estado === 'pendiente_habilitacion' ? 'pendiente_legalizacion' : legalizacion.estado,
+      trazabilidad: [
+        ...(legalizacion.trazabilidad || []),
+        {
+          event: 'recordatorio_retorno_enviado',
+          actor: { id: req.user.id, nombre: req.user.nombre || req.user.name, rol: 'Gestor' },
+          detail: { manual: true, destinatarios: recipients },
+          at: nowIso
+        }
+      ]
+    });
+    return res.json({ success: true, message: `Recordatorio enviado exitosamente a ${recipients.join(', ')}.` });
+  } catch (error) {
+    console.error('Error enviando recordatorio individual:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+module.exports = {
+  descargarPdf,
+  ejecutarRecordatorios,
+  enviarRecordatorioIndividual,
+  estadoPropio,
+  estadisticas,
+  listarGestion,
+  listarPropias,
+  obtenerGestion,
+  presentar,
+  validar,
+  verAdjunto,
+  verificar
+};

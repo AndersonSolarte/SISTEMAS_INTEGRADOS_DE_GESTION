@@ -407,6 +407,18 @@ testConnection()
         name: 'viaticos_legalizaciones_codigo_verificacion_unique',
         unique: true
       }).catch(() => null);
+      if (!legalizacionesTable.notificacion_retorno_at) {
+        await qi.addColumn(legalizacionesTableName, 'notificacion_retorno_at', {
+          type: DataTypes.DATE,
+          allowNull: true
+        }).catch(() => null);
+      }
+      await qi.addIndex(legalizacionesTableName, ['fecha_habilitacion'], {
+        name: 'viaticos_legalizaciones_fecha_habilitacion_idx'
+      }).catch(() => null);
+      await qi.addIndex(legalizacionesTableName, ['notificacion_retorno_at'], {
+        name: 'viaticos_legalizaciones_notificacion_retorno_at_idx'
+      }).catch(() => null);
       const reporteSalidaTableName = 'reporte_salida_solicitudes';
       let reporteSalidaTable = await qi.describeTable(reporteSalidaTableName).catch(() => ({}));
       const ensureReporteSalidaColumn = async (column, definition) => {
@@ -487,6 +499,12 @@ testConnection()
       startPesvExpiryNotificationScheduler();
     } catch (e) {
       console.warn('[pesv-notificaciones] No se pudo iniciar el programador:', e?.message);
+    }
+    try {
+      const { startLegalizacionReminderScheduler } = require('./services/desplazamientoViaticos/legalizacionReminderScheduler');
+      startLegalizacionReminderScheduler();
+    } catch (e) {
+      console.warn('[legalizacion-recordatorios] No se pudo iniciar el programador:', e?.message);
     }
     startServer(DEFAULT_PORT);
   })

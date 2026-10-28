@@ -667,6 +667,18 @@ const runMigrations = async () => {
       name: 'viaticos_legalizaciones_codigo_verificacion_unique',
       unique: true
     }).catch(() => null);
+    if (!legalizacionesTable.notificacion_retorno_at) {
+      await qi.addColumn(legalizacionesTableName, 'notificacion_retorno_at', {
+        type: DataTypes.DATE,
+        allowNull: true
+      }).catch(() => null);
+    }
+    await qi.addIndex(legalizacionesTableName, ['fecha_habilitacion'], {
+      name: 'viaticos_legalizaciones_fecha_habilitacion_idx'
+    }).catch(() => null);
+    await qi.addIndex(legalizacionesTableName, ['notificacion_retorno_at'], {
+      name: 'viaticos_legalizaciones_notificacion_retorno_at_idx'
+    }).catch(() => null);
     await models.SystemSetting.sync();
     await models.DatabaseBackupRun.sync();
     await ensureReporteSalidaAdminBossSupport(qi);
