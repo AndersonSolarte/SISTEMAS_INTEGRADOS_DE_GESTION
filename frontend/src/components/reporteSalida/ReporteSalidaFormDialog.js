@@ -923,6 +923,13 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const requiresViaticosFlow = shouldAskViaticos && form.viaticos?.requiereViaticos === true;
 
+  const isComunicaciones = useMemo(() => {
+    const dep = String(form.laboral?.dependencia || user?.dependencia || '').trim().toLowerCase();
+    return dep === 'oficina de comunicaciones y mercadeo' || (dep.includes('comunicaciones') && dep.includes('mercadeo'));
+  }, [form.laboral?.dependencia, user?.dependencia]);
+
+  const isViaticosAdjuntoRequired = requiresViaticosFlow && !isComunicaciones;
+
   const hasCompletedSalidaTime = useMemo(() => {
     if (category === 'salud') {
       if (!hasCompletedSaludMotivo) return false;
@@ -1457,6 +1464,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         issues.push(`El número de días solicitados para viáticos debe ser mínimo ${minDias} días.`);
       }
       if (!form.viaticos?.autorizacionAceptada) issues.push('Debe aceptar la autorización de descuento para solicitar viáticos.');
+      if (isViaticosAdjuntoRequired && !adjuntoFile) {
+        issues.push('Debe adjuntar el oficio debidamente firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato.');
+      }
     }
 
     // Motivo / observación es completamente OPCIONAL por requerimiento de usuario
@@ -1591,6 +1601,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     adjuntoFile,
     noCuentaAdjuntoSalud,
     requiresViaticosFlow,
+    isViaticosAdjuntoRequired,
     shouldAskViaticos,
     form.salida.motivo,
     form.salida.tiempoReponerHoras,
@@ -1864,6 +1875,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         estudiantesList: (subtype === 'proyeccion_social' && incluyeEstudiantes) ? estudiantesList : []
       };
       if (!requiresViaticosFlow) delete payload.viaticos;
+
+      if (requiresViaticosFlow && isViaticosAdjuntoRequired && !adjuntoFile) {
+        setErrorMessage('Debe adjuntar el oficio debidamente firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato.');
+        setSubmitting(false);
+        return;
+      }
       
       if (adjuntoFile && !(category === 'salud' && noCuentaAdjuntoSalud)) {
         const formData = new FormData();
@@ -2966,6 +2983,24 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Alert>
               )}
 
+              {requiresViaticosFlow && (
+                <Alert
+                  severity={isComunicaciones ? 'info' : 'warning'}
+                  sx={{
+                    mt: 2,
+                    borderRadius: 2,
+                    border: isComunicaciones ? '1px solid #93c5fd' : '1px solid #f59e0b',
+                    bgcolor: isComunicaciones ? '#eff6ff' : '#fffbeb',
+                    color: isComunicaciones ? '#1e3a8a' : '#92400e',
+                    fontWeight: 600
+                  }}
+                >
+                  {isComunicaciones
+                    ? 'Oficina de Comunicaciones y Mercadeo: el soporte del oficio firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato es opcional.'
+                    : 'Para la solicitud de viáticos es obligatorio adjuntar el oficio debidamente firmado por el Rector, la Vicerrectoría a la que pertenece y el Jefe Inmediato.'}
+                </Alert>
+              )}
+
               {Boolean(subtype) && isSaludAdjuntoSection && (
                 <Box sx={{ mt: 1.5 }}>
                   <FormControlLabel
@@ -3006,8 +3041,14 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       mt: 2,
                       p: subtype === 'diligencia_personal' ? 1.5 : 3,
                       borderRadius: 2,
-                      border: adjuntoFile ? '2px solid #22c55e' : (adjuntoError ? '2px solid #ef4444' : '2px dashed #93c5fd'),
-                      bgcolor: adjuntoFile ? '#f0fdf4' : (adjuntoError ? '#fef2f2' : '#eff6ff'),
+                      border: adjuntoFile
+                        ? '2px solid #22c55e'
+                        : (adjuntoError || (isViaticosAdjuntoRequired && !adjuntoFile)
+                          ? '2px dashed #f59e0b'
+                          : '2px dashed #93c5fd'),
+                      bgcolor: adjuntoFile
+                        ? '#f0fdf4'
+                        : (adjuntoError ? '#fef2f2' : (isViaticosAdjuntoRequired && !adjuntoFile ? '#fffdf7' : '#eff6ff')),
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
@@ -3063,8 +3104,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     ) : (
                       <>
                         <UploadFileIcon sx={{ fontSize: subtype === 'diligencia_personal' ? 34 : 48, color: adjuntoError ? '#ef4444' : '#3b82f6', mb: subtype === 'diligencia_personal' ? 0.5 : 1 }} />
-                        <Typography sx={{ fontWeight: 700, color: adjuntoError ? '#991b1b' : '#1e3a8a', textAlign: 'center', mb: 0.5 }}>
-                          {category === 'salud'
+                        <Typography sx={{ fontWeight: 700, color: adjuntoError ? '#991b1b' : (isViaticosAdjuntoRequired && !adjuntoFile ? '#b45309' : '#1e3a8a'), textAlign: 'center', mb: 0.5 }}>
+                          {requiresViaticosFlow
+                            ? (isComunicaciones
+                              ? 'Adjuntar oficio firmado (Opcional)'
+                              : 'Adjuntar oficio debidamente firmado por Rector, Vicerrectoría y Jefe Inmediato (Obligatorio) *')
+                            : category === 'salud'
                             ? 'Subir soporte / constancia (Opcional)'
                             : form.salida.duracionTipo !== 'menos_media_jornada'
                             ? 'Subir soporte / constancia (Opcional)'
@@ -3075,8 +3120,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                               : 'Subir soporte / constancia (Opcional)')}
                         </Typography>
                         {subtype !== 'diligencia_personal' && (
-                          <Typography sx={{ fontSize: 13, color: adjuntoError ? '#b91c1c' : '#475569', textAlign: 'center' }}>
-                          {category === 'salud'
+                          <Typography sx={{ fontSize: 13, color: adjuntoError ? '#b91c1c' : (isViaticosAdjuntoRequired && !adjuntoFile ? '#92400e' : '#475569'), textAlign: 'center' }}>
+                          {requiresViaticosFlow
+                            ? (isComunicaciones
+                              ? 'Haga clic para adjuntar el oficio (PDF o imagen) o pegue una captura con Ctrl+V (opcional para Comunicaciones y Mercadeo).'
+                              : 'Haga clic para adjuntar el oficio debidamente firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato (PDF o imagen), o pegue una captura con Ctrl+V.')
+                            : category === 'salud'
                             ? 'Adjunte PDF, imagen o pegue una captura con Ctrl+V. Si no cuenta con soporte en este momento, marque la declaracion anterior.'
                             : form.salida.duracionTipo !== 'menos_media_jornada'
                             ? 'Haga clic para adjuntar PDF, imagen o pegue una captura con Ctrl+V'
@@ -3089,8 +3138,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                                   : 'Haga clic para adjuntar PDF, imagen o pegue una captura con Ctrl+V'))}
                           </Typography>
                         )}
-                        <Button component="span" variant="contained" size="small" sx={{ mt: subtype === 'diligencia_personal' ? 1 : 2, textTransform: 'none', bgcolor: adjuntoError ? '#dc2626' : '#2563eb', boxShadow: 'none', fontWeight: 600 }}>
-                          Seleccionar archivo
+                        <Button component="span" variant="contained" size="small" sx={{ mt: subtype === 'diligencia_personal' ? 1 : 2, textTransform: 'none', bgcolor: adjuntoError ? '#dc2626' : (isViaticosAdjuntoRequired && !adjuntoFile ? '#d97706' : '#2563eb'), boxShadow: 'none', fontWeight: 600 }}>
+                          {requiresViaticosFlow ? 'Seleccionar oficio firmado' : 'Seleccionar archivo'}
                         </Button>
                       </>
                     )}

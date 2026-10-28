@@ -1330,6 +1330,18 @@ const validatePayload = (body = {}) => {
   const isValidTransport = userTransportList.length > 0 && userTransportList.every((opt) => validTransportOptions.some((v) => opt.includes(v) || v.includes(opt)));
   if (!isValidTransport) issues.push('Seleccione una opción válida de transporte.');
   if (!['Ahorros', 'Corriente'].includes(viaticos.tipoCuenta)) issues.push('Seleccione un tipo de cuenta válido.');
+  const depNorm = String(body.laboral?.dependencia || '').trim().toLowerCase();
+  const isComunicaciones = depNorm === 'oficina de comunicaciones y mercadeo'
+    || (depNorm.includes('comunicaciones') && depNorm.includes('mercadeo'));
+  if (!isComunicaciones) {
+    const hasAdjunto = Boolean(
+      (viaticos.soporteAdjunto && clean(viaticos.soporteAdjunto.filename))
+      || (body.soporteAdjunto && clean(body.soporteAdjunto.filename))
+    );
+    if (!hasAdjunto) {
+      issues.push('Debe adjuntar el oficio debidamente firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato.');
+    }
+  }
   const start = new Date(`${salida.fecha || ''}T${salida.horaInicio || ''}`);
   const end = new Date(`${salida.fechaRegreso || ''}T${salida.horaFin || ''}`);
   if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end <= start) issues.push('La fecha y hora de regreso deben ser posteriores a la salida.');

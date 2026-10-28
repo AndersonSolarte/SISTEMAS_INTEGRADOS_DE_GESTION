@@ -88,6 +88,79 @@ test('el colaborador puede radicar sin conocer el centro de costos', () => {
       tipoCuenta: 'Ahorros',
       entidadBancaria: 'Bancolombia',
       numeroCuenta: '123456789',
+      autorizacionAceptada: true,
+      soporteAdjunto: { filename: 'oficio_aprobado.pdf' }
+    }
+  });
+
+  assert.deepEqual(issues, []);
+});
+
+test('exige oficio debidamente firmado por rector, vicerrectoria y jefe si no es oficina de comunicaciones', () => {
+  const issues = _internals.validatePayload({
+    documentoId: 1,
+    isSalidaMultiple: false,
+    jefeInmediato: { email: 'jefe@unicesmag.edu.co' },
+    laboral: {
+      dependencia: 'Facultad de Ingeniería',
+      cargo: 'Docente',
+      vicerrectoria: 'Vicerrectoría Académica'
+    },
+    salida: {
+      categoria: 'propias_cargo',
+      alcance: 'Nacional',
+      fecha: '2026-08-20',
+      horaInicio: '08:00',
+      fechaRegreso: '2026-08-22',
+      horaFin: '18:00'
+    },
+    viaticos: {
+      requiereViaticos: true,
+      lugarVisitar: 'Cali',
+      fechaEvento: '2026-08-20',
+      numeroDiasSolicitados: 3,
+      objetoComision: 'Ponencia en congreso',
+      alojamiento: 'Hotel',
+      transporte: 'Terrestre',
+      tipoCuenta: 'Ahorros',
+      entidadBancaria: 'Bancolombia',
+      numeroCuenta: '123456789',
+      autorizacionAceptada: true
+    }
+  });
+
+  assert.ok(issues.includes('Debe adjuntar el oficio debidamente firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato.'));
+});
+
+test('permite radicar viaticos sin oficio adjunto a la Oficina de Comunicaciones y Mercadeo', () => {
+  const issues = _internals.validatePayload({
+    documentoId: 1,
+    isSalidaMultiple: false,
+    jefeInmediato: { email: 'jefe@unicesmag.edu.co' },
+    laboral: {
+      dependencia: 'Oficina de Comunicaciones y Mercadeo',
+      cargo: 'Comunicador',
+      vicerrectoria: 'Rectoría'
+    },
+    salida: {
+      categoria: 'propias_cargo',
+      alcance: 'Nacional',
+      fecha: '2026-08-20',
+      horaInicio: '08:00',
+      fechaRegreso: '2026-08-22',
+      horaFin: '18:00'
+    },
+    viaticos: {
+      requiereViaticos: true,
+      lugarVisitar: 'Ipiales',
+      fechaEvento: '2026-08-20',
+      numeroDiasSolicitados: 2,
+      objetoComision: 'Cobertura fotográfica y de medios',
+      alojamiento: 'Hotel',
+      transporte: 'Terrestre',
+      tipoCuenta: 'Ahorros',
+      entidadBancaria: 'Bancolombia',
+      numeroCuenta: '987654321',
       autorizacionAceptada: true
     }
   });
