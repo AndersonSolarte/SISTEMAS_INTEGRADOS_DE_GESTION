@@ -17,7 +17,7 @@ import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import VerifiedRoundedIcon from '@mui/icons-material/VerifiedRounded';
 import { useSnackbar } from 'notistack';
-import { abrirAdjuntoLegalizacion, getAccionAdministrativaViaticos, getEstadisticasViaticos, getSolicitudesViaticos, validarLegalizacion } from '../../services/legalizacionViaticosService';
+import { abrirAdjuntoLegalizacion, getAccionAdministrativaViaticos, getEstadisticasViaticos, getSolicitudesViaticos, reenviarAprobacionViaticos, validarLegalizacion } from '../../services/legalizacionViaticosService';
 import LegalizacionViaticosFormat from './LegalizacionViaticosFormat';
 
 const currency = (value) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -89,6 +89,15 @@ const currentApprovalStep = (row = {}) => {
 
 const normalizeSearch = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
+const traceEventLabel = (event = '') => ({
+  correo_aprobacion_enviado: 'Correo de aprobaci\u00f3n enviado',
+  correo_aprobacion_error: 'Error al enviar correo de aprobaci\u00f3n',
+  correo_aprobacion_reenviado: 'Enlace de aprobaci\u00f3n reenviado',
+  correo_aprobacion_reenvio_error: 'Error al reenviar enlace de aprobaci\u00f3n'
+}[event] || event || 'Firma / Actuaci\u00f3n');
+
+const lastEmailNotification = (row = {}) => [...(row.trazabilidad || [])].reverse().find((entry) => String(entry.event || entry.evento || '').startsWith('correo_aprobacion_')) || null;
+
 export default function ViaticosGestionDashboard({ user, onBack }) {
   const permissions = useMemo(() => new Set([...(user?.allowedModules || []), ...(user?.modulePermissions || [])].map((item) => typeof item === 'string' ? item : item.module_key)), [user]);
   const isAdmin = user?.role === 'administrador';
@@ -108,6 +117,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
   const [editValues, setEditValues] = useState({});
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [resending, setResending] = useState(false);
   const [confirmValidationOpen, setConfirmValidationOpen] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
 
@@ -212,6 +222,22 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
     } catch (error) {
       popup.close();
       enqueueSnackbar(error.response?.data?.message || 'No fue posible abrir la gestión de la etapa.', { variant: 'error' });
+    }
+  };
+
+  const resendStageLink = async (row) => {
+    if (!row?.id) return;
+    setResending(true);
+    try {
+      const result = await reenviarAprobacionViaticos(row.id);
+      enqueueSnackbar(result.message || 'Enlace de aprobaci\u00f3n reenviado.', { variant: 'success' });
+      setDetailRow(null);
+      await load();
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible reenviar el enlace de aprobaci\u00f3n.', { variant: 'error' });
+      await load();
+    } finally {
+      setResending(false);
     }
   };
 
@@ -546,14 +572,23 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
               </Box>
             </Paper>
 
+            {String(lastEmailNotification(detailRow)?.event || '').includes('error') && (
+              <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                El último correo de aprobación no pudo entregarse. Puede generar y reenviar un enlace nuevo desde la parte inferior.
+              </Alert>
+            )}
+
             <Typography variant="subtitle2" fontWeight={900} color="#0b3a6f">Historial y Trazabilidad de Aprobaciones</Typography>
             <Stack spacing={1}>
               {Array.isArray(detailRow.trazabilidad) && detailRow.trazabilidad.map((t, idx) => (
                 <Paper key={idx} variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: '#fff' }}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Box>
-                      <Typography variant="body2" fontWeight={800}>{t.evento || t.event || 'Firma / Actuación'}</Typography>
+                      <Typography variant="body2" fontWeight={800}>{traceEventLabel(t.evento || t.event)}</Typography>
                       <Typography variant="caption" color="text.secondary">{t.actor?.nombre || t.actor?.role || 'Sistema / Instancia'}</Typography>
+                      {Array.isArray(t.detail?.destinatarios) && t.detail.destinatarios.length > 0 && (
+                        <Typography display="block" variant="caption" color="text.secondary">Para: {t.detail.destinatarios.join(', ')}</Typography>
+                      )}
                     </Box>
                     <Typography variant="caption" fontWeight={700} color="#475569">
                       {t.at ? new Date(t.at).toLocaleString('es-CO') : '-'}
@@ -576,9 +611,14 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
       <DialogActions sx={{ p: 2 }}>
         <Button onClick={() => setDetailRow(null)}>Cerrar</Button>
         {detailRow?.access?.canAct && detailRow?.token_etapa && !['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado) && (
-          <Button variant="contained" color="primary" onClick={() => openStageAction(detailRow)}>
-            Gestionar etapa actual
-          </Button>
+          <>
+            <Button variant="outlined" startIcon={resending ? <CircularProgress size={16} /> : <RefreshRoundedIcon />} disabled={resending} onClick={() => resendStageLink(detailRow)}>
+              Reenviar enlace
+            </Button>
+            <Button variant="contained" color="primary" disabled={resending} onClick={() => openStageAction(detailRow)}>
+              Gestionar etapa actual
+            </Button>
+          </>
         )}
       </DialogActions>
     </Dialog>

@@ -927,6 +927,54 @@ const emailStep = async (solicitud, step, tokenBundle) => {
     : result;
 };
 
+const summarizeStageEmailResult = (step = {}, result = {}) => {
+  const deliveries = [
+    { source: 'primary', recipient: normalizeEmail(step.email), result: result.primary || result },
+    ...(step.alternateApprovalEmail
+      ? [{ source: step.alternateAccessSource || 'alternate', recipient: normalizeEmail(step.alternateApprovalEmail), result: result.alternate || null }]
+      : [])
+  ].map(({ source, recipient, result: delivery }) => ({
+    source,
+    recipient,
+    success: delivery?.success === true,
+    messageId: clean(delivery?.messageId, 300) || null,
+    suppressed: delivery?.suppressed === true,
+    error: delivery?.success === true ? null : clean(delivery?.error || 'El servicio de correo no confirmo la entrega.', 500)
+  }));
+
+  return {
+    success: deliveries.length > 0 && deliveries.every((delivery) => delivery.success),
+    etapa: step.key || '',
+    destinatarios: deliveries.map((delivery) => delivery.recipient).filter(Boolean),
+    entregas: deliveries
+  };
+};
+
+const recordStageEmailResult = async (solicitud, step, result, { resent = false } = {}) => {
+  const summary = summarizeStageEmailResult(step, result);
+  const event = summary.success
+    ? (resent ? 'correo_aprobacion_reenviado' : 'correo_aprobacion_enviado')
+    : (resent ? 'correo_aprobacion_reenvio_error' : 'correo_aprobacion_error');
+  const nextTrace = appendTrace(
+    solicitud,
+    event,
+    { nombre: 'SIAC UNICESMAG', role: 'sistema' },
+    { ...summary, reenvio: resent }
+  );
+  await solicitud.update({ trazabilidad: nextTrace });
+  return summary;
+};
+
+const notifyStage = async (solicitud, step, tokenBundle, { resent = false } = {}) => {
+  let result;
+  try {
+    result = await emailStep(solicitud, step, tokenBundle);
+  } catch (error) {
+    result = { success: false, error: clean(error?.message || 'Error inesperado al preparar el correo.', 500) };
+  }
+  return recordStageEmailResult(solicitud, step, result, { resent });
+};
+
 const sendRadicationCopies = async (solicitud, recipients = []) => {
   const targetEmails = [...new Set(recipients.filter(Boolean).map(normalizeEmail))];
   if (!targetEmails.length) return { success: true };
@@ -1189,7 +1237,7 @@ const advance = async (solicitud, actor, detail = {}) => {
 
   if (!next) return null;
   const tokens = await issueTokens(solicitud, next);
-  await emailStep(solicitud, next, tokens);
+  await notifyStage(solicitud, next, tokens);
   return next;
 };
 
@@ -1296,11 +1344,19 @@ const radicarSolicitud = async (req, res) => {
     const alternateFirstStepEmail = normalizeEmail(steps[0].alternateApprovalEmail);
     const radicationCopyRecipients = [personal.email, dependenciaEmail]
       .filter((email) => normalizeEmail(email) !== alternateFirstStepEmail);
-    await Promise.all([
-      emailStep(solicitud, steps[0], tokens),
+    const [notification] = await Promise.all([
+      notifyStage(solicitud, steps[0], tokens),
       sendRadicationCopies(solicitud, radicationCopyRecipients)
     ]);
-    return res.status(201).json({ success: true, message: 'Solicitud de desplazamiento con viáticos radicada exitosamente.', consecutivo: solicitud.consecutivo, flujo: 'desplazamiento_viaticos' });
+    return res.status(201).json({
+      success: true,
+      message: notification.success
+        ? 'Solicitud de desplazamiento con viáticos radicada exitosamente.'
+        : 'La solicitud fue radicada, pero no fue posible entregar uno o más correos de aprobación. El administrador puede reenviarlos desde la gestión de viáticos.',
+      consecutivo: solicitud.consecutivo,
+      flujo: 'desplazamiento_viaticos',
+      notification
+    });
   } catch (error) {
     console.error('[desplazamientos-viaticos] Error al radicar:', error);
     return res.status(500).json({ success: false, message: 'No fue posible radicar la solicitud de desplazamiento.' });
@@ -2742,6 +2798,49 @@ const abrirAccionAdmin = async (req, res) => {
   }
 };
 
+const reenviarAprobacion = async (req, res) => {
+  try {
+    if (!await canManageViaticos(req.user)) {
+      return res.status(403).json({ success: false, message: 'No tiene permiso para reenviar aprobaciones de viáticos.' });
+    }
+    const solicitud = await DesplazamientoViaticosSolicitud.findOne({
+      where: {
+        [Op.or]: [
+          { id: Number.isInteger(Number(req.params.id)) ? Number(req.params.id) : 0 },
+          { consecutivo: String(req.params.id || '') }
+        ]
+      }
+    });
+    if (!solicitud) return res.status(404).json({ success: false, message: 'Solicitud de viáticos no encontrada.' });
+    if (!canActOnSolicitud(req.user, solicitud)) {
+      return res.status(403).json({ success: false, message: 'Esta solicitud no está asignada a su dependencia.' });
+    }
+
+    const step = (solicitud.plan_aprobacion || [])[Number(solicitud.paso_actual || 0)];
+    if (!step || !solicitud.token_etapa || ['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(solicitud.estado)) {
+      return res.status(409).json({ success: false, message: 'La solicitud no tiene una etapa pendiente que pueda notificarse.' });
+    }
+
+    const tokens = await issueTokens(solicitud, step);
+    const notification = await notifyStage(solicitud, step, tokens, { resent: true });
+    if (!notification.success) {
+      return res.status(502).json({
+        success: false,
+        message: 'El enlace fue renovado, pero el servicio de correo no confirmó la entrega. El error quedó registrado en la trazabilidad.',
+        notification
+      });
+    }
+    return res.json({
+      success: true,
+      message: 'Se generó un enlace nuevo y se reenvió a la instancia responsable. El enlace anterior quedó inhabilitado.',
+      notification
+    });
+  } catch (error) {
+    console.error('Error al reenviar aprobación de viáticos:', error);
+    return res.status(500).json({ success: false, message: 'No fue posible reenviar el enlace de aprobación.' });
+  }
+};
+
 const abrirAccionAdminPorReporte = async (req, res) => {
   try {
     if (!await canManageViaticos(req.user)) {
@@ -2773,7 +2872,7 @@ const abrirAccionAdminPorReporte = async (req, res) => {
 };
 
 module.exports = {
-  _internals: { approvalForm, buildApprovalPlan, buildNormalReportData, getEffectiveViaticosDays, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, normalizeViaticosSalidaDuration, parseLiquidationBody, treasuryForm, validatePayload },
+  _internals: { approvalForm, buildApprovalPlan, buildNormalReportData, getEffectiveViaticosDays, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, normalizeViaticosSalidaDuration, parseLiquidationBody, summarizeStageEmailResult, treasuryForm, validatePayload },
   abrirAccionAdmin,
   abrirAccionAdminPorReporte,
   descargarFormato,
@@ -2787,6 +2886,7 @@ module.exports = {
   procesarDemoLiquidacion,
   procesarDemoTesoreria,
   radicarSolicitud,
+  reenviarAprobacion,
   syncAdminViaticosApproval,
   syncAdminViaticosRejection
 };

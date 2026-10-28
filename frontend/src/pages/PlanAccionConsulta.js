@@ -42,6 +42,7 @@ import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import strategicPlanningService from '../services/strategicPlanningService';
 import planAccionWorkflowService, { ESTADOS_WORKFLOW } from '../services/planAccionWorkflowService';
+import { isPlanWithinActiveSchedule } from '../utils/strategicPlanSchedule';
 
 const STATUS_CONFIG = {
   convocation: { label: 'Convocatoria', color: 'default', bg: '#f1f5f9', fg: '#475569' },
@@ -248,10 +249,10 @@ export default function PlanAccionConsulta({
         // - 'owner_validation' (en revisión / firmas del acta)
         // - 'active' (en ejecución oficial)
         // - 'monitoring' (en seguimiento)
-        // - 'closed' (cerrado)
-        // Cuando está en 'adjustments', 'formulation', etc., desaparece del módulo del líder
+        // Y siempre que la vigencia esté activa y dentro del plazo programado para ellos
         visiblePei = allPei.filter((p) =>
-          ['owner_validation', 'active', 'monitoring', 'closed'].includes(p.status)
+          ['owner_validation', 'active', 'monitoring'].includes(p.status) &&
+          isPlanWithinActiveSchedule(p)
         );
       } catch (err) {
         console.error('Error cargando planes PEI:', err);
@@ -1005,12 +1006,12 @@ export default function PlanAccionConsulta({
               background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)'
             }}
           >
-            <CheckCircleIcon sx={{ fontSize: 60, color: '#10b981', mb: 1.5 }} />
+            <LockIcon sx={{ fontSize: 56, color: '#f59e0b', mb: 1.5 }} />
             <Typography sx={{ fontSize: 19, fontWeight: 900, color: '#0f172a' }}>
-              No tiene Planes de Acción activos en esta etapa
+              Vigencia Cerrada o Fuera de Plazo Oficial
             </Typography>
             <Typography sx={{ color: '#64748b', mt: 0.6, maxWidth: 560, mx: 'auto', fontSize: 14 }}>
-              Cuando la Dirección de Planeación y Aseguramiento de la Calidad formule o active un Plan de Acción para su dependencia, o requiera su firma y revisión, aparecerá automáticamente aquí.
+              Actualmente no se encuentra dentro del plazo oficial o vigencia programada para su dependencia. Cuando la Dirección de Planeación y Efectividad habilite o ajuste los plazos de la vigencia, el plan de acción estará disponible automáticamente en este espacio.
             </Typography>
           </Paper>
         ) : (

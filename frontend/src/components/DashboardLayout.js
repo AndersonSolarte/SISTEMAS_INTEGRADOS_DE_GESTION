@@ -26,6 +26,7 @@ import reporteSalidaService from '../services/reporteSalidaService';
 import { getEstadoLegalizacion } from '../services/legalizacionViaticosService';
 import oficinaJuridicaService from '../services/oficinaJuridicaService';
 import NotificationBell from './NotificationBell';
+import { isPlanWithinActiveSchedule } from '../utils/strategicPlanSchedule';
 
 const FIXED_SECTION_ORDER = [
   'planeacion_estrategica',
@@ -112,7 +113,8 @@ function DashboardLayout() {
         const peiResp = await strategicPlanningService.getMyActionPlans();
         const myPlans = Array.isArray(peiResp?.data) ? peiResp.data : [];
         const visiblePlans = myPlans.filter((p) =>
-          ['owner_validation', 'active', 'monitoring', 'closed'].includes(p.status)
+          ['owner_validation', 'active', 'monitoring'].includes(p.status) &&
+          isPlanWithinActiveSchedule(p)
         );
         hasPeiPlan = visiblePlans.length > 0;
         peiCount = visiblePlans.filter((p) => p.status === 'owner_validation').length;

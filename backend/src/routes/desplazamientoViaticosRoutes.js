@@ -18,7 +18,8 @@ const {
   procesarDemoFinanciera,
   procesarDemoLiquidacion,
   procesarDemoTesoreria,
-  radicarSolicitud
+  radicarSolicitud,
+  reenviarAprobacion
 } = require('../controllers/desplazamientoViaticosController');
 
 const router = express.Router();
@@ -42,6 +43,7 @@ router.get('/assets/logo-formatos.jpg', (_req, res) => res.sendFile(path.join(__
 router.get('/accion/:token', publicLimiter, mostrarAccion);
 router.post('/accion/:token', publicLimiter, procesarAccion);
 router.post('/solicitudes/:id/accion-admin', auth, abrirAccionAdmin);
+router.post('/solicitudes/:id/reenviar-aprobacion', auth, reenviarAprobacion);
 router.post('/solicitudes/reporte/:reporteId/accion-admin', auth, abrirAccionAdminPorReporte);
 router.get('/prueba/liquidacion/:token', publicLimiter, mostrarDemoLiquidacion);
 router.post('/prueba/liquidacion/:token', publicLimiter, procesarDemoLiquidacion);

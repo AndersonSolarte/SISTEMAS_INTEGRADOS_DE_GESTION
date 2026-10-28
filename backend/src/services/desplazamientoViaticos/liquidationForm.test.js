@@ -219,3 +219,35 @@ test('el flujo anterior de Tesorería conserva su acción tramitar', () => {
 
   assert.match(html, /name="accion" value="tramitar" type="submit">Tramitar solicitud<\/button>/);
 });
+
+test('la trazabilidad resume la entrega primaria y alterna del enlace de aprobación', () => {
+  const summary = _internals.summarizeStageEmailResult({
+    key: 'financiera_previa',
+    email: 'jcnandar@unicesmag.edu.co',
+    alternateApprovalEmail: 'viceadfin@unicesmag.edu.co',
+    alternateAccessSource: 'vicerrectoria_financiera_institucional'
+  }, {
+    success: true,
+    primary: { success: true, messageId: 'mensaje-primario' },
+    alternate: { success: true, messageId: 'mensaje-alterno' }
+  });
+
+  assert.equal(summary.success, true);
+  assert.deepEqual(summary.destinatarios, ['jcnandar@unicesmag.edu.co', 'viceadfin@unicesmag.edu.co']);
+  assert.equal(summary.entregas[0].messageId, 'mensaje-primario');
+  assert.equal(summary.entregas[1].source, 'vicerrectoria_financiera_institucional');
+});
+
+test('la trazabilidad identifica un fallo de correo sin perder la solicitud', () => {
+  const summary = _internals.summarizeStageEmailResult({
+    key: 'jefe',
+    email: 'jefe@unicesmag.edu.co'
+  }, {
+    success: false,
+    error: 'SMTP temporalmente no disponible'
+  });
+
+  assert.equal(summary.success, false);
+  assert.equal(summary.entregas[0].recipient, 'jefe@unicesmag.edu.co');
+  assert.match(summary.entregas[0].error, /SMTP/);
+});

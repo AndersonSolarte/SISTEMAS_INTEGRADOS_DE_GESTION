@@ -707,12 +707,9 @@ const updateTerm = wrap(async (req, res) => {
     if (formulationEndsOn) {
       const plans = await StrategicActionPlan.findAll({ where: { term_id: term.id, deleted_at: null } });
       for (const p of plans) {
-        const currentDeadline = p.metadata?.formulation_ends_on || null;
-        // Regla institucional:
-        // Solo actualizar si el plan no tenía fecha o si la nueva fecha general amplía el plazo.
-        // Nunca recortar ni bajar el plazo si ya tenía una fecha individual mayor.
-        const shouldUpdate = !currentDeadline || String(formulationEndsOn) >= String(currentDeadline);
-        if (shouldUpdate) {
+        const hasIndividualExtension = Array.isArray(p.metadata?.formulation_extensions) && p.metadata.formulation_extensions.length > 0;
+        // Solo omitir si tiene una prórroga individual explícita otorgada individualmente
+        if (!hasIndividualExtension) {
           await p.update({
             metadata: {
               ...(p.metadata || {}),
@@ -741,6 +738,7 @@ const deleteTerm = wrap(async (req, res) => {
 
 const getMyActionPlans = wrap(async (req, res) => {
   const userId = req.user.id;
+  const userEmail = String(req.user?.email || '').trim().toLowerCase();
 
   // REGLA ESTRICTA DE AISLAMIENTO: Cada plan de acción es un mundo exclusivo.
   // Solo se devuelven los planes donde el usuario es el líder responsable directo
@@ -816,6 +814,34 @@ const getMyActionPlans = wrap(async (req, res) => {
     const isActive = effectiveStatus === 'active' || effectiveStatus === 'monitoring';
     const isOwnerValidation = effectiveStatus === 'owner_validation' || isSigning;
 
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const term = plain.term;
+    const termMeta = term?.metadata || {};
+    const planMeta = plain.metadata || {};
+
+    const isTermClosed = Boolean(term && ['closed', 'inactive', 'archived'].includes(term.status)) || plain.status === 'closed';
+
+    const extensions = Array.isArray(planMeta.formulation_extensions) ? planMeta.formulation_extensions : [];
+    let activeExtensionDate = null;
+    for (const ext of extensions) {
+      const extDate = ext.extended_until || ext.ends_on || ext.fecha_limite;
+      if (extDate) {
+        const extIso = String(extDate).slice(0, 10);
+        if (extIso >= todayIso) {
+          if (!activeExtensionDate || extIso > activeExtensionDate) {
+            activeExtensionDate = extIso;
+          }
+        }
+      }
+    }
+
+    const effectiveEndsOn = activeExtensionDate || termMeta.formulation_ends_on || planMeta.formulation_ends_on || term?.ends_on || (term?.year ? `${term.year}-12-31` : null);
+    const effectiveStartsOn = termMeta.formulation_starts_on || planMeta.formulation_starts_on || term?.starts_on || (term?.year ? `${term.year}-01-01` : null);
+
+    const isScheduleExpired = isTermClosed || Boolean(effectiveEndsOn && todayIso > String(effectiveEndsOn).slice(0, 10));
+    const isScheduleNotStarted = Boolean(effectiveStartsOn && todayIso < String(effectiveStartsOn).slice(0, 10));
+    const isWithinSchedule = !isTermClosed && !isScheduleExpired && !isScheduleNotStarted;
+
     const myParticipant = (latestMeeting?.participants || []).find((p) => (
       String(p.user_id) === String(userId) ||
       (userEmail && String(p.email || '').trim().toLowerCase() === userEmail)
@@ -831,6 +857,11 @@ const getMyActionPlans = wrap(async (req, res) => {
       can_execute: isActive,
       needs_review: isOwnerValidation && !mySignature,
       my_signed: Boolean(mySignature || myParticipant?.status === 'signed'),
+      is_within_schedule: isWithinSchedule,
+      is_schedule_expired: isScheduleExpired,
+      is_term_closed: isTermClosed,
+      effective_schedule_ends_on: effectiveEndsOn ? String(effectiveEndsOn).slice(0, 10) : null,
+      effective_schedule_starts_on: effectiveStartsOn ? String(effectiveStartsOn).slice(0, 10) : null,
       latest_minute_id: latestMinute?.id || null,
       latest_minute_status: latestMinute?.status || null,
       drive_file_id: latestMinute?.drive_file_id || null,
