@@ -1828,6 +1828,9 @@ const buildReposicionModuleWhere = ({ incluirCumplidas = false, userId = null } 
 
 const canViewInstitutionalReposicionModule = async (user) => {
   if (!user) return false;
+  // Las cuentas funcionales de autoridades tienen un equipo delimitado. Un
+  // permiso de menú no debe convertirlas en una vista institucional global.
+  if (isScopedReposicionAuthorityAccount(user)) return false;
   if (userHasAnyRecursoHumanoPermission(user, REPOSICION_INSTITUTIONAL_VIEW_KEYS)) return true;
   return userHasModulePermissionInDb(user, REPOSICION_INSTITUTIONAL_VIEW_KEYS);
 };
@@ -1871,6 +1874,16 @@ const FINANCIAL_REPOSICION_EMAILS = Object.freeze([
   normalizeEmail(FINANCIAL_VICERRECTORIA_OFFICE_EMAIL)
 ].filter(Boolean));
 
+// Algunas solicitudes históricas conservaron únicamente el nombre del jefe
+// en el snapshot. Estas variantes permiten recuperar exclusivamente el equipo
+// de Juan Carlos Nandar sin ampliar el alcance a toda la Vicerrectoría.
+const FINANCIAL_REPOSICION_BOSS_NAMES = Object.freeze([
+  'JUAN CARLOS NANDAR LÓPEZ',
+  'JUAN CARLOS NANDAR LOPEZ',
+  'Juan Carlos Nandar López',
+  'Juan Carlos Nandar Lopez'
+]);
+
 const isFinancialReposicionAccount = (user = {}) => (
   FINANCIAL_REPOSICION_EMAILS.includes(normalizeEmail(user.email))
 );
@@ -1903,6 +1916,15 @@ const isAcademicInstitutionalAccount = (user = {}) => (
 
 const isAcademicPersonalAccount = (user = {}) => (
   sameExactEmail(user.email, ACADEMIC_PERSONAL_EMAIL)
+);
+
+const isScopedReposicionAuthorityAccount = (user = {}) => (
+  isAcademicInstitutionalAccount(user)
+  || isAcademicProgramInstitutionalAccount(user)
+  || isFinancialReposicionAccount(user)
+  || isInvestigationReposicionAccount(user)
+  || isRectoriaReposicionAccount(user)
+  || isEvangelizationReposicionAccount(user)
 );
 
 const canManageInstitutionalReposicion = async (user = {}) => {
@@ -1975,7 +1997,10 @@ const bossScopeWhere = (user, academicAuthorityUserIds = []) => {
         ...FINANCIAL_REPOSICION_EMAILS.map((email) => ({
           jefe_snapshot: { [Op.contains]: { email } }
         })),
-        ...historicalIdScope
+        ...historicalIdScope,
+        ...FINANCIAL_REPOSICION_BOSS_NAMES.map((nombre) => ({
+          jefe_snapshot: { [Op.contains]: { nombre } }
+        }))
       ]
     };
   }
@@ -2051,7 +2076,13 @@ const isAssignedBoss = (solicitud, user, academicAuthorityUserIds = []) => {
   if (isAcademicPersonalAccount(user) || isAcademicProgramPersonalAccount(user)) return false;
   if (isFinancialReposicionAccount(user)) {
     const bossEmail = normalizeEmail(solicitud?.jefe_snapshot?.email || solicitud?.jefe_snapshot?.correo);
+    const bossName = normalizeForMatch(
+      solicitud?.jefe_snapshot?.nombre
+      || solicitud?.jefe_snapshot?.name
+      || solicitud?.jefe_snapshot?.label
+    );
     return FINANCIAL_REPOSICION_EMAILS.includes(bossEmail)
+      || bossName.includes('juan carlos nandar lopez')
       || academicAuthorityUserIds.includes(Number(solicitud?.jefe_inmediato_user_id || 0));
   }
   if (isInvestigationReposicionAccount(user)) {
@@ -10880,6 +10911,8 @@ module.exports = {
   getGroupInitialApprovalRecipients,
   isSingleHomogeneousGroup,
   isGlobalReposicionViewer,
+  isScopedReposicionAuthorityAccount,
+  canViewInstitutionalReposicionModule,
   buildReposicionModuleWhere,
   resolveSeguimientoModuleVisibility,
   getStoredReposicionLaboralProfile,

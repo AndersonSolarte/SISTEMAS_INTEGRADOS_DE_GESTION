@@ -18,6 +18,8 @@ const {
   buildAdminTraceDetail,
   getInitialApprovalSummary,
   isGlobalReposicionViewer,
+  isScopedReposicionAuthorityAccount,
+  canViewInstitutionalReposicionModule,
   buildReposicionModuleWhere,
   resolveSeguimientoModuleVisibility
 } = require('../../controllers/reporteSalidaController');
@@ -320,12 +322,49 @@ test('Juan Carlos Nandar y el correo de Vicerrectoría Financiera comparten la g
       email: 'jcnandar@unicesmag.edu.co'
     }
   };
+  const solicitudHistoricaSinCorreo = {
+    jefe_inmediato_user_id: null,
+    jefe_snapshot: {
+      nombre: 'JUAN CARLOS NANDAR LÓPEZ'
+    }
+  };
+  const solicitudOtroJefe = {
+    jefe_inmediato_user_id: 99,
+    jefe_snapshot: {
+      nombre: 'JEFE DE OTRA DEPENDENCIA',
+      email: 'otro.jefe@unicesmag.edu.co'
+    }
+  };
   assert.equal(isAssignedBoss(solicitud, { id: 81, email: 'jcnandar@unicesmag.edu.co' }, [81, 82]), true);
   assert.equal(isAssignedBoss(solicitud, { id: 82, email: 'viceadfin@unicesmag.edu.co' }, [81, 82]), true);
+  assert.equal(isAssignedBoss(solicitudHistoricaSinCorreo, { id: 81, email: 'jcnandar@unicesmag.edu.co' }, [81, 82]), true);
+  assert.equal(isAssignedBoss(solicitudHistoricaSinCorreo, { id: 82, email: 'viceadfin@unicesmag.edu.co' }, [81, 82]), true);
+  assert.equal(isAssignedBoss(solicitudOtroJefe, { id: 81, email: 'jcnandar@unicesmag.edu.co' }, [81, 82]), false);
+  assert.equal(isAssignedBoss(solicitudOtroJefe, { id: 82, email: 'viceadfin@unicesmag.edu.co' }, [81, 82]), false);
   const alternatives = bossScopeWhere({ id: 82, email: 'viceadfin@unicesmag.edu.co' }, [81, 82])[Op.or];
   assert.equal(alternatives[0].jefe_snapshot[Op.contains].email, 'jcnandar@unicesmag.edu.co');
   assert.equal(alternatives[1].jefe_snapshot[Op.contains].email, 'viceadfin@unicesmag.edu.co');
   assert.deepEqual(alternatives[2].jefe_inmediato_user_id[Op.in], [81, 82]);
+  assert.equal(alternatives[3].jefe_snapshot[Op.contains].nombre, 'JUAN CARLOS NANDAR LÓPEZ');
+  const personalAlternatives = bossScopeWhere({ id: 81, email: 'jcnandar@unicesmag.edu.co' }, [81, 82])[Op.or];
+  assert.equal(personalAlternatives[0].jefe_snapshot[Op.contains].email, 'jcnandar@unicesmag.edu.co');
+  assert.equal(personalAlternatives[1].jefe_snapshot[Op.contains].email, 'viceadfin@unicesmag.edu.co');
+  assert.deepEqual(personalAlternatives[2].jefe_inmediato_user_id[Op.in], [81, 82]);
+  assert.equal(personalAlternatives[3].jefe_snapshot[Op.contains].nombre, 'JUAN CARLOS NANDAR LÓPEZ');
+  assert.equal(isScopedReposicionAuthorityAccount({ email: 'viceadfin@unicesmag.edu.co' }), true);
+  assert.equal(isScopedReposicionAuthorityAccount({ email: 'jcnandar@unicesmag.edu.co' }), true);
+  assert.equal(isScopedReposicionAuthorityAccount({ email: 'otro.usuario@unicesmag.edu.co' }), false);
+});
+
+test('las cuentas financiera personal e institucional conservan alcance de equipo aunque tengan permiso institucional', async () => {
+  for (const email of ['jcnandar@unicesmag.edu.co', 'viceadfin@unicesmag.edu.co']) {
+    const user = {
+      email,
+      menuPermissions: ['recurso_humano_tiempo_reponer'],
+      modulePermissions: ['recurso_humano_tiempo_reponer']
+    };
+    assert.equal(await canViewInstitutionalReposicionModule(user), false);
+  }
 });
 
 test('Javier Jiménez y el correo de Vicerrectoría de Investigación gestionan únicamente su equipo', () => {
