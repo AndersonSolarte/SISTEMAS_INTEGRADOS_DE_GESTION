@@ -155,6 +155,17 @@ const NORMAL_PENDING_STATE_BY_STAGE = {
   gestion_humana: 'pendiente_aprobacion_gestion_humana'
 };
 
+const getLinkedReportStateForStage = (stageKey, { paymentAuthorized = false } = {}) => {
+  if (stageKey === 'tesoreria' && paymentAuthorized) return 'finalizada';
+  return ({
+    jefe: 'aprobada_jefe',
+    vicerrectoria_dependencia: 'aprobada_vicerrectoria_academica',
+    sst: 'aprobada_sst',
+    rectoria: 'aprobada_rectoria',
+    gestion_humana: 'aprobada_gestion_humana'
+  })[stageKey] || null;
+};
+
 const getEffectiveViaticosDays = (salida = {}, viaticos = {}) => {
   const requestedDays = Number(viaticos.numeroDiasSolicitados || 0);
   if (Number.isFinite(requestedDays) && requestedDays > 0) return requestedDays;
@@ -219,21 +230,18 @@ const syncNormalReportApproval = async (solicitud, step, actor, detail = {}) => 
     traceEntries.unshift({ event: 'aprobada_jefe', actor, detail: { aprobacionUnificadaConRectoria: true }, at: at.toISOString() });
   }
   const values = { trazabilidad: [...(report.trazabilidad || []), ...traceEntries] };
+  const linkedState = getLinkedReportStateForStage(step.key);
+  if (linkedState) values.estado = linkedState;
   if (step.key === 'jefe') {
-    values.estado = 'aprobada_jefe';
     values.jefe_aprobado_at = at;
   } else if (step.key === 'vicerrectoria_dependencia') {
-    values.estado = 'aprobada_vicerrectoria_academica';
     values.vicerrectoria_aprobado_at = at;
   } else if (step.key === 'sst') {
-    values.estado = 'aprobada_sst';
     values.enviado_sst_at = at;
   } else if (step.key === 'rectoria') {
-    values.estado = 'aprobada_rectoria';
     values.rectoria_aprobado_at = at;
     if (step.fulfillsImmediateBoss) values.jefe_aprobado_at = at;
   } else if (step.key === 'gestion_humana') {
-    values.estado = 'aprobada_gestion_humana';
     values.gestion_humana_aprobado_at = at;
   }
   await report.update(values);
@@ -2683,7 +2691,7 @@ const procesarAccion = async (req, res) => {
           },
           ...(solicitud.liquidacion ? { liquidacion: solicitud.liquidacion } : {})
         };
-        linkedReport.estado = 'finalizada';
+        linkedReport.estado = getLinkedReportStateForStage('tesoreria', { paymentAuthorized: true });
         linkedReport.finalizado_at = new Date();
         linkedReport.datos_formulario = newFormulario;
         linkedReport.trazabilidad = [...(linkedReport.trazabilidad || []), {
@@ -2737,10 +2745,7 @@ const descargarPdf = async (req, res) => {
   if (Array.isArray(solicitud.liquidacion?.detalles)) {
     attachment = await buildLiquidationPdfAttachment(solicitud);
   } else {
-    const normalReport = await getLinkedNormalReport(solicitud);
-    attachment = normalReport
-      ? await ensureReporteSalidaPdf(normalReport)
-      : await buildPdfAttachment(solicitud, { includeFinancial: false });
+    attachment = await buildPdfAttachment(solicitud, { includeFinancial: false });
   }
   res.setHeader('Content-Type', attachment.contentType);
   res.setHeader('Content-Disposition', `attachment; filename="${attachment.filename}"`);
@@ -2949,7 +2954,7 @@ const abrirAccionAdminPorReporte = async (req, res) => {
 };
 
 module.exports = {
-  _internals: { approvalForm, buildApprovalPlan, buildNormalReportData, getEffectiveViaticosDays, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, normalizeViaticosSalidaDuration, parseLiquidationBody, summarizeStageEmailResult, treasuryForm, validatePayload },
+  _internals: { approvalForm, buildApprovalPlan, buildNormalReportData, getEffectiveViaticosDays, getLinkedReportStateForStage, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, normalizeViaticosSalidaDuration, parseLiquidationBody, summarizeStageEmailResult, treasuryForm, validatePayload },
   abrirAccionAdmin,
   abrirAccionAdminPorReporte,
   actualizarSolicitudAdmin,

@@ -280,7 +280,8 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
         observacion: adminEditReason,
         datos_salida: { fecha: adminEdit.fecha, fechaRegreso: adminEdit.fechaRegreso, horaInicio: adminEdit.horaInicio, horaFin: adminEdit.horaFin },
         datos_viaticos: {
-          lugarVisitar: adminEdit.lugarVisitar, fechaEvento: adminEdit.fechaEvento, numeroDiasSolicitados: Number(adminEdit.numeroDiasSolicitados),
+          lugarVisitar: adminEdit.lugarVisitar, fechaEvento: adminEdit.fechaEvento,
+          ...(String(adminEdit.numeroDiasSolicitados || '').trim() ? { numeroDiasSolicitados: Number(adminEdit.numeroDiasSolicitados) } : {}),
           objetoComision: adminEdit.objetoComision, observacionesEspeciales: adminEdit.observacionesEspeciales,
           centroCosto: adminEdit.centroCosto, alojamiento: adminEdit.alojamiento, transporte: adminEdit.transporte
         }
@@ -296,7 +297,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
     if (deleteReason.trim().length < 8) return enqueueSnackbar('Escriba un motivo de eliminación de al menos 8 caracteres.', { variant: 'warning' });
     setAdminSaving(true);
     try {
-      const result = await eliminarSolicitudViaticosAdmin(reportId);
+      const result = await eliminarSolicitudViaticosAdmin(reportId, deleteReason.trim());
       enqueueSnackbar(result.message || 'Solicitud y registros vinculados eliminados.', { variant: 'success' });
       setDeleteRow(null); setDetailRow(null); setDeleteReason(''); await load();
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar la solicitud.', { variant: 'error' }); }
@@ -456,7 +457,6 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
             {filtered.map((row) => {
               const legalStatus = legalizationStatus(row);
               const supportCount = row.legalizacion?.adjuntos?.length || 0;
-              const canReview = Boolean(row.legalizacion);
               const canAct = Boolean(row._demo || row.access?.canAct);
               const isTecnicoContableStep = row.estado === 'pendiente_tecnico_contable' || row.token_etapa === 'tecnico_contable';
               const isTesoreriaStep = row.estado === 'pendiente_tesoreria' || row.token_etapa === 'tesoreria';
@@ -508,6 +508,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
                   <Typography fontWeight={900} sx={{ fontSize: 11, color: '#0b3a6f' }}>{currency(row.liquidacion?.totalAnticipo)}</Typography>
                 </TableCell>
                 <TableCell align="center" sx={{ py: 0.8, px: 1 }}>
+                  <Stack direction="row" spacing={0.5} justifyContent="center" alignItems="center">
                   {isTecnicoContableStep && canAct ? (
                     <Button size="small" variant="contained" color="primary" onClick={() => openStageAction(row)} sx={{ textTransform: 'none', fontWeight: 850, fontSize: 10, py: 0.4, px: 1.2, borderRadius: 1.5, minWidth: 'auto', whiteSpace: 'nowrap' }}>
                       Liquidar
@@ -516,19 +517,16 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
                     <Button size="small" variant="contained" color="info" onClick={() => openStageAction(row)} sx={{ textTransform: 'none', fontWeight: 850, fontSize: 10, py: 0.4, px: 1.2, borderRadius: 1.5, minWidth: 'auto', whiteSpace: 'nowrap' }}>
                       Autorizar Pago
                     </Button>
-                  ) : canReview ? (
-                    <Tooltip title={legalStatus.label === 'Gestionada' ? 'Consultar legalización gestionada' : 'Abrir revisión de legalización'}>
-                      <IconButton size="small" onClick={() => openReview(row)} sx={{ p: 0.5, color: legalStatus.color, bgcolor: legalStatus.soft, border: `1px solid ${legalStatus.color}35`, '&:hover': { bgcolor: `${legalStatus.color}18` } }}>
-                        <VisibilityRoundedIcon sx={{ fontSize: 17 }} />
-                      </IconButton>
-                    </Tooltip>
                   ) : (
-                    <Tooltip title="Abrir y gestionar formulario de la etapa o consultar documento">
+                    <Tooltip title="Ver expediente completo">
                       <IconButton size="small" onClick={() => setDetailRow(row)} sx={{ p: 0.5, color: '#0b3a6f', bgcolor: '#eff6ff', border: '1px solid #bfdbfe', '&:hover': { bgcolor: '#dbeafe' } }}>
                         <VisibilityRoundedIcon sx={{ fontSize: 17 }} />
                       </IconButton>
                     </Tooltip>
                   )}
+                  {(isTecnicoContableStep || isTesoreriaStep) && canAct && <Tooltip title="Ver expediente completo"><IconButton size="small" onClick={() => setDetailRow(row)}><VisibilityRoundedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip>}
+                  <Tooltip title="Más acciones"><IconButton size="small" onClick={(event) => { setMenuAnchor(event.currentTarget); setMenuRow(row); }}><MoreVertRoundedIcon sx={{ fontSize: 18 }} /></IconButton></Tooltip>
+                  </Stack>
                 </TableCell>
               </TableRow>;
             })}
@@ -536,6 +534,14 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
           </TableBody>
         </Table>
       </TableContainer>
+      <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={closeRowMenu} PaperProps={{ sx: { minWidth: 245, borderRadius: 2.5, boxShadow: '0 18px 45px rgba(15,23,42,.18)' } }}>
+        <MenuItem onClick={() => { setDetailRow(menuRow); closeRowMenu(); }}><VisibilityRoundedIcon sx={{ mr: 1.2, color: '#2563eb' }} />Ver expediente y trazabilidad</MenuItem>
+        {menuRow?.legalizacion && <MenuItem onClick={() => { openReview(menuRow); closeRowMenu(); }}><GavelRoundedIcon sx={{ mr: 1.2, color: '#7c3aed' }} />Revisar legalización</MenuItem>}
+        <MenuItem disabled={!menuRow?.datos_viaticos?.reporteSalidaSolicitudId} onClick={() => { const row = menuRow; closeRowMenu(); openDocument(() => abrirReporteSalidaViaticos(row.datos_viaticos.reporteSalidaSolicitudId), 'No fue posible abrir el Reporte de Salida.'); }}><DescriptionRoundedIcon sx={{ mr: 1.2, color: '#059669' }} />Reporte de Salida</MenuItem>
+        <MenuItem onClick={() => { const row = menuRow; closeRowMenu(); openDocument(() => abrirFormatoViaticos(row.id), 'No fue posible abrir el formato de viáticos.'); }}><ReceiptLongRoundedIcon sx={{ mr: 1.2, color: '#0b3a6f' }} />{Array.isArray(menuRow?.liquidacion?.detalles) ? 'Liquidación de viáticos' : 'Solicitud de viáticos (FR-004)'}</MenuItem>
+        {isAdmin && <MenuItem disabled={['pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(menuRow?.estado)} onClick={() => { const row = menuRow; closeRowMenu(); openAdminEdit(row); }}><EditRoundedIcon sx={{ mr: 1.2, color: '#d97706' }} />Editar datos base</MenuItem>}
+        {isAdmin && <MenuItem onClick={() => { const row = menuRow; closeRowMenu(); setDeleteReason(''); setDeleteRow(row); }} sx={{ color: '#dc2626' }}><DeleteOutlineRoundedIcon sx={{ mr: 1.2 }} />Eliminar expediente</MenuItem>}
+      </Menu>
     </> : canStats ? <StatsPanel stats={displayStats} /> : null)}
     <Dialog open={Boolean(selected)} onClose={() => setSelected(null)} fullWidth maxWidth="lg" PaperProps={{ sx: { borderRadius: 3.5, overflow: 'hidden' } }}>
       <DialogTitle sx={{ px: { xs: 2, md: 3 }, py: 2, color: '#fff', background: 'linear-gradient(120deg,#082f5f,#2563eb)' }}>
@@ -634,6 +640,23 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
               </Box>
             </Paper>
 
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5, bgcolor: '#fff' }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1} sx={{ mb: 1.5 }}>
+                <Box><Typography fontWeight={950} color="#0b3a6f">Expediente documental</Typography><Typography variant="caption" color="text.secondary">Consulte los formatos y soportes que se construyen durante el trámite.</Typography></Box>
+                <Chip icon={<FolderOpenRoundedIcon />} label="Documentos vinculados" color="primary" variant="outlined" />
+              </Stack>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,1fr)' }, gap: 1 }}>
+                <Button variant="outlined" startIcon={<DescriptionRoundedIcon />} disabled={!detailRow.datos_viaticos?.reporteSalidaSolicitudId || detailRow._demo} onClick={() => openDocument(() => abrirReporteSalidaViaticos(detailRow.datos_viaticos.reporteSalidaSolicitudId), 'No fue posible abrir el Reporte de Salida.')} sx={{ justifyContent: 'flex-start', textTransform: 'none', fontWeight: 800 }}>Reporte de Salida</Button>
+                <Button variant="outlined" startIcon={<ReceiptLongRoundedIcon />} disabled={detailRow._demo} onClick={() => openDocument(() => abrirFormatoViaticos(detailRow.id), 'No fue posible abrir el formato de viáticos.')} sx={{ justifyContent: 'flex-start', textTransform: 'none', fontWeight: 800 }}>{Array.isArray(detailRow.liquidacion?.detalles) ? 'Liquidación de viáticos' : 'Solicitud de viáticos (FR-004)'}</Button>
+                <Button variant="outlined" startIcon={<AttachFileRoundedIcon />} disabled={!detailRow.datos_viaticos?.soporteAdjunto?.filename || detailRow._demo} onClick={() => openDocument(() => abrirSoporteSolicitudViaticos(detailRow.id), 'No fue posible abrir el soporte de la solicitud.')} sx={{ justifyContent: 'flex-start', textTransform: 'none', fontWeight: 800 }}>Soporte adjunto inicial</Button>
+                <Button variant="outlined" startIcon={<FactCheckRoundedIcon />} disabled={!detailRow.legalizacion} onClick={() => { setDetailRow(null); openReview(detailRow); }} sx={{ justifyContent: 'flex-start', textTransform: 'none', fontWeight: 800 }}>Legalización y comprobantes</Button>
+              </Box>
+            </Paper>
+
+            {!['pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado) && (
+              <Alert severity="info" sx={{ borderRadius: 2 }}><strong>Estado coordinado:</strong> el Reporte de Salida y el formato de viáticos permanecen pendientes durante todo el flujo. Los dos se marcan aprobados únicamente cuando Tesorería autoriza el pago.</Alert>
+            )}
+
             {String(lastEmailNotification(detailRow)?.event || '').includes('error') && (
               <Alert severity="warning" sx={{ borderRadius: 2 }}>
                 El último correo de aprobación no pudo entregarse. Puede generar y reenviar un enlace nuevo desde la parte inferior.
@@ -672,6 +695,8 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
       </DialogContent>
       <DialogActions sx={{ p: 2 }}>
         <Button onClick={() => setDetailRow(null)}>Cerrar</Button>
+        {isAdmin && detailRow && !detailRow._demo && <Button color="warning" startIcon={<EditRoundedIcon />} disabled={['pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado)} onClick={() => openAdminEdit(detailRow)}>Editar</Button>}
+        {isAdmin && detailRow && !detailRow._demo && <Button color="error" startIcon={<DeleteOutlineRoundedIcon />} onClick={() => { setDeleteReason(''); setDeleteRow(detailRow); }}>Eliminar</Button>}
         {detailRow?.access?.canAct && detailRow?.token_etapa && !['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado) && (
           <>
             <Button variant="outlined" startIcon={resending ? <CircularProgress size={16} /> : <RefreshRoundedIcon />} disabled={resending} onClick={() => resendStageLink(detailRow)}>
@@ -683,6 +708,27 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
           </>
         )}
       </DialogActions>
+    </Dialog>
+    <Dialog open={Boolean(adminEditRow)} onClose={() => !adminSaving && setAdminEditRow(null)} fullWidth maxWidth="md" PaperProps={{ sx: { borderRadius: 3.5 } }}>
+      <DialogTitle sx={{ fontWeight: 950, color: '#0b3a6f' }}>Editar datos base · {adminEditRow?.consecutivo}</DialogTitle>
+      <DialogContent dividers sx={{ bgcolor: '#f8fafc' }}>
+        <Alert severity="warning" sx={{ mb: 2 }}>Los cambios se aplicarán también al Reporte de Salida vinculado y quedarán registrados en la trazabilidad. No se permite editar después de la autorización de Tesorería.</Alert>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,1fr)' }, gap: 1.5 }}>
+          {[['fecha', 'Fecha de salida', 'date'], ['fechaRegreso', 'Fecha de regreso', 'date'], ['horaInicio', 'Hora de salida', 'time'], ['horaFin', 'Hora de regreso', 'time'], ['fechaEvento', 'Fecha del evento', 'date'], ['numeroDiasSolicitados', 'Número de días solicitados', 'number'], ['lugarVisitar', 'Lugar a visitar', 'text'], ['centroCosto', 'Centro de costos', 'text'], ['alojamiento', 'Alojamiento', 'text'], ['transporte', 'Transporte', 'text']].map(([key, label, type]) => <TextField key={key} size="small" type={type} label={label} value={adminEdit[key] ?? ''} onChange={(event) => setAdminEdit((current) => ({ ...current, [key]: event.target.value }))} InputLabelProps={['date', 'time'].includes(type) ? { shrink: true } : undefined} />)}
+          <TextField sx={{ gridColumn: { sm: '1 / -1' } }} multiline minRows={3} label="Objeto de la comisión" value={adminEdit.objetoComision || ''} onChange={(event) => setAdminEdit((current) => ({ ...current, objetoComision: event.target.value }))} />
+          <TextField sx={{ gridColumn: { sm: '1 / -1' } }} multiline minRows={2} label="Observaciones especiales" value={adminEdit.observacionesEspeciales || ''} onChange={(event) => setAdminEdit((current) => ({ ...current, observacionesEspeciales: event.target.value }))} />
+          <TextField required sx={{ gridColumn: { sm: '1 / -1' } }} multiline minRows={2} label="Motivo de la edición" value={adminEditReason} onChange={(event) => setAdminEditReason(event.target.value)} helperText="Obligatorio para la trazabilidad administrativa (mínimo 8 caracteres)." />
+        </Box>
+      </DialogContent>
+      <DialogActions sx={{ p: 2 }}><Button disabled={adminSaving} onClick={() => setAdminEditRow(null)}>Cancelar</Button><Button variant="contained" disabled={adminSaving || adminEditReason.trim().length < 8} startIcon={adminSaving ? <CircularProgress size={17} /> : <EditRoundedIcon />} onClick={saveAdminEdit}>Guardar cambios</Button></DialogActions>
+    </Dialog>
+    <Dialog open={Boolean(deleteRow)} onClose={() => !adminSaving && setDeleteRow(null)} fullWidth maxWidth="sm" PaperProps={{ sx: { borderRadius: 3.5 } }}>
+      <DialogTitle sx={{ fontWeight: 950, color: '#b91c1c' }}>Eliminar expediente completo</DialogTitle>
+      <DialogContent dividers>
+        <Alert severity="error" sx={{ mb: 2 }}>Esta acción elimina <strong>{deleteRow?.consecutivo}</strong>, el Reporte de Salida vinculado, la solicitud de viáticos, la legalización y sus soportes. No se puede deshacer.</Alert>
+        <TextField autoFocus required fullWidth multiline minRows={3} label="Motivo de eliminación" value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} helperText="Escriba al menos 8 caracteres para confirmar la decisión administrativa." />
+      </DialogContent>
+      <DialogActions sx={{ p: 2 }}><Button disabled={adminSaving} onClick={() => setDeleteRow(null)}>Conservar expediente</Button><Button variant="contained" color="error" disabled={adminSaving || deleteReason.trim().length < 8 || !deleteRow?.datos_viaticos?.reporteSalidaSolicitudId} startIcon={adminSaving ? <CircularProgress size={17} color="inherit" /> : <DeleteOutlineRoundedIcon />} onClick={confirmDelete}>Eliminar definitivamente</Button></DialogActions>
     </Dialog>
   </Box>;
 }

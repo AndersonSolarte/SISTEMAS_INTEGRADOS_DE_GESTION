@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
-const { DesplazamientoViaticosSolicitud, Documento, PlanAccion, ReporteSalidaAdjunto, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, RecursoHumanoDocente, User, UserModulePermission, ViaticosLegalizacion, ViaticosLegalizacionAdjunto } = require('../models');
+const { DesplazamientoViaticosSolicitud, Documento, PlanAccion, ReporteSalidaAdjunto, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, RecursoHumanoDocente, SystemSetting, User, UserModulePermission, ViaticosLegalizacion, ViaticosLegalizacionAdjunto } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 const {
   getReporteSalidaRecipients,
@@ -6897,6 +6897,24 @@ const eliminarSolicitud = async (req, res) => {
 
     solicitudes.forEach(deleteSupportFile);
     await removePhysicalFiles(physicalFiles);
+    const deletionReason = sanitizeText(req.body?.observacion, 600);
+    if (deletionReason) {
+      try {
+        const auditKey = 'reporte_salida_eliminaciones_auditoria';
+        const [audit] = await SystemSetting.findOrCreate({ where: { key: auditKey }, defaults: { value: { eventos: [] } } });
+        const eventos = Array.isArray(audit.value?.eventos) ? audit.value.eventos : [];
+        await audit.update({ value: { eventos: [...eventos.slice(-999), {
+          at: new Date().toISOString(),
+          actor: { id: req.user?.id, nombre: req.user?.nombre || req.user?.name, email: req.user?.email },
+          observacion: deletionReason,
+          origen: sanitizeText(req.body?.origen, 80) || 'panel_reporte_salida',
+          reportes: solicitudes.map((item) => ({ id: item.id, consecutivo: item.consecutivo })),
+          solicitudesViaticos: viaticosDeleted
+        }] } });
+      } catch (auditError) {
+        console.error('[eliminarSolicitud] No fue posible guardar la auditoría de eliminación:', auditError.message);
+      }
+    }
     const message = grupoId
       ? `Salida grupal eliminada correctamente (${solicitudes.length} registros).`
       : 'Solicitud eliminada correctamente.';
