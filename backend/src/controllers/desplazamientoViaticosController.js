@@ -1339,7 +1339,7 @@ const validatePayload = (body = {}) => {
       || (body.soporteAdjunto && clean(body.soporteAdjunto.filename))
     );
     if (!hasAdjunto) {
-      issues.push('Debe adjuntar el oficio debidamente firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato.');
+      issues.push('Debe adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece.');
     }
   }
   const start = new Date(`${salida.fecha || ''}T${salida.horaInicio || ''}`);

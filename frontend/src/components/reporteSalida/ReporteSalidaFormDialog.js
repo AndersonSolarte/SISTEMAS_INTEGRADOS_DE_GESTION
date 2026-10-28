@@ -1465,7 +1465,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
       if (!form.viaticos?.autorizacionAceptada) issues.push('Debe aceptar la autorización de descuento para solicitar viáticos.');
       if (isViaticosAdjuntoRequired && !adjuntoFile) {
-        issues.push('Debe adjuntar el oficio debidamente firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato.');
+        issues.push('Debe adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece.');
       }
     }
 
@@ -1877,7 +1877,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       if (!requiresViaticosFlow) delete payload.viaticos;
 
       if (requiresViaticosFlow && isViaticosAdjuntoRequired && !adjuntoFile) {
-        setErrorMessage('Debe adjuntar el oficio debidamente firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato.');
+        setErrorMessage('Debe adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece.');
         setSubmitting(false);
         return;
       }
@@ -2996,8 +2996,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   }}
                 >
                   {isComunicaciones
-                    ? 'Oficina de Comunicaciones y Mercadeo: el soporte del oficio firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato es opcional.'
-                    : 'Para la solicitud de viáticos es obligatorio adjuntar el oficio debidamente firmado por el Rector, la Vicerrectoría a la que pertenece y el Jefe Inmediato.'}
+                    ? 'Oficina de Comunicaciones y Mercadeo: el soporte del oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece es opcional.'
+                    : 'Para la solicitud de viáticos es obligatorio adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece.'}
                 </Alert>
               )}
 
@@ -3108,7 +3108,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                           {requiresViaticosFlow
                             ? (isComunicaciones
                               ? 'Adjuntar oficio firmado (Opcional)'
-                              : 'Adjuntar oficio debidamente firmado por Rector, Vicerrectoría y Jefe Inmediato (Obligatorio) *')
+                              : 'Adjuntar oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece (Obligatorio) *')
                             : category === 'salud'
                             ? 'Subir soporte / constancia (Opcional)'
                             : form.salida.duracionTipo !== 'menos_media_jornada'
@@ -3124,7 +3124,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                           {requiresViaticosFlow
                             ? (isComunicaciones
                               ? 'Haga clic para adjuntar el oficio (PDF o imagen) o pegue una captura con Ctrl+V (opcional para Comunicaciones y Mercadeo).'
-                              : 'Haga clic para adjuntar el oficio debidamente firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato (PDF o imagen), o pegue una captura con Ctrl+V.')
+                              : 'Haga clic para adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece (PDF o imagen), o pegue una captura con Ctrl+V.')
                             : category === 'salud'
                             ? 'Adjunte PDF, imagen o pegue una captura con Ctrl+V. Si no cuenta con soporte en este momento, marque la declaracion anterior.'
                             : form.salida.duracionTipo !== 'menos_media_jornada'

@@ -96,7 +96,7 @@ test('el colaborador puede radicar sin conocer el centro de costos', () => {
   assert.deepEqual(issues, []);
 });
 
-test('exige oficio debidamente firmado por rector, vicerrectoria y jefe si no es oficina de comunicaciones', () => {
+test('exige oficio debidamente firmado por rector y vicerrectoria si no es oficina de comunicaciones', () => {
   const issues = _internals.validatePayload({
     documentoId: 1,
     isSalidaMultiple: false,
@@ -129,7 +129,7 @@ test('exige oficio debidamente firmado por rector, vicerrectoria y jefe si no es
     }
   });
 
-  assert.ok(issues.includes('Debe adjuntar el oficio debidamente firmado por Rector, Vicerrectoría a la que pertenece y Jefe Inmediato.'));
+  assert.ok(issues.includes('Debe adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece.'));
 });
 
 test('permite radicar viaticos sin oficio adjunto a la Oficina de Comunicaciones y Mercadeo', () => {
