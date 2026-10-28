@@ -71,15 +71,16 @@ const parseLiquidationBody = (body = {}) => {
   const supportsRemovableBaseRows = body.liquidationRowsVersion === '2';
   const detalles = [];
 
-  BASE_DETAIL_NAMES.forEach((detalle, index) => {
-    if (supportsRemovableBaseRows && body[`baseIncluded${index}`] !== '1') return;
+  for (let index = 0; index < BASE_DETAIL_NAMES.length; index += 1) {
+    const detalle = BASE_DETAIL_NAMES[index];
+    if (supportsRemovableBaseRows && body[`baseIncluded${index}`] !== '1') continue;
     const valorDiario = money(body[`valorDiario${index}`]);
     const dias = Math.max(0, Math.trunc(money(body[`dias${index}`])));
     if (valorDiario > 0 || dias > 0) {
-      if (valorDiario <= 0 || dias < 1) return;
+      if (valorDiario <= 0 || dias < 1) return { error: `Complete el valor diario y el número de días para "${detalle}".` };
       detalles.push({ detalle, valorDiario, dias, valorTotal: valorDiario * dias });
     }
-  });
+  }
 
   const extraCount = Math.min(30, Math.max(0, Math.trunc(money(body.extraCount))));
   for (let index = 0; index < extraCount; index += 1) {
@@ -2135,6 +2136,7 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
 };
 
 const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit = false, demoTechnicianOnly = false } = {}) => {
+  const suggestedDays = Math.max(1, Math.trunc(getEffectiveViaticosDays(solicitud.datos_salida || {}, solicitud.datos_viaticos || {})));
   const rows = `<tr hidden><td colspan="5"><input type="hidden" name="liquidationRowsVersion" value="2"></td></tr>${BASE_DETAIL_NAMES.map((name, index) => `<tr data-liquidation-row><td><input type="hidden" name="baseIncluded${index}" value="1">${escapeHtml(name)}</td><td><div class="currency-input"><span aria-hidden="true">$</span><input class="valor-diario" inputmode="numeric" type="number" min="0" step="1" name="valorDiario${index}" value="0" aria-label="Valor diario en pesos para ${escapeHtml(name)}" oninput="window.calcLiquidation && window.calcLiquidation()"></div></td><td><input class="dias" inputmode="numeric" type="number" min="0" step="1" name="dias${index}" value="0" oninput="window.calcLiquidation && window.calcLiquidation()"></td><td class="row-total">$0</td><td><button class="remove-row" type="button" aria-label="Eliminar ${escapeHtml(name)}">Eliminar</button></td></tr>`).join('')}`;
   const calculator = `<script>
 (function() {
@@ -2171,13 +2173,20 @@ const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit 
   }
   window.calcLiquidation = recalculate;
 
+  function suggestRequestedDays(target) {
+    if (!target || !target.classList || !target.classList.contains('valor-diario') || parseVal(target.value) <= 0) return;
+    var row = target.closest('tr[data-liquidation-row]');
+    var daysInput = row ? row.querySelector('.dias') : null;
+    if (daysInput && parseVal(daysInput.value) <= 0) daysInput.value = '${suggestedDays}';
+  }
+
   function init() {
     var body = document.getElementById('liquidacion-detalles');
     var addBtn = document.getElementById('agregar-concepto');
     var countInput = document.getElementById('extra-count');
 
     if (body) {
-      body.addEventListener('input', recalculate);
+      body.addEventListener('input', function(e) { suggestRequestedDays(e.target); recalculate(); });
       body.addEventListener('change', recalculate);
       body.addEventListener('keyup', recalculate);
       body.addEventListener('paste', function() { setTimeout(recalculate, 50); });
@@ -2240,7 +2249,7 @@ const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit 
   const formAction = demoCanSubmit
     ? `/api/desplazamientos-viaticos/prueba/liquidacion/${token}`
     : demo ? '#' : `/api/desplazamientos-viaticos/accion/${token}`;
-  return page('Generar liquidación de viáticos y gastos de viaje', `<form id="liquidacion-form" method="post" action="${formAction}"><input id="extra-count" type="hidden" name="extraCount" value="0">${demoNotice}${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true })}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados.</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</section></form>${calculator}`);
+  return page('Generar liquidación de viáticos y gastos de viaje', `<form id="liquidacion-form" method="post" action="${formAction}"><input id="extra-count" type="hidden" name="extraCount" value="0">${demoNotice}${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true })}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados. Al ingresar un valor se propondrán ${suggestedDays} día(s), que puede ajustar según el concepto.</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</section></form>${calculator}`);
 };
 
 const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {}) => {

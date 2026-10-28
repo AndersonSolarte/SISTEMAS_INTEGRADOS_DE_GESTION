@@ -151,6 +151,17 @@ test('parseLiquidationBody procesa correctamente conceptos diligenciados e ignor
   assert.equal(result.detalles[0].valorTotal, 50000);
 });
 
+test('rechaza una fila con valor diario pero sin número de días en lugar de guardarla en cero', () => {
+  const result = _internals.parseLiquidationBody({
+    liquidationRowsVersion: '2',
+    baseIncluded0: '1',
+    valorDiario0: '43000',
+    dias0: '0'
+  });
+
+  assert.match(result.error, /Complete el valor diario y el número de días para "Manutención"/);
+});
+
 const actionFormSolicitud = {
   id: 42,
   consecutivo: 'ADF-PP-FR-004-2026-0042',
@@ -194,6 +205,9 @@ test('liquidación usa valores nativos de botón y permite rechazar sin bloquear
   assert.match(html, /name="accion" value="rechazar" formnovalidate>Rechazar financiación<\/button>/);
   assert.doesNotMatch(html, /id="form-accion"/);
   assert.doesNotMatch(html, /onclick="document\.getElementById\('form-accion'\)/);
+  assert.match(html, /function suggestRequestedDays\(target\)/);
+  assert.match(html, /daysInput\.value = '2'/);
+  assert.match(html, /Al ingresar un valor se propondrán 2 día\(s\)/);
 });
 
 test('las dos modalidades de prueba de liquidación envían una sola acción válida', () => {
