@@ -335,24 +335,34 @@ const presentar = async (req, res) => {
     return rejectUpload(500, 'No fue posible registrar la legalización en la base de datos.');
   }
   const mailThread = legalizationMailThread(legalizacion, legalizacion.solicitud);
+  const pdfFormatBuffer = await buildLegalizacionPdfBuffer(legalizacion, legalizacion.solicitud);
+  const supportAttachments = await Promise.all(attachments.map(async (file) => {
+    const stored = await ViaticosLegalizacionAdjunto.findByPk(file.id);
+    return {
+      filename: file.originalName,
+      content: Buffer.from(stored.contenido),
+      contentType: stored.mime_type
+    };
+  }));
+
   const mailResult = await sendInstitutionalEmail({
     to: legalizationRecipients(legalizacion.solicitud, req.user.email),
     subject: mailThread.subject,
     messageId: mailThread.rootMessageId,
-    text: 'La legalización fue presentada y quedó pendiente de revisión del Técnico Contable.',
+    text: 'La legalización fue presentada y firmada electrónicamente por el colaborador. Se adjuntan el formato oficial y los soportes para revisión del Técnico Contable.',
     html: renderInstitutionalTemplate({
       title: 'Legalización de viáticos presentada',
-      introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">El colaborador <strong>${escapeHtml(legalizacion.solicitud?.solicitante_snapshot?.nombre || '')}</strong> ha presentado y firmado electrónicamente la legalización de viáticos de la comisión <strong>${escapeHtml(legalizacion.solicitud.consecutivo)}</strong>. La actuación pasa a revisión y validación por parte del Técnico Contable.</p>`,
-      bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Pendiente de revisión del Técnico Contable')}<p style="margin: 12px 0 4px; font-size: 13.5px;"><strong>Soportes adjuntos archivados:</strong> ${attachments.length}</p><p style="color:#64748b; font-size: 12px; margin: 0;">Los anexos y comprobantes quedaron debidamente respaldados en la base de datos institucional.</p>`
+      introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">El colaborador <strong>${escapeHtml(legalizacion.solicitud?.solicitante_snapshot?.nombre || '')}</strong> ha presentado y firmado electrónicamente la legalización de viáticos de la comisión <strong>${escapeHtml(legalizacion.solicitud.consecutivo)}</strong>. Se adjunta el formato oficial de legalización firmado electrónicamente por el solicitante junto con los soportes aportados para su respectiva revisión y validación contable.</p>`,
+      bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Pendiente de revisión del Técnico Contable')}<p style="margin: 12px 0 4px; font-size: 13.5px;"><strong>Soportes adjuntos archivados:</strong> ${attachments.length}</p><p style="color:#64748b; font-size: 12px; margin: 0;">El formato PDF incorpora la firma electrónica del colaborador, la trazabilidad, el código QR y los anexos respaldados en la base de datos institucional.</p>`
     }),
-    attachments: await Promise.all(attachments.map(async (file) => {
-      const stored = await ViaticosLegalizacionAdjunto.findByPk(file.id);
-      return {
-        filename: file.originalName,
-        content: Buffer.from(stored.contenido),
-        contentType: stored.mime_type
-      };
-    }))
+    attachments: [
+      {
+        filename: `LEGALIZACION-VIATICOS-${legalizacion.solicitud.consecutivo}.pdf`,
+        content: pdfFormatBuffer,
+        contentType: 'application/pdf'
+      },
+      ...supportAttachments
+    ]
   });
   removeUploadedFiles(files);
   return res.status(201).json({ success: true, message: 'Legalización enviada al Técnico Contable.', emailSent: mailResult.success });
