@@ -22,8 +22,9 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
 import GavelRoundedIcon from '@mui/icons-material/GavelRounded';
+import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import { useSnackbar } from 'notistack';
-import { abrirAdjuntoLegalizacion, abrirFormatoViaticos, abrirReporteSalidaViaticos, abrirSoporteSolicitudViaticos, actualizarSolicitudViaticosAdmin, eliminarSolicitudViaticosAdmin, getAccionAdministrativaViaticos, getEstadisticasViaticos, getSolicitudesViaticos, reenviarAprobacionViaticos, validarLegalizacion } from '../../services/legalizacionViaticosService';
+import { abrirAdjuntoLegalizacion, abrirFormatoViaticos, abrirReporteSalidaViaticos, abrirSoporteSolicitudViaticos, actualizarSolicitudViaticosAdmin, eliminarSolicitudViaticosAdmin, getAccionAdministrativaViaticos, getEstadisticasViaticos, getSolicitudesViaticos, reenviarAprobacionViaticos, reenviarDocumentosFinalesViaticos, validarLegalizacion } from '../../services/legalizacionViaticosService';
 import LegalizacionViaticosFormat from './LegalizacionViaticosFormat';
 
 const currency = (value) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -99,10 +100,12 @@ const traceEventLabel = (event = '') => ({
   correo_aprobacion_enviado: 'Correo de aprobaci\u00f3n enviado',
   correo_aprobacion_error: 'Error al enviar correo de aprobaci\u00f3n',
   correo_aprobacion_reenviado: 'Enlace de aprobaci\u00f3n reenviado',
-  correo_aprobacion_reenvio_error: 'Error al reenviar enlace de aprobaci\u00f3n'
+  correo_aprobacion_reenvio_error: 'Error al reenviar enlace de aprobaci\u00f3n',
+  correo_documentos_finales_enviado: 'Documentos finales enviados',
+  correo_documentos_finales_error: 'Error al enviar documentos finales'
 }[event] || event || 'Firma / Actuaci\u00f3n');
 
-const lastEmailNotification = (row = {}) => [...(row.trazabilidad || [])].reverse().find((entry) => String(entry.event || entry.evento || '').startsWith('correo_aprobacion_')) || null;
+const lastEmailNotification = (row = {}) => [...(row.trazabilidad || [])].reverse().find((entry) => String(entry.event || entry.evento || '').startsWith('correo_')) || null;
 
 export default function ViaticosGestionDashboard({ user, onBack }) {
   const permissions = useMemo(() => new Set([...(user?.allowedModules || []), ...(user?.modulePermissions || [])].map((item) => typeof item === 'string' ? item : item.module_key)), [user]);
@@ -124,6 +127,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [resending, setResending] = useState(false);
+  const [resendingFinal, setResendingFinal] = useState(false);
   const [confirmValidationOpen, setConfirmValidationOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [menuRow, setMenuRow] = useState(null);
@@ -253,6 +257,16 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
     } finally {
       setResending(false);
     }
+  };
+  const resendFinalDocuments = async (row) => {
+    if (!row?.id) return;
+    setResendingFinal(true);
+    try {
+      const result = await reenviarDocumentosFinalesViaticos(row.id);
+      enqueueSnackbar(result.message || 'Documentos finales reenviados.', { variant: 'success' });
+      setDetailRow(null); await load();
+    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible reenviar los documentos finales.', { variant: 'error' }); }
+    finally { setResendingFinal(false); }
   };
 
   const closeRowMenu = () => { setMenuAnchor(null); setMenuRow(null); };
@@ -659,7 +673,9 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
 
             {String(lastEmailNotification(detailRow)?.event || '').includes('error') && (
               <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                El último correo de aprobación no pudo entregarse. Puede generar y reenviar un enlace nuevo desde la parte inferior.
+                {String(lastEmailNotification(detailRow)?.event || '').includes('documentos_finales')
+                  ? 'Una o más copias de los documentos finales no pudieron entregarse. Puede reenviarlas desde la parte inferior.'
+                  : 'El último correo de aprobación no pudo entregarse. Puede generar y reenviar un enlace nuevo desde la parte inferior.'}
               </Alert>
             )}
 
@@ -697,6 +713,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
         <Button onClick={() => setDetailRow(null)}>Cerrar</Button>
         {isAdmin && detailRow && !detailRow._demo && <Button color="warning" startIcon={<EditRoundedIcon />} disabled={['pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado)} onClick={() => openAdminEdit(detailRow)}>Editar</Button>}
         {isAdmin && detailRow && !detailRow._demo && <Button color="error" startIcon={<DeleteOutlineRoundedIcon />} onClick={() => { setDeleteReason(''); setDeleteRow(detailRow); }}>Eliminar</Button>}
+        {isAdmin && detailRow && !detailRow._demo && ['pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada', 'finalizada'].includes(detailRow.estado) && <Button variant="outlined" color="success" disabled={resendingFinal} startIcon={resendingFinal ? <CircularProgress size={16} /> : <SendRoundedIcon />} onClick={() => resendFinalDocuments(detailRow)}>Reenviar documentos finales</Button>}
         {detailRow?.access?.canAct && detailRow?.token_etapa && !['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(detailRow.estado) && (
           <>
             <Button variant="outlined" startIcon={resending ? <CircularProgress size={16} /> : <RefreshRoundedIcon />} disabled={resending} onClick={() => resendStageLink(detailRow)}>

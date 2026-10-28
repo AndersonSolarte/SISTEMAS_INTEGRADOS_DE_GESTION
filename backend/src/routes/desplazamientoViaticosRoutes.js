@@ -21,6 +21,7 @@ const {
   procesarDemoTesoreria,
   radicarSolicitud,
   reenviarAprobacion,
+  reenviarDocumentosFinales,
   verSoporteSolicitud
 } = require('../controllers/desplazamientoViaticosController');
 
@@ -46,6 +47,7 @@ router.get('/accion/:token', publicLimiter, mostrarAccion);
 router.post('/accion/:token', publicLimiter, procesarAccion);
 router.post('/solicitudes/:id/accion-admin', auth, abrirAccionAdmin);
 router.post('/solicitudes/:id/reenviar-aprobacion', auth, reenviarAprobacion);
+router.post('/solicitudes/:id/reenviar-documentos-finales', auth, reenviarDocumentosFinales);
 router.post('/solicitudes/reporte/:reporteId/accion-admin', auth, abrirAccionAdminPorReporte);
 router.get('/prueba/liquidacion/:token', publicLimiter, mostrarDemoLiquidacion);
 router.post('/prueba/liquidacion/:token', publicLimiter, procesarDemoLiquidacion);

@@ -831,9 +831,19 @@ const liquidationBreakdownEmailHtml = (solicitud) => {
   `;
 };
 
-const getThreadHeaders = (solicitud) => {
-  const id = `<DEV-${solicitud?.consecutivo || solicitud?.id || '2026'}@unicesmag.edu.co>`;
-  return { inReplyTo: id, references: id };
+const getThreadRootId = (solicitud) => `<DEV-${solicitud?.consecutivo || solicitud?.id || '2026'}@unicesmag.edu.co>`;
+
+const getThreadHeaders = (solicitud, recipient = '') => {
+  const rootId = getThreadRootId(solicitud);
+  const normalizedRecipient = normalizeEmail(recipient);
+  const previousDelivery = [...(solicitud?.trazabilidad || [])].reverse()
+    .flatMap((entry) => Array.isArray(entry?.detail?.entregas) ? entry.detail.entregas : [])
+    .find((delivery) => normalizeEmail(delivery?.recipient) === normalizedRecipient && delivery?.success && delivery?.messageId);
+  const previousMessageId = clean(previousDelivery?.messageId, 300);
+  return {
+    inReplyTo: previousMessageId || rootId,
+    references: [rootId, previousMessageId].filter(Boolean).join(' ')
+  };
 };
 
 const emailStep = async (solicitud, step, tokenBundle) => {
@@ -1009,7 +1019,7 @@ const sendRadicationCopies = async (solicitud, recipients = []) => {
       bodyHtml: summaryHtml(solicitud)
     }),
     attachments: [supportAttachment].filter(Boolean),
-    ...getThreadHeaders(solicitud)
+    messageId: getThreadRootId(solicitud)
   });
 };
 
@@ -1080,10 +1090,31 @@ const sendNormalReportFinalCopies = async (solicitud, report = null) => {
   return { success: results.every((result) => result.success), recipients: targets, results };
 };
 
+const collectFinalRecipientEmails = (solicitud, configuredRecipients = {}, extras = {}) => {
+  const workflowEmails = (solicitud.plan_aprobacion || []).flatMap((step) => [
+    step.email,
+    step.alternateApprovalEmail,
+    ...(Array.isArray(step.infoEmails) ? step.infoEmails : [])
+  ]);
+  return [...new Set([
+    configuredRecipients.tecnicoContable,
+    configuredRecipients.financiera,
+    configuredRecipients.tesoreria,
+    configuredRecipients.gestionHumana,
+    configuredRecipients.sst,
+    configuredRecipients.rectoria,
+    extras.dependenciaEmail,
+    extras.jefeEmail,
+    extras.authorityEmail,
+    extras.researchVicerrectorEmail,
+    ...workflowEmails
+  ].filter(Boolean).map(normalizeEmail))];
+};
+
 const sendFinalizedCopies = async (solicitud) => {
   const recipients = getDesplazamientoViaticosRecipients();
   const normalReport = await getLinkedNormalReport(solicitud);
-  if (normalReport) {
+  if (normalReport && normalReport.estado !== 'finalizada') {
     const now = new Date();
     await normalReport.update({
       estado: 'finalizada',
@@ -1103,21 +1134,21 @@ const sendFinalizedCopies = async (solicitud) => {
   const researchVicerrectorEmail = isResearchVicerrectoriaAssignment(solicitud.datos_laborales)
     ? recipients.investigacion
     : '';
-
-  const allInvolvedRecipients = [...new Set([
-    recipients.tecnicoContable,
-    recipients.financiera,
-    recipients.tesoreria,
-    recipients.gestionHumana,
-    recipients.sst,
+  const authorityEmail = isAcademicVicerrectoriaAssignment(solicitud.datos_laborales)
+    ? recipients.academica
+    : isRectoriaAssignment(solicitud.datos_laborales)
+      ? recipients.rectoria
+      : isResearchVicerrectoriaAssignment(solicitud.datos_laborales)
+        ? recipients.investigacion
+        : isEvangelizationVicerrectoriaAssignment(solicitud.datos_laborales)
+          ? recipients.evangelizacion
+          : normalizeEmail(getDependencyEmail(solicitud.datos_laborales?.vicerrectoria));
+  const allInvolvedRecipients = collectFinalRecipientEmails(solicitud, recipients, {
     dependenciaEmail,
     jefeEmail,
-    viceEmail,
-    researchVicerrectorEmail,
-    recipients.rectoria
-  ].filter(Boolean).map(normalizeEmail))];
-
-  const threadHeaders = getThreadHeaders(solicitud);
+    authorityEmail,
+    researchVicerrectorEmail
+  }).filter((email) => email !== collaboratorEmail);
   const pdfAttachments = [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean);
   const normalSalida = normalReport?.datos_formulario?.salida || solicitud.datos_salida || {};
   const normalDocumentLabel = getEffectiveViaticosDays(normalSalida, solicitud.datos_viaticos || {}) >= 1
@@ -1127,34 +1158,54 @@ const sendFinalizedCopies = async (solicitud) => {
 
   const results = [];
   if (collaboratorEmail) {
-    results.push(await sendInstitutionalEmail({
-      to: collaboratorEmail,
-      subject: `${solicitud.consecutivo} | Pago autorizado y comision aprobada - Formatos firmados`,
-      text: `Tesorería/Pagaduría autorizó el pago de la solicitud ${solicitud.consecutivo}. Se adjuntan el ${normalDocumentLabel} y la Liquidación de Viáticos (FR-004) debidamente firmados.`,
+    results.push({
+      recipient: collaboratorEmail,
+      ...(await sendInstitutionalEmail({
+        to: collaboratorEmail,
+        subject: `${solicitud.consecutivo} | Pago autorizado y comision aprobada - Formatos firmados`,
+        text: `Tesorería/Pagaduría autorizó el pago de la solicitud ${solicitud.consecutivo}. Se adjuntan el ${normalDocumentLabel} y la Liquidación de Viáticos (FR-004) debidamente firmados.`,
+        html: renderInstitutionalTemplate({
+          title: 'Trámite Aprobado y Pago Autorizado',
+          introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Tesorería / Pagaduría ha autorizado el pago de su anticipo de viáticos. Se remite copia de los dos formatos institucionales (Reporte de Salida y Liquidación de Viáticos) debidamente aprobados y firmados. El módulo de legalización se habilitará automáticamente en la fecha de regreso y dispondrá de tres (3) días hábiles conforme al Acuerdo 001 de 2013.</p>',
+          bodyHtml: summaryHtml(solicitud)
+        }),
+        attachments: pdfAttachments,
+        ...getThreadHeaders(solicitud, collaboratorEmail)
+      }))
+    });
+  }
+
+  results.push(...await Promise.all(allInvolvedRecipients.map(async (email) => ({
+    recipient: email,
+    ...(await sendInstitutionalEmail({
+      to: email,
+      subject: `${solicitud.consecutivo} | Proceso finalizado y pago autorizado - Formatos firmados`,
+      text: `Se informa que la comisión y liquidación de viáticos ${solicitud.consecutivo} ha completado exitosamente todo el flujo de visto bueno y pago. Se adjuntan el ${normalDocumentLabel} y la Liquidación de Viáticos (FR-004) firmados.`,
       html: renderInstitutionalTemplate({
-        title: 'Trámite Aprobado y Pago Autorizado',
-        introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Tesorería / Pagaduría ha autorizado el pago de su anticipo de viáticos. Se remite copia de los dos formatos institucionales (Reporte de Salida y Liquidación de Viáticos) debidamente aprobados y firmados. El módulo de legalización se habilitará automáticamente en la fecha de regreso y dispondrá de tres (3) días hábiles conforme al Acuerdo 001 de 2013.</p>',
+        title: 'Proceso Finalizado · Formatos Aprobados',
+        introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Se remite copia final del proceso completado. Tesorería / Pagaduría ha autorizado el pago y la comisión cuenta con el visto bueno de todas las instancias (Jefatura, Vicerrectoría, SST, Gestión Humana, Contabilidad y Tesorería). Se adjuntan los formatos oficiales debidamente firmados.</p>',
         bodyHtml: summaryHtml(solicitud)
       }),
       attachments: pdfAttachments,
-      ...threadHeaders
-    }));
-  }
-
-  results.push(...await Promise.all(allInvolvedRecipients.map((email) => sendInstitutionalEmail({
-    to: email,
-    subject: `${solicitud.consecutivo} | Proceso finalizado y pago autorizado - Formatos firmados`,
-    text: `Se informa que la comisión y liquidación de viáticos ${solicitud.consecutivo} ha completado exitosamente todo el flujo de visto bueno y pago. Se adjuntan el ${normalDocumentLabel} y la Liquidación de Viáticos (FR-004) firmados.`,
-    html: renderInstitutionalTemplate({
-      title: 'Proceso Finalizado · Formatos Aprobados',
-      introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Se remite copia final del proceso completado. Tesorería / Pagaduría ha autorizado el pago y la comisión cuenta con el visto bueno de todas las instancias (Jefatura, Vicerrectoría, SST, Gestión Humana, Contabilidad y Tesorería). Se adjuntan los formatos oficiales debidamente firmados.</p>',
-      bodyHtml: summaryHtml(solicitud)
-    }),
-    attachments: pdfAttachments,
-    ...threadHeaders
+      ...getThreadHeaders(solicitud, email)
+    }))
   }))));
 
-  return { success: results.length > 0 && results.every((result) => result.success), results };
+  const normalizedResults = results.map((result) => ({
+    recipient: result.recipient,
+    success: result.success === true,
+    messageId: result.messageId || null,
+    error: result.success === true ? null : clean(result.error, 500)
+  }));
+  const success = normalizedResults.length > 0 && normalizedResults.every((result) => result.success);
+  await solicitud.update({
+    trazabilidad: appendTrace(solicitud, success ? 'correo_documentos_finales_enviado' : 'correo_documentos_finales_error', { nombre: 'SIAC UNICESMAG', role: 'sistema' }, {
+      destinatarios: normalizedResults.map((result) => result.recipient).filter(Boolean),
+      entregas: normalizedResults,
+      adjuntos: pdfAttachments.map((attachment) => attachment.filename).filter(Boolean)
+    })
+  });
+  return { success, results: normalizedResults };
 };
 
 const isStepAlreadyApproved = (solicitud, step, linkedReport = null) => {
@@ -2716,9 +2767,10 @@ const procesarAccion = async (req, res) => {
         await linkedReport.save();
       }
       await ensureLegalizacion(solicitud);
-      await sendFinalizedCopies(solicitud);
-      await sendNormalReportFinalCopies(solicitud, linkedReport);
-      return res.send(page('Pago autorizado', '<p>La autorización de pago fue registrada correctamente. Los dos formatos finales fueron distribuidos y la solicitud quedó pendiente de legalización desde la fecha de regreso.</p>'));
+      const finalDelivery = await sendFinalizedCopies(solicitud);
+      return res.send(page('Pago autorizado', finalDelivery.success
+        ? '<p>La autorización de pago fue registrada correctamente. Los dos formatos finales fueron distribuidos y la solicitud quedó pendiente de legalización desde la fecha de regreso.</p>'
+        : '<p>La autorización de pago fue registrada correctamente, pero una o más entregas de los documentos finales no fueron confirmadas. El administrador puede usar “Reenviar documentos finales” desde el panel de viáticos.</p>'));
     }
     if (step.action === 'tramite') {
       if (accion !== 'tramitar') return res.status(400).send(page('Acción inválida', '<p>Debe confirmar el trámite.</p>'));
@@ -2935,6 +2987,41 @@ const reenviarAprobacion = async (req, res) => {
   }
 };
 
+const reenviarDocumentosFinales = async (req, res) => {
+  try {
+    if (!await canManageViaticos(req.user)) {
+      return res.status(403).json({ success: false, message: 'No tiene permiso para reenviar documentos finales de viáticos.' });
+    }
+    const solicitud = await DesplazamientoViaticosSolicitud.findOne({
+      where: {
+        [Op.or]: [
+          { id: Number.isInteger(Number(req.params.id)) ? Number(req.params.id) : 0 },
+          { consecutivo: String(req.params.id || '') }
+        ]
+      }
+    });
+    if (!solicitud) return res.status(404).json({ success: false, message: 'Solicitud de viáticos no encontrada.' });
+    if (!canActOnSolicitud(req.user, solicitud)) {
+      return res.status(403).json({ success: false, message: 'Esta solicitud no está asignada a su dependencia.' });
+    }
+    if (!['pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada', 'finalizada'].includes(solicitud.estado)) {
+      return res.status(409).json({ success: false, message: 'Los documentos finales solo pueden enviarse después de la autorización de Tesorería.' });
+    }
+    const delivery = await sendFinalizedCopies(solicitud);
+    if (!delivery.success) {
+      return res.status(502).json({
+        success: false,
+        message: 'Se intentó reenviar los documentos, pero una o más entregas no fueron confirmadas. Revise la trazabilidad.',
+        delivery
+      });
+    }
+    return res.json({ success: true, message: 'Los documentos finales firmados fueron reenviados al trabajador y a las instancias participantes.', delivery });
+  } catch (error) {
+    console.error('Error al reenviar documentos finales de viáticos:', error);
+    return res.status(500).json({ success: false, message: 'No fue posible generar o reenviar los documentos finales.' });
+  }
+};
+
 const abrirAccionAdminPorReporte = async (req, res) => {
   try {
     if (!await canManageViaticos(req.user)) {
@@ -2966,7 +3053,7 @@ const abrirAccionAdminPorReporte = async (req, res) => {
 };
 
 module.exports = {
-  _internals: { approvalForm, buildApprovalPlan, buildNormalReportData, getEffectiveViaticosDays, getLinkedReportStateForStage, getPendingLinkedReportStateForStage, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, normalizeViaticosSalidaDuration, parseLiquidationBody, summarizeStageEmailResult, treasuryForm, validatePayload },
+  _internals: { approvalForm, buildApprovalPlan, buildNormalReportData, collectFinalRecipientEmails, getEffectiveViaticosDays, getLinkedReportStateForStage, getPendingLinkedReportStateForStage, getThreadHeaders, getThreadRootId, legacyTreasuryForm, liquidacionForm, liquidationRequestDocumentHtml, normalizeViaticosSalidaDuration, parseLiquidationBody, summarizeStageEmailResult, treasuryForm, validatePayload },
   abrirAccionAdmin,
   abrirAccionAdminPorReporte,
   actualizarSolicitudAdmin,
@@ -2982,6 +3069,7 @@ module.exports = {
   procesarDemoTesoreria,
   radicarSolicitud,
   reenviarAprobacion,
+  reenviarDocumentosFinales,
   verSoporteSolicitud,
   syncAdminViaticosApproval,
   syncAdminViaticosRejection
