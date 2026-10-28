@@ -270,7 +270,6 @@ const SolicitudViaticosFields = ({
             gap: 1.1
           }}
         >
-          <TextField sx={compactSx} size="small" label="Centro de costos (opcional)" helperText="Si no lo conoce, el Técnico Contable lo completará." value={viaticos.centroCosto || ''} onChange={(e) => onChange('centroCosto', e.target.value)} />
           {!(salida?.cronogramaActividadId || salida?.isCronogramaMovilidad || salida?.tipo === 'practica_movilidad') && (
             <TextField sx={compactSx} size="small" required select label="Alojamiento" value={viaticos.alojamiento || ''} onChange={(e) => onChange('alojamiento', e.target.value)}>
               <MenuItem value="Hotel">Hotel</MenuItem>
