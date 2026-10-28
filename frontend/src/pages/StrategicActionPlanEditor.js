@@ -5046,26 +5046,28 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       {`ACTAS DE REUNIÓN · ${(detail?.organizationalUnit?.name || detail?.title || 'PLAN DE ACCIÓN').toUpperCase()}`}
                     </Typography>
                     <Stack direction="row" spacing={1.5} alignItems="center">
-                      <Button
-                        size="small"
-                        variant="contained"
-                        startIcon={<FolderSharedIcon sx={{ fontSize: 14 }} />}
-                        onClick={handleOpenMinutesFolder}
-                        sx={{
-                          textTransform: 'none',
-                          fontWeight: 850,
-                          fontSize: 11,
-                          borderRadius: 2,
-                          py: 0.3,
-                          px: 1.4,
-                          bgcolor: '#7e22ce',
-                          color: '#ffffff',
-                          boxShadow: 'none',
-                          '&:hover': { bgcolor: '#6b21a8' }
-                        }}
-                      >
-                        Carpeta en Google Drive
-                      </Button>
+                      {isPlanningAdmin && (
+                        <Button
+                          size="small"
+                          variant="contained"
+                          startIcon={<FolderSharedIcon sx={{ fontSize: 14 }} />}
+                          onClick={handleOpenMinutesFolder}
+                          sx={{
+                            textTransform: 'none',
+                            fontWeight: 850,
+                            fontSize: 11,
+                            borderRadius: 2,
+                            py: 0.3,
+                            px: 1.4,
+                            bgcolor: '#7e22ce',
+                            color: '#ffffff',
+                            boxShadow: 'none',
+                            '&:hover': { bgcolor: '#6b21a8' }
+                          }}
+                        >
+                          Carpeta en Google Drive
+                        </Button>
+                      )}
                       <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#7e22ce' }}>
                         FORMATO OFICIAL DIR-PE-FR-003 · ACTAS DE REUNIÓN
                       </Typography>
@@ -5183,7 +5185,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               </TableCell>
                               <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2 }}>
                                 <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
-                                  {(acta.driveUrl || acta.driveFileId) ? (
+                                  {isPlanningAdmin && (acta.driveUrl || acta.driveFileId) && (
                                     <Button
                                       size="small"
                                       variant="contained"
@@ -5203,8 +5205,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                     >
                                       Ver en Drive
                                     </Button>
-                                  ) : (
-                                    <Chip size="small" label="Sin enlace" sx={{ fontSize: 10, color: '#94a3b8' }} />
                                   )}
                                   <Button
                                     size="small"
@@ -6003,16 +6003,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             </Box>
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center">
-            <Button
-              size="small"
-              variant="outlined"
-              color="primary"
-              startIcon={<FolderSharedIcon sx={{ fontSize: 16 }} />}
-              onClick={() => handleOpenActivityFolder(evidenceItem)}
-              sx={{ textTransform: 'none', fontWeight: 800, fontSize: 11.5, borderRadius: 2 }}
-            >
-              Carpeta en Google Drive
-            </Button>
+            {isPlanningAdmin && (
+              <Button
+                size="small"
+                variant="outlined"
+                color="primary"
+                startIcon={<FolderSharedIcon sx={{ fontSize: 16 }} />}
+                onClick={() => handleOpenActivityFolder(evidenceItem)}
+                sx={{ textTransform: 'none', fontWeight: 800, fontSize: 11.5, borderRadius: 2 }}
+              >
+                Carpeta en Google Drive
+              </Button>
+            )}
             <IconButton
               aria-label="cerrar"
               onClick={() => setEvidenceModalOpen(false)}
@@ -6090,7 +6092,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Stack>
 
                   <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignSelf: { xs: 'flex-end', sm: 'center' } }}>
-                    {(ev.drive_url || ev.drive_file_id) && (
+                    {isPlanningAdmin && (ev.drive_url || ev.drive_file_id) && (
                       <Button
                         size="small"
                         variant="outlined"

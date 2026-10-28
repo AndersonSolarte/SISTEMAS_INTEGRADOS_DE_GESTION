@@ -33,7 +33,6 @@ import {
   Search as SearchIcon,
   Visibility as VisibilityIcon,
   CloudDone as CloudDoneIcon,
-  FolderShared as FolderSharedIcon,
   ChatBubbleOutline as ChatBubbleOutlineIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
@@ -682,45 +681,6 @@ export default function PlanAccionConsulta({
     }
   };
 
-  const handleOpenDriveUrl = (url) => {
-    if (!url) return;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleOpenActivityFolder = async (item, periodId = null) => {
-    if (!item) return;
-    let targetPeriodId = periodId || monitoringForm?.period_id || null;
-    if (!targetPeriodId) {
-      const applicable = periods.filter((p) => isPeriodApplicableToItem(item, p, periods));
-      if (applicable.length > 0) {
-        targetPeriodId = applicable[0].id;
-      }
-    }
-    const directUrl = (item.evidence || []).find((e) => targetPeriodId ? (String(e.monitoring_period_id) === String(targetPeriodId) && e.drive_folder_url) : e.drive_folder_url)?.drive_folder_url
-      || ((item.evidence || []).find((e) => targetPeriodId ? (String(e.monitoring_period_id) === String(targetPeriodId) && e.drive_folder_id) : e.drive_folder_id)
-          ? `https://drive.google.com/drive/folders/${item.evidence.find((e) => targetPeriodId ? (String(e.monitoring_period_id) === String(targetPeriodId) && e.drive_folder_id) : e.drive_folder_id).drive_folder_id}`
-          : null);
-    
-    if (directUrl) {
-      window.open(directUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
-
-    try {
-      enqueueSnackbar('Localizando carpeta en Google Drive...', { variant: 'info' });
-      const res = await strategicPlanningService.getActionItemDriveFolder(item.id, targetPeriodId);
-      const url = res?.folderUrl || res?.data?.folderUrl;
-      if (url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      } else {
-        enqueueSnackbar('La carpeta de la actividad en Drive se habilitará al sincronizar el primer soporte.', { variant: 'warning' });
-      }
-    } catch (e) {
-      console.error('Error al obtener carpeta de Drive:', e);
-      enqueueSnackbar('No fue posible abrir la carpeta en Google Drive.', { variant: 'error' });
-    }
-  };
-
   // Listado de actas de reunión del plan para consulta institucional
   const planActas = useMemo(() => {
     if (!selectedPlan) return [];
@@ -778,28 +738,6 @@ export default function PlanAccionConsulta({
 
     return list.sort((a, b) => new Date(b.finalizedAt || b.meetingDate || 0) - new Date(a.finalizedAt || a.meetingDate || 0));
   }, [selectedPlan]);
-
-  const handleOpenMinutesFolder = async () => {
-    if (!selectedPlan) return;
-    const directFolderUrl = planActas.find((a) => a.driveFolderUrl)?.driveFolderUrl;
-    if (directFolderUrl) {
-      window.open(directFolderUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    try {
-      enqueueSnackbar('Localizando carpeta ACTAS DE REUNIÓN en Google Drive...', { variant: 'info' });
-      const res = await strategicPlanningService.getActionPlanMinutesDriveFolder(selectedPlan.id);
-      const url = res?.folderUrl || res?.data?.folderUrl;
-      if (url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      } else {
-        enqueueSnackbar('La carpeta de actas en Drive se habilitará al sincronizar la primera acta oficial.', { variant: 'warning' });
-      }
-    } catch (e) {
-      console.error('Error al abrir carpeta de actas en Drive:', e);
-      enqueueSnackbar('No fue posible abrir la carpeta de actas en Google Drive.', { variant: 'error' });
-    }
-  };
 
   // Períodos de monitoreo dinámicos del plan (1, 2, 3 o más según la vigencia)
   const periods = useMemo(() => {
@@ -1866,28 +1804,6 @@ export default function PlanAccionConsulta({
                   : `ACTAS DE REUNIÓN · ${(selectedPlan?.organizationalUnit?.name || selectedPlan?.title || 'PLAN DE ACCIÓN').toUpperCase()}`)}
           </Typography>
           <Stack direction="row" spacing={1.5} alignItems="center">
-            {activityViewTab === 'minutes' && (
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={<FolderSharedIcon sx={{ fontSize: 14 }} />}
-                onClick={handleOpenMinutesFolder}
-                sx={{
-                  textTransform: 'none',
-                  fontWeight: 850,
-                  fontSize: 11,
-                  borderRadius: 2,
-                  py: 0.3,
-                  px: 1.4,
-                  bgcolor: '#7e22ce',
-                  color: '#ffffff',
-                  boxShadow: 'none',
-                  '&:hover': { bgcolor: '#6b21a8' }
-                }}
-              >
-                Carpeta en Google Drive
-              </Button>
-            )}
             <Typography sx={{ fontSize: 11, fontWeight: 800, color: activityViewTab === 'responsible' ? '#2f5597' : (activityViewTab === 'co_responsible' ? '#b45309' : '#7e22ce') }}>
               FORMATO OFICIAL DIR-PE-FR-003 · {activityViewTab === 'responsible' ? 'PLAN DE ACCIÓN' : (activityViewTab === 'co_responsible' ? 'EN CORRESPONSABILIDAD' : 'ACTAS DE REUNIÓN')}
             </Typography>
@@ -1936,17 +1852,8 @@ export default function PlanAccionConsulta({
                           No hay actas registradas para este plan de acción
                         </Typography>
                         <Typography sx={{ fontSize: 12, color: '#64748b', maxWidth: 480 }}>
-                          Cada acta de concertación o seguimiento generada por Planeación y Efectividad estará disponible aquí con su enlace directo a la carpeta "ACTAS DE REUNIÓN" en Google Drive.
+                          Cada acta de concertación o seguimiento generada por Planeación y Efectividad estará disponible en este panel para su visualización y consulta inmediata en el visor oficial.
                         </Typography>
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          startIcon={<FolderSharedIcon sx={{ fontSize: 15 }} />}
-                          onClick={handleOpenMinutesFolder}
-                          sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, mt: 1, borderColor: '#c084fc', color: '#7e22ce' }}
-                        >
-                          Ver Carpeta de Actas en Google Drive
-                        </Button>
                       </Stack>
                     </TableCell>
                   </TableRow>
@@ -2007,46 +1914,28 @@ export default function PlanAccionConsulta({
                       </TableCell>
                       <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2 }}>
                         <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
-                          {(acta.driveUrl || acta.driveFileId) ? (
+                          <Tooltip title="Consultar el acta oficial en el visor interno del sistema" arrow>
                             <Button
                               size="small"
                               variant="contained"
-                              startIcon={<FileIcon sx={{ fontSize: 14 }} />}
-                              onClick={() => handleOpenDriveUrl(acta.driveUrl || `https://drive.google.com/file/d/${acta.driveFileId}/view`)}
+                              startIcon={<VisibilityIcon sx={{ fontSize: 14 }} />}
+                              onClick={() => handlePreviewMinute(acta.minuteId, acta.meetingTitle)}
                               sx={{
                                 textTransform: 'none',
                                 fontWeight: 850,
-                                fontSize: 11,
-                                py: 0.4,
-                                px: 1.2,
+                                fontSize: 11.5,
+                                py: 0.45,
+                                px: 1.5,
                                 borderRadius: 2,
-                                bgcolor: '#15803d',
+                                bgcolor: '#1e40af',
+                                color: '#ffffff',
                                 boxShadow: 'none',
-                                '&:hover': { bgcolor: '#166534' }
+                                '&:hover': { bgcolor: '#1d4ed8' }
                               }}
                             >
-                              Ver en Drive
+                              Visor
                             </Button>
-                          ) : null}
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<VisibilityIcon sx={{ fontSize: 14 }} />}
-                            onClick={() => handlePreviewMinute(acta.minuteId, acta.meetingTitle)}
-                            sx={{
-                              textTransform: 'none',
-                              fontWeight: 800,
-                              fontSize: 11,
-                              py: 0.4,
-                              px: 1,
-                              borderRadius: 2,
-                              borderColor: '#cbd5e1',
-                              color: '#334155',
-                              '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8' }
-                            }}
-                          >
-                            Visor
-                          </Button>
+                          </Tooltip>
                         </Stack>
                       </TableCell>
                     </TableRow>
@@ -3044,17 +2933,6 @@ export default function PlanAccionConsulta({
                     sx={{ bgcolor: '#f1f5f9', color: '#64748b', fontWeight: 700, fontSize: 11, height: 28 }}
                   />
                 )}
-                {targetPeriodEvidences.length > 0 && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<FolderSharedIcon sx={{ fontSize: 14 }} />}
-                    onClick={() => handleOpenActivityFolder(targetItem, monitoringForm.period_id)}
-                    sx={{ textTransform: 'none', fontWeight: 750, fontSize: 11, borderRadius: 2, height: 28, py: 0 }}
-                  >
-                    Drive
-                  </Button>
-                )}
               </Box>
             </Stack>
 
@@ -3090,24 +2968,13 @@ export default function PlanAccionConsulta({
                         </Typography>
                       </Stack>
                       <Stack direction="row" spacing={0.5} alignItems="center">
-                        {(ev.drive_url || ev.drive_file_id) && (
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            color="success"
-                            startIcon={<OpenInNewIcon sx={{ fontSize: 12 }} />}
-                            onClick={() => handleOpenDriveUrl(ev.drive_url || `https://drive.google.com/file/d/${ev.drive_file_id}/view`)}
-                            sx={{ textTransform: 'none', fontWeight: 750, fontSize: 10.5, borderRadius: 1.5, py: 0.2, px: 0.8, bgcolor: '#f0fdf4', borderColor: '#86efac', color: '#15803d' }}
-                          >
-                            Drive
-                          </Button>
-                        )}
                         <Button
                           size="small"
-                          variant="text"
+                          variant="outlined"
+                          color="primary"
                           startIcon={<VisibilityIcon sx={{ fontSize: 13 }} />}
                           onClick={() => handlePreviewEvidence(ev)}
-                          sx={{ textTransform: 'none', fontWeight: 750, fontSize: 11, py: 0.2, px: 0.8 }}
+                          sx={{ textTransform: 'none', fontWeight: 750, fontSize: 11, py: 0.2, px: 1, borderRadius: 1.5 }}
                         >
                           Ver
                         </Button>
@@ -3293,16 +3160,6 @@ export default function PlanAccionConsulta({
             </Box>
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center">
-            <Button
-              size="small"
-              variant="outlined"
-              color="primary"
-              startIcon={<FolderSharedIcon sx={{ fontSize: 16 }} />}
-              onClick={() => handleOpenActivityFolder(evidenceItem)}
-              sx={{ textTransform: 'none', fontWeight: 800, fontSize: 11.5, borderRadius: 2 }}
-            >
-              Carpeta en Google Drive
-            </Button>
             <IconButton
               aria-label="cerrar"
               onClick={() => setEvidenceModalOpen(false)}
@@ -3370,7 +3227,7 @@ export default function PlanAccionConsulta({
                             <Chip
                               size="small"
                               icon={<CloudDoneIcon sx={{ fontSize: '13px !important', color: '#16a34a !important' }} />}
-                              label="En Google Drive"
+                              label="En Repositorio Institucional"
                               sx={{ bgcolor: '#f0fdf4', color: '#166534', fontWeight: 750, fontSize: 10.5, height: 20 }}
                             />
                           </>
@@ -3380,27 +3237,6 @@ export default function PlanAccionConsulta({
                   </Stack>
 
                   <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignSelf: { xs: 'flex-end', sm: 'center' } }}>
-                    {(ev.drive_url || ev.drive_file_id) && (
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        color="success"
-                        startIcon={<OpenInNewIcon sx={{ fontSize: 15 }} />}
-                        onClick={() => handleOpenDriveUrl(ev.drive_url || `https://drive.google.com/file/d/${ev.drive_file_id}/view`)}
-                        sx={{
-                          borderRadius: 2,
-                          textTransform: 'none',
-                          fontWeight: 800,
-                          fontSize: 12,
-                          bgcolor: '#f0fdf4',
-                          borderColor: '#86efac',
-                          color: '#15803d',
-                          '&:hover': { bgcolor: '#dcfce7', borderColor: '#4ade80' }
-                        }}
-                      >
-                        Ver en Drive
-                      </Button>
-                    )}
                     <Button
                       size="small"
                       variant="outlined"
@@ -3736,26 +3572,6 @@ export default function PlanAccionConsulta({
             </Box>
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center">
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<FolderSharedIcon sx={{ fontSize: 14 }} />}
-              onClick={handleOpenMinutesFolder}
-              sx={{
-                textTransform: 'none',
-                fontWeight: 850,
-                fontSize: 11,
-                borderRadius: 2,
-                py: 0.3,
-                px: 1.4,
-                bgcolor: '#7e22ce',
-                color: '#ffffff',
-                boxShadow: 'none',
-                '&:hover': { bgcolor: '#6b21a8' }
-              }}
-            >
-              Carpeta en Drive
-            </Button>
             <Tooltip title="Actualizar actas desde el repositorio" arrow>
               <IconButton
                 size="small"
@@ -3855,29 +3671,6 @@ export default function PlanAccionConsulta({
 
                         <TableCell align="center" sx={{ py: 1.2 }}>
                           <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
-                            {(acta.driveUrl || acta.driveFileId) && (
-                              <Tooltip title="Abrir y consultar el acta directamente en Google Drive" arrow>
-                                <Button
-                                  size="small"
-                                  variant="contained"
-                                  startIcon={<FileIcon sx={{ fontSize: 14 }} />}
-                                  onClick={() => handleOpenDriveUrl(acta.driveUrl || `https://drive.google.com/file/d/${acta.driveFileId}/view`)}
-                                  sx={{
-                                    textTransform: 'none',
-                                    fontSize: 11,
-                                    fontWeight: 850,
-                                    py: 0.5,
-                                    px: 1.2,
-                                    borderRadius: 2,
-                                    bgcolor: '#15803d',
-                                    boxShadow: 'none',
-                                    '&:hover': { bgcolor: '#166534' }
-                                  }}
-                                >
-                                  Ver en Drive
-                                </Button>
-                              </Tooltip>
-                            )}
                             {/* Previsualizar en el visor interno de SIAC sin salir a Drive */}
                             <Tooltip title="Previsualizar el documento oficial en el visor interno del sistema" arrow>
                               <Button

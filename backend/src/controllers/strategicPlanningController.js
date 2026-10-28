@@ -3395,6 +3395,11 @@ const retrySync = wrap(async (req, res) => {
 });
 
 const getActionItemDriveFolder = wrap(async (req, res) => {
+  const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user?.role);
+  if (!isPlanningAdmin) {
+    throw Object.assign(new Error('El acceso directo a carpetas de Google Drive está reservado para la Dirección de Planeación y Administradores. Utilice el visor del sistema para consultar los soportes.'), { statusCode: 403 });
+  }
+
   const item = await StrategicActionItem.findByPk(req.params.itemId, {
     include: [{ model: StrategicEvidence, as: 'evidence', where: { deleted_at: null }, required: false }]
   });
@@ -3416,6 +3421,11 @@ const getActionItemDriveFolder = wrap(async (req, res) => {
 });
 
 const getActionPlanMinutesDriveFolder = wrap(async (req, res) => {
+  const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user?.role);
+  if (!isPlanningAdmin) {
+    throw Object.assign(new Error('El acceso directo a carpetas de Google Drive está reservado para la Dirección de Planeación y Administradores. Utilice el visor del sistema para consultar las actas.'), { statusCode: 403 });
+  }
+
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id, {
     include: [
       { model: StrategicMeeting, as: 'meetings', required: false, include: [{ model: StrategicMinuteVersion, as: 'minuteVersions', required: false }] }
