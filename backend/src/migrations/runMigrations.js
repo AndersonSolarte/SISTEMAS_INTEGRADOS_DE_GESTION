@@ -642,37 +642,40 @@ const runMigrations = async () => {
     await models.SecurityRemediationProposal.sync();
     await models.SecurityFindingComment.sync();
     await models.DesplazamientoViaticosSolicitud.sync();
+
+    const legalizacionesTableName = 'viaticos_legalizaciones';
+    await sequelize.query(`
+      ALTER TABLE IF EXISTS "${legalizacionesTableName}"
+      ADD COLUMN IF NOT EXISTS "codigo_verificacion" UUID,
+      ADD COLUMN IF NOT EXISTS "notificacion_retorno_at" TIMESTAMP WITH TIME ZONE,
+      ADD COLUMN IF NOT EXISTS "presentado_at" TIMESTAMP WITH TIME ZONE,
+      ADD COLUMN IF NOT EXISTS "revisado_at" TIMESTAMP WITH TIME ZONE,
+      ADD COLUMN IF NOT EXISTS "revisado_por" INTEGER,
+      ADD COLUMN IF NOT EXISTS "finalizado_at" TIMESTAMP WITH TIME ZONE;
+    `).catch(() => null);
+
+    await sequelize.query(`
+      UPDATE "${legalizacionesTableName}"
+      SET "codigo_verificacion" = md5(random()::text || clock_timestamp()::text || "id"::text)::uuid
+      WHERE "codigo_verificacion" IS NULL;
+    `).catch(() => null);
+
     await models.ViaticosLegalizacion.sync();
     await models.ViaticosLegalizacionAdjunto.sync();
     await models.CronogramaMovilidad.sync();
     await models.CronogramaMovilidadActividad.sync();
-    const legalizacionesTableName = 'viaticos_legalizaciones';
+
     const legalizacionesTable = await qi.describeTable(legalizacionesTableName).catch(() => ({}));
-    if (!legalizacionesTable.codigo_verificacion) {
-      await qi.addColumn(legalizacionesTableName, 'codigo_verificacion', {
-        type: DataTypes.UUID,
-        allowNull: true
-      });
-      await sequelize.query(`
-        UPDATE "${legalizacionesTableName}"
-        SET "codigo_verificacion" = md5(random()::text || clock_timestamp()::text || "id"::text)::uuid
-        WHERE "codigo_verificacion" IS NULL
-      `);
+    if (legalizacionesTable.codigo_verificacion) {
       await qi.changeColumn(legalizacionesTableName, 'codigo_verificacion', {
         type: DataTypes.UUID,
         allowNull: false
-      });
+      }).catch(() => null);
     }
     await qi.addIndex(legalizacionesTableName, ['codigo_verificacion'], {
       name: 'viaticos_legalizaciones_codigo_verificacion_unique',
       unique: true
     }).catch(() => null);
-    if (!legalizacionesTable.notificacion_retorno_at) {
-      await qi.addColumn(legalizacionesTableName, 'notificacion_retorno_at', {
-        type: DataTypes.DATE,
-        allowNull: true
-      }).catch(() => null);
-    }
     await qi.addIndex(legalizacionesTableName, ['fecha_habilitacion'], {
       name: 'viaticos_legalizaciones_fecha_habilitacion_idx'
     }).catch(() => null);
