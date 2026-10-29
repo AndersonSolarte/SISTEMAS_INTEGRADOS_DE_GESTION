@@ -3,7 +3,7 @@ const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const {
   User, StrategicPlan, StrategicTerm, StrategicCatalogItem, StrategicResponsibility,
-  StrategicActionPlan, StrategicReferenceImport
+  StrategicActionPlan, StrategicActionItem, StrategicReferenceImport
 } = require('../models');
 const { sha256, cleanCode } = require('./strategicPlanningDomainService');
 const { ensureAnnualDependenciesForActionPlans } = require('./strategicLegacyActionPlanService');
@@ -214,9 +214,15 @@ const removeTermDependency = async ({ termId, assignmentId, userId }) => sequeli
   // Si la dependencia tiene planes de acción activos en esta vigencia, eliminarlos en cascada
   const plans = await StrategicActionPlan.findAll({ where: { term_id: termId, catalog_item_id: assignment.catalog_item_id, deleted_at: null }, transaction });
   for (const plan of plans) {
+    const deletedCode = `DELETED-${String(plan.id).slice(0, 8)}-${plan.code}`.slice(0, 80);
     await StrategicActionItem.update({ deleted_at: new Date() }, { where: { action_plan_id: plan.id, deleted_at: null }, transaction });
     await StrategicResponsibility.update({ status: 'ended', ends_on: new Date().toISOString().slice(0, 10) }, { where: { action_plan_id: plan.id, status: 'active' }, transaction });
-    await plan.update({ deleted_at: new Date(), updated_by: userId }, { transaction });
+    await plan.update({
+      code: deletedCode,
+      deleted_at: new Date(),
+      updated_by: userId,
+      metadata: { ...(plan.metadata || {}), deleted_original_code: plan.code }
+    }, { transaction });
   }
 
   await assignment.update({ status: 'inactive', ends_on: new Date().toISOString().slice(0, 10), ended_by: userId }, { transaction });
