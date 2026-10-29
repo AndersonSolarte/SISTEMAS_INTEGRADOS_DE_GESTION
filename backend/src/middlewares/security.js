@@ -140,7 +140,10 @@ const sqlInjectionGuard = (req, res, next) => {
     /\bexec(?:ute)?\s*\(/i,
     /\binformation_schema\b/i,
     /\bpg_catalog\b/i,
-    /(?:--|#|\/\*)\s*(?:$|\w)/,
+    // Un # aislado es habitual en direcciones y referencias institucionales.
+    // Solo es sospechoso como comentario cuando sigue a una expresion SQL.
+    /(?:--|\/\*)\s*(?:$|\w)/,
+    /(?:['";]|\b\d+\s*=\s*\d+)\s*#\s*(?:$|\w)/,
     /;\s*(?:select|insert|update|delete|drop|alter|truncate|create)\b/i,
     /\b(?:sleep|pg_sleep|benchmark)\s*\(/i
   ];

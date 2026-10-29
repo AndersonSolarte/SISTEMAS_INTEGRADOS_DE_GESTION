@@ -2,6 +2,37 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { sqlInjectionGuard } = require('./security');
 
+const runSalidaGuard = (salida) => {
+  let response = null;
+  let continued = false;
+  const req = {
+    originalUrl: '/api/reporte-salida/solicitudes', method: 'POST',
+    ip: '127.0.0.1', query: {}, params: {},
+    body: { salida: { tipo: 'proyeccion_social', ...salida } }
+  };
+  const res = { status: (status) => ({ json: (payload) => { response = { status, payload }; } }) };
+  sqlInjectionGuard(req, res, () => { continued = true; });
+  return { response, continued };
+};
+
+test('permite direcciones y referencias con numeral en solicitudes de Proyeccion Social', () => {
+  const result = runSalidaGuard({
+    motivo: 'Proceso de articulación y capacitación, jornada #1',
+    entidadDestino: 'VCV', alcance: 'Regional', municipio: 'Pasto',
+    destinatarioDireccionEmail: 'Carrera 20 # 14-35'
+  });
+  assert.equal(result.continued, true);
+  assert.equal(result.response, null);
+});
+
+test('mantiene el bloqueo de SQL y comentarios maliciosos en solicitudes de salida', () => {
+  for (const motivo of ["' OR 1=1 # comentario", "admin' # comentario", '1=1#', 'UNION SELECT password FROM users', 'DROP TABLE users', 'valor -- comentario', 'valor /* comentario']) {
+    const result = runSalidaGuard({ motivo });
+    assert.equal(result.continued, false, motivo);
+    assert.equal(result.response.status, 400, motivo);
+  }
+});
+
 const runGuard = (originalUrl, signatureLength) => {
   const req = {
     originalUrl,
