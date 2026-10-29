@@ -929,6 +929,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   }, [form.laboral?.dependencia, user?.dependencia]);
 
   const isViaticosAdjuntoRequired = requiresViaticosFlow && !isComunicaciones;
+  const viaticosAdscripcion = String(form.laboral?.vicerrectoria || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const oficioViaticosDescripcion = viaticosAdscripcion.includes('rectoria') && !viaticosAdscripcion.includes('vicerrectoria') && !viaticosAdscripcion.includes('vicerectoria')
+    ? 'oficio de autorización firmado por el Rector'
+    : 'oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece';
 
   const hasCompletedSalidaTime = useMemo(() => {
     if (category === 'salud') {
@@ -1465,7 +1469,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
       if (!form.viaticos?.autorizacionAceptada) issues.push('Debe aceptar la autorización de descuento para solicitar viáticos.');
       if (isViaticosAdjuntoRequired && !adjuntoFile) {
-        issues.push('Debe adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece.');
+        issues.push(`Debe adjuntar el ${oficioViaticosDescripcion}.`);
       }
     }
 
@@ -1602,6 +1606,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     noCuentaAdjuntoSalud,
     requiresViaticosFlow,
     isViaticosAdjuntoRequired,
+    oficioViaticosDescripcion,
     shouldAskViaticos,
     form.salida.motivo,
     form.salida.tiempoReponerHoras,
@@ -1877,7 +1882,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       if (!requiresViaticosFlow) delete payload.viaticos;
 
       if (requiresViaticosFlow && isViaticosAdjuntoRequired && !adjuntoFile) {
-        setErrorMessage('Debe adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece.');
+        setErrorMessage(`Debe adjuntar el ${oficioViaticosDescripcion}.`);
         setSubmitting(false);
         return;
       }
@@ -2996,8 +3001,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   }}
                 >
                   {isComunicaciones
-                    ? 'Oficina de Comunicaciones y Mercadeo: el soporte del oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece es opcional.'
-                    : 'Para la solicitud de viáticos es obligatorio adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece.'}
+                    ? `Oficina de Comunicaciones y Mercadeo: el soporte del ${oficioViaticosDescripcion} es opcional.`
+                    : `Para la solicitud de viáticos es obligatorio adjuntar el ${oficioViaticosDescripcion}.`}
                 </Alert>
               )}
 
@@ -3108,7 +3113,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                           {requiresViaticosFlow
                             ? (isComunicaciones
                               ? 'Adjuntar oficio firmado (Opcional)'
-                              : 'Adjuntar oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece (Obligatorio) *')
+                              : `Adjuntar ${oficioViaticosDescripcion} (Obligatorio) *`)
                             : category === 'salud'
                             ? 'Subir soporte / constancia (Opcional)'
                             : form.salida.duracionTipo !== 'menos_media_jornada'
@@ -3124,7 +3129,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                           {requiresViaticosFlow
                             ? (isComunicaciones
                               ? 'Haga clic para adjuntar el oficio (PDF o imagen) o pegue una captura con Ctrl+V (opcional para Comunicaciones y Mercadeo).'
-                              : 'Haga clic para adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece (PDF o imagen), o pegue una captura con Ctrl+V.')
+                              : `Haga clic para adjuntar el ${oficioViaticosDescripcion} (PDF o imagen), o pegue una captura con Ctrl+V.`)
                             : category === 'salud'
                             ? 'Adjunte PDF, imagen o pegue una captura con Ctrl+V. Si no cuenta con soporte en este momento, marque la declaracion anterior.'
                             : form.salida.duracionTipo !== 'menos_media_jornada'

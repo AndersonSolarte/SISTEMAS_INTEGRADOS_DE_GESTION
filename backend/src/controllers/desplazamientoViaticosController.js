@@ -577,7 +577,14 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
   );
   const uniqueSteps = [];
   const seenKeys = new Set();
-  for (const step of steps) {
+  // Las autorizaciones de Rectoría y de la Vicerrectoría de adscripción
+  // se acreditan mediante el oficio adjunto, no con etapas adicionales.
+  for (const originalStep of steps) {
+    if (originalStep.key === 'vicerrectoria_dependencia') continue;
+    if (originalStep.key === 'rectoria' && !originalStep.fulfillsImmediateBoss) continue;
+    const step = originalStep.key === 'rectoria'
+      ? { ...originalStep, key: 'jefe', label: 'Rector – jefe inmediato' }
+      : originalStep;
     if (!step.email) continue;
     if (isJuanCarlosNandarRequest && step.key === 'financiera_previa') continue;
     if (seenKeys.has(step.key)) continue;
@@ -1339,7 +1346,9 @@ const validatePayload = (body = {}) => {
       || (body.soporteAdjunto && clean(body.soporteAdjunto.filename))
     );
     if (!hasAdjunto) {
-      issues.push('Debe adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece.');
+      issues.push(isRectoriaAssignment(body.laboral)
+        ? 'Debe adjuntar el oficio de autorización firmado por el Rector.'
+        : 'Debe adjuntar el oficio debidamente firmado por el Rector y la Vicerrectoría a la que pertenece.');
     }
   }
   const start = new Date(`${salida.fecha || ''}T${salida.horaInicio || ''}`);

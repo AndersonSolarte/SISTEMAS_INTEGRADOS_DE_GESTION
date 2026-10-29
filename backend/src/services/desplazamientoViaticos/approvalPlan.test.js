@@ -8,7 +8,25 @@ const evangelizationLabor = {
   cargo: 'Instructora de Danzas'
 };
 
-test('Evangelización incluye aprobación de la Vicerrectoría cuando el jefe es diferente', () => {
+test('Las distintas adscripciones usan las seis etapas y mantienen al Rector como jefe cuando corresponde', () => {
+  for (const vicerrectoria of ['Rectoría', 'Vicerrectoría Académica', 'Vicerrectoría Financiera y de Desarrollo Institucional', 'Vicerrectoría de Investigación y Extensión']) {
+    const { steps } = _internals.buildApprovalPlan({
+      personal: { nombre: 'COLABORADOR DE PRUEBA', email: 'prueba@unicesmag.edu.co' },
+      laboral: { dependencia: 'Dependencia de prueba', vicerrectoria, cargo: 'Profesional' },
+      jefe: { nombre: 'Rector', email: 'rectoria@unicesmag.edu.co', cargo: 'Rector' }
+    });
+    assert.deepEqual(steps.map(step => step.key), ['jefe', 'financiera_previa', 'sst', 'gestion_humana', 'tecnico_contable', 'tesoreria']);
+    assert.equal(steps[0].email, 'rectoria@unicesmag.edu.co');
+  }
+});
+
+test('La validación del oficio de adscripción a Rectoría solo pide la firma del Rector', () => {
+  const issues = _internals.validatePayload({ laboral: { dependencia: 'Planeación', vicerrectoria: 'Rectoría', cargo: 'Profesional' } });
+  assert.ok(issues.includes('Debe adjuntar el oficio de autorización firmado por el Rector.'));
+  assert.equal(issues.some(issue => issue.includes('firmado por el Rector y la Vicerrectoría')), false);
+});
+
+test('El oficio reemplaza las etapas adicionales de Vicerrectoría y Rectoría', () => {
   const { steps } = _internals.buildApprovalPlan({
     personal: { nombre: 'ANITA MAGALY ENRIQUEZ JURADO' },
     laboral: evangelizationLabor,
@@ -22,14 +40,12 @@ test('Evangelización incluye aprobación de la Vicerrectoría cuando el jefe es
   assert.deepEqual(steps.map((step) => step.key), [
     'jefe',
     'financiera_previa',
-    'vicerrectoria_dependencia',
     'sst',
-    'rectoria',
     'gestion_humana',
     'tecnico_contable',
     'tesoreria'
   ]);
-  assert.equal(steps.find((step) => step.key === 'vicerrectoria_dependencia').email, 'vicebien@unicesmag.edu.co');
+  assert.equal(steps.some((step) => ['rectoria', 'vicerrectoria_dependencia'].includes(step.key)), false);
 });
 
 test('Evangelización no duplica la aprobación cuando la Vicerrectora es jefe inmediato', () => {
@@ -65,7 +81,7 @@ test('Juan Carlos Nandar no puede revisar financieramente su propia solicitud', 
   });
 
   assert.deepEqual(steps.map((step) => step.key), [
-    'rectoria',
+    'jefe',
     'sst',
     'gestion_humana',
     'tecnico_contable',
@@ -211,7 +227,6 @@ test('No duplica la Vicerrectoria Financiera para sus colaboradores adscritos', 
     'jefe',
     'financiera_previa',
     'sst',
-    'rectoria',
     'gestion_humana',
     'tecnico_contable',
     'tesoreria'

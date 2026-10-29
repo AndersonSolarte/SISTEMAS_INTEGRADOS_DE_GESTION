@@ -146,8 +146,14 @@ const buildWorkbook = async (solicitud, { includeFinancial = true } = {}) => {
   mergeAndSet(sheet, 'H15:I15', 'AUTORIZACIÓN', labelStyle); mergeAndSet(sheet, 'J15:R15', AUTHORIZATION_TEXT, { font: { size: 8 }, alignment: { wrapText: true, vertical: 'middle' } });
   mergeAndSet(sheet, 'A16:C16', `Visto Bueno Jefe Inmediato\n${traceActor(solicitud, 'jefe')}`, valueStyle);
   mergeAndSet(sheet, 'D16:J16', `Vicerrector Financiero y Desarrollo Institucional\n${traceActor(solicitud, 'financiera_final')}`, valueStyle);
-  mergeAndSet(sheet, 'K16:N16', `Vicerrector Dependencia\n${traceActor(solicitud, 'vicerrectoria_dependencia')}`, valueStyle);
-  mergeAndSet(sheet, 'O16:R16', `Visto Bueno Rector\n${traceActor(solicitud, 'rectoria')}`, valueStyle);
+  const hasApprovalStage = (key) => (solicitud.plan_aprobacion || []).some((step) => step.key === key);
+  const adscripcion = String(solicitud.datos_laborales?.vicerrectoria || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  mergeAndSet(sheet, 'K16:N16', hasApprovalStage('vicerrectoria_dependencia')
+    ? `Vicerrector Dependencia\n${traceActor(solicitud, 'vicerrectoria_dependencia')}`
+    : adscripcion.includes('vicerrectoria') || adscripcion.includes('vicerectoria') ? 'Vicerrectoría de adscripción\nAutorización en oficio adjunto' : 'Vicerrectoría de adscripción\nNo aplica', valueStyle);
+  mergeAndSet(sheet, 'O16:R16', hasApprovalStage('rectoria')
+    ? `Visto Bueno Rector\n${traceActor(solicitud, 'rectoria')}`
+    : 'Rectoría\nAutorización en oficio adjunto', valueStyle);
   mergeAndSet(sheet, 'A17:R17', LEGALIZATION_NOTICE, { font: { bold: true, size: 9, color: { argb: 'FFC00000' } }, alignment: { wrapText: true, vertical: 'middle' } });
   addTraceabilitySheet(workbook, solicitud);
   if (!includeFinancial) {
