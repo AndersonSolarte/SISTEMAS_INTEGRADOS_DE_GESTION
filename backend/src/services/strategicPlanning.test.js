@@ -13,7 +13,7 @@ const {
   repositoryName, compactFolderName, compactFileName, intersectsPeriod,
   buildRepositoryPeriods, buildOfficialWorkbook, buildActionRepositoryDriveAuth,
   buildRepositoryEntries, hasUsableActionRepositoryOAuth, repositoryPropertyValue,
-  buildPedFolderName, REPOSITORY_PROPERTY, MAX_APP_PROPERTY_BYTES
+  buildPedFolderName, REPOSITORY_PROPERTY, MAX_APP_PROPERTY_BYTES, parsePeriodDate
 } = require('./actionPlanRepositoryDriveService');
 
 test('workflow institucional contiene el recorrido completo y parametrizable', () => {
@@ -109,6 +109,19 @@ test('cada actividad se ubica solamente en los periodos que intersecta', () => {
   assert.equal(intersectsPeriod({ starts_on: '2027-02-01', ends_on: '2027-04-30' }, first), true);
   assert.equal(intersectsPeriod({ starts_on: '2027-02-01', ends_on: '2027-04-30' }, second), false);
   assert.equal(intersectsPeriod({ starts_on: null, ends_on: null }, second), true);
+  // Soporta formato colombiano DD/MM/YYYY y reprogramación de actividad no cumplida a semestre siguiente
+  assert.equal(parsePeriodDate('20/10/2026'), '2026-10-20');
+  assert.equal(parsePeriodDate('03/03/2026'), '2026-03-03');
+  const s1_2026 = { starts_on: '2026-01-01', ends_on: '2026-07-31' };
+  const s2_2026 = { starts_on: '2026-08-01', ends_on: '2026-12-31' };
+  // Actividad original en marzo (Semestre 1)
+  const actividadMarzo = { starts_on: '03/03/2026', ends_on: '15/03/2026' };
+  assert.equal(intersectsPeriod(actividadMarzo, s1_2026), true);
+  assert.equal(intersectsPeriod(actividadMarzo, s2_2026), false);
+  // Al no cumplirse, se edita a octubre (Semestre 2)
+  const actividadMigradaOctubre = { starts_on: '20/10/2026', ends_on: '22/10/2026' };
+  assert.equal(intersectsPeriod(actividadMigradaOctubre, s1_2026), false);
+  assert.equal(intersectsPeriod(actividadMigradaOctubre, s2_2026), true);
 });
 
 test('el repositorio divide cada vigencia en enero-julio y agosto-diciembre', () => {

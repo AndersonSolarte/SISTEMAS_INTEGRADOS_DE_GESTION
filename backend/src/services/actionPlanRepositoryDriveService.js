@@ -7,7 +7,7 @@ const {
   StrategicPlan, StrategicTerm, StrategicActionPlan, StrategicActionItem,
   StrategicCatalogItem, StrategicMonitoringPeriod, StrategicMonitoringResult,
   StrategicEvidence, StrategicMeeting, StrategicMinuteVersion, StrategicElement,
-  User, StrategicResponsibility
+  User, StrategicResponsibility, StrategicActionItemVersion
 } = require('../models');
 const { Op } = require('sequelize');
 const { generatePlanAccionBuffer } = require('./planAccionExportService');
@@ -272,8 +272,29 @@ const upsertFile = async (drive, { parentId, name, key, mimeType, buffer, hash }
 
 const parsePeriodDate = (val) => {
   if (!val) return null;
-  if (typeof val === 'string') return val.slice(0, 10);
-  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  if (val instanceof Date && !Number.isNaN(val.getTime())) {
+    return val.toISOString().slice(0, 10);
+  }
+  const str = String(val).trim();
+  if (!str) return null;
+  const isoMatch = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    const y = isoMatch[1];
+    const m = isoMatch[2].padStart(2, '0');
+    const d = isoMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const dmyMatch = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmyMatch) {
+    const d = dmyMatch[1].padStart(2, '0');
+    const m = dmyMatch[2].padStart(2, '0');
+    const y = dmyMatch[3];
+    return `${y}-${m}-${d}`;
+  }
+  const dt = new Date(str);
+  if (!Number.isNaN(dt.getTime())) {
+    return dt.toISOString().slice(0, 10);
+  }
   return null;
 };
 
@@ -682,7 +703,8 @@ const syncActionPlanRepositoryTerm = async (termId) => {
         model: StrategicActionItem, as: 'items', where: { deleted_at: null }, required: false,
         include: [
           { model: StrategicMonitoringResult, as: 'monitoringResults', required: false, include: [{ model: StrategicMonitoringPeriod, as: 'period' }] },
-          { model: StrategicEvidence, as: 'evidence', where: { deleted_at: null }, required: false }
+          { model: StrategicEvidence, as: 'evidence', where: { deleted_at: null }, required: false },
+          { model: StrategicActionItemVersion, as: 'versions', required: false }
         ]
       },
       {
@@ -740,7 +762,17 @@ const syncActionPlanRepositoryTerm = async (termId) => {
     for (const item of actionPlan.items || []) {
       counters.activities += 1;
       const evidencePeriodIds = new Set((item.evidence || []).map((file) => String(file.monitoring_period_id)));
-      const applicablePeriods = periods.filter((period) => evidencePeriodIds.has(String(period.id)) || intersectsPeriod(item, period));
+      const monitoringPeriodIds = new Set((item.monitoringResults || []).map((r) => String(r.monitoring_period_id)));
+      const historicalPeriods = (item.versions || []).flatMap((v) => {
+        const snap = v.snapshot || {};
+        return periods.filter((period) => intersectsPeriod(snap, period));
+      });
+      const applicablePeriods = periods.filter((period) =>
+        evidencePeriodIds.has(String(period.id)) ||
+        monitoringPeriodIds.has(String(period.id)) ||
+        historicalPeriods.some((p) => String(p.id) === String(period.id)) ||
+        intersectsPeriod(item, period)
+      );
       for (const period of (applicablePeriods.length ? applicablePeriods : periods)) {
         const activityFolder = await ensureFolder(drive, {
           parentId: periodFolders.get(String(period.id)),
@@ -831,7 +863,17 @@ const syncActionPlanRepositoryTerm = async (termId) => {
 
     for (const item of actionPlan.items || []) {
       const evidencePeriodIds = new Set((item.evidence || []).map((file) => String(file.monitoring_period_id)));
-      const applicablePeriods = periods.filter((period) => evidencePeriodIds.has(String(period.id)) || intersectsPeriod(item, period));
+      const monitoringPeriodIds = new Set((item.monitoringResults || []).map((r) => String(r.monitoring_period_id)));
+      const historicalPeriods = (item.versions || []).flatMap((v) => {
+        const snap = v.snapshot || {};
+        return periods.filter((period) => intersectsPeriod(snap, period));
+      });
+      const applicablePeriods = periods.filter((period) =>
+        evidencePeriodIds.has(String(period.id)) ||
+        monitoringPeriodIds.has(String(period.id)) ||
+        historicalPeriods.some((p) => String(p.id) === String(period.id)) ||
+        intersectsPeriod(item, period)
+      );
       for (const period of (applicablePeriods.length ? applicablePeriods : periods)) {
         const activityFolder = activityFolders.get(`${item.id}:${period.id}`);
         for (const evidence of (item.evidence || []).filter((file) => String(file.monitoring_period_id) === String(period.id))) {
@@ -1016,6 +1058,7 @@ module.exports = {
   compactFolderName,
   compactFileName,
   buildPedFolderName,
+  parsePeriodDate,
   intersectsPeriod,
   buildRepositoryPeriods,
   buildOfficialWorkbook,

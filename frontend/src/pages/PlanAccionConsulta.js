@@ -82,17 +82,34 @@ const getFileIcon = (fileName) => {
   return <FileIcon sx={{ color: '#64748b', fontSize: 22 }} />;
 };
 
+const parsePeriodDateString = (val) => {
+  if (!val) return null;
+  if (typeof val === 'string') {
+    const str = val.trim();
+    const dmy = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+    const iso = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+    return str.slice(0, 10);
+  }
+  if (val instanceof Date && !Number.isNaN(val.getTime())) {
+    return val.toISOString().slice(0, 10);
+  }
+  return null;
+};
+
 // Determina si un período de reporte / seguimiento aplica a una actividad según sus fechas de ejecución
 const isPeriodApplicableToItem = (item, period, allPeriods = []) => {
   if (!item) return true;
   const startRaw = item.starts_on || item.fecha_inicio || item.custom_values?.starts_on || item.custom_values?.fecha_inicio;
   const endRaw = item.ends_on || item.fecha_fin || item.custom_values?.ends_on || item.custom_values?.fecha_fin;
   if (!startRaw && !endRaw) return true;
-  const start = String(startRaw || endRaw).slice(0, 10);
-  const end = String(endRaw || startRaw).slice(0, 10);
+  const start = parsePeriodDateString(startRaw || endRaw);
+  const end = parsePeriodDateString(endRaw || startRaw);
+  if (!start && !end) return true;
 
-  let pStart = period.starts_on ? String(period.starts_on).slice(0, 10) : null;
-  let pEnd = period.ends_on ? String(period.ends_on).slice(0, 10) : null;
+  let pStart = period.starts_on ? parsePeriodDateString(period.starts_on) : null;
+  let pEnd = period.ends_on ? parsePeriodDateString(period.ends_on) : null;
   const year = (start || end).slice(0, 4) || new Date().getFullYear();
   const isS1 = (period.code || '').toUpperCase() === 'S1' || /1|prim/i.test(period.name || '') || period.position === 1;
   const isS2 = (period.code || '').toUpperCase() === 'S2' || /2|seg/i.test(period.name || '') || period.position === 2;
@@ -114,7 +131,7 @@ const isPeriodApplicableToItem = (item, period, allPeriods = []) => {
   }
 
   if (!pStart || !pEnd) return true;
-  return start <= pEnd && end >= pStart;
+  return (start || end) <= pEnd && (end || start) >= pStart;
 };
 
 export default function PlanAccionConsulta({

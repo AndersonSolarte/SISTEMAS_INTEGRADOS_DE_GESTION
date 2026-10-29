@@ -25,7 +25,8 @@ const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailSe
 const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
 const { ensureStrategicPlanningDefaults, DEFAULT_WORKFLOW, DEFAULT_FIELDS } = require('../services/strategicPlanningBootstrap');
 const { sha256, cleanCode, requestMeta, audit, transitionPlan, saveActionItem, upsertMonitoring, findActionPlans } = require('../services/strategicPlanningDomainService');
-const { buildWritableDriveClient, enqueueSync, enqueueActionRepositorySync, reconcileTerm, syncMinute, syncEvidence, getActivityDriveFolder, getMinutesDriveFolder } = require('../services/strategicPlanningDriveService');
+const { buildWritableDriveClient, enqueueSync, enqueueActionRepositorySync, reconcileTerm, syncMinute, syncEvidence, getActivityDriveFolder, ensureActivityFoldersInDrive, getMinutesDriveFolder } = require('../services/strategicPlanningDriveService');
+const { parsePeriodDate } = require('../services/actionPlanRepositoryDriveService');
 const { buildReferenceWorkbook, previewReferenceImport, confirmReferenceImport } = require('../services/strategicReferenceService');
 const { buildPedSchedule, reconcilePlanTerms } = require('../services/strategicPlanSetupService');
 const { buildDynamicActionItemWorkbook, previewDynamicActionItems, confirmDynamicActionItems } = require('../services/strategicDynamicWorkbookService');
@@ -1402,6 +1403,12 @@ const addActionItem = wrap(async (req, res) => {
   await ensureCanModifyActionPlanItems(actionPlan, req);
   await ensureActionPlanSchemaSnapshot(actionPlan);
   const item = await saveActionItem({ req, actionPlan, payload: req.body });
+
+  // Garantizar la creación inmediata de la carpeta en Drive para el periodo de la actividad
+  ensureActivityFoldersInDrive(item.id).catch((err) => {
+    console.warn('[StrategicDrive] No se pudo preparar inmediatamente la carpeta en Drive:', err.message);
+  });
+
   await refreshActionRepository(actionPlan.term_id, req, 'activity_created');
   syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
 
@@ -1593,6 +1600,12 @@ const updateActionItem = wrap(async (req, res) => {
   await ensureCanModifyActionPlanItems(actionPlan, req);
   await ensureActionPlanSchemaSnapshot(actionPlan);
   const updated = await saveActionItem({ req, actionPlan, payload: req.body, item });
+
+  // Garantizar la creación inmediata de la carpeta en Drive para el periodo correspondiente sin borrar el anterior
+  ensureActivityFoldersInDrive(updated.id).catch((err) => {
+    console.warn('[StrategicDrive] No se pudo preparar inmediatamente la carpeta en Drive:', err.message);
+  });
+
   await refreshActionRepository(actionPlan.term_id, req, 'activity_updated');
   syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
   ok(res, updated);
@@ -3409,8 +3422,34 @@ const getActionItemDriveFolder = wrap(async (req, res) => {
     include: [{ model: StrategicEvidence, as: 'evidence', where: { deleted_at: null }, required: false }]
   });
   if (!item) throw Object.assign(new Error('Actividad no encontrada.'), { statusCode: 404 });
-  const periodId = req.query.periodId || null;
-  const syncedEvidence = (item.evidence || []).find((e) => periodId ? (String(e.monitoring_period_id) === String(periodId) && e.drive_folder_id) : e.drive_folder_id);
+
+  let effectivePeriodId = req.query.periodId || null;
+  if (!effectivePeriodId && item.action_plan_id) {
+    const actionPlan = await StrategicActionPlan.findByPk(item.action_plan_id, { attributes: ['term_id'] });
+    if (actionPlan?.term_id) {
+      const periods = await StrategicMonitoringPeriod.findAll({
+        where: { term_id: actionPlan.term_id },
+        order: [['position', 'ASC'], ['starts_on', 'ASC']]
+      });
+      if (periods.length > 0) {
+        const itemStart = parsePeriodDate(item.starts_on || item.custom_values?.starts_on || item.custom_values?.fecha_inicio || item.fecha_inicio);
+        const itemEnd = parsePeriodDate(item.ends_on || item.custom_values?.ends_on || item.custom_values?.fecha_fin || item.fecha_fin || itemStart);
+        const dateToCheck = itemEnd || itemStart;
+        if (dateToCheck) {
+          const month = parseInt(dateToCheck.slice(5, 7), 10);
+          const pIdx = month <= 7 ? 0 : Math.min(1, periods.length - 1);
+          effectivePeriodId = periods[pIdx]?.id || periods[0]?.id;
+        } else {
+          effectivePeriodId = periods[0]?.id;
+        }
+      }
+    }
+  }
+
+  const syncedEvidence = effectivePeriodId
+    ? (item.evidence || []).find((e) => String(e.monitoring_period_id) === String(effectivePeriodId) && e.drive_folder_id)
+    : (item.evidence || []).find((e) => e.drive_folder_id);
+
   if (syncedEvidence) {
     return ok(res, {
       folderId: syncedEvidence.drive_folder_id,
@@ -3418,7 +3457,7 @@ const getActionItemDriveFolder = wrap(async (req, res) => {
     });
   }
   try {
-    const folderInfo = await getActivityDriveFolder(item.id, periodId);
+    const folderInfo = await getActivityDriveFolder(item.id, effectivePeriodId);
     return ok(res, folderInfo);
   } catch (e) {
     return ok(res, { folderId: null, folderUrl: null, message: e.message });

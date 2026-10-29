@@ -6,7 +6,7 @@ const { Op } = require('sequelize');
 const {
   StrategicEvidence, StrategicSyncJob, StrategicActionItem, StrategicActionPlan,
   StrategicCatalogItem, StrategicTerm, StrategicPlan, StrategicMonitoringPeriod,
-  StrategicMinuteVersion, StrategicMeeting
+  StrategicMinuteVersion, StrategicMeeting, StrategicActionItemVersion, StrategicMonitoringResult
 } = require('../models');
 const {
   buildActionRepositoryDriveClient,
@@ -14,7 +14,9 @@ const {
   compactFolderName,
   repositoryName,
   repositoryPropertyValue,
-  REPOSITORY_PROPERTY
+  REPOSITORY_PROPERTY,
+  parsePeriodDate,
+  intersectsPeriod
 } = require('./actionPlanRepositoryDriveService');
 
 const buildWritableDriveClient = () => {
@@ -190,11 +192,11 @@ const ensureEvidenceFolder = async (drive, evidence) => {
   }
   if (!selectedPeriod) {
     // Si no se especifica período, deducir automáticamente por la fecha configurada para la actividad
-    const itemStart = item.starts_on || item.custom_values?.starts_on || item.custom_values?.fecha_inicio || item.fecha_inicio;
-    const itemEnd = item.ends_on || item.custom_values?.ends_on || item.custom_values?.fecha_fin || item.fecha_fin || itemStart;
+    const itemStart = parsePeriodDate(item.starts_on || item.custom_values?.starts_on || item.custom_values?.fecha_inicio || item.fecha_inicio);
+    const itemEnd = parsePeriodDate(item.ends_on || item.custom_values?.ends_on || item.custom_values?.fecha_fin || item.fecha_fin || itemStart);
     const dateToCheck = itemEnd || itemStart;
     if (dateToCheck) {
-      const month = new Date(dateToCheck).getMonth() + 1; // 1 = Ene, 7 = Jul, 8 = Ago, 12 = Dic
+      const month = parseInt(dateToCheck.slice(5, 7), 10); // 1 = Ene, 7 = Jul, 8 = Ago, 12 = Dic
       const periodIdx = month <= 7 ? 0 : Math.min(1, normalizedPeriods.length - 1);
       selectedPeriod = normalizedPeriods[periodIdx] || normalizedPeriods[0];
     } else {
@@ -244,6 +246,76 @@ const getActivityDriveFolder = async (actionItemId, periodId = null) => {
     folderId,
     folderUrl: `https://drive.google.com/drive/folders/${folderId}`
   };
+};
+
+// Garantiza que existan las carpetas en Drive para todos los periodos aplicables a la actividad
+// (tanto los históricos de versiones anteriores sin borrarlos, como el nuevo periodo académico migrado)
+const ensureActivityFoldersInDrive = async (actionItemId) => {
+  const item = await StrategicActionItem.findByPk(actionItemId, {
+    include: [
+      {
+        model: StrategicActionPlan, as: 'actionPlan',
+        include: [
+          { model: StrategicCatalogItem, as: 'organizationalUnit' },
+          { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }] }
+        ]
+      },
+      { model: StrategicActionItemVersion, as: 'versions', required: false },
+      { model: StrategicEvidence, as: 'evidence', where: { deleted_at: null }, required: false },
+      { model: StrategicMonitoringResult, as: 'monitoringResults', required: false }
+    ]
+  });
+  if (!item || !item.actionPlan?.term) return null;
+
+  const drive = buildWritableDriveClient();
+  const periods = await StrategicMonitoringPeriod.findAll({
+    where: { term_id: item.actionPlan.term_id },
+    order: [['position', 'ASC'], ['starts_on', 'ASC']]
+  });
+  const term = item.actionPlan.term;
+  const repoPeriods = periods.map((period, index) => {
+    const isS1 = (period.code || '').toUpperCase() === 'S1' || /1|prim/i.test(period.name || '') || index === 0;
+    return {
+      id: String(period.id),
+      code: period.code,
+      name: period.name,
+      starts_on: isS1 ? `${term.year}-01-01` : `${term.year}-08-01`,
+      ends_on: isS1 ? `${term.year}-07-31` : `${term.year}-12-31`,
+      index
+    };
+  });
+
+  const evidencePeriodIds = new Set((item.evidence || []).map((file) => String(file.monitoring_period_id)));
+  const monitoringPeriodIds = new Set((item.monitoringResults || []).map((r) => String(r.monitoring_period_id)));
+  const historicalPeriods = (item.versions || []).flatMap((v) => {
+    const snap = v.snapshot || {};
+    return repoPeriods.filter((p) => intersectsPeriod(snap, p));
+  });
+
+  const applicablePeriods = repoPeriods.filter((p) =>
+    evidencePeriodIds.has(String(p.id)) ||
+    monitoringPeriodIds.has(String(p.id)) ||
+    historicalPeriods.some((hp) => String(hp.id) === String(p.id)) ||
+    intersectsPeriod(item, p)
+  );
+
+  const targetPeriods = applicablePeriods.length ? applicablePeriods : repoPeriods;
+  const folderResults = [];
+
+  for (const period of targetPeriods) {
+    const folderId = await ensureEvidenceFolder(drive, {
+      action_item_id: item.id,
+      monitoring_period_id: period.id
+    });
+    folderResults.push({
+      periodId: period.id,
+      periodName: period.name,
+      folderId,
+      folderUrl: `https://drive.google.com/drive/folders/${folderId}`
+    });
+  }
+
+  return folderResults;
 };
 
 const ensureActionPlanFolder = async (drive, actionPlan) => {
@@ -533,4 +605,4 @@ const reconcileTerm = async (termId, createdBy) => {
   return { total: evidence.length, pending: pending.length };
 };
 
-module.exports = { buildWritableDriveClient, enqueueSync, enqueueActionRepositorySync, syncEvidence, syncMinute, reconcileTerm, processOneSyncJob, startStrategicPlanningSyncWorker, safeName, getActivityDriveFolder, getMinutesDriveFolder };
+module.exports = { buildWritableDriveClient, enqueueSync, enqueueActionRepositorySync, syncEvidence, syncMinute, reconcileTerm, processOneSyncJob, startStrategicPlanningSyncWorker, safeName, getActivityDriveFolder, ensureActivityFoldersInDrive, getMinutesDriveFolder };
