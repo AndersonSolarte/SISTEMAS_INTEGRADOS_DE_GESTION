@@ -120,16 +120,9 @@ function DashboardLayout() {
         peiCount = visiblePlans.filter((p) => p.status === 'owner_validation').length;
       } catch (_) {}
 
-      let legacyCount = 0;
-      try {
-        const resp = await planAccionWorkflowService.obtenerBadge();
-        const value = Number(resp?.data?.count || 0);
-        legacyCount = Number.isFinite(value) ? value : 0;
-      } catch (_) {}
-
-      const totalBadge = peiCount + legacyCount;
+      const totalBadge = peiCount;
       setPlanAccionPendientes(totalBadge);
-      setHasPlanAccionModulo(hasPeiPlan || legacyCount > 0);
+      setHasPlanAccionModulo(hasPeiPlan);
     } catch (err) {
       setPlanAccionPendientes(0);
       setHasPlanAccionModulo(false);
@@ -179,7 +172,15 @@ function DashboardLayout() {
   useEffect(() => {
     const handleLegalizacionUpdated = () => refrescarLegalizaciones();
     window.addEventListener('legalizacion:updated', handleLegalizacionUpdated);
-    return () => window.removeEventListener('legalizacion:updated', handleLegalizacionUpdated);
+    window.addEventListener('focus', handleLegalizacionUpdated);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refrescarLegalizaciones();
+    }, 60000);
+    return () => {
+      window.removeEventListener('legalizacion:updated', handleLegalizacionUpdated);
+      window.removeEventListener('focus', handleLegalizacionUpdated);
+      window.clearInterval(timer);
+    };
   }, [refrescarLegalizaciones]);
 
   useEffect(() => {
@@ -636,8 +637,8 @@ function DashboardLayout() {
     }
   }
 
-  // === Inyección dinámica del módulo "Plan de Acción" según rol y planes asignados ===
-  if (hasPlanAccionModulo || planAccionPendientes > 0) {
+  // === Inyección dinámica del módulo "Plan de Acción" según rol y vigencia activa ===
+  if (hasPlanAccionModulo) {
     if (user?.role !== ROLES.PLANEACION_ESTRATEGICA && user?.role !== ROLES.PLANEACION_EFECTIVIDAD) {
       const planAccionItem = {
         key: 'plan_accion_consulta',

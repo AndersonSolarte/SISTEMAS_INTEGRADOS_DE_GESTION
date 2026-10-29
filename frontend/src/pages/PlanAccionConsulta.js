@@ -275,11 +275,13 @@ export default function PlanAccionConsulta({
         if (refreshed) {
           setSelectedPlan(refreshed);
         } else {
-          // Si el plan ya no es visible (ej. pasó a ajustes), volver al listado
+          // Si el plan ya no es visible (ej. pasó a ajustes o su plazo/vigencia venció), limpiar selección
           setSelectedPlan(visiblePei.length > 0 ? visiblePei[0] : null);
         }
       } else if (visiblePei.length > 0) {
         setSelectedPlan(visiblePei[0]);
+      } else {
+        setSelectedPlan(null);
       }
 
       // 2. Fallback: Planes legacy (si no hay planes PEI)

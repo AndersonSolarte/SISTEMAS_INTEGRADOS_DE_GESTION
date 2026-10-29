@@ -707,9 +707,17 @@ const updateTerm = wrap(async (req, res) => {
     if (formulationEndsOn) {
       const plans = await StrategicActionPlan.findAll({ where: { term_id: term.id, deleted_at: null } });
       for (const p of plans) {
-        const hasIndividualExtension = Array.isArray(p.metadata?.formulation_extensions) && p.metadata.formulation_extensions.length > 0;
-        // Solo omitir si tiene una prórroga individual explícita otorgada individualmente
-        if (!hasIndividualExtension) {
+        const extensions = Array.isArray(p.metadata?.formulation_extensions) ? p.metadata.formulation_extensions : [];
+        let latestExt = null;
+        for (const ext of extensions) {
+          const extDate = ext.new_deadline || ext.extended_until || ext.ends_on || ext.fecha_limite;
+          if (extDate) {
+            const extIso = String(extDate).slice(0, 10);
+            if (!latestExt || extIso > latestExt) latestExt = extIso;
+          }
+        }
+        // Si no tiene prórroga o si el nuevo plazo global es mayor o igual, se sincroniza el plan
+        if (!latestExt || formulationEndsOn >= latestExt) {
           await p.update({
             metadata: {
               ...(p.metadata || {}),
@@ -752,11 +760,11 @@ const resolvePlanEffectiveSchedule = (plan, term = null) => {
   const globalEndsOn = termMeta.formulation_ends_on || resolvedTerm?.ends_on || (resolvedTerm?.year ? `${resolvedTerm.year}-12-31` : null);
   const globalStartsOn = termMeta.formulation_starts_on || resolvedTerm?.starts_on || (resolvedTerm?.year ? `${resolvedTerm.year}-01-01` : null);
 
-  // 2. Plazo Individual del Plan (prórrogas u override individual en metadata)
+  // 2. Plazo Individual del Plan (prórrogas otorgadas formalmente en metadata)
   const extensions = Array.isArray(planMeta.formulation_extensions) ? planMeta.formulation_extensions : [];
   let latestExtensionDate = null;
   for (const ext of extensions) {
-    const extDate = ext.extended_until || ext.ends_on || ext.fecha_limite;
+    const extDate = ext.new_deadline || ext.extended_until || ext.ends_on || ext.fecha_limite;
     if (extDate) {
       const extIso = String(extDate).slice(0, 10);
       if (!latestExtensionDate || extIso > latestExtensionDate) {
@@ -765,13 +773,10 @@ const resolvePlanEffectiveSchedule = (plan, term = null) => {
     }
   }
 
-  const planEndsOn = planMeta.formulation_ends_on ? String(planMeta.formulation_ends_on).slice(0, 10) : null;
-  let individualEndsOn = null;
-  if (latestExtensionDate && planEndsOn) {
-    individualEndsOn = latestExtensionDate > planEndsOn ? latestExtensionDate : planEndsOn;
-  } else {
-    individualEndsOn = latestExtensionDate || planEndsOn || null;
-  }
+  // REGLA INSTITUCIONAL ESTRICTA:
+  // Un plazo individual ÚNICAMENTE existe si fue otorgado formalmente mediante prórroga individual (formulation_extensions).
+  // Si no hay prórrogas registradas, el plan se rige 100% por el plazo global de la vigencia.
+  const individualEndsOn = latestExtensionDate || null;
 
   const individualStartsOn = planMeta.formulation_starts_on ? String(planMeta.formulation_starts_on).slice(0, 10) : null;
 

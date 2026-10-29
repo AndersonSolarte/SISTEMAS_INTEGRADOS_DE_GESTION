@@ -49,13 +49,13 @@ export const getPlanEffectiveSchedule = (plan) => {
   const globalEndsOn = termMeta.formulation_ends_on || term?.ends_on || (term?.year ? `${term.year}-12-31` : null);
   const globalStartsOn = termMeta.formulation_starts_on || term?.starts_on || (term?.year ? `${term.year}-01-01` : null);
 
-  // 2. Plazo Individual del Plan (prórrogas u override individual en metadata)
+  // 2. Plazo Individual del Plan (prórrogas otorgadas formalmente en metadata)
   const planMeta = plan.metadata || {};
   const extensions = Array.isArray(planMeta.formulation_extensions) ? planMeta.formulation_extensions : [];
 
   let latestExtensionDate = null;
   for (const ext of extensions) {
-    const extDate = ext.extended_until || ext.ends_on || ext.fecha_limite;
+    const extDate = ext.new_deadline || ext.extended_until || ext.ends_on || ext.fecha_limite;
     if (extDate) {
       const extIso = String(extDate).slice(0, 10);
       if (!latestExtensionDate || extIso > latestExtensionDate) {
@@ -64,14 +64,11 @@ export const getPlanEffectiveSchedule = (plan) => {
     }
   }
 
-  // La fecha individual es la mayor entre la última prórroga registrada y el formulation_ends_on del plan
-  const planEndsOn = planMeta.formulation_ends_on ? String(planMeta.formulation_ends_on).slice(0, 10) : null;
-  let individualEndsOn = null;
-  if (latestExtensionDate && planEndsOn) {
-    individualEndsOn = latestExtensionDate > planEndsOn ? latestExtensionDate : planEndsOn;
-  } else {
-    individualEndsOn = latestExtensionDate || planEndsOn || null;
-  }
+  // REGLA INSTITUCIONAL ESTRICTA:
+  // Un plazo individual ÚNICAMENTE existe si fue otorgado formalmente mediante una prórroga individual (formulation_extensions).
+  // Si no hay prórrogas registradas, el plan no tiene plazo individual propio y se rige 100% por el plazo global de la vigencia.
+  // (NO tomar planMeta.formulation_ends_on como prórroga individual para evitar arrastrar fechas por defecto cuando Planeación reduce o cierra el plazo general).
+  const individualEndsOn = latestExtensionDate || null;
 
   const individualStartsOn = planMeta.formulation_starts_on ? String(planMeta.formulation_starts_on).slice(0, 10) : null;
 

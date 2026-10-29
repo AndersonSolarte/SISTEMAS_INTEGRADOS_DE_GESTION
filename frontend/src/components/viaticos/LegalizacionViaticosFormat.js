@@ -7,6 +7,7 @@ import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import logoFormatos from '../../assets/logoFormatos';
 
 const currency = (value) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value || 0));
+const EMPTY_DETAILS = [];
 const formatDate = (value) => value ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' }).format(new Date(`${String(value).slice(0, 10)}T12:00:00`)) : 'Sin registrar';
 
 export default function LegalizacionViaticosFormat({
@@ -25,7 +26,7 @@ export default function LegalizacionViaticosFormat({
   onOpenSupport,
   demo = false
 }) {
-  const details = legalizacion?.detalles || [];
+  const details = legalizacion?.detalles || EMPTY_DETAILS;
   const attachments = legalizacion?.adjuntos || [];
   const salida = solicitud?.datos_salida || {};
   const viaticos = solicitud?.datos_viaticos || {};
@@ -55,6 +56,7 @@ export default function LegalizacionViaticosFormat({
     };
   }, [details, values]);
   const collaboratorMode = mode === 'collaborator';
+  const emailCustody = legalizacion?.estado === 'finalizada' && attachments.some((file) => file.disponibleEnCorreo);
 
   return (
     <Paper variant="outlined" sx={{ borderRadius: { xs: 2.5, md: 3.5 }, overflow: 'hidden', bgcolor: '#fff', borderColor: '#cbd5e1' }}>
@@ -72,6 +74,7 @@ export default function LegalizacionViaticosFormat({
       </Box>
 
       <Box sx={{ p: { xs: 1.7, md: 2.5 } }}>
+        {emailCustody && <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>Los documentos y soportes finales fueron entregados por correo institucional. Este expediente conserva los valores, las firmas y los datos de trazabilidad.</Alert>}
         {demo && <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>Formato demostrativo. Puede probar la edición de valores, pero los cambios no se guardan ni generan actuaciones reales.</Alert>}
         <Paper elevation={0} sx={{ mb: 2.2, p: { xs: 1.5, md: 2 }, borderRadius: 3, border: '1px solid #dbe5f1', bgcolor: '#f8fbff' }}>
           <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} gap={1} sx={{ mb: 1.5 }}>
@@ -107,7 +110,7 @@ export default function LegalizacionViaticosFormat({
               <Box sx={cellSx}><Typography sx={{ display: { md: 'none' } }} variant="caption" color="text.secondary">Anticipo</Typography><Typography fontWeight={800} color="#172033">{currency(item.valorAnticipo)}</Typography></Box>
               <Box sx={cellSx}><TextField label={editable ? 'Valor legalizado' : undefined} type="number" size="small" disabled={!editable} value={values[item.id] ?? item.valorLegalizado ?? ''} onChange={(event) => onValueChange?.(item.id, event.target.value)} inputProps={{ min: 0, step: 1 }} /></Box>
               <Box sx={cellSx}><Typography sx={{ display: { md: 'none' } }} variant="caption" color="text.secondary">Diferencia</Typography><Typography fontWeight={900} color="#172033">{currency(difference)}</Typography></Box>
-              <Box sx={{ ...cellSx, borderRight: 0 }}>{collaboratorMode ? <Stack spacing={.4}><FormControlLabel sx={{ m: 0 }} control={<Checkbox checked={Boolean(selectedConcepts[item.id])} onChange={(event) => onConceptToggle?.(item.id, event.target.checked)} disabled={!editable} />} label="Incluir soporte (opcional)" /><Button component="label" variant={files[item.id] ? 'contained' : 'outlined'} startIcon={<UploadFileRoundedIcon />} disabled={!editable || !selectedConcepts[item.id]} sx={{ textTransform: 'none', justifyContent: 'flex-start' }}>{files[item.id]?.name || 'Adjuntar soporte'}<input hidden type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => onFileChange?.(item.id, event.target.files?.[0])} /></Button></Stack> : <Button variant="outlined" disabled={!support} startIcon={<AttachFileRoundedIcon />} onClick={() => support && onOpenSupport?.(support)} sx={{ color: '#172033', borderColor: '#94a3b8', textTransform: 'none', justifyContent: 'flex-start', overflow: 'hidden', '&:hover': { borderColor: '#172033', bgcolor: '#f8fafc' } }}>{support?.originalName || 'Sin soporte adjunto'}</Button>}</Box>
+              <Box sx={{ ...cellSx, borderRight: 0 }}>{collaboratorMode ? <Stack spacing={.4}><FormControlLabel sx={{ m: 0 }} control={<Checkbox checked={Boolean(selectedConcepts[item.id])} onChange={(event) => onConceptToggle?.(item.id, event.target.checked)} disabled={!editable} />} label="Incluir soporte (opcional)" /><Button component="label" variant={files[item.id] ? 'contained' : 'outlined'} startIcon={<UploadFileRoundedIcon />} disabled={!editable || !selectedConcepts[item.id]} sx={{ textTransform: 'none', justifyContent: 'flex-start' }}>{files[item.id]?.name || 'Adjuntar soporte'}<input hidden type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => onFileChange?.(item.id, event.target.files?.[0])} /></Button></Stack> : <Button variant="outlined" disabled={!support || support.disponibleEnCorreo} startIcon={<AttachFileRoundedIcon />} onClick={() => support && onOpenSupport?.(support)} sx={{ color: '#172033', borderColor: '#94a3b8', textTransform: 'none', justifyContent: 'flex-start', overflow: 'hidden', '&:hover': { borderColor: '#172033', bgcolor: '#f8fafc' } }}>{support?.disponibleEnCorreo ? `${support.originalName} · Entregado por correo` : support?.originalName || 'Sin soporte adjunto'}</Button>}</Box>
             </Box>;
           })}
           {details.length === 0 && <Alert severity="warning" sx={{ m: 1.5 }}>No hay conceptos registrados en esta legalización.</Alert>}

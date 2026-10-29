@@ -1,512 +1,180 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Grid,
-  InputAdornment,
-  Paper,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
-  Tooltip,
-  Typography
-} from '@mui/material';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Box, Button, Chip, CircularProgress, InputAdornment, Paper, Stack, TextField, Typography } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
-import VisibilityIcon from '@mui/icons-material/Visibility';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
+import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
 import { getMisLegalizaciones, presentarLegalizacion } from '../services/legalizacionViaticosService';
 import LegalizacionViaticosFormat from '../components/viaticos/LegalizacionViaticosFormat';
 
-const labels = {
-  pendiente_habilitacion: 'Pendiente de fecha de regreso',
-  pendiente_legalizacion: 'Habilitada para legalizar',
-  legalizacion_vencida: 'Legalización vencida',
-  en_revision: 'En revisión del Técnico Contable',
-  finalizada: 'Legalización finalizada'
-};
-
-const stateConfigs = {
-  pendiente_habilitacion: { color: 'warning', bg: '#fff7ed', border: '#fdba74', icon: HourglassEmptyIcon, label: 'En viaje / Pendiente regreso' },
-  pendiente_legalizacion: { color: 'primary', bg: '#eff6ff', border: '#93c5fd', icon: EventAvailableIcon, label: 'Habilitada para legalizar' },
-  legalizacion_vencida: { color: 'error', bg: '#fef2f2', border: '#fca5a5', icon: WarningAmberIcon, label: 'Legalización vencida' },
-  en_revision: { color: 'secondary', bg: '#faf5ff', border: '#d8b4fe', icon: HourglassEmptyIcon, label: 'En revisión' },
-  finalizada: { color: 'success', bg: '#f0fdf4', border: '#86efac', icon: CheckCircleOutlineIcon, label: 'Finalizada' }
-};
-
-const formatCop = (value) => `$${Number(value || 0).toLocaleString('es-CO')}`;
+const pendingStates = ['pendiente_legalizacion', 'legalizacion_vencida'];
+const formatCop = (value) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value || 0));
+const formatDate = (value) => value ? new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${String(value).slice(0, 10)}T12:00:00Z`)) : 'Sin registrar';
+const advanceTotal = (row) => Number(row.solicitud?.liquidacion?.totalAnticipo) || (row.legalizacion?.detalles || []).reduce((sum, item) => sum + Number(item.valorAnticipo || 0), 0);
 
 export default function LegalizacionViaticos() {
   const { enqueueSnackbar } = useSnackbar();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [rows, setRows] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterState, setFilterState] = useState('PENDING');
-
-  // Form states when viewing a single legalización
+  const [filterState, setFilterState] = useState('ALL');
   const [values, setValues] = useState({});
   const [files, setFiles] = useState({});
   const [selectedConcepts, setSelectedConcepts] = useState({});
   const [observaciones, setObservaciones] = useState('');
   const [sending, setSending] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const result = await getMisLegalizaciones();
-      const list = result.data || [];
-      setRows(list);
+      setRows((result.data || []).filter((row) => pendingStates.includes(row.legalizacion?.estado)));
+      window.dispatchEvent(new CustomEvent('legalizacion:updated'));
     } catch (error) {
+      setLoadError(true);
       enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar las legalizaciones.', { variant: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  };
+    } finally { setLoading(false); }
+  }, [enqueueSnackbar]);
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, [load]);
 
-  // Filtered rows for the list table
   const filteredRows = useMemo(() => {
+    const search = searchTerm.toLocaleLowerCase('es').trim();
     return rows.filter((row) => {
       const sol = row.solicitud || {};
-      const leg = row.legalizacion || {};
-      const search = searchTerm.toLowerCase().trim();
-      const matchSearch = !search ||
-        (sol.consecutivo || '').toLowerCase().includes(search) ||
-        (sol.datos_viaticos?.lugarVisitar || sol.datos_salida?.municipio || '').toLowerCase().includes(search);
-      let matchState = true;
-      if (filterState === 'PENDING') {
-        matchState = leg.estado !== 'finalizada';
-      } else if (filterState !== 'ALL') {
-        matchState = leg.estado === filterState;
-      }
-      return matchSearch && matchState;
-    });
+      const searchable = `${sol.consecutivo || ''} ${sol.datos_viaticos?.lugarVisitar || sol.datos_salida?.municipio || ''}`.toLocaleLowerCase('es');
+      return (!search || searchable.includes(search)) && (filterState === 'ALL' || row.legalizacion.estado === filterState);
+    }).sort((a, b) => String(a.legalizacion.fecha_limite || '9999').localeCompare(String(b.legalizacion.fecha_limite || '9999')));
   }, [rows, searchTerm, filterState]);
 
-  // Statistics counts
-  const stats = useMemo(() => {
-    const total = rows.length;
-    const pendientes = rows.filter((r) => ['pendiente_legalizacion', 'legalizacion_vencida'].includes(r.legalizacion?.estado)).length;
-    const enViaje = rows.filter((r) => r.legalizacion?.estado === 'pendiente_habilitacion').length;
-    const enRevision = rows.filter((r) => r.legalizacion?.estado === 'en_revision').length;
-    const finalizadas = rows.filter((r) => r.legalizacion?.estado === 'finalizada').length;
-    return { total, pendientes, enViaje, enRevision, finalizadas };
-  }, [rows]);
-
-  const handleOpenRow = (row) => {
+  const overdue = rows.filter((row) => row.legalizacion.estado === 'legalizacion_vencida').length;
+  const openRow = (row) => {
     setSelectedRow(row);
-    setValues({});
-    setFiles({});
-    setSelectedConcepts({});
-    setObservaciones(row.legalizacion?.observaciones || '');
-  };
-
-  const handleBackToList = () => {
-    setSelectedRow(null);
+    setValues({}); setFiles({}); setSelectedConcepts({});
+    setObservaciones(row.legalizacion.observaciones || '');
   };
 
   const submit = async () => {
-    if (!selectedRow) return;
+    if (!selectedRow || sending) return;
     const details = selectedRow.legalizacion.detalles || [];
-    const missingValue = details.find((item) => values[item.id] === undefined || values[item.id] === '');
-    if (missingValue) {
-      return enqueueSnackbar(`Ingrese el valor legalizado de ${missingValue.detalle}.`, { variant: 'warning' });
-    }
-    const selectedWithoutFile = details.find((item) => selectedConcepts[item.id] && !files[item.id]);
-    if (selectedWithoutFile) {
-      return enqueueSnackbar(`Seleccione el archivo de soporte de ${selectedWithoutFile.detalle} o desmarque "Incluir soporte".`, { variant: 'warning' });
-    }
+    const invalid = details.find((item) => values[item.id] === undefined || values[item.id] === '' || !Number.isFinite(Number(values[item.id])) || Number(values[item.id]) < 0);
+    if (invalid) return enqueueSnackbar(`Ingrese un valor válido para ${invalid.detalle}.`, { variant: 'warning' });
+    const missing = details.find((item) => selectedConcepts[item.id] && !files[item.id]);
+    if (missing) return enqueueSnackbar(`Adjunte el soporte de ${missing.detalle} o desmarque "Incluir soporte".`, { variant: 'warning' });
     const form = new FormData();
     form.append('detalles', JSON.stringify(details.map((item) => ({ id: item.id, valorLegalizado: Number(values[item.id]) }))));
     form.append('observaciones', observaciones);
-    details.forEach((item) => {
-      if (selectedConcepts[item.id] && files[item.id]) form.append(`soporte_${item.id}`, files[item.id]);
-    });
-
+    details.forEach((item) => { if (selectedConcepts[item.id] && files[item.id]) form.append(`soporte_${item.id}`, files[item.id]); });
     setSending(true);
     try {
       const result = await presentarLegalizacion(selectedRow.legalizacion.id, form);
-      enqueueSnackbar(result.message || 'Legalización enviada con éxito.', { variant: 'success' });
+      enqueueSnackbar(result.message || 'Legalización presentada al Técnico Contable.', { variant: result.emailSent === false ? 'warning' : 'success' });
+      setRows((current) => current.filter((row) => row.legalizacion.id !== selectedRow.legalizacion.id));
       setSelectedRow(null);
       window.dispatchEvent(new CustomEvent('legalizacion:updated'));
       await load();
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'No fue posible presentar la legalización.', { variant: 'error' });
-    } finally {
-      setSending(false);
-    }
+    } finally { setSending(false); }
   };
 
-  if (loading) {
-    return (
-      <Box sx={{ minHeight: 380, display: 'grid', placeItems: 'center' }}>
-        <CircularProgress size={44} />
-      </Box>
-    );
-  }
+  if (loading) return <Box role="status" aria-label="Cargando legalizaciones" sx={{ minHeight: 380, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>;
+  if (loadError) return <Alert severity="error" action={<Button color="inherit" onClick={load}>Reintentar</Button>}>No pudimos consultar sus pendientes. Intente nuevamente.</Alert>;
 
-  // -------------------------------------------------------------
-  // VIEW MODE: Single Legalización Form
-  // -------------------------------------------------------------
   if (selectedRow) {
-    const active = selectedRow;
-    const editable = ['pendiente_legalizacion', 'legalizacion_vencida'].includes(active.legalizacion.estado);
-    const cfg = stateConfigs[active.legalizacion.estado] || {};
-
+    const { solicitud, legalizacion } = selectedRow;
     return (
-      <Box sx={{ maxWidth: 1140, mx: 'auto' }}>
-        <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2.5 }}>
-          <Button
-            startIcon={<ArrowBackIcon />}
-            onClick={handleBackToList}
-            variant="outlined"
-            sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 700, borderColor: '#cbd5e1', color: '#0b3a6f' }}
-          >
-            Volver a mis legalizaciones
-          </Button>
-          <Box sx={{ flexGrow: 1 }}>
-            <Typography variant="h5" sx={{ fontWeight: 900, color: '#0b3a6f' }}>
-              Legalización {active.solicitud.consecutivo}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Lugar: {active.solicitud.datos_viaticos?.lugarVisitar || active.solicitud.datos_salida?.municipio || 'No registrado'}
-            </Typography>
+      <Box sx={{ width: '100%', minWidth: 0, pb: 3 }}>
+        <Stack direction={{ xs: 'column', lg: 'row' }} alignItems={{ xs: 'stretch', lg: 'center' }} gap={2} sx={{ mb: 3 }}>
+          <Button disabled={sending} startIcon={<ArrowBackIcon />} onClick={() => setSelectedRow(null)} variant="outlined" sx={{ alignSelf: 'flex-start', borderRadius: 3, textTransform: 'none' }}>Volver a pendientes</Button>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography component="h1" sx={{ fontWeight: 900, color: '#0b3a6f', fontSize: { xs: 21, md: 28 }, overflowWrap: 'anywhere' }}>Legalizar {solicitud.consecutivo}</Typography>
+            <Typography color="text.secondary" variant="body2">Registre lo utilizado en cada concepto autorizado y adjunte los soportes correspondientes.</Typography>
           </Box>
-          <Chip
-            color={cfg.color || 'primary'}
-            label={labels[active.legalizacion.estado] || active.legalizacion.estado}
-            sx={{ fontWeight: 800, fontSize: 13, py: 0.5 }}
-          />
+          <Chip icon={<EventAvailableIcon />} label={`Fecha límite: ${formatDate(legalizacion.fecha_limite)}`} sx={{ alignSelf: 'flex-start', maxWidth: '100%' }} />
         </Stack>
-
-        {active.legalizacion.estado === 'legalizacion_vencida' && (
-          <Alert severity="error" sx={{ mb: 2.5, borderRadius: '8px', border: '1px solid #fca5a5' }}>
-            <strong>Plazo vencido:</strong> El plazo de tres (3) días hábiles siguientes al regreso venció. La obligación continúa pendiente y debe ser legalizada a la brevedad conforme al Acuerdo 001 de 2013.
-          </Alert>
-        )}
-        {active.legalizacion.estado === 'pendiente_habilitacion' && (
-          <Alert severity="info" sx={{ mb: 2.5, borderRadius: '8px', border: '1px solid #93c5fd' }}>
-            <strong>Desplazamiento en curso:</strong> El formulario de legalización se habilitará en la fecha de regreso ({active.legalizacion.fecha_habilitacion}).
-          </Alert>
-        )}
-        {active.legalizacion.estado === 'en_revision' && (
-          <Alert severity="warning" sx={{ mb: 2.5, borderRadius: '8px', border: '1px solid #fdba74' }}>
-            <strong>En revisión:</strong> Esta legalización se encuentra en revisión por parte del Técnico Contable.
-          </Alert>
-        )}
-        {active.legalizacion.estado === 'finalizada' && (
-          <Alert severity="success" sx={{ mb: 2.5, borderRadius: '8px', border: '1px solid #86efac' }}>
-            <strong>Legalización finalizada:</strong> La legalización fue aprobada y cerrada formalmente en el sistema.
-          </Alert>
-        )}
-
-        <LegalizacionViaticosFormat
-          solicitud={active.solicitud}
-          legalizacion={active.legalizacion}
-          mode="collaborator"
-          editable={editable}
-          values={values}
-          onValueChange={(id, value) => setValues((current) => ({ ...current, [id]: value }))}
-          selectedConcepts={selectedConcepts}
-          onConceptToggle={(id, checked) => setSelectedConcepts((current) => ({ ...current, [id]: checked }))}
-          files={files}
-          onFileChange={(id, file) => setFiles((current) => ({ ...current, [id]: file }))}
-          observations={observaciones}
-          onObservationsChange={setObservaciones}
-        />
-
-        {editable && (
-          <Box sx={{ mt: 3, textAlign: 'center' }}>
-            <Button
-              onClick={submit}
-              disabled={sending}
-              variant="contained"
-              size="large"
-              startIcon={sending ? <CircularProgress size={20} color="inherit" /> : <ReceiptLongRoundedIcon />}
-              sx={{
-                py: 1.5,
-                px: 4,
-                borderRadius: '10px',
-                textTransform: 'none',
-                fontWeight: 850,
-                fontSize: 15,
-                background: 'linear-gradient(135deg,#0b3a6f,#1e40af)',
-                boxShadow: '0 4px 14px rgba(11,58,111,0.35)',
-                '&:hover': { background: 'linear-gradient(135deg,#1e40af,#1d4ed8)' }
-              }}
-            >
-              Enviar legalización al Técnico Contable
-            </Button>
-          </Box>
-        )}
+        {legalizacion.estado === 'legalizacion_vencida' && <Alert severity="warning" sx={{ mb: 2, borderRadius: 3 }}>El plazo registrado venció. Aún puede presentar su legalización para completar la obligación.</Alert>}
+        <LegalizacionViaticosFormat solicitud={solicitud} legalizacion={legalizacion} mode="collaborator" editable={!sending}
+          values={values} onValueChange={(id, value) => setValues((current) => ({ ...current, [id]: value }))}
+          selectedConcepts={selectedConcepts} onConceptToggle={(id, checked) => setSelectedConcepts((current) => ({ ...current, [id]: checked }))}
+          files={files} onFileChange={(id, file) => setFiles((current) => ({ ...current, [id]: file }))}
+          observations={observaciones} onObservationsChange={setObservaciones} />
+        <Paper elevation={0} sx={{ mt: 2, p: { xs: 2, md: 3 }, borderRadius: 3, border: '1px solid #dbe5f1' }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ md: 'center' }} gap={2}>
+            <Box sx={{ flex: 1 }}><Typography fontWeight={800}>¿Todo está listo?</Typography><Typography variant="body2" color="text.secondary">Al enviar, el Técnico Contable revisará la legalización. Esta solicitud saldrá de sus pendientes.</Typography></Box>
+            <Button onClick={submit} disabled={sending} variant="contained" size="large" startIcon={sending ? <CircularProgress size={20} color="inherit" /> : <ReceiptLongRoundedIcon />} sx={{ borderRadius: 3, textTransform: 'none', px: 3, py: 1.5, fontWeight: 800 }}>Enviar al Técnico Contable</Button>
+          </Stack>
+        </Paper>
       </Box>
     );
   }
 
-  // -------------------------------------------------------------
-  // DASHBOARD LIST MODE: Table of Legalizaciones
-  // -------------------------------------------------------------
+  if (rows.length === 0) return (
+    <Paper elevation={0} sx={{ width: '100%', boxSizing: 'border-box', py: { xs: 5, md: 9 }, px: 3, textAlign: 'center', borderRadius: 4, border: '1px solid #dbe5f1' }}>
+      <CheckCircleOutlineIcon sx={{ fontSize: 62, color: '#059669', mb: 2 }} />
+      <Typography component="h1" variant="h5" fontWeight={900} color="#0b3a6f">Está al día con sus legalizaciones</Typography>
+      <Typography sx={{ mt: 1, maxWidth: 580, mx: 'auto', color: 'text.secondary' }}>No tiene legalizaciones pendientes por presentar. Esta opción se oculta del menú y volverá a aparecer si tiene una nueva comisión habilitada para legalizar.</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Las copias de sus documentos se envían a su correo institucional.</Typography>
+      <Button variant="contained" onClick={() => navigate('/dashboard')} sx={{ mt: 3, borderRadius: 3, textTransform: 'none' }}>Volver al inicio</Button>
+    </Paper>
+  );
+
   return (
-    <Box sx={{ maxWidth: 1140, mx: 'auto' }}>
-      {/* Header section */}
-      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} gap={2} sx={{ mb: 3 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 900, color: '#0b3a6f', letterSpacing: '-0.5px' }}>
-            Legalización de viáticos
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Consulte y gestione la legalización de sus anticipos de viáticos y gastos de viaje.
-          </Typography>
-        </Box>
-      </Stack>
-
-      {/* KPI Cards Summary */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-            <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-              <Typography variant="caption" sx={{ fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>Total Legalizaciones</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 900, color: '#0b3a6f', mt: 0.5 }}>{stats.total}</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderRadius: '12px', border: '1.5px solid #93c5fd', bgcolor: '#eff6ff', boxShadow: '0 2px 8px rgba(37,99,235,0.06)' }}>
-            <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-              <Typography variant="caption" sx={{ fontWeight: 800, color: '#1e40af', textTransform: 'uppercase' }}>Por Legalizar / En Viaje</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 900, color: '#1d4ed8', mt: 0.5 }}>{stats.pendientes}</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderRadius: '12px', border: '1.5px solid #d8b4fe', bgcolor: '#faf5ff', boxShadow: '0 2px 8px rgba(147,51,234,0.06)' }}>
-            <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-              <Typography variant="caption" sx={{ fontWeight: 800, color: '#6b21a8', textTransform: 'uppercase' }}>En Revisión</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 900, color: '#7e22ce', mt: 0.5 }}>{stats.enRevision}</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderRadius: '12px', border: '1.5px solid #86efac', bgcolor: '#f0fdf4', boxShadow: '0 2px 8px rgba(22,101,52,0.06)' }}>
-            <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-              <Typography variant="caption" sx={{ fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>Finalizadas</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 900, color: '#15803d', mt: 0.5 }}>{stats.finalizadas}</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* Filters and Search Bar */}
-      <Paper sx={{ p: 2, mb: 3, borderRadius: '12px', border: '1px solid #cbd5e1', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              size="small"
-              placeholder="Buscar por consecutivo o lugar de destino..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon sx={{ color: '#64748b' }} />
-                  </InputAdornment>
-                )
-              }}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Stack direction="row" spacing={1} justifyContent={{ xs: 'flex-start', md: 'flex-end' }} flexWrap="wrap" gap={0.5}>
-              <Chip
-                label="Todas"
-                onClick={() => setFilterState('ALL')}
-                color={filterState === 'ALL' ? 'primary' : 'default'}
-                variant={filterState === 'ALL' ? 'filled' : 'outlined'}
-                sx={{ fontWeight: 700 }}
-              />
-              <Chip
-                label="Habilitadas"
-                onClick={() => setFilterState('pendiente_legalizacion')}
-                color={filterState === 'pendiente_legalizacion' ? 'primary' : 'default'}
-                variant={filterState === 'pendiente_legalizacion' ? 'filled' : 'outlined'}
-                sx={{ fontWeight: 700 }}
-              />
-              <Chip
-                label="En revisión"
-                onClick={() => setFilterState('en_revision')}
-                color={filterState === 'en_revision' ? 'secondary' : 'default'}
-                variant={filterState === 'en_revision' ? 'filled' : 'outlined'}
-                sx={{ fontWeight: 700 }}
-              />
-              <Chip
-                label="Finalizadas"
-                onClick={() => setFilterState('finalizada')}
-                color={filterState === 'finalizada' ? 'success' : 'default'}
-                variant={filterState === 'finalizada' ? 'filled' : 'outlined'}
-                sx={{ fontWeight: 700 }}
-              />
-            </Stack>
-          </Grid>
-        </Grid>
+    <Box sx={{ width: '100%', minWidth: 0, pb: 3 }}>
+      <Paper elevation={0} sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 4, mb: 3, color: '#fff', background: 'linear-gradient(120deg,#0b284f 0%,#124b86 65%,#2563eb 100%)' }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} gap={2}>
+          <Box sx={{ display: 'grid', placeItems: 'center', p: 1.5, borderRadius: 3, bgcolor: '#ffffff20', alignSelf: 'flex-start' }}><ReceiptLongRoundedIcon sx={{ fontSize: 34 }} /></Box>
+          <Box sx={{ flex: 1 }}><Typography sx={{ fontSize: 11, letterSpacing: 1.2, fontWeight: 800, color: '#bfdbfe', textTransform: 'uppercase' }}>Mi espacio · SIAC</Typography><Typography component="h1" sx={{ fontSize: { xs: 25, md: 34 }, fontWeight: 900, mt: .5 }}>Legalización de viáticos</Typography><Typography sx={{ mt: .8, color: '#dbeafe', fontSize: 14 }}>Complete sus pendientes de viaje. Seleccione una comisión para registrar los gastos y enviar sus soportes.</Typography></Box>
+          <Button color="inherit" variant="outlined" startIcon={<RefreshRoundedIcon />} onClick={load} sx={{ alignSelf: { xs: 'flex-start', sm: 'center' }, borderColor: '#ffffff60', borderRadius: 3, textTransform: 'none' }}>Actualizar</Button>
+        </Stack>
       </Paper>
-
-      {stats.pendientes === 0 && rows.length > 0 && (
-        <Alert severity="success" sx={{ mb: 3, borderRadius: '10px', border: '1px solid #bbf7d0', bgcolor: '#f0fdf4' }}>
-          <strong>No tiene legalizaciones pendientes:</strong> No registra comisiones pendientes por legalizar. El módulo en el menú lateral se activará automáticamente a las 7:00 a. m. de la fecha de regreso de sus próximas comisiones autorizadas.
-        </Alert>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3,minmax(0,1fr))' }, gap: 2, mb: 3 }}>
+        {[
+          { label: 'Pendientes por presentar', value: rows.length, icon: ReceiptLongRoundedIcon, color: '#1d4ed8', bg: '#eff6ff' },
+          { label: 'Con plazo vencido', value: overdue, icon: WarningAmberIcon, color: '#b45309', bg: '#fffbeb' },
+          { label: 'Anticipo por legalizar', value: formatCop(rows.reduce((sum, row) => sum + advanceTotal(row), 0)), icon: EventAvailableIcon, color: '#0b3a6f', bg: '#f1f5f9' }
+        ].map(({ label, value, icon: Icon, color, bg }) => <Paper key={label} elevation={0} sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 3, border: '1px solid #dbe5f1', display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}><Box sx={{ p: 1.2, display: 'flex', borderRadius: 3, bgcolor: bg, color }}><Icon /></Box><Box sx={{ minWidth: 0 }}><Typography sx={{ color: 'text.secondary', fontSize: 12, fontWeight: 700 }}>{label}</Typography><Typography sx={{ fontSize: { xs: 23, lg: 28 }, fontWeight: 900, color, overflowWrap: 'anywhere' }}>{value}</Typography></Box></Paper>)}
+      </Box>
+      <Paper elevation={0} sx={{ p: 2, mb: 3, borderRadius: 3, border: '1px solid #dbe5f1' }}>
+        <Stack direction={{ xs: 'column', lg: 'row' }} gap={2} alignItems={{ lg: 'center' }}>
+          <TextField fullWidth size="small" label="Buscar comisión" placeholder="Consecutivo o destino" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }} sx={{ flex: 1, minWidth: 0, '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
+          <Stack direction="row" flexWrap="wrap" gap={1}>
+            {[['ALL', 'Todas las pendientes'], ['pendiente_legalizacion', 'En plazo'], ['legalizacion_vencida', 'Plazo vencido']].map(([key, label]) => <Chip key={key} label={label} onClick={() => setFilterState(key)} color={filterState === key ? 'primary' : 'default'} variant={filterState === key ? 'filled' : 'outlined'} sx={{ fontWeight: 700 }} />)}
+          </Stack>
+        </Stack>
+      </Paper>
+      <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 2 }}><Typography component="h2" fontWeight={900} color="#0b3a6f" fontSize={19}>Sus comisiones pendientes</Typography><Typography variant="body2" color="text.secondary">{filteredRows.length} de {rows.length}</Typography></Stack>
+      {filteredRows.length === 0 ? <Alert severity="info" sx={{ borderRadius: 3 }}>No hay pendientes que coincidan con su búsqueda o filtro.</Alert> : (
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', md: 'repeat(2,minmax(0,1fr))', xl: 'repeat(3,minmax(0,1fr))' }, gap: 2.5 }}>
+          {filteredRows.map((row) => {
+            const sol = row.solicitud || {}, leg = row.legalizacion;
+            const expired = leg.estado === 'legalizacion_vencida';
+            return <Paper component="article" key={leg.id} elevation={0} sx={{ display: 'flex', flexDirection: 'column', minWidth: 0, p: { xs: 2, md: 2.5 }, borderRadius: 4, border: '1px solid #dbe5f1', borderTop: `3px solid ${expired ? '#f59e0b' : '#2563eb'}`, transition: 'box-shadow .2s', '&:hover': { boxShadow: '0 8px 28px #0b3a6f10' } }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} sx={{ mb: 2 }}><Typography variant="caption" fontWeight={800} color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>{sol.consecutivo}</Typography><Chip size="small" label={expired ? 'Plazo vencido' : 'En plazo'} color={expired ? 'warning' : 'primary'} variant="outlined" sx={{ flexShrink: 0, fontWeight: 700 }} /></Stack>
+              <Stack direction="row" gap={1} alignItems="flex-start"><PlaceOutlinedIcon sx={{ color: '#2563eb', mt: .2 }} /><Typography component="h3" sx={{ fontSize: 18, fontWeight: 800, color: '#0b3a6f', overflowWrap: 'anywhere' }}>{sol.datos_viaticos?.lugarVisitar || sol.datos_salida?.municipio || 'Destino sin registrar'}</Typography></Stack>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 2 }}>{formatDate(sol.datos_salida?.fecha)} — {formatDate(sol.datos_salida?.fechaRegreso)}</Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 2, p: 1.5, borderRadius: 2.5, bgcolor: '#f8fafc', mb: 2 }}>
+                <Box><Typography variant="caption" color="text.secondary">Anticipo recibido</Typography><Typography fontWeight={900} color="#0b3a6f" sx={{ mt: .5, overflowWrap: 'anywhere' }}>{formatCop(advanceTotal(row))}</Typography></Box>
+                <Box><Typography variant="caption" color="text.secondary">Fecha límite</Typography><Typography fontWeight={800} sx={{ mt: .5, color: expired ? '#b45309' : '#0b3a6f' }}>{formatDate(leg.fecha_limite)}</Typography></Box>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, flex: 1 }}>{expired ? 'Puede completar la legalización aunque el plazo haya vencido.' : 'Registre los gastos ejecutados y adjunte sus soportes.'}</Typography>
+              <Button fullWidth variant="contained" endIcon={<ArrowForwardRoundedIcon />} onClick={() => openRow(row)} aria-label={`Legalizar ${sol.consecutivo}`} sx={{ py: 1.2, borderRadius: 2.5, textTransform: 'none', fontWeight: 800, boxShadow: 'none' }}>Legalizar comisión</Button>
+            </Paper>;
+          })}
+        </Box>
       )}
-
-      {/* Main Table */}
-      {filteredRows.length === 0 ? (
-        <Alert severity="info" sx={{ borderRadius: '10px' }}>
-          {rows.length === 0
-            ? 'No tiene solicitudes de desplazamiento pendientes o legalizadas.'
-            : 'No se encontraron legalizaciones con el criterio de búsqueda.'}
-        </Alert>
-      ) : (
-        <TableContainer component={Paper} sx={{ borderRadius: '12px', border: '1.5px solid #0b3a6f', boxShadow: '0 4px 16px rgba(11,58,111,0.08)', overflow: 'hidden' }}>
-          <Table sx={{ minWidth: 700 }}>
-            <TableHead>
-              <TableRow sx={{ bgcolor: '#0b3a6f' }}>
-                <TableCell sx={{ color: '#ffffff', fontWeight: 800, fontSize: 12.5, textTransform: 'uppercase', py: 1.5 }}>Consecutivo</TableCell>
-                <TableCell sx={{ color: '#ffffff', fontWeight: 800, fontSize: 12.5, textTransform: 'uppercase', py: 1.5 }}>Destino / Lugar</TableCell>
-                <TableCell sx={{ color: '#ffffff', fontWeight: 800, fontSize: 12.5, textTransform: 'uppercase', py: 1.5 }}>Fechas del Viaje</TableCell>
-                <TableCell align="right" sx={{ color: '#ffffff', fontWeight: 800, fontSize: 12.5, textTransform: 'uppercase', py: 1.5 }}>Total Anticipo</TableCell>
-                <TableCell align="center" sx={{ color: '#ffffff', fontWeight: 800, fontSize: 12.5, textTransform: 'uppercase', py: 1.5 }}>Estado</TableCell>
-                <TableCell align="center" sx={{ color: '#ffffff', fontWeight: 800, fontSize: 12.5, textTransform: 'uppercase', py: 1.5 }}>Acción</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredRows.map((row) => {
-                const sol = row.solicitud || {};
-                const leg = row.legalizacion || {};
-                const editable = ['pendiente_legalizacion', 'legalizacion_vencida'].includes(leg.estado);
-                const isFuture = leg.estado === 'pendiente_habilitacion';
-                const cfg = stateConfigs[leg.estado] || {};
-                const total = Number(sol.liquidacion?.totalAnticipo) || (leg.detalles || []).reduce((s, i) => s + Number(i.valorAnticipo || 0), 0);
-
-                return (
-                  <TableRow
-                    key={leg.id || sol.id}
-                    hover
-                    sx={{
-                      '&:hover': { bgcolor: '#f8fafc' },
-                      transition: 'background-color 0.2s'
-                    }}
-                  >
-                    <TableCell sx={{ fontWeight: 800, color: '#0b3a6f', fontSize: 13 }}>
-                      {sol.consecutivo || `REG-${leg.id}`}
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13 }}>
-                      {sol.datos_viaticos?.lugarVisitar || sol.datos_salida?.municipio || 'No registrado'}
-                    </TableCell>
-                    <TableCell sx={{ fontSize: 12.5, color: '#334155' }}>
-                      <Box sx={{ fontWeight: 700, color: '#0f172a' }}>{sol.datos_salida?.fecha || ''}</Box>
-                      <Box sx={{ fontSize: 11, color: '#64748b' }}>hasta {sol.datos_salida?.fechaRegreso || ''}</Box>
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 900, color: '#0b3a6f', fontSize: 13.5 }}>
-                      {formatCop(total)}
-                    </TableCell>
-                    <TableCell align="center">
-                      <Chip
-                        color={cfg.color || 'default'}
-                        label={labels[leg.estado] || leg.estado}
-                        size="small"
-                        sx={{ fontWeight: 800, fontSize: 11.5 }}
-                      />
-                    </TableCell>
-                    <TableCell align="center">
-                      {editable ? (
-                        <Button
-                          variant="contained"
-                          size="small"
-                          startIcon={<ReceiptLongRoundedIcon />}
-                          onClick={() => handleOpenRow(row)}
-                          sx={{
-                            borderRadius: '8px',
-                            textTransform: 'none',
-                            fontWeight: 800,
-                            fontSize: 12,
-                            px: 2,
-                            background: leg.estado === 'legalizacion_vencida'
-                              ? 'linear-gradient(135deg,#dc2626,#b91c1c)'
-                              : 'linear-gradient(135deg,#2563eb,#1d4ed8)',
-                            boxShadow: '0 2px 8px rgba(37,99,235,0.25)'
-                          }}
-                        >
-                          Legalizar
-                        </Button>
-                      ) : isFuture ? (
-                        <Tooltip title={`Se habilitará el ${sol.datos_salida?.fechaRegreso || leg.fecha_habilitacion} tras el regreso del viaje`}>
-                          <span>
-                            <Button
-                              variant="outlined"
-                              size="small"
-                              startIcon={<HourglassEmptyIcon />}
-                              onClick={() => handleOpenRow(row)}
-                              sx={{
-                                borderRadius: '8px',
-                                textTransform: 'none',
-                                fontWeight: 700,
-                                fontSize: 12,
-                                borderColor: '#fdba74',
-                                color: '#c2410c',
-                                bgcolor: '#fff7ed',
-                                '&:hover': { bgcolor: '#ffedd5', borderColor: '#fb923c' }
-                              }}
-                            >
-                              En comisión
-                            </Button>
-                          </span>
-                        </Tooltip>
-                      ) : (
-                        <Tooltip title="Ver detalle de la legalización">
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            startIcon={<VisibilityIcon />}
-                            onClick={() => handleOpenRow(row)}
-                            sx={{
-                              borderRadius: '8px',
-                              textTransform: 'none',
-                              fontWeight: 700,
-                              fontSize: 12,
-                              borderColor: '#cbd5e1',
-                              color: '#0b3a6f'
-                            }}
-                          >
-                            Ver detalle
-                          </Button>
-                        </Tooltip>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>Este espacio muestra únicamente solicitudes pendientes de su actuación. Los documentos se envían a su correo institucional.</Typography>
     </Box>
   );
 }
