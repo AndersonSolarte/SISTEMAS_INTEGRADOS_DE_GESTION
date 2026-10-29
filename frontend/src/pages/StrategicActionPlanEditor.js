@@ -1691,6 +1691,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       setTimelineModalOpen(false);
       await load();
       if (onChanged) onChanged();
+      window.dispatchEvent(new CustomEvent('plan_accion:updated'));
     } catch (err) {
       enqueueSnackbar(err?.response?.data?.message || 'No fue posible actualizar el plazo.', { variant: 'error' });
     } finally {

@@ -242,7 +242,7 @@ export default function PlanAccionConsulta({
       let visiblePei = [];
       try {
         const peiResp = await strategicPlanningService.getMyActionPlans();
-        const allPei = Array.isArray(peiResp?.data) ? peiResp.data : [];
+        const allPei = Array.isArray(peiResp?.data) ? peiResp.data : (Array.isArray(peiResp) ? peiResp : []);
         // REGLA INSTITUCIONAL:
         // Visible para el líder únicamente cuando está en:
         // - 'owner_validation' (en revisión / firmas del acta)
@@ -251,7 +251,7 @@ export default function PlanAccionConsulta({
         // Y siempre que la vigencia esté activa y dentro del plazo programado para ellos
         visiblePei = allPei.filter((p) =>
           ['owner_validation', 'active', 'monitoring'].includes(p.status) &&
-          isPlanWithinActiveSchedule(p)
+          (p.is_within_schedule !== undefined ? p.is_within_schedule : isPlanWithinActiveSchedule(p))
         );
       } catch (err) {
         console.error('Error cargando planes PEI:', err);

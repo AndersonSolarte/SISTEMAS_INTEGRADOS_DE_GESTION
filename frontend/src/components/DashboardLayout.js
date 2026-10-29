@@ -111,10 +111,10 @@ function DashboardLayout() {
       let hasPeiPlan = false;
       try {
         const peiResp = await strategicPlanningService.getMyActionPlans();
-        const myPlans = Array.isArray(peiResp?.data) ? peiResp.data : [];
+        const myPlans = Array.isArray(peiResp?.data) ? peiResp.data : (Array.isArray(peiResp) ? peiResp : []);
         const visiblePlans = myPlans.filter((p) =>
           ['owner_validation', 'active', 'monitoring'].includes(p.status) &&
-          isPlanWithinActiveSchedule(p)
+          (p.is_within_schedule !== undefined ? p.is_within_schedule : isPlanWithinActiveSchedule(p))
         );
         hasPeiPlan = visiblePlans.length > 0;
         peiCount = visiblePlans.filter((p) => p.status === 'owner_validation').length;
@@ -168,6 +168,16 @@ function DashboardLayout() {
     window.addEventListener('reposicion:updated', handleReposicionUpdated);
     return () => window.removeEventListener('reposicion:updated', handleReposicionUpdated);
   }, [refrescarBadgeReposicion]);
+
+  useEffect(() => {
+    const handlePlanAccionUpdated = () => refrescarBadgePlanAccion();
+    window.addEventListener('plan_accion:updated', handlePlanAccionUpdated);
+    window.addEventListener('focus', handlePlanAccionUpdated);
+    return () => {
+      window.removeEventListener('plan_accion:updated', handlePlanAccionUpdated);
+      window.removeEventListener('focus', handlePlanAccionUpdated);
+    };
+  }, [refrescarBadgePlanAccion]);
 
   useEffect(() => {
     const handleLegalizacionUpdated = () => refrescarLegalizaciones();
@@ -645,6 +655,7 @@ function DashboardLayout() {
         path: '/dashboard/plan-accion-mi-plan',
         label: 'Plan de Acción',
         icon: <AssignmentTurnedInIcon />,
+        pinnedTop: true,
         badge: planAccionPendientes > 0 ? planAccionPendientes : undefined
       };
       const inicioIdx = menuItems.findIndex((it) => it.key === 'dashboard');

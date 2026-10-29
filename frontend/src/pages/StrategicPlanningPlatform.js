@@ -590,6 +590,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
       enqueueSnackbar(`Plazo general de la vigencia ${generalTimelineModal.term.year} actualizado y aplicado a los planes. Las prórrogas individuales mayores fueron respetadas.`, { variant: 'success' });
       setGeneralTimelineModal({ open: false, term: null, starts_on: '', ends_on: '', saving: false });
       await load();
+      window.dispatchEvent(new CustomEvent('plan_accion:updated'));
     } catch (err) {
       enqueueSnackbar(err?.response?.data?.message || 'No fue posible actualizar el plazo general.', { variant: 'error' });
       setGeneralTimelineModal((prev) => ({ ...prev, saving: false }));
