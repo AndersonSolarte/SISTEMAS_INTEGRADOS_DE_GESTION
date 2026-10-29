@@ -2822,13 +2822,37 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible generar la plantilla dinámica.', { variant: 'error' }); }
   };
   const previewDynamicImport = async (file) => {
-    if (!file) return; const body = new FormData(); body.append('file', file);
-    try { const response = await strategicPlanningService.previewDynamicItems(planId, body); setDynamicImportPreview(response.data); enqueueSnackbar('Archivo revisado. Confirme la carga cuando no existan errores.', { variant: 'success' }); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible revisar la plantilla.', { variant: 'error' }); }
+    if (!file) return;
+    const body = new FormData();
+    body.append('file', file);
+    try {
+      enqueueSnackbar('Procesando plantilla de actividades...', { variant: 'info' });
+      const response = await strategicPlanningService.previewDynamicItems(planId, body);
+      const preview = response.data;
+      if (preview && (!preview.errors || preview.errors.length === 0)) {
+        await strategicPlanningService.confirmDynamicItems(preview.id);
+        setDynamicImportPreview(null);
+        await load();
+        onChanged?.();
+        enqueueSnackbar(`¡Carga masiva exitosa! Se guardaron ${preview.rows?.length || 0} actividades en el Plan de Acción.`, { variant: 'success' });
+      } else {
+        setDynamicImportPreview(preview);
+        enqueueSnackbar(`La plantilla contiene ${preview.errors?.length || 0} observaciones. Revíselas en pantalla.`, { variant: 'warning' });
+      }
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible procesar la plantilla.', { variant: 'error' });
+    }
   };
   const confirmDynamicImport = async () => {
-    try { await strategicPlanningService.confirmDynamicItems(dynamicImportPreview.id); setDynamicImportPreview(null); await load(); onChanged?.(); enqueueSnackbar('Registros creados o actualizados desde Excel.', { variant: 'success' }); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible confirmar la carga.', { variant: 'error' }); }
+    try {
+      await strategicPlanningService.confirmDynamicItems(dynamicImportPreview.id);
+      setDynamicImportPreview(null);
+      await load();
+      onChanged?.();
+      enqueueSnackbar('Registros creados o actualizados desde Excel.', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible confirmar la carga.', { variant: 'error' });
+    }
   };
 
   return (

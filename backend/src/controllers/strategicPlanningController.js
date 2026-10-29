@@ -1580,15 +1580,17 @@ const previewDynamicItems = wrap(async (req, res) => {
 });
 
 const confirmDynamicItems = wrap(async (req, res) => {
-  const importRecord = await StrategicDynamicActionItemImport.findByPk(req.params.importId);
-  if (importRecord) {
-    const actionPlan = await StrategicActionPlan.findByPk(importRecord.action_plan_id);
+  const importRecord = await StrategicHistoricalImport.findByPk(req.params.importId);
+  if (!importRecord) throw Object.assign(new Error('Registro de importación no encontrado.'), { statusCode: 404 });
+  const actionPlanId = importRecord.mapping?.action_plan_id;
+  if (actionPlanId) {
+    const actionPlan = await StrategicActionPlan.findByPk(actionPlanId);
     if (actionPlan) await ensureCanModifyActionPlanItems(actionPlan, req);
   }
   const batch = await confirmDynamicActionItems({ importId: req.params.importId, req });
-  await refreshActionRepository(batch.term_id, req, 'activities_imported');
-  if (importRecord?.action_plan_id) {
-    syncSinglePlanOfficialWorkbook(importRecord.action_plan_id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
+  await refreshActionRepository(batch.getDataValue('term_id') || batch.term_id, req, 'activities_imported');
+  if (actionPlanId) {
+    syncSinglePlanOfficialWorkbook(actionPlanId).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
   }
   ok(res, batch, 'Carga masiva confirmada correctamente.');
 });
