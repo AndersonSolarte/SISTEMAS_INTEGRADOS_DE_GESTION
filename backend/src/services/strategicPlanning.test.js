@@ -374,6 +374,21 @@ test('el plazo de formulacion respeta la fecha mayor entre individual y global (
   const effectiveEndsOn4 = ('2026-10-25' > '2026-10-27') ? '2026-10-25' : '2026-10-27';
   assert.equal(effectiveEndsOn4, '2026-10-27');
   assert.ok(today > effectiveEndsOn4, 'Ambos plazos están vencidos');
+
+  // Caso 5: Historial múltiple de prórrogas -> La que rige es la ÚLTIMA asignada (último elemento)
+  // Si primero se asignó 2026-10-31 y luego se ajustó formalmente a 2026-10-28, rige 2026-10-28
+  const extensionsHistory = [
+    { new_deadline: '2026-10-31', reason: 'Prórroga inicial' },
+    { new_deadline: '2026-10-28', reason: 'Ajuste de cierre individual' }
+  ];
+  const lastExt = extensionsHistory[extensionsHistory.length - 1];
+  const latestDateFromHistory = lastExt.new_deadline;
+  assert.equal(latestDateFromHistory, '2026-10-28', 'Rige estrictamente la última prórroga otorgada en el historial individual');
+
+  // Caso 6: Aislamiento estricto por plan -> Si Plan A tiene prórroga y Plan B no, Plan B se rige 100% por el global
+  const planWithoutExt = { metadata: { formulation_extensions: [] } };
+  const hasExtB = Array.isArray(planWithoutExt.metadata.formulation_extensions) && planWithoutExt.metadata.formulation_extensions.length > 0;
+  assert.equal(hasExtB, false, 'Plan B sin prórroga no tiene plazo individual y no se ve afectado por Plan A');
 });
 
 

@@ -709,16 +709,10 @@ const updateTerm = wrap(async (req, res) => {
       const plans = await StrategicActionPlan.findAll({ where: { term_id: term.id, deleted_at: null } });
       for (const p of plans) {
         const extensions = Array.isArray(p.metadata?.formulation_extensions) ? p.metadata.formulation_extensions : [];
-        let latestExt = null;
-        for (const ext of extensions) {
-          const extDate = ext.new_deadline || ext.extended_until || ext.ends_on || ext.fecha_limite;
-          if (extDate) {
-            const extIso = String(extDate).slice(0, 10);
-            if (!latestExt || extIso > latestExt) latestExt = extIso;
-          }
-        }
-        // Si no tiene prórroga o si el nuevo plazo global es mayor o igual, se sincroniza el plan
-        if (!latestExt || formulationEndsOn >= latestExt) {
+        // REGLA ESTRICTA DE AISLAMIENTO:
+        // Si el plan NO tiene prórroga individual asignada (extensions.length === 0), se sincroniza con el plazo global.
+        // Si el plan tiene prórrogas individuales propias, se respeta estrictamente su configuración individual y no se sobreescribe.
+        if (extensions.length === 0) {
           await p.update({
             metadata: {
               ...(p.metadata || {}),
@@ -763,23 +757,19 @@ const resolvePlanEffectiveSchedule = (plan, term = null) => {
 
   // 2. Plazo Individual del Plan (prórrogas otorgadas formalmente en metadata)
   const extensions = Array.isArray(planMeta.formulation_extensions) ? planMeta.formulation_extensions : [];
-  let latestExtensionDate = null;
-  for (const ext of extensions) {
-    const extDate = ext.new_deadline || ext.extended_until || ext.ends_on || ext.fecha_limite;
-    if (extDate) {
-      const extIso = String(extDate).slice(0, 10);
-      if (!latestExtensionDate || extIso > latestExtensionDate) {
-        latestExtensionDate = extIso;
-      }
-    }
-  }
 
   // REGLA INSTITUCIONAL ESTRICTA:
   // Un plazo individual ÚNICAMENTE existe si fue otorgado formalmente mediante prórroga individual (formulation_extensions).
-  // Si no hay prórrogas registradas, el plan se rige 100% por el plazo global de la vigencia.
-  const individualEndsOn = latestExtensionDate || null;
+  // La prórroga que rige es la ÚLTIMA configurada para ese plan (último elemento del historial asignado).
+  let individualEndsOn = null;
+  let individualStartsOn = null;
 
-  const individualStartsOn = planMeta.formulation_starts_on ? String(planMeta.formulation_starts_on).slice(0, 10) : null;
+  if (extensions.length > 0) {
+    const latestExt = extensions[extensions.length - 1];
+    const extDate = latestExt ? (latestExt.new_deadline || latestExt.extended_until || latestExt.ends_on || latestExt.fecha_limite) : null;
+    individualEndsOn = extDate ? String(extDate).slice(0, 10) : (planMeta.formulation_ends_on ? String(planMeta.formulation_ends_on).slice(0, 10) : null);
+    individualStartsOn = latestExt?.starts_on ? String(latestExt.starts_on).slice(0, 10) : (planMeta.formulation_starts_on ? String(planMeta.formulation_starts_on).slice(0, 10) : null);
+  }
 
   // 3. Regla del Mayor Plazo (MAX DATE):
   // Si la fecha global supera la fecha individual, nos quedamos con la fecha que más tenga plazo (la mayor).
@@ -1318,9 +1308,6 @@ const bulkCreateActionPlans = wrap(async (req, res) => {
 const ensureCanModifyActionPlanItems = async (actionPlan, req) => {
   const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user?.role);
   if (isPlanningAdmin) return true;
-  if (['active', 'monitoring', 'closed'].includes(actionPlan?.status)) {
-    throw Object.assign(new Error('El Plan de Acción se encuentra en ejecución. Para adicionar, modificar o eliminar actividades, comuníquese con la Dirección de Planeación y Aseguramiento de la Calidad.'), { statusCode: 403 });
-  }
 
   // Verificación de vigencia y plazo de la Etapa 1 para usuarios no administradores (Regla del Mayor Plazo)
   let term = actionPlan.term;
@@ -1328,6 +1315,16 @@ const ensureCanModifyActionPlanItems = async (actionPlan, req) => {
     term = await StrategicTerm.findByPk(actionPlan.term_id, { attributes: ['id', 'metadata', 'year', 'status', 'starts_on', 'ends_on'] });
   }
   const schedule = resolvePlanEffectiveSchedule(actionPlan, term);
+
+  if (actionPlan?.status === 'closed' || schedule.isTermClosed) {
+    throw Object.assign(new Error('El Plan de Acción o la vigencia se encuentra formalmente cerrado.'), { statusCode: 403 });
+  }
+
+  // Si el plan ya se encuentra concertado y en ejecución (active o monitoring),
+  // únicamente se permite adicionar o modificar actividades si Planeación otorgó una prórroga individual activa
+  if (['active', 'monitoring'].includes(actionPlan?.status) && !schedule.hasActiveIndividualExtension) {
+    throw Object.assign(new Error('El Plan de Acción se encuentra en ejecución oficial. Para adicionar, modificar o eliminar actividades, solicite a la Dirección de Planeación y Aseguramiento de la Calidad la habilitación de una prórroga de formulación.'), { statusCode: 403 });
+  }
 
   if (schedule.isScheduleNotStarted) {
     throw Object.assign(new Error(`El plazo de formulación de la Etapa 1 aún no ha iniciado (Inicia el ${schedule.effectiveStartsOn}).`), { statusCode: 403 });

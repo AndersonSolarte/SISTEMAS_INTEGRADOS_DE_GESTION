@@ -53,24 +53,18 @@ export const getPlanEffectiveSchedule = (plan) => {
   const planMeta = plan.metadata || {};
   const extensions = Array.isArray(planMeta.formulation_extensions) ? planMeta.formulation_extensions : [];
 
-  let latestExtensionDate = null;
-  for (const ext of extensions) {
-    const extDate = ext.new_deadline || ext.extended_until || ext.ends_on || ext.fecha_limite;
-    if (extDate) {
-      const extIso = String(extDate).slice(0, 10);
-      if (!latestExtensionDate || extIso > latestExtensionDate) {
-        latestExtensionDate = extIso;
-      }
-    }
-  }
-
   // REGLA INSTITUCIONAL ESTRICTA:
-  // Un plazo individual ÚNICAMENTE existe si fue otorgado formalmente mediante una prórroga individual (formulation_extensions).
-  // Si no hay prórrogas registradas, el plan no tiene plazo individual propio y se rige 100% por el plazo global de la vigencia.
-  // (NO tomar planMeta.formulation_ends_on como prórroga individual para evitar arrastrar fechas por defecto cuando Planeación reduce o cierra el plazo general).
-  const individualEndsOn = latestExtensionDate || null;
+  // Un plazo individual ÚNICAMENTE existe si fue otorgado formalmente mediante prórroga individual (formulation_extensions).
+  // La prórroga que rige es la ÚLTIMA configurada para ese plan (último elemento del historial asignado).
+  let individualEndsOn = null;
+  let individualStartsOn = null;
 
-  const individualStartsOn = planMeta.formulation_starts_on ? String(planMeta.formulation_starts_on).slice(0, 10) : null;
+  if (extensions.length > 0) {
+    const latestExt = extensions[extensions.length - 1];
+    const extDate = latestExt ? (latestExt.new_deadline || latestExt.extended_until || latestExt.ends_on || latestExt.fecha_limite) : null;
+    individualEndsOn = extDate ? String(extDate).slice(0, 10) : (planMeta.formulation_ends_on ? String(planMeta.formulation_ends_on).slice(0, 10) : null);
+    individualStartsOn = latestExt?.starts_on ? String(latestExt.starts_on).slice(0, 10) : (planMeta.formulation_starts_on ? String(planMeta.formulation_starts_on).slice(0, 10) : null);
+  }
 
   // 3. REGLA DE ORO: PREVALECE LA FECHA MAYOR ENTRE GLOBAL E INDIVIDUAL
   let effectiveEndsOn = null;

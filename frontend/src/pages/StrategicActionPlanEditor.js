@@ -6636,22 +6636,30 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   <History fontSize="small" sx={{ color: '#64748b' }} /> Historial de prórrogas ({stage1Extensions.length})
                 </Typography>
                 <Stack spacing={1} sx={{ maxHeight: 160, overflowY: 'auto', pr: 0.5 }}>
-                  {stage1Extensions.map((ext, idx) => (
-                    <Box key={idx} sx={{ p: 1.25, borderRadius: 1.75, bgcolor: '#ffffff', border: '1px solid #e2e8f0', fontSize: 12 }}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center">
-                        <Typography fontWeight={800} color="#0f172a" sx={{ fontSize: 12.5 }}>
-                          Nueva fecha: {ext.new_deadline}
+                  {stage1Extensions.map((ext, idx) => {
+                    const isLatest = idx === stage1Extensions.length - 1;
+                    return (
+                      <Box key={idx} sx={{ p: 1.25, borderRadius: 1.75, bgcolor: isLatest ? '#eff6ff' : '#ffffff', border: '1px solid', borderColor: isLatest ? '#93c5fd' : '#e2e8f0', fontSize: 12 }}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography fontWeight={800} color="#0f172a" sx={{ fontSize: 12.5 }}>
+                              Nueva fecha: {ext.new_deadline}
+                            </Typography>
+                            {isLatest && (
+                              <Chip size="small" label="Activa / Vigente" color="primary" sx={{ height: 20, fontSize: 10, fontWeight: 800 }} />
+                            )}
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {ext.granted_at ? new Date(ext.granted_at).toLocaleDateString('es-CO') : ''}
+                          </Typography>
+                        </Stack>
+                        <Typography color="#475569" sx={{ mt: 0.5, fontSize: 12 }}>{ext.reason || 'Sin motivo registrado'}</Typography>
+                        <Typography variant="caption" color="#64748b" display="block" sx={{ mt: 0.25, fontSize: 11 }}>
+                          Autorizado por: {ext.granted_by_name || 'Planeación'}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {ext.granted_at ? new Date(ext.granted_at).toLocaleDateString('es-CO') : ''}
-                        </Typography>
-                      </Stack>
-                      <Typography color="#475569" sx={{ mt: 0.5, fontSize: 12 }}>{ext.reason || 'Sin motivo registrado'}</Typography>
-                      <Typography variant="caption" color="#64748b" display="block" sx={{ mt: 0.25, fontSize: 11 }}>
-                        Autorizado por: {ext.granted_by_name || 'Planeación'}
-                      </Typography>
-                    </Box>
-                  ))}
+                      </Box>
+                    );
+                  })}
                 </Stack>
               </Box>
             )}
