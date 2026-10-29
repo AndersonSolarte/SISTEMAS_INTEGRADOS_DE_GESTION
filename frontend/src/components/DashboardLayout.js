@@ -647,29 +647,7 @@ function DashboardLayout() {
     }
   }
 
-  // === Inyección dinámica del módulo "Plan de Acción" según rol y vigencia activa ===
-  if (hasPlanAccionModulo) {
-    if (user?.role !== ROLES.PLANEACION_ESTRATEGICA && user?.role !== ROLES.PLANEACION_EFECTIVIDAD) {
-      const planAccionItem = {
-        key: 'plan_accion_consulta',
-        path: '/dashboard/plan-accion-mi-plan',
-        label: 'Plan de Acción',
-        icon: <AssignmentTurnedInIcon />,
-        pinnedTop: true,
-        badge: planAccionPendientes > 0 ? planAccionPendientes : undefined
-      };
-      const inicioIdx = menuItems.findIndex((it) => it.key === 'dashboard');
-      if (inicioIdx >= 0) {
-        menuItems = [
-          ...menuItems.slice(0, inicioIdx + 1),
-          planAccionItem,
-          ...menuItems.slice(inicioIdx + 1)
-        ];
-      } else {
-        menuItems = [planAccionItem, ...menuItems];
-      }
-    }
-  }
+
 
   if (executionPlanAccess?.access && executionPlanAccess?.executionOnly) {
     const executionItem = {
@@ -793,6 +771,23 @@ function DashboardLayout() {
     };
     if (!menuItems.some((it) => it.key === 'practica_integral_movilidad')) {
       menuItems = [...menuItems, movilidadItem];
+    }
+  }
+
+  // === Inyección dinámica del módulo "Plan de Acción" según rol y vigencia activa ===
+  // Ubicado al final del menú (en el bloque de módulos individuales/solos, debajo de Práctica Integral de Movilidad)
+  if (hasPlanAccionModulo) {
+    if (user?.role !== ROLES.PLANEACION_ESTRATEGICA && user?.role !== ROLES.PLANEACION_EFECTIVIDAD) {
+      const planAccionItem = {
+        key: 'plan_accion_consulta',
+        path: '/dashboard/plan-accion-mi-plan',
+        label: 'Plan de Acción',
+        icon: <AssignmentTurnedInIcon />,
+        badge: planAccionPendientes > 0 ? planAccionPendientes : undefined
+      };
+      if (!menuItems.some((it) => it.key === 'plan_accion_consulta')) {
+        menuItems = [...menuItems, planAccionItem];
+      }
     }
   }
 
