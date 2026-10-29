@@ -506,6 +506,8 @@ testConnection()
     } catch (e) {
       console.warn('[legalizacion-recordatorios] No se pudo iniciar el programador:', e?.message);
     }
+    const { startSubmissionEmailWorker } = require('./services/desplazamientoViaticos/legalizacionSubmissionQueue');
+    startSubmissionEmailWorker();
     startServer(DEFAULT_PORT);
   })
   .catch((error) => {

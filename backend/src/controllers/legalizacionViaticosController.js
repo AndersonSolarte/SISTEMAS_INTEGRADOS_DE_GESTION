@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { enqueueSubmissionEmail, kickSubmissionEmails } = require('../services/desplazamientoViaticos/legalizacionSubmissionQueue');
 const {
   DesplazamientoViaticosSolicitud,
   ViaticosLegalizacion,
@@ -13,7 +14,7 @@ const { ROLES } = require('../constants/roles');
 const { getDesplazamientoViaticosRecipients, normalizeEmail } = require('../config/desplazamientoViaticosConfig');
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 const { buildLegalizacionPdfBuffer } = require('../services/desplazamientoViaticos/legalizacionPdfService');
-const { canAccessSolicitud, canActOnSolicitud, canValidateLegalizacion, filterSolicitudesForUser } = require('../services/desplazamientoViaticos/accessScope');
+const { canAccessSolicitud, canActOnSolicitud, canValidateLegalizacion, canReviewAccounting, filterSolicitudesForUser } = require('../services/desplazamientoViaticos/accessScope');
 
 const MANAGEMENT_PERMISSION = 'vicerrectoria_financiera.viaticos.gestion';
 const STATS_PERMISSION = 'vicerrectoria_financiera.viaticos.estadistica';
@@ -48,7 +49,7 @@ const legalizationRecipients = (solicitud, fallbackCollaboratorEmail) => {
   const testRecipients = controlledTestRecipients(solicitud);
   if (testRecipients) return testRecipients;
   return [
-    normalizeEmail(solicitud?.solicitante_snapshot?.email || fallbackCollaboratorEmail),
+    normalizeEmail(solicitud?.solicitante_snapshot?.email || solicitud?.solicitante_snapshot?.correo || fallbackCollaboratorEmail),
     getDesplazamientoViaticosRecipients().tecnicoContable
   ].filter(Boolean);
 };
@@ -187,7 +188,7 @@ const canAccess = async (user, permission) => {
 
 const effectiveState = (legalizacion) => {
   if (!legalizacion) return null;
-  if (['finalizada', 'en_revision'].includes(legalizacion.estado)) return legalizacion.estado;
+  if (['finalizada', 'en_revision', 'en_revision_contabilidad', 'devuelta_tecnico'].includes(legalizacion.estado)) return legalizacion.estado;
   const current = today();
   if (current < legalizacion.fecha_habilitacion) return 'pendiente_habilitacion';
   if (current > legalizacion.fecha_limite) return 'legalizacion_vencida';
@@ -230,7 +231,7 @@ const estadoPropio = async (req, res) => {
     const legalizaciones = await ViaticosLegalizacion.findAll({ where: { user_id: req.user.id } });
     const safeList = legalizaciones.map(safeLegalizacion);
     const active = safeList.filter(isPendingForCollaborator);
-    const inReview = safeList.filter((item) => item.estado === 'en_revision');
+    const inReview = safeList.filter((item) => ['en_revision', 'en_revision_contabilidad', 'devuelta_tecnico'].includes(item.estado));
     const future = safeList.filter((item) => item.estado === 'pendiente_habilitacion');
     const finalized = safeList.filter((item) => item.estado === 'finalizada');
     return res.json({
@@ -261,7 +262,7 @@ const presentar = async (req, res) => {
   if (state === 'pendiente_habilitacion') {
     return rejectUpload(400, `La legalización solo se habilitará a partir de la fecha de regreso (${legalizacion.fecha_habilitacion}).`);
   }
-  if (['en_revision', 'finalizada'].includes(state)) {
+  if (['en_revision', 'en_revision_contabilidad', 'devuelta_tecnico', 'finalizada'].includes(state)) {
     return rejectUpload(409, 'La legalización ya fue enviada o finalizada.');
   }
 
@@ -327,40 +328,65 @@ const presentar = async (req, res) => {
   }
   const actor = { id: req.user.id, nombre: req.user.nombre || req.user.name, email: req.user.email };
   try {
-    await legalizacion.update({
-      estado: 'en_revision',
-      detalles: result,
-      observaciones: clean(req.body.observaciones),
-      adjuntos: attachments,
-      presentado_at: new Date(),
-      trazabilidad: trace(legalizacion, 'legalizacion_presentada', actor)
+    await sequelize.transaction(async (transaction) => {
+      // Bloquear únicamente esta legalización evita dos presentaciones simultáneas.
+      const current = await ViaticosLegalizacion.findByPk(legalizacion.id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!current || !isPendingForCollaborator(current)) {
+        const conflict = new Error('La legalización ya fue presentada o dejó de estar disponible.');
+        conflict.status = 409;
+        throw conflict;
+      }
+      await legalizacion.update({
+        estado: 'en_revision',
+        detalles: result,
+        observaciones: clean(req.body.observaciones),
+        adjuntos: attachments,
+        presentado_at: new Date(),
+        trazabilidad: trace(current, 'legalizacion_presentada', actor, { notificacion: 'encolada' })
+      }, { transaction });
+      await enqueueSubmissionEmail(legalizacion.id, { transaction });
     });
   } catch (error) {
     if (storedAttachmentIds.length) {
       await ViaticosLegalizacionAdjunto.destroy({ where: { id: storedAttachmentIds } }).catch(() => null);
     }
-    return rejectUpload(500, 'No fue posible registrar la legalización en la base de datos.');
+    return rejectUpload(error.status || 500, error.status === 409 ? error.message : 'No fue posible registrar la legalización en la base de datos.');
   }
+  removeUploadedFiles(files);
+  res.status(201).json({ success: true, message: 'Legalización registrada. El Técnico Contable ya puede revisarla; las copias se enviarán por correo en segundo plano.', emailQueued: true });
+  kickSubmissionEmails();
+  return res;
+};
+
+const enviarCorreoPresentacion = async (legalizacionId) => {
+  const legalizacion = await ViaticosLegalizacion.findByPk(legalizacionId, {
+    include: [{ model: DesplazamientoViaticosSolicitud, as: 'solicitud', required: true }]
+  });
+  // Un expediente eliminado o ya finalizado no necesita una notificación de presentación tardía.
+  if (!legalizacion || legalizacion.estado === 'finalizada') return { success: true, skipped: true };
+  if ((legalizacion.trazabilidad || []).some((entry) => entry.event === 'correo_presentacion_enviado')) return { success: true, skipped: true };
   const mailThread = legalizationMailThread(legalizacion, legalizacion.solicitud);
-  const pdfFormatBuffer = await buildLegalizacionPdfBuffer(legalizacion, legalizacion.solicitud);
-  const supportAttachments = await Promise.all(attachments.map(async (file) => {
-    const stored = await ViaticosLegalizacionAdjunto.findByPk(file.id);
-    return {
-      filename: file.originalName,
-      content: Buffer.from(stored.contenido),
-      contentType: stored.mime_type
-    };
+  const presenterEmail = [...(legalizacion.trazabilidad || [])].reverse().find((entry) => entry.event === 'legalizacion_presentada')?.actor?.email;
+  const recipients = legalizationRecipients(legalizacion.solicitud, presenterEmail);
+  const frontendUrl = String(process.env.FRONTEND_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
+  const reviewUrl = `${frontendUrl}/dashboard/gestion-informacion?tab=estadistica&module=vicerrectoria_financiera&panel=viaticos&solicitud=${encodeURIComponent(legalizacion.solicitud.id)}&revision=tecnico`;
+  const [pdfFormatBuffer, storedAttachments] = await Promise.all([
+    buildLegalizacionPdfBuffer(legalizacion, legalizacion.solicitud),
+    ViaticosLegalizacionAdjunto.findAll({ where: { legalizacion_id: legalizacion.id }, order: [['id', 'ASC']] })
+  ]);
+  const supportAttachments = storedAttachments.map((stored) => ({
+    filename: stored.nombre_original, content: Buffer.from(stored.contenido), contentType: stored.mime_type
   }));
 
   const mailResult = await sendInstitutionalEmail({
-    to: legalizationRecipients(legalizacion.solicitud, req.user.email),
+    to: recipients,
     subject: mailThread.subject,
     messageId: mailThread.rootMessageId,
-    text: 'La legalización fue presentada y firmada electrónicamente por el colaborador. Se adjuntan el formato oficial y los soportes para revisión del Técnico Contable.',
+    text: `La legalización fue presentada y firmada electrónicamente por el colaborador. Se adjuntan el formato oficial y los soportes para revisión del Técnico Contable. Revisar y validar legalización en SIAC: ${reviewUrl}. Requiere iniciar sesión y tener permiso para revisar esta solicitud.`,
     html: renderInstitutionalTemplate({
       title: 'Legalización de viáticos presentada',
       introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">El colaborador <strong>${escapeHtml(legalizacion.solicitud?.solicitante_snapshot?.nombre || '')}</strong> ha presentado y firmado electrónicamente la legalización de viáticos de la comisión <strong>${escapeHtml(legalizacion.solicitud.consecutivo)}</strong>. Se adjunta el formato oficial de legalización firmado electrónicamente por el solicitante junto con los soportes aportados para su respectiva revisión y validación contable.</p>`,
-      bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Pendiente de revisión del Técnico Contable')}<p style="margin: 12px 0 4px; font-size: 13.5px;"><strong>Soportes adjuntos:</strong> ${attachments.length}</p><p style="color:#64748b; font-size: 12px; margin: 0;">El formato PDF incorpora la firma electrónica del colaborador, la trazabilidad y el código QR. Los soportes se conservan temporalmente durante la revisión; al finalizar, los documentos se entregan por correo institucional y el SIAC conserva únicamente los datos de trazabilidad.</p>`
+      bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Pendiente de revisión del Técnico Contable')}<p style="margin: 12px 0 4px; font-size: 13.5px;"><strong>Soportes adjuntos:</strong> ${supportAttachments.length}</p><p style="color:#64748b; font-size: 12px; margin: 0;">El formato PDF incorpora la firma electrónica del colaborador, la trazabilidad y el código QR. Se adjuntan el formato y los soportes para la revisión correspondiente.</p><p style="text-align:center;margin:24px 0 12px"><a href="${escapeHtml(reviewUrl)}" style="display:inline-block;padding:14px 24px;background:#0b3a6f;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold">Revisar y validar legalización</a></p><p style="text-align:center;color:#64748b;font-size:12px">Acceso para el Técnico Contable. Requiere iniciar sesión en SIAC y contar con los permisos correspondientes.</p>`
     }),
     attachments: [
       {
@@ -371,8 +397,14 @@ const presentar = async (req, res) => {
       ...supportAttachments
     ]
   });
-  removeUploadedFiles(files);
-  return res.status(201).json({ success: true, message: 'Legalización enviada al Técnico Contable.', emailSent: mailResult.success });
+  if (!mailResult.success || mailResult.suppressed) throw new Error(mailResult.error || 'El envío de correo está deshabilitado.');
+  await sequelize.transaction(async (transaction) => {
+    const current = await ViaticosLegalizacion.findByPk(legalizacion.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (current) await current.update({ trazabilidad: trace(current, 'correo_presentacion_enviado', { nombre: 'SIAC', role: 'sistema' }, {
+      destinatarios: recipients, messageId: mailResult.messageId || null
+    }) }, { transaction });
+  });
+  return mailResult;
 };
 
 const listarGestion = async (req, res) => {
@@ -399,7 +431,8 @@ const listarGestion = async (req, res) => {
       legalizacion: safeLegalizacion(row.legalizacion),
       access: {
         canAct: canActOnSolicitud(req.user, row),
-        canValidateLegalizacion: canValidateLegalizacion(req.user)
+        canValidateLegalizacion: canValidateLegalizacion(req.user),
+        canReviewAccounting: canReviewAccounting(req.user)
       }
     }))
   });
@@ -410,7 +443,10 @@ const obtenerGestion = async (req, res) => {
   const solicitud = await DesplazamientoViaticosSolicitud.findByPk(req.params.solicitudId, { include: includeLegalizacion });
   if (!solicitud) return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
   if (!canAccessSolicitud(req.user, solicitud)) return res.status(403).json({ success: false, message: 'Esta solicitud no está asignada a su dependencia.' });
-  return res.json({ success: true, data: { ...solicitud.toJSON(), legalizacion: safeLegalizacion(solicitud.legalizacion) } });
+  return res.json({ success: true, data: {
+    ...solicitud.toJSON(), legalizacion: safeLegalizacion(solicitud.legalizacion),
+    access: { canAct: canActOnSolicitud(req.user, solicitud), canValidateLegalizacion: canValidateLegalizacion(req.user), canReviewAccounting: canReviewAccounting(req.user) }
+  } });
 };
 
 const verAdjunto = async (req, res) => {
@@ -424,7 +460,7 @@ const verAdjunto = async (req, res) => {
   }
   const attachment = (legalizacion.adjuntos || []).find((file) => file.id === req.params.fileId);
   if (attachment?.disponibleEnCorreo && attachment.persistidoEnBaseDatos === false) {
-    return res.status(410).json({ success: false, message: 'El soporte fue entregado por correo institucional. El SIAC conserva únicamente sus datos de trazabilidad.' });
+    return res.status(410).json({ success: false, message: 'El soporte fue entregado por correo institucional. Consulte el mensaje de finalización de la legalización.' });
   }
   if (attachment) {
     const stored = await ViaticosLegalizacionAdjunto.findOne({
@@ -443,75 +479,38 @@ const verAdjunto = async (req, res) => {
 };
 
 const validar = async (req, res) => {
-  if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No tiene permiso para validar legalizaciones.' });
-  const legalizacion = await ViaticosLegalizacion.findByPk(req.params.id, { include: [{ model: DesplazamientoViaticosSolicitud, as: 'solicitud', required: true }] });
-  if (!legalizacion) return res.status(404).json({ success: false, message: 'Legalización no encontrada.' });
-  if (legalizacion.estado === 'finalizada') return res.status(409).json({ success: false, message: 'La legalización ya fue finalizada.' });
-  if (legalizacion.estado !== 'en_revision') return res.status(409).json({ success: false, message: 'La legalización todavía no fue presentada.' });
-  if (!canValidateLegalizacion(req.user) || !canAccessSolicitud(req.user, legalizacion.solicitud)) return res.status(403).json({ success: false, message: 'No tiene autorización para validar esta legalización.' });
-  let details = legalizacion.detalles || [];
-  if (req.body.detalles) {
-    const edited = Array.isArray(req.body.detalles) ? req.body.detalles : JSON.parse(req.body.detalles);
-    details = details.map((row) => {
-      const update = edited.find((item) => item.id === row.id);
-      const legalized = Number(update?.valorLegalizado ?? row.valorLegalizado);
-      if (!Number.isFinite(legalized) || legalized < 0) throw new Error(`Valor inválido para ${row.detalle}.`);
-      return { ...row, valorLegalizado: legalized, diferencia: Number(row.valorAnticipo) - legalized };
-    });
+  try {
+    if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No tiene permiso para gestionar legalizaciones.' });
+    const { validateTechnician } = require('../services/desplazamientoViaticos/legalizacionAccountingWorkflow');
+    const estado = await validateTechnician({ id: req.params.id, user: req.user, body: req.body, file: req.file });
+    return res.json({ success: true, estado, message: 'Validación técnica registrada. La legalización y el PDF SEVEN se remitirán a Contabilidad para verificar las cuentas.' });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'No fue posible registrar la validación técnica.' });
+  } finally {
+    removeUploadedFiles(req.file ? [req.file] : []);
   }
-  const actor = { id: req.user.id, nombre: req.user.nombre || req.user.name, email: req.user.email };
-  const finalTrace = trace(legalizacion, 'legalizacion_validada', actor, { observaciones: clean(req.body.observaciones) });
-  await legalizacion.update({ detalles: details, observaciones: clean(req.body.observaciones || legalizacion.observaciones), trazabilidad: finalTrace });
-  const pdf = await buildLegalizacionPdfBuffer(legalizacion, legalizacion.solicitud);
-  const storedAttachments = await ViaticosLegalizacionAdjunto.findAll({
-    where: { legalizacion_id: legalizacion.id },
-    order: [['id', 'ASC']]
-  });
-  const mailThread = legalizationMailThread(legalizacion, legalizacion.solicitud);
-  const result = await sendInstitutionalEmail({
-    to: legalizationRecipients(legalizacion.solicitud),
-    subject: mailThread.subject,
-    messageId: mailThread.finalMessageId,
-    inReplyTo: mailThread.rootMessageId,
-    references: mailThread.rootMessageId,
-    text: 'La legalización de viáticos fue revisada y validada por el Técnico Contable.',
-    html: renderInstitutionalTemplate({
-      title: 'Legalización de viáticos validada',
-      introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">La legalización de viáticos correspondiente a la solicitud <strong>${escapeHtml(legalizacion.solicitud.consecutivo)}</strong> fue revisada, validada y firmada electrónicamente por el Técnico Contable. Se adjuntan el formato oficial en PDF y sus respectivos soportes.</p>`,
-      bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Legalización validada y finalizada')}<p style="color:#64748b; font-size: 12px; margin-top: 12px;">El documento PDF incorpora las firmas electrónicas del colaborador y del Técnico Contable, la trazabilidad completa, el código QR y el enlace institucional de verificación.</p>`
-    }),
-    attachments: [
-      { filename: `LEGALIZACION-VIATICOS-${legalizacion.solicitud.consecutivo}.pdf`, content: pdf, contentType: 'application/pdf' },
-      ...storedAttachments.map((file) => ({
-        filename: file.nombre_original,
-        content: Buffer.from(file.contenido),
-        contentType: file.mime_type
-      }))
-    ]
-  });
-  if (!result.success || result.suppressed) return res.status(502).json({ success: false, message: 'No fue posible enviar los documentos finales. Los soportes se conservaron para reintentar.', error: result.error });
-  const deliveredAt = new Date();
-  await sequelize.transaction(async (transaction) => {
-    await legalizacion.update({
-      estado: 'finalizada',
-      revisado_at: deliveredAt,
-      revisado_por: req.user.id,
-      finalizado_at: deliveredAt,
-      trazabilidad: trace(legalizacion, 'documentos_finales_enviados', actor, {
-        destinatarios: legalizationRecipients(legalizacion.solicitud), messageId: result.messageId || null,
-        soportes: storedAttachments.length, custodia: 'correo_institucional'
-      }),
-      adjuntos: (legalizacion.adjuntos || []).map(({ path: _path, ...file }) => ({
-        ...file, persistidoEnBaseDatos: false, disponibleEnCorreo: true,
-        sha256: storedAttachments.find((stored) => String(stored.id) === String(file.id))?.sha256 || file.sha256,
-        enviadoPorCorreoAt: deliveredAt.toISOString()
-      }))
-    }, { transaction });
-    await legalizacion.solicitud.update({ estado: 'legalizacion_finalizada' }, { transaction });
-    // Los binarios son temporales durante la revisión; el cierre conserva solo metadatos.
-    await ViaticosLegalizacionAdjunto.destroy({ where: { legalizacion_id: legalizacion.id }, transaction });
-  });
-  return res.json({ success: true, message: 'Legalización validada. Los documentos se enviaron por correo y el SIAC conserva los datos de trazabilidad.' });
+};
+
+const revisarContabilidad = async (req, res) => {
+  try {
+    if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No tiene permiso para gestionar legalizaciones.' });
+    const { reviewAccounting } = require('../services/desplazamientoViaticos/legalizacionAccountingWorkflow');
+    await reviewAccounting({ id: req.params.id, user: req.user, body: req.body });
+    return res.json({ success: true, message: req.body.decision === 'correcta' ? 'Información validada. El proceso finalizó; se enviará la confirmación por correo.' : 'Observaciones registradas. Se devolverá la legalización al Técnico Contable en el mismo hilo de correo.' });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'No fue posible registrar la revisión de Contabilidad.' });
+  }
+};
+
+const confirmarAjustesRealizados = async (req, res) => {
+  try {
+    if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No tiene permiso para gestionar legalizaciones.' });
+    const { completeExternalAdjustments } = require('../services/desplazamientoViaticos/legalizacionAccountingWorkflow');
+    await completeExternalAdjustments({ id: req.params.id, user: req.user });
+    return res.json({ success: true, estado: 'finalizada', message: 'Ajustes realizados. La solicitud quedó finalizada en SIAC.' });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'No fue posible actualizar el estado de la legalización.' });
+  }
 };
 
 const estadisticas = async (req, res) => {
@@ -595,7 +594,7 @@ const enviarRecordatorioIndividual = async (req, res) => {
       ]
     });
     if (!legalizacion) return res.status(404).json({ success: false, message: 'Legalización no encontrada.' });
-    if (['finalizada', 'en_revision'].includes(legalizacion.estado)) {
+    if (['finalizada', 'en_revision', 'en_revision_contabilidad', 'devuelta_tecnico'].includes(legalizacion.estado)) {
       return res.status(409).json({ success: false, message: 'Esta legalización ya fue presentada o finalizada.' });
     }
     const { buildReminderEmail, getRecipientsForLegalizacion } = require('../services/desplazamientoViaticos/legalizacionReminderScheduler');
@@ -635,6 +634,9 @@ const enviarRecordatorioIndividual = async (req, res) => {
 };
 
 module.exports = {
+  confirmarAjustesRealizados,
+  revisarContabilidad,
+  enviarCorreoPresentacion,
   descargarPdf,
   ejecutarRecordatorios,
   enviarRecordatorioIndividual,

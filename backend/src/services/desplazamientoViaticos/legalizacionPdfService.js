@@ -40,11 +40,15 @@ const buildLegalizacionDefinition = (legalizacion, solicitud) => {
   const transactionId = value(legalizacion.codigo_verificacion).toUpperCase();
   const verifyUrl = `${backendUrl}/api/legalizacion-viaticos/verificar/${legalizacion.codigo_verificacion}`;
   const collaboratorTrace = (legalizacion.trazabilidad || []).find((entry) => entry.event === 'legalizacion_presentada');
-  const technicianTrace = (legalizacion.trazabilidad || []).find((entry) => entry.event === 'legalizacion_validada');
+  const technicianTrace = [...(legalizacion.trazabilidad || [])].reverse().find((entry) => entry.event === 'legalizacion_validada');
   const traceRows = [
     { label: 'Habilitación de la legalización', entry: (legalizacion.trazabilidad || []).find((entry) => entry.event === 'pago_autorizado'), fallback: 'SIAC UNICESMAG' },
     { label: 'Presentación del colaborador', entry: collaboratorTrace, fallback: personal.nombre },
-    { label: 'Validación del Técnico Contable', entry: technicianTrace, fallback: 'Técnico Contable' }
+    { label: 'Validación del Técnico Contable', entry: technicianTrace, fallback: 'Técnico Contable' },
+    ...(legalizacion.trazabilidad || []).filter((entry) => ['contabilidad_validada', 'contabilidad_observaciones', 'correccion_tecnico_finalizada', 'ajustes_realizados'].includes(entry.event)).map((entry) => ({
+      label: entry.event === 'contabilidad_validada' ? 'Información y cuentas verificadas por Contabilidad' : entry.event === 'contabilidad_observaciones' ? 'Retroalimentación: errores en cuentas asociadas' : 'Ajustes realizados y cierre por el Técnico Contable',
+      entry, fallback: 'SIAC'
+    }))
   ];
   const signature = ({ title, trace, fallbackName, cargo, document }) => ([
     { text: title, bold: true, alignment: 'center', fillColor: '#eaf4ff', color: '#0b3a6f', fontSize: 8.5, margin: [5, 5] },
@@ -142,7 +146,7 @@ const buildLegalizacionDefinition = (legalizacion, solicitud) => {
           body: [
             [label('Actuación'), label('Estado'), label('Responsable'), label('Fecha y hora'), label('ID transacción')],
             ...traceRows.map(({ label: actionLabel, entry, fallback }) => [
-              cell(actionLabel),
+              cell(`${actionLabel}${entry?.detail?.observaciones ? `\n${entry.detail.observaciones}` : ''}`),
               cell(entry ? 'Registrada' : 'Pendiente', { color: entry ? '#166534' : '#92400e', bold: true }),
               cell(entry?.actor?.nombre || entry?.actor?.email || fallback),
               cell(entry?.at ? new Date(entry.at).toLocaleString('es-CO') : 'Pendiente'),

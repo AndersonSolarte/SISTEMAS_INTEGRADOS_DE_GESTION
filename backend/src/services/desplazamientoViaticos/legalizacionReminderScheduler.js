@@ -178,7 +178,7 @@ const runLegalizacionReturnReminders = async ({ now = new Date(), force = false 
         where: {
           notificacion_retorno_at: null,
           fecha_habilitacion: { [Op.lte]: today },
-          estado: { [Op.notIn]: ['finalizada', 'en_revision'] }
+          estado: { [Op.in]: ['pendiente_habilitacion', 'pendiente_legalizacion', 'legalizacion_vencida'] }
         },
         include: [
           {

@@ -44,6 +44,7 @@ const getDesplazamientoViaticosRecipients = () => ({
   tecnicoContable: normalizeEmail(
     process.env.VIATICOS_TECNICO_CONTABLE_EMAIL || 'tecnico.viceadfin@unicesmag.edu.co'
   ),
+  contabilidad: normalizeEmail(process.env.VIATICOS_CONTABILIDAD_EMAIL || getDependencyEmail('Oficina de Contabilidad') || 'contabil@unicesmag.edu.co'),
   tesoreria: normalizeEmail(
     process.env.VIATICOS_TESORERIA_EMAIL || 'pagador@unicesmag.edu.co'
   )

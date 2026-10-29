@@ -31,7 +31,9 @@ router.get('/gestion/solicitudes', auth, controller.listarGestion);
 router.post('/gestion/recordatorios/ejecutar', auth, controller.ejecutarRecordatorios);
 router.post('/gestion/:id/recordatorio', auth, controller.enviarRecordatorioIndividual);
 router.get('/gestion/solicitudes/:solicitudId', auth, controller.obtenerGestion);
-router.post('/gestion/:id/validar', auth, express.json(), controller.validar);
+router.post('/gestion/:id/validar', auth, upload.single('seven'), controller.validar);
+router.post('/gestion/:id/contabilidad', auth, express.json(), controller.revisarContabilidad);
+router.post('/gestion/:id/ajustes-realizados', auth, controller.confirmarAjustesRealizados);
 router.get('/estadisticas/resumen', auth, controller.estadisticas);
 
 module.exports = router;

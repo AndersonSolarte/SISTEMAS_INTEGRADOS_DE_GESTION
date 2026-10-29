@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Chip, CircularProgress, InputAdornment, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, InputAdornment, LinearProgress, Paper, Stack, TextField, Typography } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
@@ -33,6 +33,7 @@ export default function LegalizacionViaticos() {
   const [selectedConcepts, setSelectedConcepts] = useState({});
   const [observaciones, setObservaciones] = useState('');
   const [sending, setSending] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,14 +77,16 @@ export default function LegalizacionViaticos() {
     form.append('detalles', JSON.stringify(details.map((item) => ({ id: item.id, valorLegalizado: Number(values[item.id]) }))));
     form.append('observaciones', observaciones);
     details.forEach((item) => { if (selectedConcepts[item.id] && files[item.id]) form.append(`soporte_${item.id}`, files[item.id]); });
+    setUploadProgress(0);
     setSending(true);
     try {
-      const result = await presentarLegalizacion(selectedRow.legalizacion.id, form);
+      const result = await presentarLegalizacion(selectedRow.legalizacion.id, form, ({ loaded, total }) => {
+        if (total > 0) setUploadProgress(Math.min(100, Math.round(loaded * 100 / total)));
+      });
       enqueueSnackbar(result.message || 'Legalización presentada al Técnico Contable.', { variant: result.emailSent === false ? 'warning' : 'success' });
       setRows((current) => current.filter((row) => row.legalizacion.id !== selectedRow.legalizacion.id));
       setSelectedRow(null);
       window.dispatchEvent(new CustomEvent('legalizacion:updated'));
-      await load();
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'No fue posible presentar la legalización.', { variant: 'error' });
     } finally { setSending(false); }
@@ -111,6 +114,7 @@ export default function LegalizacionViaticos() {
           files={files} onFileChange={(id, file) => setFiles((current) => ({ ...current, [id]: file }))}
           observations={observaciones} onObservationsChange={setObservaciones} />
         <Paper elevation={0} sx={{ mt: 2, p: { xs: 2, md: 3 }, borderRadius: 3, border: '1px solid #dbe5f1' }}>
+          {sending && <Box role="status" sx={{ mb: 2 }}><Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{uploadProgress < 100 ? `Cargando datos y soportes: ${uploadProgress}%` : 'Guardando su legalización. La confirmación llegará sin esperar el envío del correo.'}</Typography><LinearProgress variant={uploadProgress < 100 ? 'determinate' : 'indeterminate'} value={uploadProgress} sx={{ borderRadius: 2 }} /></Box>}
           <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ md: 'center' }} gap={2}>
             <Box sx={{ flex: 1 }}><Typography fontWeight={800}>¿Todo está listo?</Typography><Typography variant="body2" color="text.secondary">Al enviar, el Técnico Contable revisará la legalización. Esta solicitud saldrá de sus pendientes.</Typography></Box>
             <Button onClick={submit} disabled={sending} variant="contained" size="large" startIcon={sending ? <CircularProgress size={20} color="inherit" /> : <ReceiptLongRoundedIcon />} sx={{ borderRadius: 3, textTransform: 'none', px: 3, py: 1.5, fontWeight: 800 }}>Enviar al Técnico Contable</Button>

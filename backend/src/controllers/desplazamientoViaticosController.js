@@ -874,7 +874,7 @@ const emailStep = async (solicitud, step, tokenBundle) => {
   const buttonLabel = step.action === 'liquidacion'
     ? 'Generar liquidación de viáticos y gastos de viaje'
     : step.action === 'pago'
-      ? 'Autorizar pago de viáticos'
+      ? 'Procesar liquidación para pago'
       : step.action === 'tramite'
         ? 'Tramitar solicitud de viáticos'
       : 'Revisar solicitud y dar visto bueno';
@@ -2343,7 +2343,7 @@ const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {})
   return page(`Revisión pendiente: ${step.label}`, `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: step.key, formId: 'action-form', isTechnician: false })}${privacyNotice}${delegatedNotice}<label class="observations-label" style="display:block;margin-top:24px;font-weight:700;color:#0b3a6f;">${observationLabel}</label><textarea name="observacion" maxlength="1200" rows="4"${alternateObservationRequired ? ' required' : ''} placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="aprobar" type="submit">Dar visto bueno</button><button class="bad" name="accion" value="rechazar" type="submit"${alternateObservationRequired ? '' : ' formnovalidate'}>No aprobar</button></div></form>`);
 };
 
-const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / Pagaduría', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false, isTreasury: true })}<p style="margin:16px 0 12px;color:#475569">Revise o corrija los valores de la liquidación y la logística si es necesario, y decida si autoriza el pago.</p><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="autorizar_pago" type="submit">Autorizar pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit" formnovalidate>No autorizar pago</button></div></form>`);
+const treasuryForm = (solicitud, token) => page('Procesar liquidación para pago en Tesorería / Pagaduría', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false, isTreasury: true })}<p style="margin:16px 0 12px;color:#475569">Revise o corrija los valores de la liquidación y la logística si es necesario, y decida si autoriza el pago.</p><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="autorizar_pago" type="submit">Procesar liquidación para pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit" formnovalidate>No autorizar pago</button></div></form>`);
 
 const legacyTreasuryForm = (solicitud, token) => page('Tramitar solicitud en Tesorería', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<div class="notice"><strong>Solicitud iniciada con el flujo anterior.</strong> Esta actuación se conserva únicamente para finalizar correctamente solicitudes que ya estaban en curso.</div><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="primary" name="accion" value="tramitar" type="submit">Tramitar solicitud</button></div></form>`);
 
@@ -2426,7 +2426,7 @@ const procesarDemoLiquidacion = async (req, res) => {
     const html = renderInstitutionalTemplate({
       title: 'PRUEBA - Autorización de pago en Tesorería',
       introHtml: '<p><strong>ESTE ES UN CORREO DE PRUEBA. NO REALICE NINGÚN TRÁMITE REAL.</strong></p><p>El técnico contable diligenció la liquidación. De acuerdo con el flujo actualizado, pasa directamente a Tesorería/Pagaduría para autorizar el pago.</p>',
-      bodyHtml: `${summaryHtml(solicitudDemo)}<p><strong>Total anticipo:</strong> $${liquidacion.totalAnticipo.toLocaleString('es-CO')}</p><p><strong>Observaciones:</strong> ${escapeHtml(liquidacion.observaciones || 'Sin observaciones')}</p><p style="text-align:center;margin:22px 0"><a href="${treasuryUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Autorizar pago de prueba</a></p>`
+      bodyHtml: `${summaryHtml(solicitudDemo)}<p><strong>Total anticipo:</strong> $${liquidacion.totalAnticipo.toLocaleString('es-CO')}</p><p><strong>Observaciones:</strong> ${escapeHtml(liquidacion.observaciones || 'Sin observaciones')}</p><p style="text-align:center;margin:22px 0"><a href="${treasuryUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Procesar liquidación para pago (prueba)</a></p>`
     });
     const result = await sendInstitutionalEmail({
       to: DEMO_TREASURY_EMAIL,
@@ -2451,7 +2451,7 @@ const mostrarDemoTesoreria = async (req, res) => {
     if (await isDemoTokenProcessed(tokenHash, usedDemoTreasuryTokens)) return res.status(409).send(page('Pago ya autorizado', '<p>Esta autorización de pago de prueba ya fue registrada.</p>'));
     const solicitudDemo = buildDemoSolicitud(payload.liquidacion || {});
     res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action *;");
-    return res.send(page('Autorizar pago de prueba en Tesorería', `${summaryHtml(solicitudDemo)}<p>La liquidación fue registrada por el Técnico Contable y remitida directamente a Tesorería/Pagaduría. Al confirmar se autorizará el pago y finalizará la prueba.</p><form method="post" action="/api/desplazamientos-viaticos/prueba/tesoreria/${req.params.token}"><label>Observación de Tesorería / Pagaduría</label><textarea name="observacion" maxlength="1200" rows="4"></textarea><button class="primary" type="submit">Autorizar pago</button></form>`));
+    return res.send(page('Autorizar pago de prueba en Tesorería', `${summaryHtml(solicitudDemo)}<p>La liquidación fue registrada por el Técnico Contable y remitida directamente a Tesorería/Pagaduría. Al confirmar se autorizará el pago y finalizará la prueba.</p><form method="post" action="/api/desplazamientos-viaticos/prueba/tesoreria/${req.params.token}"><label>Observación de Tesorería / Pagaduría</label><textarea name="observacion" maxlength="1200" rows="4"></textarea><button class="primary" type="submit">Procesar liquidación para pago</button></form>`));
   } catch (_) {
     return res.status(404).send(page('Vista de prueba no disponible', '<p>El enlace no es válido o ya expiró.</p>'));
   }
@@ -2528,7 +2528,7 @@ const procesarDemoFinanciera = async (req, res) => {
       html: renderInstitutionalTemplate({
         title: 'PRUEBA - Autorización de pago',
         introHtml: '<p><strong>ESTE ES UN CORREO DE PRUEBA.</strong></p><p>La Vicerrectoría Financiera aprobó la liquidación. Tesorería/Pagaduría debe autorizar el pago para finalizar.</p>',
-        bodyHtml: `${summaryHtml(solicitudDemo)}<p style="text-align:center;margin:22px 0"><a href="${treasuryUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Autorizar pago</a></p>`
+        bodyHtml: `${summaryHtml(solicitudDemo)}<p style="text-align:center;margin:22px 0"><a href="${treasuryUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Procesar liquidación para pago</a></p>`
       }),
       attachments: [pdfAttachment]
     });

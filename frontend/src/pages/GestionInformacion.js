@@ -3059,6 +3059,9 @@ function GestionInformacion() {
       if (module === 'gestion_procesos') {
         setSelectedCard('gestion_procesos');
         setGestionProcesosPanel(['estadistica_documental', 'estadisticas_formatos'].includes(panel) ? panel : 'hub');
+      } else if (module === 'vicerrectoria_financiera' && panel === 'viaticos') {
+        setSelectedCard('vicerrectoria_financiera');
+        setFinancialPanel('viaticos');
       } else {
         setSelectedCard(null);
       }
@@ -18121,7 +18124,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 {selectedCard === 'vicerrectoria_academica' && renderAcademicViceRectoryHub()}
                 {selectedCard === 'vicerrectoria_financiera' && (
                   financialPanel === 'viaticos'
-                    ? <ViaticosGestionDashboard user={user} onBack={() => setFinancialPanel('hub')} />
+                    ? <ViaticosGestionDashboard user={user} onBack={() => setFinancialPanel('hub')} reviewSolicitudId={new URLSearchParams(location.search).get('solicitud')} reviewStage={new URLSearchParams(location.search).get('revision')} />
                     : renderFinancialHub()
                 )}
                 {selectedCard === 'oficina_juridica' && canAccessOficinaJuridica && (

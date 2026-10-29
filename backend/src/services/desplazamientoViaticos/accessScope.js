@@ -1,4 +1,5 @@
 const { ROLES } = require('../../constants/roles');
+const { getDesplazamientoViaticosRecipients } = require('../../config/desplazamientoViaticosConfig');
 
 const normalize = (value) => String(value || '')
   .normalize('NFD')
@@ -78,23 +79,27 @@ const userAreaAppearsInTrace = (user = {}, solicitud = {}) => {
   });
 };
 
-const isAccountingUser = (user = {}) => {
-  const identity = getUserIdentityText(user);
-  return AREA_TERMS.tecnico_contable.some((term) => identity.includes(normalize(term)));
-};
-
 const canActOnSolicitud = (user = {}, solicitud = {}) => user?.role === ROLES.ADMINISTRADOR
   || userMatchesStep(user, getCurrentStep(solicitud));
 
-const canValidateLegalizacion = (user = {}) => user?.role === ROLES.ADMINISTRADOR || isAccountingUser(user);
+const canValidateLegalizacion = (user = {}) => user?.role === ROLES.ADMINISTRADOR
+  || normalizeEmail(user.email) === getDesplazamientoViaticosRecipients().tecnicoContable
+  || normalize(user.cargo).includes('tecnico contable');
+
+const canReviewAccounting = (user = {}) => user?.role === ROLES.ADMINISTRADOR
+  || normalizeEmail(user.email) === getDesplazamientoViaticosRecipients().contabilidad
+  || normalize(user.dependencia) === 'oficina de contabilidad';
 
 const canAccessSolicitud = (user = {}, solicitud = {}) => {
   if (user?.role === ROLES.ADMINISTRADOR) return true;
   const currentStep = getCurrentStep(solicitud);
+  if (solicitud.legalizacion && canReviewAccounting(user) && !canValidateLegalizacion(user)) {
+    return ['en_revision_contabilidad', 'devuelta_tecnico', 'finalizada'].includes(solicitud.legalizacion.estado);
+  }
   if (userMatchesStep(user, currentStep)) return true;
   if (userAppearsInTrace(user, solicitud) || userAreaAppearsInTrace(user, solicitud)) return true;
 
-  return Boolean(isAccountingUser(user) && solicitud.legalizacion);
+  return Boolean(canValidateLegalizacion(user) && solicitud.legalizacion);
 };
 
 const filterSolicitudesForUser = (user, solicitudes = []) => user?.role === ROLES.ADMINISTRADOR
@@ -105,6 +110,7 @@ module.exports = {
   canActOnSolicitud,
   canAccessSolicitud,
   canValidateLegalizacion,
+  canReviewAccounting,
   filterSolicitudesForUser,
   getCurrentStep,
   userMatchesStep

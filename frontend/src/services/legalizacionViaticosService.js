@@ -2,10 +2,12 @@ import api from './api';
 
 export const getEstadoLegalizacion = () => api.get('/legalizacion-viaticos/estado-propio').then((response) => response.data);
 export const getMisLegalizaciones = () => api.get('/legalizacion-viaticos/mis-legalizaciones').then((response) => response.data);
-export const presentarLegalizacion = (id, formData) => api.post(`/legalizacion-viaticos/${id}/presentar`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 }).then((response) => response.data);
+export const presentarLegalizacion = (id, formData, onUploadProgress) => api.post(`/legalizacion-viaticos/${id}/presentar`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000, onUploadProgress }).then((response) => response.data);
 export const getSolicitudesViaticos = (params = {}) => api.get('/legalizacion-viaticos/gestion/solicitudes', { params }).then((response) => response.data);
 export const getSolicitudViaticos = (id) => api.get(`/legalizacion-viaticos/gestion/solicitudes/${id}`).then((response) => response.data);
 export const validarLegalizacion = (id, payload) => api.post(`/legalizacion-viaticos/gestion/${id}/validar`, payload, { timeout: 120000 }).then((response) => response.data);
+export const revisarContabilidadLegalizacion = (id, payload) => api.post(`/legalizacion-viaticos/gestion/${id}/contabilidad`, payload).then((response) => response.data);
+export const confirmarAjustesLegalizacion = (id) => api.post(`/legalizacion-viaticos/gestion/${id}/ajustes-realizados`, {}).then((response) => response.data);
 export const ejecutarRecordatoriosLegalizacion = () => api.post('/legalizacion-viaticos/gestion/recordatorios/ejecutar').then((response) => response.data);
 export const enviarRecordatorioIndividualLegalizacion = (id) => api.post(`/legalizacion-viaticos/gestion/${id}/recordatorio`).then((response) => response.data);
 export const getEstadisticasViaticos = () => api.get('/legalizacion-viaticos/estadisticas/resumen').then((response) => response.data);
@@ -39,3 +41,4 @@ export const abrirAdjuntoLegalizacion = async (legalizacionId, fileId) => {
   window.open(url, '_blank', 'noopener,noreferrer');
   window.setTimeout(() => URL.revokeObjectURL(url), 60000);
 };
+export const obtenerAdjuntoLegalizacion = (legalizacionId, fileId, signal) => api.get(`/legalizacion-viaticos/${legalizacionId}/adjuntos/${fileId}`, { responseType: 'blob', timeout: 60000, signal }).then((response) => response.data);

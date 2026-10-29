@@ -296,7 +296,7 @@ test('las dos modalidades de prueba de liquidación envían una sola acción vá
 test('Tesorería puede autorizar o rechazar aunque existan campos editables requeridos', () => {
   const html = _internals.treasuryForm(actionFormSolicitud, 'token-tesoreria');
 
-  assert.match(html, /name="accion" value="autorizar_pago" type="submit">Autorizar pago<\/button>/);
+  assert.match(html, /name="accion" value="autorizar_pago" type="submit">Procesar liquidación para pago<\/button>/);
   assert.match(html, /name="accion" value="rechazar_pago" type="submit" formnovalidate>No autorizar pago<\/button>/);
   assert.match(html, /name="numeroCuenta"[^>]+required/);
 });

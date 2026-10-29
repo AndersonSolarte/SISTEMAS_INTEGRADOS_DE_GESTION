@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { canAccessSolicitud, canActOnSolicitud, canValidateLegalizacion, filterSolicitudesForUser, userMatchesStep } = require('./accessScope');
+const { canReviewAccounting } = require('./accessScope');
 
 const solicitud = (step, extra = {}) => ({
   plan_aprobacion: step ? [step] : [],
@@ -49,4 +50,12 @@ test('un usuario sin coincidencia no puede consultar solicitudes de otras depend
   const user = { role: 'consulta', email: 'consulta@unicesmag.edu.co', dependencia: 'Biblioteca' };
   const row = solicitud({ key: 'gestion_humana', label: 'Oficina de Gestión del Talento Humano', email: 'talentohumano@unicesmag.edu.co' });
   assert.equal(canAccessSolicitud(user, row), false);
+});
+
+test('Contabilidad revisa su nueva etapa pero no sustituye la validación del Técnico Contable', () => {
+  const user = { role: 'consulta', email: 'contabil@unicesmag.edu.co', dependencia: 'Oficina de Contabilidad' };
+  assert.equal(canReviewAccounting(user), true);
+  assert.equal(canValidateLegalizacion(user), false);
+  assert.equal(canAccessSolicitud(user, solicitud(null, { legalizacion: { estado: 'en_revision' } })), false);
+  assert.equal(canAccessSolicitud(user, solicitud(null, { legalizacion: { estado: 'en_revision_contabilidad' } })), true);
 });
