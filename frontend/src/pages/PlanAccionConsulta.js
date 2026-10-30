@@ -178,8 +178,9 @@ export default function PlanAccionConsulta({
     loading: false
   });
 
-  // Filtro de búsqueda en la tabla de actividades
+  // Filtro de búsqueda y origen en la tabla de actividades
   const [activitySearch, setActivitySearch] = useState('');
+  const [activityOriginFilter, setActivityOriginFilter] = useState('all');
 
   // Paginación de tablas (5 por defecto, con opciones 5, 10, 20, 50)
   const [respPage, setRespPage] = useState(0);
@@ -193,7 +194,7 @@ export default function PlanAccionConsulta({
     setRespPage(0);
     setCoRespPage(0);
     setActasPage(0);
-  }, [activitySearch]);
+  }, [activitySearch, activityOriginFilter]);
 
   // Parámetros de URL para redirección directa desde notificaciones de campana
   const [searchParams] = useSearchParams();
@@ -807,18 +808,28 @@ export default function PlanAccionConsulta({
     return { totalActivities, avgProgress, totalEvidences, completedActivities, inProgressActivities, totalCoActivities };
   }, [selectedPlan, coResponsibleItems]);
 
+  const pmItemsCount = useMemo(() => {
+    return (selectedPlan?.items || []).filter((it) => it.custom_values?.source_module === 'plan_mejoramiento').length;
+  }, [selectedPlan?.items]);
+
   // Actividades filtradas por búsqueda en tiempo real (Como Responsable)
   const filteredItems = useMemo(() => {
-    const planItems = selectedPlan?.items || [];
+    let planItems = selectedPlan?.items || [];
+    if (activityOriginFilter === 'plan_mejoramiento') {
+      planItems = planItems.filter((it) => it.custom_values?.source_module === 'plan_mejoramiento');
+    } else if (activityOriginFilter === 'plan_accion') {
+      planItems = planItems.filter((it) => it.custom_values?.source_module !== 'plan_mejoramiento');
+    }
     if (!activitySearch.trim()) return planItems;
     const term = activitySearch.toLowerCase().trim();
     return planItems.filter((it) =>
       (it.code || '').toLowerCase().includes(term) ||
       (it.activity || '').toLowerCase().includes(term) ||
       (it.indicator || '').toLowerCase().includes(term) ||
-      (it.macroactivity || '').toLowerCase().includes(term)
+      (it.macroactivity || '').toLowerCase().includes(term) ||
+      (it.custom_values?.pm_programa || '').toLowerCase().includes(term)
     );
-  }, [selectedPlan, activitySearch]);
+  }, [selectedPlan, activityOriginFilter, activitySearch]);
 
   // Actividades filtradas por búsqueda en tiempo real (En Corresponsabilidad)
   const filteredCoItems = useMemo(() => {
@@ -1762,18 +1773,56 @@ export default function PlanAccionConsulta({
           </Box>
 
           {/* Barra de contexto y buscador dinámico */}
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
-            <Typography sx={{ fontSize: 12.5, color: '#475569', fontWeight: 750 }}>
-              {activityViewTab === 'responsible' && (
-                <>Mostrando <strong style={{ color: '#1e3a8a' }}>{filteredItems.length}</strong> actividades del plan propio</>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} flexWrap="wrap" gap={1}>
+            <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+              <Typography sx={{ fontSize: 12.5, color: '#475569', fontWeight: 750 }}>
+                {activityViewTab === 'responsible' && (
+                  <>Mostrando <strong style={{ color: '#1e3a8a' }}>{filteredItems.length}</strong> actividades del plan propio</>
+                )}
+                {activityViewTab === 'co_responsible' && (
+                  <>Mostrando <strong style={{ color: '#9f1239' }}>{filteredCoItems.length}</strong> actividades en corresponsabilidad con otras áreas</>
+                )}
+                {activityViewTab === 'minutes' && (
+                  <>Mostrando <strong style={{ color: '#6b21a8' }}>{planActas.length}</strong> actas oficiales COM-IF-FR-002 registradas</>
+                )}
+              </Typography>
+
+              {activityViewTab === 'responsible' && pmItemsCount > 0 && (
+                <Stack direction="row" spacing={0.8} alignItems="center">
+                  <Chip
+                    size="small"
+                    label={`Todas (${selectedPlan?.items?.length || 0})`}
+                    color={activityOriginFilter === 'all' ? 'primary' : 'default'}
+                    variant={activityOriginFilter === 'all' ? 'filled' : 'outlined'}
+                    onClick={() => { setActivityOriginFilter('all'); setRespPage(0); }}
+                    sx={{ fontWeight: 800, cursor: 'pointer', height: 26, fontSize: 11 }}
+                  />
+                  <Chip
+                    size="small"
+                    label={`Institucionales (${(selectedPlan?.items?.length || 0) - pmItemsCount})`}
+                    color={activityOriginFilter === 'plan_accion' ? 'primary' : 'default'}
+                    variant={activityOriginFilter === 'plan_accion' ? 'filled' : 'outlined'}
+                    onClick={() => { setActivityOriginFilter('plan_accion'); setRespPage(0); }}
+                    sx={{ fontWeight: 800, cursor: 'pointer', height: 26, fontSize: 11 }}
+                  />
+                  <Chip
+                    size="small"
+                    icon={<TrendingUpIcon sx={{ fontSize: '13px !important', color: activityOriginFilter === 'plan_mejoramiento' ? '#ffffff !important' : '#c2410c !important' }} />}
+                    label={`Plan de Mejoramiento (${pmItemsCount})`}
+                    onClick={() => { setActivityOriginFilter('plan_mejoramiento'); setRespPage(0); }}
+                    sx={{
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      height: 26,
+                      fontSize: 11,
+                      ...(activityOriginFilter === 'plan_mejoramiento'
+                        ? { bgcolor: '#ea580c', color: '#ffffff' }
+                        : { bgcolor: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' })
+                    }}
+                  />
+                </Stack>
               )}
-              {activityViewTab === 'co_responsible' && (
-                <>Mostrando <strong style={{ color: '#9f1239' }}>{filteredCoItems.length}</strong> actividades en corresponsabilidad con otras áreas</>
-              )}
-              {activityViewTab === 'minutes' && (
-                <>Mostrando <strong style={{ color: '#6b21a8' }}>{planActas.length}</strong> actas oficiales COM-IF-FR-002 registradas</>
-              )}
-            </Typography>
+            </Stack>
 
             <TextField
               size="small"
@@ -1800,6 +1849,15 @@ export default function PlanAccionConsulta({
             />
           </Stack>
         </Box>
+
+        {activityViewTab === 'responsible' && activityOriginFilter === 'plan_mejoramiento' && (
+          <Box sx={{ px: 2.5, py: 1.2, bgcolor: '#fff7ed', borderBottom: '1px solid #fed7aa', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TrendingUpIcon sx={{ color: '#ea580c', fontSize: 18 }} />
+            <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: '#9a3412' }}>
+              Actividades articuladas desde Plan de Mejoramiento ({filteredItems.length}) — Evidencias sincronizadas bidireccionalmente con Autoevaluación
+            </Typography>
+          </Box>
+        )}
 
         {/* TIRA INSTITUCIONAL (FILA 5 EXCEL) */}
         <Box
@@ -2087,27 +2145,56 @@ export default function PlanAccionConsulta({
 
                       {/* Código */}
                       <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
-                        <Chip
-                          size="small"
-                          label={it.code || '—'}
-                          sx={{
-                            fontWeight: 800,
-                            bgcolor: '#e2e8f0',
-                            color: '#1e293b',
-                            fontSize: 10.5,
-                            height: 22,
-                            borderRadius: 1
-                          }}
-                        />
+                        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
+                          <Chip
+                            size="small"
+                            label={it.code || '—'}
+                            sx={{
+                              fontWeight: 800,
+                              bgcolor: it.custom_values?.source_module === 'plan_mejoramiento' ? '#ffedd5' : '#e2e8f0',
+                              color: it.custom_values?.source_module === 'plan_mejoramiento' ? '#c2410c' : '#1e293b',
+                              fontSize: 10.5,
+                              height: 22,
+                              borderRadius: 1,
+                              border: it.custom_values?.source_module === 'plan_mejoramiento' ? '1px solid #fed7aa' : 'none'
+                            }}
+                          />
+                          {it.custom_values?.source_module === 'plan_mejoramiento' && (
+                            <Tooltip title={`Originada en Plan de Mejoramiento (${it.custom_values?.pm_programa || ''})`}>
+                              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#ea580c', flexShrink: 0, boxShadow: '0 0 0 2px #ffedd5' }} />
+                            </Tooltip>
+                          )}
+                        </Stack>
                       </TableCell>
 
                       {/* Actividad */}
                       <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1, minWidth: 190, maxWidth: { xs: 230, sm: 280, md: 320 } }}>
+                        {it.custom_values?.source_module === 'plan_mejoramiento' && (
+                          <Box sx={{ mb: 0.6 }}>
+                            <Tooltip title={`Actividad articulada desde Plan de Mejoramiento (${it.custom_values?.pm_programa || ''})`}>
+                              <Chip
+                                size="small"
+                                icon={<TrendingUpIcon sx={{ fontSize: '13px !important', color: '#c2410c !important' }} />}
+                                label={`Plan de Mejoramiento · ${it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '') || 'Autoevaluación'}`}
+                                sx={{
+                                  height: 22,
+                                  fontSize: 10.5,
+                                  fontWeight: 900,
+                                  bgcolor: '#fff7ed',
+                                  color: '#c2410c',
+                                  border: '1px solid #fed7aa',
+                                  borderRadius: 1.5,
+                                  '& .MuiChip-icon': { ml: 0.5 }
+                                }}
+                              />
+                            </Tooltip>
+                          </Box>
+                        )}
                         <Tooltip title={it.activity} arrow placement="top-start">
                           <Typography
                             sx={{
                               fontSize: 12,
-                              fontWeight: 700,
+                              fontWeight: it.custom_values?.source_module === 'plan_mejoramiento' ? 800 : 700,
                               color: '#0f172a',
                               lineHeight: 1.3,
                               display: '-webkit-box',
@@ -2880,12 +2967,20 @@ export default function PlanAccionConsulta({
               <CloudUploadIcon sx={{ fontSize: 22 }} />
             </Box>
             <Box sx={{ minWidth: 0 }}>
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                 <Chip
                   size="small"
                   label={targetItem?.code || 'Actividad'}
                   sx={{ bgcolor: '#e0e7ff', color: '#1e40af', fontWeight: 900, fontSize: 11, height: 22 }}
                 />
+                {targetItem?.custom_values?.source_module === 'plan_mejoramiento' && (
+                  <Chip
+                    size="small"
+                    icon={<TrendingUpIcon sx={{ fontSize: '13px !important', color: '#c2410c !important' }} />}
+                    label={`Plan de Mejoramiento · ${targetItem?.custom_values?.pm_programa || ''}`}
+                    sx={{ bgcolor: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontWeight: 900, fontSize: 10.5, height: 22 }}
+                  />
+                )}
                 <Typography sx={{ fontSize: 15.5, fontWeight: 900, color: '#0f172a' }}>
                   Cargar Evidencia
                 </Typography>
@@ -2907,6 +3002,16 @@ export default function PlanAccionConsulta({
 
         <DialogContent sx={{ px: 3, py: 2.5, bgcolor: '#ffffff' }}>
           <Stack spacing={2}>
+            {targetItem?.custom_values?.source_module === 'plan_mejoramiento' && (
+              <Alert severity="info" icon={<TrendingUpIcon sx={{ color: '#ea580c' }} />} sx={{ bgcolor: '#fff7ed', color: '#9a3412', border: '1px solid #fed7aa', borderRadius: 2, py: 0.8 }}>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 800 }}>
+                  Actividad de Autoevaluación ({targetItem?.custom_values?.pm_programa || 'Plan de Mejoramiento'})
+                </Typography>
+                <Typography sx={{ fontSize: 11.5, color: '#c2410c' }}>
+                  El soporte que radique aquí se sincroniza automáticamente en Google Drive y queda disponible tanto para el Comité de Autoevaluación como para el seguimiento de Planeación y Efectividad.
+                </Typography>
+              </Alert>
+            )}
             {/* Fila Ejecutiva: Selección de Período y Estado de Calificación de Planeación */}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between">
               <TextField
@@ -3167,8 +3272,16 @@ export default function PlanAccionConsulta({
               <AttachFileIcon sx={{ fontSize: 20 }} />
             </Box>
             <Box sx={{ minWidth: 0 }}>
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                 <Chip size="small" label={evidenceItem?.code || 'Actividad'} sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 900, fontSize: 11 }} />
+                {evidenceItem?.custom_values?.source_module === 'plan_mejoramiento' && (
+                  <Chip
+                    size="small"
+                    icon={<TrendingUpIcon sx={{ fontSize: '13px !important', color: '#c2410c !important' }} />}
+                    label={`Plan de Mejoramiento · ${evidenceItem?.custom_values?.pm_programa || ''}`}
+                    sx={{ bgcolor: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontWeight: 900, fontSize: 10.5, height: 22 }}
+                  />
+                )}
                 <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }} noWrap>
                   Evidencias Radicadas
                 </Typography>
