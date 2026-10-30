@@ -3,10 +3,11 @@ const path = require('path');
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const { Op } = require('sequelize');
-const { Autoevaluacion, AutoevaluacionPrograma, Documento, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission, StrategicPlan, StrategicTerm, StrategicCatalogItem, StrategicResponsibility, StrategicActionPlan, StrategicActionItem, StrategicMonitoringPeriod, StrategicMonitoringResult, StrategicEvidence } = require('../models');
+const { Autoevaluacion, AutoevaluacionPrograma, Documento, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission, StrategicPlan, StrategicTerm, StrategicCatalogItem, StrategicResponsibility, StrategicActionPlan, StrategicActionItem, StrategicMonitoringPeriod, StrategicMonitoringResult, StrategicEvidence, StrategicNotification } = require('../models');
 const planMejoramientoDriveService = require('../services/planMejoramientoDriveService');
 const { ensureActivityFoldersInDrive } = require('../services/strategicPlanningDriveService');
 const { syncSinglePlanOfficialWorkbook } = require('../services/actionPlanRepositoryDriveService');
+const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
 
 const PLAN_MANAGER_ROLES = new Set([
   'administrador',
@@ -1430,6 +1431,99 @@ const linkActivityToActionPlan = async (req, res) => {
     syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) =>
       console.warn('[Sync Official Workbook warning]:', err.message)
     );
+
+    // 1. Notificación por correo electrónico a planeacionestrategica@unicesmag.edu.co
+    try {
+      const emailSubject = `[Plan de Mejoramiento] Nueva actividad articulada al Plan de Acción ${actionPlan.code} - ${plan.programa || ''}`;
+      const emailHtml = `
+        <div style="font-family: Arial, sans-serif; color: #1e293b; max-width: 600px; line-height: 1.6;">
+          <h2 style="color: #0d3c61; margin-bottom: 8px;">Actividad de Plan de Mejoramiento Articulada al Plan de Acción</h2>
+          <p>Se ha vinculado una actividad originada en el <strong>Plan de Mejoramiento (${plan.programa || 'Autoevaluación'})</strong> al <strong>Plan de Acción ${actionPlan.code}</strong> para su revisión y seguimiento institucional.</p>
+          
+          <table style="width: 100%; border-collapse: collapse; margin: 16px 0; background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <tr>
+              <td style="padding: 10px 14px; font-weight: bold; border-bottom: 1px solid #e2e8f0; width: 35%;">Programa / Origen:</td>
+              <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0;">${plan.programa || 'Autoevaluación'}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 14px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">Plan de Acción Destino:</td>
+              <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0;">${actionPlan.title || actionPlan.code} (${actionPlan.code})</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 14px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">Código Asignado:</td>
+              <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #2563eb;">${actionItem.code}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 14px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">Actividad:</td>
+              <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0;">${activityName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 14px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">Líder / Responsable:</td>
+              <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0;">${leaderName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 14px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">Vinculado por:</td>
+              <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0;">${req.user?.nombre || req.user?.username || 'Usuario'}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 14px; font-weight: bold;">Fecha de Vinculación:</td>
+              <td style="padding: 10px 14px;">${new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' })}</td>
+            </tr>
+          </table>
+
+          <p style="font-size: 13px; color: #64748b; margin-top: 20px;">
+            Este es un mensaje automático del Sistema Integrado de Gestión (SIAC). Ingrese al módulo de Planeación Estratégica para verificar los detalles del plan.
+          </p>
+        </div>
+      `;
+
+      sendStrategicPlanningEmail({
+        to: 'planeacionestrategica@unicesmag.edu.co',
+        subject: emailSubject,
+        html: emailHtml
+      }).catch((emailErr) => console.warn('[PM Email Notification warning]:', emailErr.message));
+    } catch (err) {
+      console.warn('[PM Email warning]:', err.message);
+    }
+
+    // 2. Notificaciones en campana para Planeación y Efectividad y los involucrados
+    try {
+      const planningUsers = await User.findAll({
+        where: {
+          role: { [Op.in]: ['planeacion_efectividad', 'planeacion_estrategica'] },
+          estado: 'activo'
+        },
+        attributes: ['id']
+      });
+
+      const recipientUserIds = new Set(planningUsers.map((u) => u.id));
+      if (actionPlan.responsible_user_id) recipientUserIds.add(actionPlan.responsible_user_id);
+      if (req.user?.id) recipientUserIds.add(req.user.id);
+
+      const notifPromises = Array.from(recipientUserIds).map((uid) =>
+        StrategicNotification.create({
+          user_id: uid,
+          action_plan_id: actionPlan.id,
+          type: 'action_plan_review_submitted',
+          title: `Actividad vinculada desde Plan de Mejoramiento (${actionItem.code})`,
+          message: `El programa ${plan.programa || ''} vinculó la actividad "${activityName}" al Plan de Acción ${actionPlan.code}.`,
+          link: `/plan-accion-consulta`,
+          metadata: {
+            action_plan_code: actionPlan.code,
+            action_plan_id: actionPlan.id,
+            action_item_id: actionItem.id,
+            action_item_code: actionItem.code,
+            source_module: 'plan_mejoramiento',
+            programa: plan.programa,
+            activity_name: activityName
+          }
+        }).catch((notifErr) => console.warn(`[StrategicNotification warning for ${uid}]:`, notifErr.message))
+      );
+
+      await Promise.all(notifPromises);
+    } catch (notifError) {
+      console.warn('[StrategicNotification create error]:', notifError.message);
+    }
 
     return res.json({
       success: true,
