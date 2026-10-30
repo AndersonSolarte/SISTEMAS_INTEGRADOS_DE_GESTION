@@ -1938,15 +1938,58 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     onChange={(e) => setTermDependencyForm({ ...termDependencyForm, dependency: e.target.value })}
                     sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff', borderRadius: 2.25 } }}
                   />
-                  <TextField
+                  <Autocomplete
                     size="small"
-                    label="Cédula del responsable"
-                    inputProps={{ inputMode: 'numeric' }}
-                    value={termDependencyForm.document}
-                    onChange={(e) => setTermDependencyForm({ ...termDependencyForm, document: e.target.value.replace(/\D/g, '') })}
-                    error={Boolean(annualLeaderDocument && !selectedAnnualLeader)}
-                    helperText={annualLeaderDocument && !selectedAnnualLeader ? 'No encontrada en SIAC' : undefined}
-                    sx={{ minWidth: { sm: 220 }, '& .MuiOutlinedInput-root': { bgcolor: '#fff', borderRadius: 2.25 } }}
+                    fullWidth
+                    options={leaders}
+                    value={selectedAnnualLeader || null}
+                    onChange={(_, leader) => {
+                      setTermDependencyForm({
+                        ...termDependencyForm,
+                        document: leader?.document || ''
+                      });
+                    }}
+                    filterOptions={(options, state) => {
+                      const query = state.inputValue.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+                      if (!query) return options.slice(0, 50);
+                      const words = query.split(/\s+/).filter(Boolean);
+                      return options.filter((leader) => {
+                        const target = `${leader.document || ''} ${leader.name || ''} ${leader.position || ''} ${leader.email || ''}`
+                          .toLowerCase()
+                          .normalize('NFD')
+                          .replace(/[\u0300-\u036f]/g, '');
+                        return words.every((w) => target.includes(w));
+                      }).slice(0, 50);
+                    }}
+                    getOptionLabel={(leader) => typeof leader === 'string'
+                      ? leader
+                      : `${leader.name || ''} · CC ${leader.document || ''}`}
+                    renderOption={(props, leader) => (
+                      <li {...props} key={leader.id || leader.document}>
+                        <Box sx={{ width: '100%', py: 0.5 }}>
+                          <Typography variant="body2" fontWeight={800} color="#0f172a">
+                            {leader.name}
+                          </Typography>
+                          <Typography variant="caption" color="#64748b" display="block">
+                            CC: <strong>{leader.document}</strong> {leader.position ? `· ${leader.position}` : ''} {leader.email ? `(${leader.email})` : ''}
+                          </Typography>
+                        </Box>
+                      </li>
+                    )}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Responsable (cédula o nombre)"
+                        placeholder="Buscar por cédula o nombre..."
+                        error={Boolean(annualLeaderDocument && !selectedAnnualLeader)}
+                        helperText={annualLeaderDocument && !selectedAnnualLeader ? 'No encontrada en SIAC' : undefined}
+                        sx={{
+                          minWidth: { xs: '100%', sm: 280, md: 360 },
+                          '& .MuiOutlinedInput-root': { bgcolor: '#fff', borderRadius: 2.25 }
+                        }}
+                      />
+                    )}
+                    sx={{ minWidth: { xs: '100%', sm: 280, md: 360 } }}
                   />
                   <Button
                     variant="contained"
