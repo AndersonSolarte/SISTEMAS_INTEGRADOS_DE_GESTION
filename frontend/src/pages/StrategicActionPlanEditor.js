@@ -219,11 +219,21 @@ const isEndDateField = (field) => {
   );
 };
 
+const isMacroactivityField = (field) => {
+  if (!field) return false;
+  const k = normalizeFieldText(field.key);
+  const l = normalizeFieldText(field.label);
+  return k.includes('macro') || l.includes('macro');
+};
+
 const isActivityField = (field) => {
   if (!field) return false;
   if (isResponsibleField(field) || isCoResponsibleField(field) || isStartDateField(field) || isEndDateField(field)) return false;
   const k = normalizeFieldText(field.key);
   const l = normalizeFieldText(field.label);
+  // Excluir estrictamente cualquier campo de Macroactividad
+  if (k.includes('macro') || l.includes('macro')) return false;
+
   return (
     k === 'activity' ||
     k === 'actividad' ||
@@ -232,8 +242,9 @@ const isActivityField = (field) => {
     k === 'descripcion_actividad' ||
     l === 'actividad' ||
     l === 'actividades' ||
-    l.includes('actividad') ||
-    l.includes('actividades')
+    l === 'nombre de la actividad' ||
+    l === 'descripcion de la actividad' ||
+    l === 'nombre o descripcion de la actividad'
   );
 };
 
@@ -1192,6 +1203,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         }
 
         // 4. Macroactividad y otros campos dinámicos del PED si existen en la sugerencia
+        const macroField = activityFields.find(isMacroactivityField);
+        const suggestionMacro = selectedSuggestion.macroactivity || selectedSuggestion.custom_values?.macroactivity || (macroField && selectedSuggestion.custom_values?.[macroField.key]);
+        if (suggestionMacro) {
+          nextItem.macroactivity = suggestionMacro;
+          if (macroField) nextCustom[macroField.key] = suggestionMacro;
+        }
         if (selectedSuggestion.custom_values && typeof selectedSuggestion.custom_values === 'object') {
           Object.entries(selectedSuggestion.custom_values).forEach(([k, v]) => {
             if (v && !nextCustom[k] && !['starts_on', 'ends_on', 'fecha_inicio', 'fecha_fin', 'responsible', 'co_responsibles'].includes(k)) {
@@ -1694,8 +1711,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                 minRows={2}
                 maxRows={5}
                 label={field.label || 'Actividades'}
-                placeholder="Escriba palabras clave para seleccionar una actividad existente o redacte una nueva..."
-                helperText="💡 Escriba palabras clave para autocompletar actividades existentes del banco institucional o redacte una nueva."
+                placeholder="Escriba el nombre de la actividad..."
+                
                 InputProps={{
                   ...params.InputProps,
                   endAdornment: (
@@ -1712,11 +1729,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     transition: 'all 0.2s ease-in-out',
                     '&:hover': { borderColor: '#86add9' },
                     '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(104, 157, 214, 0.14)' }
-                  },
-                  '& .MuiFormHelperText-root': {
-                    fontSize: 11,
-                    color: '#64748b',
-                    mt: 0.5
                   }
                 }}
               />
