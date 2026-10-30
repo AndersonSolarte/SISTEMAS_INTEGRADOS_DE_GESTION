@@ -3,8 +3,10 @@ const path = require('path');
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const { Op } = require('sequelize');
-const { Autoevaluacion, AutoevaluacionPrograma, Documento, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission } = require('../models');
+const { Autoevaluacion, AutoevaluacionPrograma, Documento, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission, StrategicPlan, StrategicTerm, StrategicCatalogItem, StrategicActionPlan, StrategicActionItem, StrategicMonitoringPeriod, StrategicMonitoringResult, StrategicEvidence } = require('../models');
 const planMejoramientoDriveService = require('../services/planMejoramientoDriveService');
+const { ensureActivityFoldersInDrive } = require('../services/strategicPlanningDriveService');
+const { syncSinglePlanOfficialWorkbook } = require('../services/actionPlanRepositoryDriveService');
 
 const PLAN_MANAGER_ROLES = new Set([
   'administrador',
@@ -837,6 +839,47 @@ const uploadActivityEvidence = async (req, res) => {
 
     const uploaded = await planMejoramientoDriveService.uploadActivityEvidence(plan, activityUid, req.file);
     await plan.update({ contenido: uploaded.content, actualizado_por: req.user?.id });
+    // Sincronizar evidencia con Plan de Acción si la actividad está vinculada
+    try {
+      let linkedItemId = null;
+      for (const obj of array(uploaded.content?.objetivos)) {
+        const a = array(obj.actividades).find((x) => String(x.uid) === String(activityUid));
+        if (a?.linkedActionItemId) {
+          linkedItemId = a.linkedActionItemId;
+          break;
+        }
+      }
+      if (linkedItemId) {
+        const actionItem = await StrategicActionItem.findByPk(linkedItemId, {
+          include: [{ model: StrategicActionPlan, as: 'actionPlan' }]
+        });
+        if (actionItem?.actionPlan?.term_id) {
+          const cutMonth = new Date().getMonth() + 1;
+          const targetPos = cutMonth <= 7 ? 1 : 2;
+          const period = (await StrategicMonitoringPeriod.findOne({
+            where: { term_id: actionItem.actionPlan.term_id, position: targetPos }
+          })) || (await StrategicMonitoringPeriod.findOne({ where: { term_id: actionItem.actionPlan.term_id } }));
+
+          if (period) {
+            await StrategicEvidence.create({
+              action_item_id: actionItem.id,
+              monitoring_period_id: period.id,
+              original_name: req.file.originalname,
+              stored_name: req.file.originalname,
+              storage_key: `pm-evidence-${plan.id}-${activityUid}-${Date.now()}`,
+              mime_type: req.file.mimetype || 'application/octet-stream',
+              size_bytes: req.file.size || 0,
+              sha256: crypto.createHash('sha256').update(req.file.buffer).digest('hex'),
+              drive_file_id: uploaded.evidence?.driveFileId || null,
+              sync_status: 'synced',
+              uploaded_by: req.user.id
+            });
+          }
+        }
+      }
+    } catch (syncEvErr) {
+      console.warn('[Sync StrategicEvidence error]:', syncEvErr.message);
+    }
     return res.status(201).json({
       success: true,
       data: {
@@ -882,9 +925,390 @@ const update = async (req, res) => {
         : mergeExecutionContent(plan.contenido || {}, payload.contenido || {}, new Set(delegated.filter((item) => ['asignada', 'en_ejecucion', 'devuelta'].includes(item.estado_flujo)).map((item) => String(item.actividad_uid))));
     }
     await plan.update({ ...payload, actualizado_por: req.user?.id });
+    syncLinkedActionPlansTracking(plan, req).catch((err) => console.warn('[syncLinkedActionPlansTracking error]:', err.message));
     return res.json({ success: true, data: await serializeForRequest(plan, req) });
   } catch (error) {
     return res.status(error.status || 500).json({ success: false, message: error.message || 'No fue posible actualizar el plan' });
+  }
+};
+
+
+// ============================================================================
+// INTEROPERABILIDAD BIDIRECCIONAL: PLAN DE MEJORAMIENTO <-> PLAN DE ACCIÓN
+// ============================================================================
+
+const syncLinkedActionPlansTracking = async (plan, req) => {
+  try {
+    const objetivos = array(plan.contenido?.objetivos);
+    for (const obj of objetivos) {
+      for (const act of array(obj.actividades)) {
+        if (!act.linkedActionItemId) continue;
+
+        const actionItem = await StrategicActionItem.findByPk(act.linkedActionItemId, {
+          include: [{
+            model: StrategicActionPlan,
+            as: 'actionPlan',
+            include: [{ model: StrategicTerm, as: 'term' }]
+          }]
+        });
+        if (!actionItem || !actionItem.actionPlan?.term_id) continue;
+
+        const rawProgress = Number(act.metaAlcanzada ?? 0);
+        const progressClamped = Math.min(100, Math.max(0, Math.round(Number.isFinite(rawProgress) ? rawProgress : 0)));
+
+        let cutMonth = 1;
+        if (act.fechaSeguimiento) {
+          const parts = String(act.fechaSeguimiento).split('-');
+          if (parts.length >= 2) cutMonth = parseInt(parts[1], 10) || 1;
+        } else {
+          cutMonth = new Date().getMonth() + 1;
+        }
+        const isS1 = cutMonth <= 7;
+        const targetPosition = isS1 ? 1 : 2;
+
+        const periods = await StrategicMonitoringPeriod.findAll({
+          where: { term_id: actionItem.actionPlan.term_id },
+          order: [['position', 'ASC'], ['starts_on', 'ASC']]
+        });
+        const targetPeriod = periods.find((p) => p.position === targetPosition) || periods[isS1 ? 0 : Math.min(1, periods.length - 1)];
+
+        if (targetPeriod) {
+          const [result] = await StrategicMonitoringResult.findOrCreate({
+            where: { action_item_id: actionItem.id, monitoring_period_id: targetPeriod.id },
+            defaults: {
+              action_item_id: actionItem.id,
+              monitoring_period_id: targetPeriod.id,
+              created_by: req?.user?.id || 1
+            }
+          });
+
+          await result.update({
+            physical_progress: progressClamped,
+            observations: act.observaciones || 'Seguimiento registrado desde Plan de Mejoramiento',
+            status: 'submitted',
+            updated_by: req?.user?.id || 1
+          });
+
+          const custom = { ...(actionItem.custom_values || {}) };
+          if (isS1) {
+            custom.progress_s1 = progressClamped;
+            custom.observations_s1 = act.observaciones || '';
+          } else {
+            custom.progress_s2 = progressClamped;
+            custom.observations_s2 = act.observaciones || '';
+          }
+
+          const allResults = await StrategicMonitoringResult.findAll({
+            where: { action_item_id: actionItem.id, deleted_at: null }
+          });
+          const avg = allResults.length
+            ? allResults.reduce((s, r) => s + Number(r.physical_progress || 0), 0) / allResults.length
+            : progressClamped;
+
+          await actionItem.update({
+            custom_values: custom,
+            current_progress: avg,
+            updated_by: req?.user?.id || 1
+          });
+
+          syncSinglePlanOfficialWorkbook(actionItem.action_plan_id).catch((err) =>
+            console.warn('[Auto-sync official workbook error]:', err.message)
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[syncLinkedActionPlansTracking error]:', err.message);
+  }
+};
+
+const getActionPlanCandidates = async (req, res) => {
+  try {
+    const plan = await PlanMejoramiento.findByPk(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: 'Plan de mejoramiento no encontrado' });
+
+    const activityUid = text(req.params.uid);
+    let targetActivity = null;
+    for (const obj of array(plan.contenido?.objetivos)) {
+      const found = array(obj.actividades).find((a) => String(a.uid) === activityUid);
+      if (found) { targetActivity = found; break; }
+    }
+    if (!targetActivity) return res.status(404).json({ success: false, message: 'Actividad no encontrada' });
+
+    let year = plan.periodo_inicio || 2026;
+    if (targetActivity.fechaInicio) {
+      const match = String(targetActivity.fechaInicio).match(/^(\d{4})/);
+      if (match) year = parseInt(match[1], 10);
+    }
+
+    const term = await StrategicTerm.findOne({ where: { year } });
+    if (!term) {
+      return res.json({
+        success: true,
+        data: {
+          year,
+          activity: targetActivity,
+          program: plan.programa,
+          plans: []
+        }
+      });
+    }
+
+    const actionPlans = await StrategicActionPlan.findAll({
+      where: { term_id: term.id, deleted_at: null },
+      include: [
+        { model: StrategicCatalogItem, as: 'organizationalUnit' },
+        { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo'] }
+      ],
+      order: [['code', 'ASC']]
+    });
+
+    const normalize = (str) =>
+      String(str || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, ' ')
+        .trim();
+
+    const progNorm = normalize(plan.programa);
+
+    const mappedPlans = actionPlans.map((p) => {
+      const unitName = p.organizationalUnit?.name || p.title || '';
+      const unitNorm = normalize(unitName);
+      const isRecommended = progNorm && (unitNorm.includes(progNorm) || progNorm.includes(unitNorm));
+
+      return {
+        id: p.id,
+        code: p.code,
+        title: p.title,
+        unit_name: unitName,
+        leader_name: p.responsibleUser?.nombre || 'Director / Líder asignado',
+        leader_email: p.responsibleUser?.email || '',
+        leader_cargo: p.responsibleUser?.cargo || '',
+        is_recommended: Boolean(isRecommended)
+      };
+    });
+
+    mappedPlans.sort((a, b) => (b.is_recommended ? 1 : 0) - (a.is_recommended ? 1 : 0));
+
+    return res.json({
+      success: true,
+      data: {
+        year,
+        activity: {
+          uid: targetActivity.uid,
+          nombre: targetActivity.nombre,
+          indicador: targetActivity.indicador,
+          meta: targetActivity.meta,
+          fechaInicio: targetActivity.fechaInicio,
+          fechaFin: targetActivity.fechaFin,
+          linkedActionPlanId: targetActivity.linkedActionPlanId || null,
+          linkedActionItemId: targetActivity.linkedActionItemId || null
+        },
+        program: plan.programa,
+        plans: mappedPlans
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Error consultando planes candidatos' });
+  }
+};
+
+const linkActivityToActionPlan = async (req, res) => {
+  try {
+    const plan = await PlanMejoramiento.findByPk(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: 'Plan de mejoramiento no encontrado' });
+
+    const activityUid = text(req.params.uid);
+    let targetActivity = null;
+
+    const content = JSON.parse(JSON.stringify(plan.contenido || {}));
+    for (const obj of array(content.objetivos)) {
+      const found = array(obj.actividades).find((a) => String(a.uid) === activityUid);
+      if (found) {
+        targetActivity = found;
+        break;
+      }
+    }
+    if (!targetActivity) return res.status(404).json({ success: false, message: 'Actividad no encontrada en el plan' });
+
+    const actionPlanId = req.body.action_plan_id;
+    if (!actionPlanId) return res.status(400).json({ success: false, message: 'Seleccione el Plan de Acción destino' });
+
+    const actionPlan = await StrategicActionPlan.findByPk(actionPlanId, {
+      include: [
+        { model: StrategicTerm, as: 'term' },
+        { model: StrategicCatalogItem, as: 'organizationalUnit' },
+        { model: User, as: 'responsibleUser' }
+      ]
+    });
+    if (!actionPlan) return res.status(404).json({ success: false, message: 'Plan de Acción no encontrado' });
+
+    const existingItems = await StrategicActionItem.findAll({
+      where: { action_plan_id: actionPlan.id, deleted_at: null },
+      attributes: ['code']
+    });
+    const existingCodes = new Set(existingItems.map((it) => it.code));
+    let maxNum = 0;
+    for (const code of existingCodes) {
+      const match = String(code).match(/^ACT-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    }
+    let nextNum = Math.max(maxNum + 1, existingItems.length + 1);
+    let candidateCode = `ACT-${String(nextNum).padStart(3, '0')}`;
+    while (existingCodes.has(candidateCode)) {
+      nextNum += 1;
+      candidateCode = `ACT-${String(nextNum).padStart(3, '0')}`;
+    }
+
+    const leaderName = actionPlan.responsibleUser?.nombre || actionPlan.organizationalUnit?.name || 'Director del Programa';
+
+    let actionItem;
+    if (targetActivity.linkedActionItemId) {
+      actionItem = await StrategicActionItem.findByPk(targetActivity.linkedActionItemId);
+    }
+
+    if (actionItem && !actionItem.deleted_at) {
+      await actionItem.update({
+        activity: targetActivity.nombre || actionItem.activity,
+        indicator: targetActivity.indicador || actionItem.indicator,
+        target: String(targetActivity.meta || actionItem.target || '1'),
+        starts_on: targetActivity.fechaInicio || actionItem.starts_on,
+        ends_on: targetActivity.fechaFin || actionItem.ends_on,
+        custom_values: {
+          ...(actionItem.custom_values || {}),
+          source_module: 'plan_mejoramiento',
+          pm_plan_id: plan.id,
+          pm_actividad_uid: targetActivity.uid,
+          pm_programa: plan.programa,
+          drive_subfolder: `Plan de Mejoramiento - ${plan.programa}`,
+          responsible: leaderName
+        },
+        updated_by: req.user.id
+      });
+    } else {
+      actionItem = await StrategicActionItem.create({
+        action_plan_id: actionPlan.id,
+        code: candidateCode,
+        activity: targetActivity.nombre,
+        indicator: targetActivity.indicador || '',
+        indicator_type: 'Resultado',
+        target: String(targetActivity.meta || '1'),
+        starts_on: targetActivity.fechaInicio || `${actionPlan.term?.year || 2026}-01-01`,
+        ends_on: targetActivity.fechaFin || `${actionPlan.term?.year || 2026}-12-31`,
+        responsible_catalog_item_id: actionPlan.catalog_item_id || null,
+        custom_values: {
+          source_module: 'plan_mejoramiento',
+          pm_plan_id: plan.id,
+          pm_actividad_uid: targetActivity.uid,
+          pm_programa: plan.programa,
+          drive_subfolder: `Plan de Mejoramiento - ${plan.programa}`,
+          responsible: leaderName
+        },
+        version: 1,
+        status: 'active',
+        created_by: req.user.id
+      });
+    }
+
+    let driveFolderUrl = '';
+    try {
+      const folderRes = await ensureActivityFoldersInDrive(actionItem.id);
+      if (Array.isArray(folderRes) && folderRes[0]?.folderUrl) {
+        driveFolderUrl = folderRes[0].folderUrl;
+      }
+    } catch (driveErr) {
+      console.warn('[ensureActivityFoldersInDrive Warning]:', driveErr.message);
+    }
+
+    targetActivity.linkedActionPlanId = actionPlan.id;
+    targetActivity.linkedActionPlanCode = actionPlan.code;
+    targetActivity.linkedActionPlanTitle = actionPlan.title;
+    targetActivity.linkedActionItemId = actionItem.id;
+    targetActivity.linkedActionItemCode = actionItem.code;
+    targetActivity.linkedAt = new Date().toISOString();
+    if (driveFolderUrl) {
+      targetActivity.evidenceFolderUrl = driveFolderUrl;
+    }
+
+    await plan.update({ contenido: content, actualizado_por: req.user.id });
+
+    syncSinglePlanOfficialWorkbook(actionPlan.id).catch((err) =>
+      console.warn('[Sync Official Workbook warning]:', err.message)
+    );
+
+    return res.json({
+      success: true,
+      message: `Actividad vinculada con éxito al Plan de Acción (${actionPlan.code})`,
+      data: {
+        activity: targetActivity,
+        actionItem: {
+          id: actionItem.id,
+          code: actionItem.code,
+          activity: actionItem.activity
+        },
+        actionPlan: {
+          id: actionPlan.id,
+          code: actionPlan.code,
+          title: actionPlan.title,
+          leader: leaderName
+        },
+        evidenceFolderUrl: driveFolderUrl
+      }
+    });
+  } catch (error) {
+    console.error('[linkActivityToActionPlan Error]:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Error al vincular actividad con Plan de Acción' });
+  }
+};
+
+const unlinkActivityFromActionPlan = async (req, res) => {
+  try {
+    const plan = await PlanMejoramiento.findByPk(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: 'Plan de mejoramiento no encontrado' });
+
+    const activityUid = text(req.params.uid);
+    let targetActivity = null;
+
+    const content = JSON.parse(JSON.stringify(plan.contenido || {}));
+    for (const obj of array(content.objetivos)) {
+      const found = array(obj.actividades).find((a) => String(a.uid) === activityUid);
+      if (found) { targetActivity = found; break; }
+    }
+    if (!targetActivity) return res.status(404).json({ success: false, message: 'Actividad no encontrada' });
+
+    if (targetActivity.linkedActionItemId) {
+      const actionItem = await StrategicActionItem.findByPk(targetActivity.linkedActionItemId);
+      if (actionItem) {
+        await actionItem.update({
+          deleted_at: new Date(),
+          status: 'deleted',
+          updated_by: req.user.id
+        });
+        syncSinglePlanOfficialWorkbook(actionItem.action_plan_id).catch(() => {});
+      }
+    }
+
+    targetActivity.linkedActionPlanId = null;
+    targetActivity.linkedActionPlanCode = null;
+    targetActivity.linkedActionPlanTitle = null;
+    targetActivity.linkedActionItemId = null;
+    targetActivity.linkedActionItemCode = null;
+    targetActivity.linkedAt = null;
+
+    await plan.update({ contenido: content, actualizado_por: req.user.id });
+
+    return res.json({
+      success: true,
+      message: 'Actividad desvinculada del Plan de Acción',
+      data: targetActivity
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Error al desvincular actividad' });
   }
 };
 
@@ -1753,4 +2177,5 @@ const importPlanExcel = async (req, res) => {
   }
 };
 
-module.exports = { ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, syncDriveRepository, uploadActivityEvidence, exportExcel, downloadPlanTemplate, importPlanExcel, buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, planStateForAssignment };
+module.exports = {
+  getActionPlanCandidates, linkActivityToActionPlan, unlinkActivityFromActionPlan, syncLinkedActionPlansTracking, ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, syncDriveRepository, uploadActivityEvidence, exportExcel, downloadPlanTemplate, importPlanExcel, buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, planStateForAssignment };

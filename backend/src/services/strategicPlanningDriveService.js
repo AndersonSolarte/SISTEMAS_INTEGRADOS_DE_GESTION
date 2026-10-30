@@ -216,7 +216,24 @@ const ensureEvidenceFolder = async (drive, evidence) => {
     key: periodKey
   });
 
-  // 5. Carpeta de la ACTIVIDAD con su nombre completo (hasta 240 caracteres)
+  // 5. Si la actividad proviene de Plan de Mejoramiento, crear la subcarpeta intermedia "Plan de Mejoramiento - [Programa]"
+  let parentForActivity = periodFolder;
+  const pmSubfolderName = item.custom_values?.drive_subfolder
+    || (item.custom_values?.pm_programa ? `Plan de Mejoramiento - ${item.custom_values.pm_programa}` : null)
+    || (item.custom_values?.source_module === 'plan_mejoramiento' ? 'Plan de Mejoramiento' : null);
+
+  if (pmSubfolderName) {
+    const subfolderKey = selectedPeriod
+      ? `action-repository:subfolder:${unitScope}:${selectedPeriod.id}:${safeName(pmSubfolderName, 80)}`
+      : `action-repository:subfolder:${unitScope}:${safeName(pmSubfolderName, 80)}`;
+    parentForActivity = await findOrCreateFolder(drive, {
+      parentId: periodFolder,
+      name: compactFolderName('', pmSubfolderName, 240),
+      key: subfolderKey
+    });
+  }
+
+  // 6. Carpeta de la ACTIVIDAD con su nombre completo (hasta 240 caracteres)
   const actName = item.activity || item.description || 'ACTIVIDAD';
   const activityFolderName = compactFolderName(item.code, actName, 240);
   const activityKey = selectedPeriod
@@ -224,7 +241,7 @@ const ensureEvidenceFolder = async (drive, evidence) => {
     : `action-repository:activity:${item.id}`;
 
   return findOrCreateFolder(drive, {
-    parentId: periodFolder,
+    parentId: parentForActivity,
     name: activityFolderName,
     key: activityKey
   });

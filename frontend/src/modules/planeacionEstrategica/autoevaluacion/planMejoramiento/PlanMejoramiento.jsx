@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Collapse, Dialog, Divider, IconButton, LinearProgress, MenuItem, Paper, Stack,
+  Alert, Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, InputAdornment, LinearProgress, MenuItem, Paper, Radio, RadioGroup, Stack,
   Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, TextField, Tooltip, Typography
 } from '@mui/material';
 import {
   AddRounded as AddIcon,
   AttachFileRounded as AttachIcon,
   ArrowBack as ArrowBackIcon,
+  CheckCircleOutlineRounded as CheckCircleOutlineIcon,
   DeleteOutlineRounded as DeleteIcon,
   DownloadRounded as DownloadIcon,
   EditRounded as EditIcon,
@@ -16,6 +17,8 @@ import {
   CloudSyncRounded as CloudSyncIcon,
   CalendarMonthRounded as CalendarIcon,
   FlagRounded as ObjectiveIcon,
+  LinkOffRounded as LinkOffIcon,
+  LinkRounded as LinkIcon,
   MonetizationOnRounded as BudgetIcon,
   PlaylistAddCheckRounded as PlanIcon,
   PersonAddAlt1Rounded as PersonAddIcon,
@@ -51,7 +54,8 @@ const emptyActivity = () => ({
   responsableDependencia: '', responsableVicerrectoria: '', cargoResponsable: '', alcance: 'PROGRAMA', ejeEstrategico: '', objetivoEstrategico: '',
   proyectoPdi: '', politicasInstitucionales: [], lineasAccionPolitica: [],
   metaAlcanzada: '', fechaSeguimiento: '', evidencia: '', evidenceFolderId: '', evidenceFolderUrl: '', evidenceDriveStatus: '',
-  observaciones: '', verificacionSeguimiento: 'pendiente', seguimientos: []
+  observaciones: '', verificacionSeguimiento: 'pendiente', seguimientos: [],
+  linkedActionPlanId: null, linkedActionItemId: null, linkedActionPlanCode: '', linkedActionPlanName: '', linkedDirectorNombre: ''
 });
 const emptyObjective = (number) => ({
   codigo: `OPM_${String(number).padStart(2, '0')}`, factor: '', caracteristica: '', aspecto: '', calificacion: '',
@@ -106,8 +110,22 @@ const withCurrent = (options = [], current = '') => current && !options.includes
 const asStringArray = (value) => Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
 const withCurrentMany = (options = [], current = []) => Array.from(new Set([...(options || []), ...asStringArray(current)]));
 const percent = (activity) => {
-  const goal = Number(activity.meta || 0);
-  return goal > 0 ? Math.min(100, Math.max(0, (Number(activity.metaAlcanzada || 0) / goal) * 100)) : 0;
+  const rawVal = Number(activity?.metaAlcanzada ?? 0);
+  const goal = Number(activity?.meta ?? 0);
+  if (!Number.isFinite(rawVal) || rawVal <= 0) return 0;
+  // Compatibilidad hacia atrás: si digitaban decimales como 0.5 cuando la meta era 1
+  if (rawVal <= 1 && rawVal > 0 && goal === 1) {
+    return Math.round(rawVal * 100);
+  }
+  // Si la meta es 1 o 100, el avance se interpreta como porcentaje directo de 0 a 100
+  if (goal === 1 || goal === 100 || goal <= 0) {
+    return Math.min(100, Math.max(0, Math.round(rawVal)));
+  }
+  // Si rawVal es mayor que la meta pero está dentro de 100, probablemente fue ingresado como porcentaje
+  if (rawVal > goal && rawVal <= 100) {
+    return Math.min(100, Math.round(rawVal));
+  }
+  return Math.min(100, Math.max(0, Math.round((rawVal / goal) * 100)));
 };
 const objectiveProgress = (objective) => {
   const activities = objective?.actividades || [];
@@ -306,6 +324,13 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const importInputRef = useRef(null);
   const editorImportInputRef = useRef(null);
+
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [linkingTarget, setLinkingTarget] = useState(null);
+  const [linkingCandidates, setLinkingCandidates] = useState([]);
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [selectedActionPlanId, setSelectedActionPlanId] = useState('');
+  const [linkingBusy, setLinkingBusy] = useState(false);
 
   const handleDownloadBlankTemplate = async (programa = '') => {
     setDownloadingTemplate(true);
@@ -827,6 +852,107 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     }, 1600);
     return () => window.clearTimeout(timer);
   }, [editor?.id, currentDriveActivitiesReady, currentDriveRepositoryKey, tab, syncEvidenceRepository]);
+
+  const handleOpenLinkDialog = async (objectiveIndex, activityIndex, activity) => {
+    if (!activity?.nombre?.trim()) {
+      return enqueueSnackbar('Asigne un nombre a la actividad antes de vincularla', { variant: 'warning' });
+    }
+    let planId = editor?.id;
+    if (!planId) {
+      const saved = await persistPlan(editor);
+      planId = saved?.id;
+    }
+    if (!planId) {
+      return enqueueSnackbar('Guarde primero el plan de mejoramiento para continuar', { variant: 'warning' });
+    }
+
+    setLinkingTarget({ objectiveIndex, activityIndex, activity });
+    setLinkingCandidates([]);
+    setSelectedActionPlanId('');
+    setLinkModalOpen(true);
+    setLoadingCandidates(true);
+
+    try {
+      const res = await planMejoramientoService.getActionPlanCandidates(planId, activity.uid);
+      const plans = res?.data?.plans || [];
+      setLinkingCandidates(plans);
+      const recommended = plans.find((p) => p.is_recommended) || plans[0];
+      if (recommended) {
+        setSelectedActionPlanId(recommended.id);
+      }
+    } catch (err) {
+      enqueueSnackbar(err.response?.data?.message || err.message || 'Error al buscar planes de acción candidatos', { variant: 'error' });
+    } finally {
+      setLoadingCandidates(false);
+    }
+  };
+
+  const handleConfirmLink = async () => {
+    if (!linkingTarget || !selectedActionPlanId) {
+      return enqueueSnackbar('Seleccione un plan de acción destino', { variant: 'warning' });
+    }
+    setLinkingBusy(true);
+    try {
+      const res = await planMejoramientoService.linkToActionPlan(editor.id, linkingTarget.activity.uid, {
+        action_plan_id: selectedActionPlanId
+      });
+      const data = res?.data;
+      const linkedPlan = linkingCandidates.find((p) => String(p.id) === String(selectedActionPlanId));
+
+      setEditor((previous) => ({
+        ...previous,
+        objetivos: previous.objetivos.map((obj, oi) => oi !== linkingTarget.objectiveIndex ? obj : {
+          ...obj,
+          actividades: obj.actividades.map((act, ai) => ai !== linkingTarget.activityIndex ? act : {
+            ...act,
+            linkedActionPlanId: data?.action_plan_id || selectedActionPlanId,
+            linkedActionItemId: data?.action_item_id,
+            linkedActionPlanCode: data?.action_plan_code || linkedPlan?.code || '',
+            linkedActionPlanName: data?.action_plan_name || linkedPlan?.name || '',
+            linkedDirectorNombre: data?.director_nombre || linkedPlan?.responsible_name || '',
+            evidenceFolderUrl: data?.drive_folder_url || act.evidenceFolderUrl,
+            evidenceFolderId: data?.drive_folder_id || act.evidenceFolderId,
+            evidenceDriveStatus: 'synced'
+          })
+        })
+      }));
+
+      enqueueSnackbar(`Actividad vinculada exitosamente al Plan de Acción ${data?.action_plan_code || ''}`, { variant: 'success' });
+      setLinkModalOpen(false);
+      setLinkingTarget(null);
+    } catch (err) {
+      enqueueSnackbar(err.response?.data?.message || err.message || 'No fue posible vincular la actividad', { variant: 'error' });
+    } finally {
+      setLinkingBusy(false);
+    }
+  };
+
+  const handleUnlinkActivity = async (objectiveIndex, activityIndex, activity) => {
+    if (!window.confirm(`¿Desea desvincular la actividad "${activity.nombre}" del Plan de Acción?`)) return;
+    setLinkingBusy(true);
+    try {
+      await planMejoramientoService.unlinkFromActionPlan(editor.id, activity.uid);
+      setEditor((previous) => ({
+        ...previous,
+        objetivos: previous.objetivos.map((obj, oi) => oi !== objectiveIndex ? obj : {
+          ...obj,
+          actividades: obj.actividades.map((act, ai) => ai !== activityIndex ? act : {
+            ...act,
+            linkedActionPlanId: null,
+            linkedActionItemId: null,
+            linkedActionPlanCode: '',
+            linkedActionPlanName: '',
+            linkedDirectorNombre: ''
+          })
+        })
+      }));
+      enqueueSnackbar('Actividad desvinculada del Plan de Acción', { variant: 'success' });
+    } catch (err) {
+      enqueueSnackbar(err.response?.data?.message || err.message || 'No fue posible desvincular la actividad', { variant: 'error' });
+    } finally {
+      setLinkingBusy(false);
+    }
+  };
 
   const assignExecutionResponsible = async (user) => {
     if (!user || !editor?.id) return;
@@ -1682,6 +1808,48 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                             renderInput={(params) => <TextField {...params} label="Líneas de acción de las políticas" helperText={asStringArray(activity.politicasInstitucionales).length ? 'Solo se muestran las líneas de las políticas seleccionadas.' : 'Seleccione primero una o varias políticas.'} />}
                             sx={{ gridColumn: { md: 'span 6' } }}
                           />
+                          <Box sx={{ gridColumn: { md: 'span 12' }, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 1, pt: 1.5, borderTop: '1px dashed #cbd5e1' }}>
+                            {activity.linkedActionItemId ? (
+                              <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+                                <Chip
+                                  icon={<CheckCircleOutlineIcon />}
+                                  label={`Vinculada a Plan de Acción: ${activity.linkedActionPlanCode || activity.linkedActionPlanName || 'Asignado'}`}
+                                  color="success"
+                                  variant="outlined"
+                                  sx={{ fontWeight: 800, bgcolor: '#f0fdf4', borderColor: '#86efac', py: 0.5 }}
+                                />
+                                <Button
+                                  size="small"
+                                  color="error"
+                                  variant="text"
+                                  startIcon={<LinkOffIcon />}
+                                  disabled={linkingBusy}
+                                  onClick={() => handleUnlinkActivity(objectiveIndex, activityIndex, activity)}
+                                  sx={{ textTransform: 'none', fontWeight: 800 }}
+                                >
+                                  Desvincular
+                                </Button>
+                              </Stack>
+                            ) : (
+                              <Button
+                                variant="contained"
+                                color="success"
+                                startIcon={<LinkIcon />}
+                                disabled={linkingBusy}
+                                onClick={() => handleOpenLinkDialog(objectiveIndex, activityIndex, activity)}
+                                sx={{
+                                  textTransform: 'none',
+                                  fontWeight: 850,
+                                  bgcolor: '#16a34a',
+                                  '&:hover': { bgcolor: '#15803d' },
+                                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
+                                  px: 2.2
+                                }}
+                              >
+                                Vincular con Plan de Acción
+                              </Button>
+                            )}
+                          </Box>
                         </Box>
                       </Paper>
                     ))}
@@ -1853,7 +2021,34 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   })()}
                   <LinearProgress variant="determinate" value={percent(activity)} sx={{ mb: 2, height: 8, borderRadius: 8, bgcolor: '#e2e8f0', '& .MuiLinearProgress-bar': { borderRadius: 8, bgcolor: percent(activity) >= 100 ? '#16a34a' : '#2563eb' } }} />
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5 }}>
-                    <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Valor alcanzado" type="number" value={activity.metaAlcanzada} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'metaAlcanzada', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
+                    {activity.linkedActionItemId && (
+                      <Alert severity="success" icon={<LinkIcon />} sx={{ gridColumn: { md: 'span 12' }, py: 0.3, bgcolor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 2 }}>
+                        Actividad vinculada al Plan de Acción <strong>{activity.linkedActionPlanCode || activity.linkedActionPlanName}</strong>. El seguimiento sincroniza automáticamente el avance y las evidencias al periodo semestral correspondiente (Mes 1-7: S1 / Mes 8-12: S2).
+                      </Alert>
+                    )}
+                    <TextField
+                      disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))}
+                      label="Valor alcanzado (%)"
+                      type="number"
+                      inputProps={{ min: 0, max: 100, step: 1 }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">%</InputAdornment>
+                      }}
+                      value={activity.metaAlcanzada ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '') {
+                          updateActivity(objectiveIndex, activityIndex, 'metaAlcanzada', '');
+                          return;
+                        }
+                        let num = parseInt(val, 10);
+                        if (isNaN(num)) num = 0;
+                        if (num < 0) num = 0;
+                        if (num > 100) num = 100;
+                        updateActivity(objectiveIndex, activityIndex, 'metaAlcanzada', num);
+                      }}
+                      sx={{ gridColumn: { md: 'span 2' } }}
+                    />
                     <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Fecha del corte" type="date" InputLabelProps={{ shrink: true }} value={activity.fechaSeguimiento} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'fechaSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
                     <TextField disabled={executionMode || executionLocked} select label="Verificación de Autoevaluación" value={activity.verificacionSeguimiento || 'pendiente'} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'verificacionSeguimiento', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}>
                       <MenuItem value="pendiente">Pendiente de verificación</MenuItem><MenuItem value="verificado">Cumplimiento verificado</MenuItem><MenuItem value="requiere_ajustes">Requiere ajustes</MenuItem>
@@ -1980,6 +2175,152 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           </Paper>
           <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}><Button variant="contained" onClick={() => setEvidenceOpportunity(null)} sx={{ textTransform: 'none', fontWeight: 900 }}>Cerrar</Button></Stack>
         </Box>
+      </Dialog>
+
+      <Dialog
+        open={linkModalOpen}
+        onClose={() => !linkingBusy && setLinkModalOpen(false)}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{ sx: { borderRadius: 3.5, p: 1 } }}
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box sx={{ width: 44, height: 44, borderRadius: 2.5, bgcolor: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <LinkIcon fontSize="medium" />
+            </Box>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 950, color: '#0f172a' }}>
+                Vincular Actividad con Plan de Acción Institucional
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#64748b' }}>
+                Interoperabilidad bidireccional de evidencias y seguimiento semestral
+              </Typography>
+            </Box>
+          </Stack>
+        </DialogTitle>
+        <DialogContent dividers sx={{ pt: 2 }}>
+          {/* Resumen de la actividad de origen */}
+          <Paper elevation={0} sx={{ p: 2, mb: 2.5, borderRadius: 2.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+            <Typography variant="caption" sx={{ fontWeight: 900, color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Actividad en Plan de Mejoramiento
+            </Typography>
+            <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#0f172a', mt: 0.5 }}>
+              {linkingTarget?.activity?.nombre || 'Sin nombre'}
+            </Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 1 }}>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>
+                <strong>Programa:</strong> {editor?.programa || 'General'}
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>
+                <strong>Vigencia:</strong> {editor?.periodoInicio || currentYear}
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>
+                <strong>Meta:</strong> {linkingTarget?.activity?.meta || 1}
+              </Typography>
+            </Stack>
+          </Paper>
+
+          {/* Explicación de Drive */}
+          <Alert severity="info" sx={{ mb: 2.5, borderRadius: 2.5, '& .MuiAlert-message': { width: '100%' } }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 0.5 }}>
+              Estructura organizada en Google Drive
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#334155' }}>
+              Al vincular esta actividad, se generará automáticamente en Google Drive la jerarquía oficial:
+            </Typography>
+            <Box sx={{ mt: 1, p: 1.5, borderRadius: 2, bgcolor: '#f1f5f9', fontFamily: 'monospace', fontSize: 13, color: '#0f172a' }}>
+              📁 <strong>Plan de Acción ({editor?.periodoInicio || currentYear})</strong><br />
+              &nbsp;&nbsp;└── 📁 <strong>Plan de Mejoramiento - {editor?.programa || 'Programa'}</strong><br />
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── 📁 <strong>{linkingTarget?.activity?.nombre || 'Nombre de la actividad'}</strong> (Evidencias sincronizadas)
+            </Box>
+          </Alert>
+
+          {/* Selector de Plan de Acción candidato */}
+          <Typography variant="subtitle2" sx={{ fontWeight: 950, color: '#0f172a', mb: 1 }}>
+            Seleccione el Plan de Acción destino:
+          </Typography>
+
+          {loadingCandidates ? (
+            <Box sx={{ py: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <CircularProgress size={32} sx={{ color: '#16a34a', mb: 1.5 }} />
+              <Typography variant="body2" sx={{ color: '#64748b' }}>Buscando planes de acción vigentes para {editor?.periodoInicio || currentYear}…</Typography>
+            </Box>
+          ) : linkingCandidates.length === 0 ? (
+            <Alert severity="warning" sx={{ borderRadius: 2.5 }}>
+              No se encontraron Planes de Acción registrados para la vigencia {editor?.periodoInicio || currentYear}. Puede generar la vigencia desde el módulo de Planeación Estratégica.
+            </Alert>
+          ) : (
+            <RadioGroup
+              value={selectedActionPlanId}
+              onChange={(e) => setSelectedActionPlanId(e.target.value)}
+            >
+              <Stack spacing={1.2}>
+                {linkingCandidates.map((plan) => {
+                  const isSelected = String(plan.id) === String(selectedActionPlanId);
+                  return (
+                    <Paper
+                      key={plan.id}
+                      elevation={0}
+                      onClick={() => setSelectedActionPlanId(plan.id)}
+                      sx={{
+                        p: 1.8,
+                        borderRadius: 2.5,
+                        border: '2px solid',
+                        borderColor: isSelected ? '#16a34a' : '#e2e8f0',
+                        bgcolor: isSelected ? '#f0fdf4' : 'white',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { borderColor: isSelected ? '#16a34a' : '#cbd5e1' }
+                      }}
+                    >
+                      <Stack direction="row" alignItems="center" spacing={1.5}>
+                        <Radio checked={isSelected} value={plan.id} sx={{ color: '#16a34a', '&.Mui-checked': { color: '#16a34a' } }} />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                            <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{plan.name}</Typography>
+                            <Chip size="small" label={plan.code} sx={{ fontWeight: 800, bgcolor: '#e0f2fe', color: '#0284c7' }} />
+                            {plan.is_recommended && (
+                              <Chip size="small" label="Recomendado: Programa Coincidente" color="success" sx={{ fontWeight: 900 }} />
+                            )}
+                          </Stack>
+                          <Typography variant="body2" sx={{ color: '#64748b', mt: 0.4 }}>
+                            <strong>Responsable / Director:</strong> {plan.responsible_name || 'Sin asignar'} · <strong>Dependencia:</strong> {plan.unit_name || 'Sin especificar'}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Paper>
+                  );
+                })}
+              </Stack>
+            </RadioGroup>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button
+            onClick={() => setLinkModalOpen(false)}
+            disabled={linkingBusy}
+            sx={{ textTransform: 'none', fontWeight: 800, color: '#64748b' }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="success"
+            disabled={linkingBusy || !selectedActionPlanId || linkingCandidates.length === 0}
+            onClick={handleConfirmLink}
+            startIcon={linkingBusy ? <CircularProgress size={18} color="inherit" /> : <LinkIcon />}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 900,
+              bgcolor: '#16a34a',
+              '&:hover': { bgcolor: '#15803d' },
+              px: 3
+            }}
+          >
+            {linkingBusy ? 'Vinculando y creando carpetas…' : 'Confirmar y Vincular'}
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
     </Dialog>

@@ -26,6 +26,9 @@ const planMejoramientoService = {
   create: (payload) => api.post('/autoevaluacion/planes-mejoramiento', payload).then(unwrap),
   update: (id, payload) => api.put(`/autoevaluacion/planes-mejoramiento/${id}`, payload).then(unwrap),
   syncDriveRepository: (id) => api.post(`/autoevaluacion/planes-mejoramiento/${id}/repositorio-drive/sincronizar`).then(unwrap),
+  getActionPlanCandidates: (id, uid) => api.get(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/planes-accion-candidatos`).then(unwrap),
+  linkToActionPlan: (id, uid, payload) => api.post(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/vincular-plan-accion`, payload).then(unwrap),
+  unlinkFromActionPlan: (id, uid) => api.post(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/desvincular-plan-accion`).then(unwrap),
   uploadActivityEvidence: (id, uid, file) => {
     const formData = new FormData();
     formData.append('file', file);
