@@ -1482,6 +1482,103 @@ const addActionItem = wrap(async (req, res) => {
   res.status(201); ok(res, item);
 });
 
+const searchActivitySuggestions = wrap(async (req, res) => {
+  const planId = req.params.id;
+  const rawQ = String(req.query.q || '').trim();
+
+  if (rawQ.length < 2) {
+    return ok(res, []);
+  }
+
+  let currentPlan = null;
+  if (planId) {
+    currentPlan = await StrategicActionPlan.findByPk(planId, {
+      attributes: ['id', 'catalog_item_id', 'term_id']
+    });
+  }
+
+  const normalize = (str) =>
+    String(str || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+
+  const queryWords = rawQ.split(/\s+/).map(normalize).filter(Boolean);
+
+  const items = await StrategicActionItem.findAll({
+    where: {
+      deleted_at: null
+    },
+    attributes: [
+      'id', 'code', 'activity', 'indicator_type', 'indicator', 'target',
+      'starts_on', 'ends_on', 'co_responsibles', 'custom_values', 'action_plan_id'
+    ],
+    include: [
+      {
+        model: StrategicActionPlan,
+        as: 'actionPlan',
+        attributes: ['id', 'catalog_item_id', 'term_id', 'code', 'title'],
+        include: [
+          {
+            model: StrategicCatalogItem,
+            as: 'organizationalUnit',
+            attributes: ['id', 'name', 'code']
+          }
+        ]
+      }
+    ],
+    limit: 400,
+    order: [['id', 'DESC']]
+  });
+
+  const currentDepId = currentPlan?.catalog_item_id;
+  const matching = [];
+  const seenTexts = new Set();
+
+  for (const it of items) {
+    const actText = (it.activity || it.custom_values?.activity || '').trim();
+    if (!actText) continue;
+
+    const normText = normalize(actText);
+    const matchesAllWords = queryWords.every((w) => normText.includes(w));
+    if (!matchesAllWords) continue;
+
+    if (seenTexts.has(normText)) continue;
+    seenTexts.add(normText);
+
+    const isSamePlan = currentPlan && String(it.action_plan_id) === String(currentPlan.id);
+    const isSameDep = currentDepId && String(it.actionPlan?.catalog_item_id) === String(currentDepId);
+
+    matching.push({
+      id: it.id,
+      code: it.code,
+      activity: actText,
+      indicator_type: it.indicator_type || '',
+      indicator: it.indicator || '',
+      target: it.target || '',
+      starts_on: it.starts_on || '',
+      ends_on: it.ends_on || '',
+      co_responsibles: it.co_responsibles || [],
+      custom_values: it.custom_values || {},
+      is_same_plan: Boolean(isSamePlan),
+      is_same_dependency: Boolean(isSameDep),
+      dependency_name: it.actionPlan?.organizationalUnit?.name || it.actionPlan?.title || '',
+      action_plan_code: it.actionPlan?.code || ''
+    });
+
+    if (matching.length >= 25) break;
+  }
+
+  matching.sort((a, b) => {
+    if (a.is_same_dependency && !b.is_same_dependency) return -1;
+    if (!a.is_same_dependency && b.is_same_dependency) return 1;
+    return a.activity.length - b.activity.length;
+  });
+
+  ok(res, matching);
+});
+
 const reviewExecutionActionItem = wrap(async (req, res) => {
   const item = await StrategicActionItem.findByPk(req.params.itemId);
   if (!item || String(item.action_plan_id) !== String(req.params.id)) {
@@ -4315,7 +4412,7 @@ module.exports = {
   applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, reorderFieldDefinitions, previewFieldSchema, confirmFieldSchema,
   downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, searchMeetingParticipants, termDependencies, downloadTermDependencyTemplate,
   termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
-  listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, reviewExecutionActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem, replicateActionItem,
+  listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, reviewExecutionActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem, replicateActionItem, searchActivitySuggestions,
   transitionActionPlan, sendActionPlanChatMessage, clearActionPlanChat, saveMonitoring, createMeeting, updateMeeting,
   improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
