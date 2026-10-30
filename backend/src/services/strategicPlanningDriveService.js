@@ -59,7 +59,7 @@ const findOrCreateFolder = async (drive, { parentId, name, key }) => {
             appProperties: {
               ...(existing.appProperties || {}),
               [REPOSITORY_PROPERTY]: propVal,
-              siacPeiKey: rawKey
+              siacPeiKey: propVal
             }
           },
           fields: 'id,name',
@@ -94,7 +94,7 @@ const findOrCreateFolder = async (drive, { parentId, name, key }) => {
               appProperties: {
                 ...(existing.appProperties || {}),
                 [REPOSITORY_PROPERTY]: propVal,
-                siacPeiKey: rawKey
+                siacPeiKey: propVal
               }
             },
             fields: 'id,name',
@@ -115,7 +115,7 @@ const findOrCreateFolder = async (drive, { parentId, name, key }) => {
       parents: [parentId],
       appProperties: {
         [REPOSITORY_PROPERTY]: propVal,
-        siacPeiKey: rawKey
+        siacPeiKey: propVal
       }
     },
     fields: 'id',

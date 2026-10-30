@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const { Op } = require('sequelize');
-const { Autoevaluacion, AutoevaluacionPrograma, Documento, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission, StrategicPlan, StrategicTerm, StrategicCatalogItem, StrategicActionPlan, StrategicActionItem, StrategicMonitoringPeriod, StrategicMonitoringResult, StrategicEvidence } = require('../models');
+const { Autoevaluacion, AutoevaluacionPrograma, Documento, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission, StrategicPlan, StrategicTerm, StrategicCatalogItem, StrategicResponsibility, StrategicActionPlan, StrategicActionItem, StrategicMonitoringPeriod, StrategicMonitoringResult, StrategicEvidence } = require('../models');
 const planMejoramientoDriveService = require('../services/planMejoramientoDriveService');
 const { ensureActivityFoldersInDrive } = require('../services/strategicPlanningDriveService');
 const { syncSinglePlanOfficialWorkbook } = require('../services/actionPlanRepositoryDriveService');
@@ -1035,30 +1035,52 @@ const getActionPlanCandidates = async (req, res) => {
     }
     if (!targetActivity) return res.status(404).json({ success: false, message: 'Actividad no encontrada' });
 
-    let year = plan.periodo_inicio || 2026;
+    let year = Number(plan.periodo_inicio) || new Date().getFullYear();
     if (targetActivity.fechaInicio) {
-      const match = String(targetActivity.fechaInicio).match(/^(\d{4})/);
+      const match = String(targetActivity.fechaInicio).match(/(\d{4})/);
       if (match) year = parseInt(match[1], 10);
     }
 
-    const term = await StrategicTerm.findOne({ where: { year } });
-    if (!term) {
-      return res.json({
-        success: true,
-        data: {
-          year,
-          activity: targetActivity,
-          program: plan.programa,
-          plans: []
-        }
-      });
+    const { Op } = require('sequelize');
+
+    // 1. Obtener los IDs de términos para ese año
+    const terms = await StrategicTerm.findAll({
+      where: { year },
+      attributes: ['id', 'year']
+    });
+    const termIds = terms.map((t) => t.id);
+
+    // 2. Construir condiciones de búsqueda amplias para no descartar planes del mismo responsable ni de la vigencia
+    const orConditions = [
+      ...(termIds.length ? [{ term_id: { [Op.in]: termIds } }] : []),
+      { code: { [Op.like]: `%${year}%` } }
+    ];
+
+    if (targetActivity.responsableId) {
+      orConditions.push({ responsible_user_id: targetActivity.responsableId });
+    }
+    if (plan.asignacion?.usuario_id) {
+      orConditions.push({ responsible_user_id: plan.asignacion.usuario_id });
+    }
+    if (req.user?.id) {
+      orConditions.push({ responsible_user_id: req.user.id });
     }
 
     const actionPlans = await StrategicActionPlan.findAll({
-      where: { term_id: term.id, deleted_at: null },
+      where: {
+        [Op.or]: orConditions,
+        deleted_at: null
+      },
       include: [
-        { model: StrategicCatalogItem, as: 'organizationalUnit' },
-        { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo'] }
+        { model: StrategicTerm, as: 'term', required: false },
+        { model: StrategicCatalogItem, as: 'organizationalUnit', required: false },
+        { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false },
+        {
+          model: StrategicResponsibility,
+          as: 'currentResponsibility',
+          required: false,
+          include: [{ model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'cargo', 'dependencia', 'username'], required: false }]
+        }
       ],
       order: [['code', 'ASC']]
     });
@@ -1072,25 +1094,73 @@ const getActionPlanCandidates = async (req, res) => {
         .trim();
 
     const progNorm = normalize(plan.programa);
+    const actRespNorm = normalize(targetActivity.responsableNombre);
+    const planRespNorm = normalize(plan.asignacion?.usuario_nombre);
+    const userSessionNorm = normalize(req.user?.nombre);
+    const actDoc = String(targetActivity.responsableDocumento || targetActivity.responsableUsername || '').trim();
+    const planDoc = String(plan.asignacion?.usuario_documento || plan.asignacion?.usuario_username || '').trim();
+    const userSessionDoc = String(req.user?.username || req.user?.documento || '').trim();
 
     const mappedPlans = actionPlans.map((p) => {
       const unitName = p.organizationalUnit?.name || p.title || '';
       const unitNorm = normalize(unitName);
-      const isRecommended = progNorm && (unitNorm.includes(progNorm) || progNorm.includes(unitNorm));
+      const leader = p.responsibleUser || p.currentResponsibility?.responsibleUser;
+      const leaderName = leader?.nombre || 'Director / Líder asignado';
+      const leaderNorm = normalize(leaderName);
+      const leaderDoc = String(leader?.username || '').trim();
+      const leaderId = p.responsible_user_id || p.currentResponsibility?.responsible_user_id || leader?.id;
+
+      // Coincidencia por Responsable (Mismo responsable)
+      const sameResponsible = Boolean(
+        (targetActivity.responsableId && leaderId && String(targetActivity.responsableId) === String(leaderId)) ||
+        (plan.asignacion?.usuario_id && leaderId && String(plan.asignacion.usuario_id) === String(leaderId)) ||
+        (req.user?.id && leaderId && String(req.user.id) === String(leaderId)) ||
+        (actDoc && leaderDoc && actDoc === leaderDoc) ||
+        (planDoc && leaderDoc && planDoc === leaderDoc) ||
+        (userSessionDoc && leaderDoc && userSessionDoc === leaderDoc) ||
+        (actRespNorm && leaderNorm && (actRespNorm.includes(leaderNorm) || leaderNorm.includes(actRespNorm))) ||
+        (planRespNorm && leaderNorm && (planRespNorm.includes(leaderNorm) || leaderNorm.includes(planRespNorm))) ||
+        (userSessionNorm && leaderNorm && (userSessionNorm.includes(leaderNorm) || leaderNorm.includes(userSessionNorm)))
+      );
+
+      // Coincidencia por Programa o Dependencia
+      const matchesProgram = Boolean(
+        progNorm && (unitNorm.includes(progNorm) || progNorm.includes(unitNorm))
+      );
+
+      const isRecommended = sameResponsible || matchesProgram;
+      let recommendationReason = '';
+      if (sameResponsible) {
+        recommendationReason = `Mismo responsable: ${leaderName}`;
+      } else if (matchesProgram) {
+        recommendationReason = `Programa coincidente: ${plan.programa}`;
+      }
 
       return {
         id: p.id,
         code: p.code,
         title: p.title,
+        name: p.title || p.code,
         unit_name: unitName,
-        leader_name: p.responsibleUser?.nombre || 'Director / Líder asignado',
-        leader_email: p.responsibleUser?.email || '',
-        leader_cargo: p.responsibleUser?.cargo || '',
-        is_recommended: Boolean(isRecommended)
+        leader_name: leaderName,
+        responsible_name: leaderName,
+        leader_email: leader?.email || '',
+        leader_cargo: leader?.cargo || '',
+        year: p.term?.year || year,
+        is_recommended: Boolean(isRecommended),
+        recommendation_reason: recommendationReason,
+        same_responsible: sameResponsible
       };
     });
 
-    mappedPlans.sort((a, b) => (b.is_recommended ? 1 : 0) - (a.is_recommended ? 1 : 0));
+    // Ordenar: primero los del mismo responsable, luego los del programa coincidente, luego por código
+    mappedPlans.sort((a, b) => {
+      if (a.same_responsible && !b.same_responsible) return -1;
+      if (!a.same_responsible && b.same_responsible) return 1;
+      if (a.is_recommended && !b.is_recommended) return -1;
+      if (!a.is_recommended && b.is_recommended) return 1;
+      return (a.code || '').localeCompare(b.code || '');
+    });
 
     return res.json({
       success: true,
@@ -1138,9 +1208,15 @@ const linkActivityToActionPlan = async (req, res) => {
 
     const actionPlan = await StrategicActionPlan.findByPk(actionPlanId, {
       include: [
-        { model: StrategicTerm, as: 'term' },
-        { model: StrategicCatalogItem, as: 'organizationalUnit' },
-        { model: User, as: 'responsibleUser' }
+        { model: StrategicTerm, as: 'term', required: false },
+        { model: StrategicCatalogItem, as: 'organizationalUnit', required: false },
+        { model: User, as: 'responsibleUser', required: false },
+        {
+          model: StrategicResponsibility,
+          as: 'currentResponsibility',
+          required: false,
+          include: [{ model: User, as: 'responsibleUser', required: false }]
+        }
       ]
     });
     if (!actionPlan) return res.status(404).json({ success: false, message: 'Plan de Acción no encontrado' });
@@ -1165,7 +1241,11 @@ const linkActivityToActionPlan = async (req, res) => {
       candidateCode = `ACT-${String(nextNum).padStart(3, '0')}`;
     }
 
-    const leaderName = actionPlan.responsibleUser?.nombre || actionPlan.organizationalUnit?.name || 'Director del Programa';
+    const leaderName =
+      actionPlan.responsibleUser?.nombre ||
+      actionPlan.currentResponsibility?.responsibleUser?.nombre ||
+      actionPlan.organizationalUnit?.name ||
+      'Director del Programa';
 
     let actionItem;
     if (targetActivity.linkedActionItemId) {

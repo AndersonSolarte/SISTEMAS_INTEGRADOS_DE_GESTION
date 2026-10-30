@@ -2278,14 +2278,19 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                         <Radio checked={isSelected} value={plan.id} sx={{ color: '#16a34a', '&.Mui-checked': { color: '#16a34a' } }} />
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                            <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{plan.name}</Typography>
+                            <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{plan.title || plan.name || plan.code}</Typography>
                             <Chip size="small" label={plan.code} sx={{ fontWeight: 800, bgcolor: '#e0f2fe', color: '#0284c7' }} />
                             {plan.is_recommended && (
-                              <Chip size="small" label="Recomendado: Programa Coincidente" color="success" sx={{ fontWeight: 900 }} />
+                              <Chip
+                                size="small"
+                                label={plan.recommendation_reason || (plan.same_responsible ? 'Mismo responsable' : 'Programa coincidente')}
+                                color="success"
+                                sx={{ fontWeight: 900 }}
+                              />
                             )}
                           </Stack>
                           <Typography variant="body2" sx={{ color: '#64748b', mt: 0.4 }}>
-                            <strong>Responsable / Director:</strong> {plan.responsible_name || 'Sin asignar'} · <strong>Dependencia:</strong> {plan.unit_name || 'Sin especificar'}
+                            <strong>Responsable / Líder:</strong> {plan.leader_name || plan.responsible_name || 'Sin asignar'} {plan.leader_cargo ? `(${plan.leader_cargo})` : ''} · <strong>Dependencia:</strong> {plan.unit_name || 'Sin especificar'}
                           </Typography>
                         </Box>
                       </Stack>
