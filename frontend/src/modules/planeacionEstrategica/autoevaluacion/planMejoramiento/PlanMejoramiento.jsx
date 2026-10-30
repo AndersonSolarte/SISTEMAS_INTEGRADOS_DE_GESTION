@@ -2676,6 +2676,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                               <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{plan.title || plan.name || plan.code}</Typography>
                               <Chip size="small" label={plan.code} sx={{ fontWeight: 800, bgcolor: '#e0f2fe', color: '#0284c7' }} />
+                              <Chip size="small" label={`Vigencia ${plan.year}`} sx={{ fontWeight: 850, bgcolor: plan.year === (editor?.periodoInicio || currentYear) ? '#dcfce7' : '#fef3c7', color: plan.year === (editor?.periodoInicio || currentYear) ? '#15803d' : '#b45309' }} />
                               {plan.is_recommended && (
                                 <Chip
                                   size="small"

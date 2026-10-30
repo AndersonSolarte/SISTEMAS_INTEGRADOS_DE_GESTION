@@ -1035,44 +1035,54 @@ const getActionPlanCandidates = async (req, res) => {
     }
     if (!targetActivity) return res.status(404).json({ success: false, message: 'Actividad no encontrada' });
 
-    let year = Number(plan.periodo_inicio) || new Date().getFullYear();
+    const currentYear = new Date().getFullYear();
+    let baseYear = Number(plan.periodo_inicio) || currentYear;
     if (targetActivity.fechaInicio) {
       const match = String(targetActivity.fechaInicio).match(/(\d{4})/);
-      if (match) year = parseInt(match[1], 10);
+      if (match) baseYear = parseInt(match[1], 10);
+    }
+    let endYear = baseYear;
+    if (targetActivity.fechaFin) {
+      const matchEnd = String(targetActivity.fechaFin).match(/(\d{4})/);
+      if (matchEnd) endYear = parseInt(matchEnd[1], 10);
+    }
+
+    // Regla de vigencias: Vigencia actual (ej: 2026), anteriores nunca (< baseYear o cerradas),
+    // posteriores inmediatas válidas sí (ej: 2027), pero nunca vigencias lejanas (2030, 2040, etc.)
+    const allowedYears = [baseYear];
+    const maxAllowedFuture = Math.min(Math.max(baseYear + 1, endYear), baseYear + 1);
+    for (let y = baseYear + 1; y <= maxAllowedFuture; y += 1) {
+      if (!allowedYears.includes(y)) allowedYears.push(y);
     }
 
     const { Op } = require('sequelize');
 
-    // 1. Obtener los IDs de términos para ese año
+    // 1. Obtener los IDs de términos activos o planeados para las vigencias permitidas
     const terms = await StrategicTerm.findAll({
-      where: { year },
-      attributes: ['id', 'year']
+      where: {
+        year: { [Op.in]: allowedYears },
+        status: { [Op.notIn]: ['closed', 'archived', 'inactive'] }
+      },
+      attributes: ['id', 'year', 'strategic_plan_id', 'status']
     });
-    const termIds = terms.map((t) => t.id);
+    const validTermIds = terms.map((t) => t.id);
 
-    // 2. Construir condiciones de búsqueda amplias para no descartar planes del mismo responsable ni de la vigencia
-    const orConditions = [
-      ...(termIds.length ? [{ term_id: { [Op.in]: termIds } }] : []),
-      { code: { [Op.like]: `%${year}%` } }
+    // 2. Condición obligatoria de vigencia: solo vigencia actual y posterior inmediata (ej: 2026, 2027)
+    const yearScopeConditions = [
+      ...(validTermIds.length ? [{ term_id: { [Op.in]: validTermIds } }] : []),
+      ...allowedYears.map((y) => ({ code: { [Op.iLike]: `%${y}%` } })),
+      ...allowedYears.map((y) => ({ title: { [Op.iLike]: `%${y}%` } }))
     ];
-
-    if (targetActivity.responsableId) {
-      orConditions.push({ responsible_user_id: targetActivity.responsableId });
-    }
-    if (plan.asignacion?.usuario_id) {
-      orConditions.push({ responsible_user_id: plan.asignacion.usuario_id });
-    }
-    if (req.user?.id) {
-      orConditions.push({ responsible_user_id: req.user.id });
-    }
 
     const actionPlans = await StrategicActionPlan.findAll({
       where: {
-        [Op.or]: orConditions,
-        deleted_at: null
+        deleted_at: null,
+        [Op.and]: [
+          { [Op.or]: yearScopeConditions }
+        ]
       },
       include: [
-        { model: StrategicTerm, as: 'term', attributes: ['id', 'year', 'strategic_plan_id'], required: false },
+        { model: StrategicTerm, as: 'term', attributes: ['id', 'year', 'strategic_plan_id', 'status'], required: false },
         { model: StrategicCatalogItem, as: 'organizationalUnit', required: false },
         { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false },
         {
@@ -1083,6 +1093,13 @@ const getActionPlanCandidates = async (req, res) => {
         }
       ],
       order: [['code', 'ASC']]
+    });
+
+    // Filtrar estrictamente para descartar cualquier plan que tenga año anterior a baseYear o mayor al permitido
+    const strictlyFilteredPlans = actionPlans.filter((p) => {
+      const planYear = p.term?.year || (String(p.code || p.title).match(/(20\d\d)/) ? parseInt(String(p.code || p.title).match(/(20\d\d)/)[1], 10) : null);
+      if (!planYear) return true;
+      return allowedYears.includes(planYear);
     });
 
     const normalize = (str) =>
@@ -1101,7 +1118,7 @@ const getActionPlanCandidates = async (req, res) => {
     const planDoc = String(plan.asignacion?.usuario_documento || plan.asignacion?.usuario_username || '').trim();
     const userSessionDoc = String(req.user?.username || req.user?.documento || '').trim();
 
-    const mappedPlans = await Promise.all(actionPlans.map(async (p) => {
+    const mappedPlans = await Promise.all(strictlyFilteredPlans.map(async (p) => {
       const unitName = p.organizationalUnit?.name || p.title || '';
       const unitNorm = normalize(unitName);
       const leader = p.responsibleUser || p.currentResponsibility?.responsibleUser;
@@ -1154,7 +1171,7 @@ const getActionPlanCandidates = async (req, res) => {
         responsible_name: leaderName,
         leader_email: leader?.email || '',
         leader_cargo: leader?.cargo || '',
-        year: p.term?.year || year,
+        year: p.term?.year || baseYear,
         is_recommended: Boolean(isRecommended),
         recommendation_reason: recommendationReason,
         same_responsible: sameResponsible,
@@ -1162,19 +1179,23 @@ const getActionPlanCandidates = async (req, res) => {
       };
     }));
 
-    // Ordenar: primero los del mismo responsable, luego los del programa coincidente, luego por código
+    // Ordenar: primero los del mismo responsable en la vigencia actual, luego del mismo responsable, luego programa coincidente, luego por vigencia
     mappedPlans.sort((a, b) => {
+      if (a.same_responsible && a.year === baseYear && !(b.same_responsible && b.year === baseYear)) return -1;
+      if (!(a.same_responsible && a.year === baseYear) && b.same_responsible && b.year === baseYear) return 1;
       if (a.same_responsible && !b.same_responsible) return -1;
       if (!a.same_responsible && b.same_responsible) return 1;
       if (a.is_recommended && !b.is_recommended) return -1;
       if (!a.is_recommended && b.is_recommended) return 1;
+      if (a.year === baseYear && b.year !== baseYear) return -1;
+      if (a.year !== baseYear && b.year === baseYear) return 1;
       return (a.code || '').localeCompare(b.code || '');
     });
 
     return res.json({
       success: true,
       data: {
-        year,
+        year: baseYear,
         activity: {
           uid: targetActivity.uid,
           nombre: targetActivity.nombre,
