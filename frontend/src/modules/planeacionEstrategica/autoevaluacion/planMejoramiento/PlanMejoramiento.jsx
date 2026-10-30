@@ -351,6 +351,20 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     return linkingCandidates.find((p) => String(p.id) === String(selectedActionPlanId)) || linkingCandidates[0] || null;
   }, [linkingCandidates, selectedActionPlanId]);
 
+  const currentModalDuplicate = useMemo(() => {
+    if (!selectedActionPlan || !linkingTarget) return null;
+    const actName = (linkFormData.actividad || linkFormData.activity || linkingTarget.activity?.nombre || '').trim();
+    if (!actName) return null;
+    const norm = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const actNorm = norm(actName);
+    return (selectedActionPlan.existing_activities || []).find((it) => {
+      if (linkingTarget.activity?.linkedActionItemId && String(it.id) === String(linkingTarget.activity.linkedActionItemId)) {
+        return false;
+      }
+      return norm(it.activity) === actNorm;
+    });
+  }, [selectedActionPlan, linkingTarget, linkFormData.actividad, linkFormData.activity]);
+
   const dynamicFormFields = useMemo(() => {
     const raw = selectedActionPlan?.form_schema?.fields;
     const EXCLUDED_ACTION_PLAN_KEYS = new Set([
@@ -1287,6 +1301,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     const actName = (linkFormData.actividad || linkFormData.activity || linkingTarget.activity?.nombre || '').trim();
     if (!actName) {
       return enqueueSnackbar('El nombre de la actividad no puede estar vacío', { variant: 'warning' });
+    }
+    if (currentModalDuplicate) {
+      return enqueueSnackbar(`No es posible registrar actividades duplicadas. Ya existe la actividad "${currentModalDuplicate.activity}" (${currentModalDuplicate.code}) en este Plan de Acción.`, { variant: 'error', autoHideDuration: 6000 });
     }
     setLinkingBusy(true);
     try {
@@ -2718,6 +2735,12 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.6 }}>
               {dynamicFormFields.map((field) => renderDynamicFormField(field))}
             </Box>
+
+            {currentModalDuplicate && (
+              <Alert severity="error" sx={{ mt: 2, borderRadius: 2.5, fontWeight: 700 }}>
+                Esta actividad ya se encuentra registrada en el Plan de Acción destino ({currentModalDuplicate.code}: &ldquo;{currentModalDuplicate.activity}&rdquo;). No se permite registrar actividades duplicadas.
+              </Alert>
+            )}
           </Paper>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
@@ -2735,6 +2758,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               linkingBusy ||
               loadingCandidates ||
               linkingCandidates.length === 0 ||
+              Boolean(currentModalDuplicate) ||
               !(linkFormData.actividad?.trim() || linkFormData.activity?.trim() || linkingTarget?.activity?.nombre?.trim())
             }
             onClick={handleConfirmLink}

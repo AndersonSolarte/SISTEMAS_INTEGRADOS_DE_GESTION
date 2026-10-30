@@ -2071,6 +2071,17 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     if (!primaryActivity) return enqueueSnackbar('Escriba el nombre o descripción principal del registro.', { variant: 'warning' });
     const missingField = activityFields.find((field) => field.required && (Array.isArray(fieldValue(field)) ? !fieldValue(field).length : !String(fieldValue(field) || '').trim()));
     if (missingField) return enqueueSnackbar(`Complete el campo “${missingField.label}”.`, { variant: 'warning' });
+
+    // Validar que no se registren actividades duplicadas en el mismo Plan de Acción
+    const normActivity = normalizeFieldText(primaryActivity);
+    const existingDuplicate = (detail?.items || []).find((it) => {
+      if (editingItemId && String(it.id) === String(editingItemId)) return false;
+      const otherAct = normalizeFieldText(it.activity || it.custom_values?.activity || it.custom_values?.actividad || '');
+      return otherAct === normActivity;
+    });
+    if (existingDuplicate) {
+      return enqueueSnackbar(`No es posible registrar actividades duplicadas. Ya existe la actividad "${existingDuplicate.activity || primaryActivity}" (${existingDuplicate.code}) en este Plan de Acción.`, { variant: 'error', autoHideDuration: 6000 });
+    }
     setSaving(true);
     try {
       const payloadCustomValues = { ...(item.custom_values || {}) };
@@ -3758,7 +3769,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                 </Stack>
                               </TableCell>
                               {recordColumns.map((field) => {
-                                const isActivityCol = field.key === 'activity' || (field.label || '').toLowerCase().includes('actividad');
+                                const isActivityCol = isActivityField(field);
                                 const isPm = row.custom_values?.source_module === 'plan_mejoramiento';
                                 const pmProgram = row.custom_values?.pm_programa || row.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '') || '';
 

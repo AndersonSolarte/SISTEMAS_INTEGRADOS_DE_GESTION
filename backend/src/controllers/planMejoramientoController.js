@@ -1161,6 +1161,17 @@ const getActionPlanCandidates = async (req, res) => {
         } catch (_) {}
       }
 
+      // Obtener actividades existentes del plan para validar duplicados
+      const planItems = await StrategicActionItem.findAll({
+        where: { action_plan_id: p.id, deleted_at: null },
+        attributes: ['id', 'code', 'activity', 'custom_values']
+      });
+      const existingActivities = planItems.map((it) => ({
+        id: it.id,
+        code: it.code,
+        activity: it.activity || it.custom_values?.activity || it.custom_values?.actividad || ''
+      }));
+
       return {
         id: p.id,
         code: p.code,
@@ -1175,7 +1186,8 @@ const getActionPlanCandidates = async (req, res) => {
         is_recommended: Boolean(isRecommended),
         recommendation_reason: recommendationReason,
         same_responsible: sameResponsible,
-        form_schema: schema
+        form_schema: schema,
+        existing_activities: existingActivities
       };
     }));
 
@@ -1253,7 +1265,7 @@ const linkActivityToActionPlan = async (req, res) => {
 
     const existingItems = await StrategicActionItem.findAll({
       where: { action_plan_id: actionPlan.id, deleted_at: null },
-      attributes: ['code']
+      attributes: ['id', 'code', 'activity', 'custom_values']
     });
     const existingCodes = new Set(existingItems.map((it) => it.code));
     let maxNum = 0;
@@ -1279,6 +1291,29 @@ const linkActivityToActionPlan = async (req, res) => {
 
     const formValues = req.body.form_values || req.body.activity_data || {};
     const activityName = text(formValues.actividad || formValues.nombre || targetActivity.nombre);
+
+    // Validar si ya existe una actividad con el mismo nombre en este Plan de Acción
+    const normActivityText = (s) => String(s || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    const candidateNorm = normActivityText(activityName);
+    const duplicate = existingItems.find((it) => {
+      if (targetActivity.linkedActionItemId && String(it.id) === String(targetActivity.linkedActionItemId)) {
+        return false;
+      }
+      const existingName = it.activity || it.custom_values?.activity || it.custom_values?.actividad || '';
+      return normActivityText(existingName) === candidateNorm;
+    });
+
+    if (duplicate) {
+      return res.status(400).json({
+        success: false,
+        message: `No es posible registrar actividades duplicadas. Ya existe la actividad "${duplicate.activity || activityName}" (${duplicate.code}) en el Plan de Acción "${actionPlan.title || actionPlan.code}".`
+      });
+    }
     const indicatorName = text(formValues.indicador || targetActivity.indicador);
     const indicatorType = text(formValues.tipoIndicador || formValues.tipo_indicador || 'Resultado');
     const targetVal = String(formValues.meta || targetActivity.meta || '1');

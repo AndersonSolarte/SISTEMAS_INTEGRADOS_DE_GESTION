@@ -149,6 +149,35 @@ const saveActionItem = async ({ req, actionPlan, payload, item = null }) => sequ
       const err = new Error('La actividad es obligatoria.'); err.statusCode = 422; throw err;
     }
   }
+
+  // Validar actividades duplicadas en el mismo Plan de Acción
+  const normText = (s) => String(s || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  const candidateNorm = normText(values.activity);
+  const siblingItems = await StrategicActionItem.findAll({
+    where: {
+      action_plan_id: actionPlan.id,
+      deleted_at: null,
+      ...(item ? { id: { [Op.ne]: item.id } } : {})
+    },
+    attributes: ['id', 'code', 'activity', 'custom_values'],
+    transaction
+  });
+
+  const duplicate = siblingItems.find((sib) => {
+    const sibAct = sib.activity || sib.custom_values?.activity || sib.custom_values?.actividad || '';
+    return normText(sibAct) === candidateNorm;
+  });
+
+  if (duplicate) {
+    const err = new Error(`No es posible registrar actividades duplicadas. Ya existe la actividad "${duplicate.activity || values.activity}" (${duplicate.code}) en este Plan de Acción.`);
+    err.statusCode = 400;
+    throw err;
+  }
   if (item) {
     await StrategicActionItemVersion.create({
       action_item_id: item.id, version: item.version, snapshot: previous,
