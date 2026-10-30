@@ -139,6 +139,9 @@ const formatSentenceCase = (value = '') => {
 const participantRoleLabel = (participant = {}) => {
   const role = clean(participant.role_title, 220);
   const organization = clean(participant.organization, 240);
+  if (participant.user_id && (!organization || /universidad cesmag/i.test(organization))) {
+    return formatSentenceCase(role);
+  }
   return [organization, role].map(formatSentenceCase).filter(Boolean).join(' · ');
 };
 const placeResponsibleFirst = (participants = [], responsible = {}) => {
@@ -603,6 +606,29 @@ const participantRequiresSignature = (participant = {}, minute = {}) => {
   return meta.requires_signature !== false;
 };
 
+const reconcileMinuteStatus = async (minute, transaction = null) => {
+  if (!minute || minute.deleted_at || minute.status !== 'signing') return minute;
+  const participants = (minute.participants && minute.participants.length > 0)
+    ? minute.participants
+    : await DigitalMeetingParticipant.findAll({
+        where: { minute_id: minute.id },
+        transaction
+      });
+  const selectedSigners = (participants || []).filter((item) => participantRequiresSignature(item, minute));
+  if (selectedSigners.length > 0 && selectedSigners.every((item) => item.status === 'signed')) {
+    const finalizedAt = minute.finalized_at || new Date();
+    await minute.update({ status: 'signed', finalized_at: finalizedAt }, { transaction });
+    if (typeof minute.setDataValue === 'function') {
+      minute.setDataValue('status', 'signed');
+      minute.setDataValue('finalized_at', finalizedAt);
+    } else {
+      minute.status = 'signed';
+      minute.finalized_at = finalizedAt;
+    }
+  }
+  return minute;
+};
+
 const buildSignedMinutePayload = (minute, options = {}) => {
   const formatCode = resolveMeetingMinuteFormatCode(minute);
   const isCouncil = formatCode === 'COM-GD-FR-012';
@@ -958,6 +984,7 @@ const listMinutes = wrap(async (req, res) => {
     formatStates[resolveMeetingMinuteFormatCode(row)]
     && (Number(row.created_by) === userId || isMinuteResponsible(req.user, row))
   ));
+  await Promise.all(ownedRows.map((row) => reconcileMinuteStatus(row)));
   res.json({ success: true, data: ownedRows.map(addRetentionMetadata) });
 });
 
@@ -991,6 +1018,7 @@ const listMyMinutes = wrap(async (req, res) => {
     formatStates[resolveMeetingMinuteFormatCode(row)]
     && (Number(row.created_by) === userId || isMinuteResponsible(req.user, row))
   ));
+  await Promise.all(ownedRows.map((row) => reconcileMinuteStatus(row)));
   res.json({
     success: true,
     data: ownedRows.map(addRetentionMetadata),
@@ -1091,6 +1119,7 @@ const getStatistics = wrap(async (req, res) => {
     ],
     order: [['created_at', 'DESC']]
   });
+  await Promise.all(rows.map((row) => reconcileMinuteStatus(row)));
 
   const availableYears = [...new Set(rows
     .map((row) => Number(localDateKey(row.created_at).slice(0, 4)))
@@ -1219,6 +1248,7 @@ const getMinute = wrap(async (req, res) => {
   if (!row || row.deleted_at) {
     throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
   }
+  await reconcileMinuteStatus(row);
   const formatCode = resolveMeetingMinuteFormatCode(row);
   if (!(await isMeetingMinuteFormatEnabled(formatCode))) {
     throw Object.assign(new Error(`El formulario ${formatCode} no está habilitado por el administrador.`), { statusCode: 403 });
@@ -2226,6 +2256,7 @@ const publicMinute = wrap(async (req, res) => {
   const access = await resolveSigningAccess(req.params.token);
   if (!access) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
   const { minute, invitedParticipant, invitationVerified } = access;
+  await reconcileMinuteStatus(minute);
   const alreadySigned = Boolean(invitationVerified && invitedParticipant?.status === 'signed');
   // El QR general nunca expone una lista seleccionable. Google confirma la
   // propiedad del correo y el servidor lo compara con el registrado en el acta.
@@ -2370,10 +2401,12 @@ const sign = wrap(async (req, res) => {
   const clientIp = clean(req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress, 80);
   await DigitalMeetingSignature.create({ minute_id: minute.id, participant_id: participant.id, signer_name: participant.name, signer_email: participant.email, signature_storage_key: storage, signature_hash: hash(parsed.buffer), content_hash: minute.content_hash, signed_at: signedAt, privacy_accepted_at: !participant.user_id ? signedAt : null, privacy_policy_version: !participant.user_id ? PRIVACY_POLICY_VERSION : null, ip_address: clientIp, user_agent: clean(req.headers['user-agent'], 500) });
   await participant.update({ status: 'signed', email_verified_at: new Date(), otp_hash: null, otp_expires_at: null });
-  const selectedSigners = (minute.participants || []).filter((item) => participantRequiresSignature(item, minute));
-  if (selectedSigners.length > 0 && selectedSigners.every((item) => item.status === 'signed')) {
-    await minute.update({ status: 'signed', finalized_at: signedAt });
+  const freshParticipants = await DigitalMeetingParticipant.findAll({ where: { minute_id: minute.id } });
+  minute.participants = freshParticipants;
+  if (typeof minute.setDataValue === 'function') {
+    minute.setDataValue('participants', freshParticipants);
   }
+  await reconcileMinuteStatus(minute);
   res.json({ success: true, message: 'Firma registrada y vinculada al acta.', data: { id: participant.id } });
 });
 
@@ -3045,6 +3078,7 @@ module.exports = {
     participantIsCouncilAbsent,
     participantRequiresSignature,
     placeResponsibleFirst,
+    reconcileMinuteStatus,
     resolveCouncilMinuteYear,
     sanitizeRichText
   }

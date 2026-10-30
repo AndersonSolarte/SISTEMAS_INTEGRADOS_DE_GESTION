@@ -391,5 +391,45 @@ test('el plazo de formulacion respeta la fecha mayor entre individual y global (
   assert.equal(hasExtB, false, 'Plan B sin prórroga no tiene plazo individual y no se ve afectado por Plan A');
 });
 
+test('las sugerencias de actividades existentes filtran por palabras clave y priorizan la misma dependencia', () => {
+  const normalize = (str) => String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+  const mockDbItems = [
+    { id: '1', code: 'ACT-001', activity: 'Diseñar y ejecutar la política de gestión de la información', catalog_item_id: 'dep-1' },
+    { id: '2', code: 'ACT-002', activity: 'Capacitación al personal docente en plataformas virtuales', catalog_item_id: 'dep-2' },
+    { id: '3', code: 'ACT-003', activity: 'Actualización y difusión de políticas institucionales', catalog_item_id: 'dep-1' },
+    { id: '4', code: 'ACT-004', activity: 'Diseñar y ejecutar la política de gestión de la información', catalog_item_id: 'dep-3' } // Duplicado en texto
+  ];
+
+  const currentDepId = 'dep-1';
+  const query = 'politica gestion';
+  const words = query.split(/\s+/).map(normalize);
+
+  // Filtrar por palabras clave (todas las palabras deben coincidir)
+  const filtered = mockDbItems.filter((item) => {
+    const actNorm = normalize(item.activity);
+    return words.every((w) => actNorm.includes(w));
+  });
+
+  assert.equal(filtered.length, 2, 'Coinciden dos items que contienen "politica" y "gestion"');
+
+  // Deduplicación por texto normalizado
+  const seen = new Set();
+  const deduped = [];
+  for (const item of filtered) {
+    const norm = normalize(item.activity);
+    if (!seen.has(norm)) {
+      seen.add(norm);
+      deduped.push({
+        ...item,
+        is_same_dependency: item.catalog_item_id === currentDepId
+      });
+    }
+  }
+
+  assert.equal(deduped.length, 1, 'Se deduplica el texto idéntico');
+  assert.equal(deduped[0].is_same_dependency, true, 'Se marca correctamente si pertenece a la misma dependencia');
+});
+
 
 

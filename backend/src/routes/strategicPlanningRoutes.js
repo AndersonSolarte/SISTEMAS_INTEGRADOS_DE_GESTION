@@ -56,6 +56,8 @@ router.delete('/action-plans/:id', permit('pei_formular'), c.deleteActionPlan);
 router.post('/terms/:termId/action-plans/bulk-delete', permit('pei_formular'), c.bulkDeleteActionPlans);
 router.post('/terms/:termId/action-plans/bulk-create', permit('pei_formular'), c.bulkCreateActionPlans);
 router.post('/action-plans/:id/items', permit('pei_formular'), c.addActionItem);
+router.get('/action-plans/:id/activity-suggestions', permit(), c.searchActivitySuggestions);
+router.get('/action-plans-activities/suggestions', permit(), c.searchActivitySuggestions);
 router.get('/action-plans/:id/items-template', permit('pei_formular'), c.downloadDynamicItemTemplate);
 router.post('/action-plans/:id/items-import/preview', permit('pei_formular'), upload.single('file'), c.previewDynamicItems);
 router.post('/action-items-imports/:importId/confirm', permit('pei_formular'), c.confirmDynamicItems);

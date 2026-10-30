@@ -56,9 +56,21 @@ const MINUTE_STATUS = {
   signed: { label: 'Firmada', color: 'success' },
   distributed: { label: 'Enviada', color: 'info' }
 };
-const minuteStatus = (minute) => minute?.deleted_at
-  ? { label: 'Eliminada', color: 'error' }
-  : (MINUTE_STATUS[minute?.status] || { label: minute?.status || 'Sin estado', color: 'default' });
+const minuteStatus = (minute) => {
+  if (minute?.deleted_at) return { label: 'Eliminada', color: 'error' };
+  if (minute?.status === 'signing') {
+    const participants = minute.participants || [];
+    const fmtCode = resolveMeetingMinuteFormatCode(minute);
+    const isCouncil = fmtCode === 'COM-GD-FR-012';
+    const signers = participants.filter((p) => (
+      !isCouncil || (p.attendance_type !== 'ausente' && p.requires_signature !== false)
+    ));
+    if (signers.length > 0 && signers.every((p) => p.status === 'signed')) {
+      return MINUTE_STATUS.signed;
+    }
+  }
+  return MINUTE_STATUS[minute?.status] || { label: minute?.status || 'Sin estado', color: 'default' };
+};
 const formatSentenceCase = (value) => {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';

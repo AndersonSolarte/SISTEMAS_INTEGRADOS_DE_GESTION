@@ -162,3 +162,49 @@ test('convierte las dependencias en lugares de oficina sin duplicar el prefijo',
   assert.equal(_internals.formatDependencyOfficeLocation('  Gestión   Humana  '), 'Oficina de Gestión Humana');
   assert.equal(_internals.formatDependencyOfficeLocation(''), '');
 });
+
+test('reconcilia y cambia de estado a firmado cuando todas las firmas finalizan (COM-ID-FR-002)', async () => {
+  let updatedFields = null;
+  const mockMinute = {
+    id: 'uuid-minute-1',
+    status: 'signing',
+    documento: { codigo: 'COM-ID-FR-002' },
+    participants: [
+      { id: 'p1', name: 'Participante 1', status: 'signed' },
+      { id: 'p2', name: 'Participante 2', status: 'signed' },
+      { id: 'p3', name: 'Participante 3', status: 'signed' }
+    ],
+    update: async (fields) => {
+      updatedFields = fields;
+      mockMinute.status = fields.status;
+    },
+    setDataValue: (key, val) => {
+      mockMinute[key] = val;
+    }
+  };
+
+  await _internals.reconcileMinuteStatus(mockMinute);
+  assert.equal(mockMinute.status, 'signed');
+  assert.equal(updatedFields?.status, 'signed');
+  assert.ok(updatedFields?.finalized_at);
+});
+
+test('mantiene estado en firmas si quedan participantes pendientes', async () => {
+  let updatedFields = null;
+  const mockMinute = {
+    id: 'uuid-minute-2',
+    status: 'signing',
+    documento: { codigo: 'COM-ID-FR-002' },
+    participants: [
+      { id: 'p1', name: 'Participante 1', status: 'signed' },
+      { id: 'p2', name: 'Participante 2', status: 'invited' }
+    ],
+    update: async (fields) => {
+      updatedFields = fields;
+    }
+  };
+
+  await _internals.reconcileMinuteStatus(mockMinute);
+  assert.equal(mockMinute.status, 'signing');
+  assert.equal(updatedFields, null);
+});

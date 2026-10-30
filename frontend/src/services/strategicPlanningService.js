@@ -53,6 +53,7 @@ const strategicPlanningService = {
   bulkDeleteActionPlans: (termId) => api.post(`${root}/terms/${termId}/action-plans/bulk-delete`).then(data),
   bulkCreateActionPlans: (termId) => api.post(`${root}/terms/${termId}/action-plans/bulk-create`).then(data),
   addItem: (id, payload) => api.post(`${root}/action-plans/${id}/items`, payload, { timeout: 30000 }).then(data),
+  searchActivitySuggestions: (planId, query = '') => api.get(`${root}/action-plans/${planId}/activity-suggestions`, { params: { q: query }, timeout: 15000 }).then(data),
   downloadDynamicItemTemplate: (id) => api.get(`${root}/action-plans/${id}/items-template`, { responseType: 'blob', timeout: 60000 }).then((response) => response.data),
   previewDynamicItems: (id, formData) => api.post(`${root}/action-plans/${id}/items-import/preview`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }).then(data),
   confirmDynamicItems: (importId) => api.post(`${root}/action-items-imports/${importId}/confirm`).then(data),

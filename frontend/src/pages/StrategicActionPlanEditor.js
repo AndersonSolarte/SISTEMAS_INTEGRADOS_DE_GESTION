@@ -226,6 +226,35 @@ const isEndDateField = (field) => {
   );
 };
 
+const isActivityField = (field) => {
+  if (!field) return false;
+  if (isResponsibleField(field) || isCoResponsibleField(field) || isStartDateField(field) || isEndDateField(field)) return false;
+  const k = normalizeFieldText(field.key);
+  const l = normalizeFieldText(field.label);
+  return (
+    k === 'activity' ||
+    k === 'actividad' ||
+    k === 'actividades' ||
+    k === 'nombre_actividad' ||
+    k === 'descripcion_actividad' ||
+    l === 'actividad' ||
+    l === 'actividades' ||
+    l.includes('actividad') ||
+    l.includes('actividades')
+  );
+};
+
+const isIndicatorField = (field) => {
+  if (!field) return false;
+  const k = normalizeFieldText(field.key);
+  const l = normalizeFieldText(field.label);
+  return (
+    k === 'indicator' ||
+    k === 'indicador' ||
+    (l.includes('indicador') && !l.includes('tipo'))
+  );
+};
+
 const parseCoResponsibles = (val) => {
   if (!val) return [];
   if (Array.isArray(val)) return val.filter(Boolean);
@@ -412,6 +441,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     responsables: '', dependencia: '', lugar: '', fecha: '', horario: '', objetivo: '', desarrollo: '', conclusiones: '', participantes: []
   });
   const [calendarSchedulerOpen, setCalendarSchedulerOpen] = useState(false);
+
+  // Sugerencias de actividades existentes por palabras clave
+  const [activitySuggestions, setActivitySuggestions] = useState([]);
+  const [loadingActivitySuggestions, setLoadingActivitySuggestions] = useState(false);
+  const activitySearchTimeoutRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -1041,6 +1075,127 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
   }, [detail?.id, getInitialItem]);
 
+  const searchActivities = useCallback(async (queryText = '') => {
+    if (!detail?.id) return;
+    setLoadingActivitySuggestions(true);
+    try {
+      const resp = await strategicPlanningService.searchActivitySuggestions(detail.id, queryText);
+      const list = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []);
+      setActivitySuggestions(list);
+    } catch (err) {
+      console.warn('Error buscando sugerencias de actividades:', err);
+    } finally {
+      setLoadingActivitySuggestions(false);
+    }
+  }, [detail?.id]);
+
+  const handleActivityInputChange = useCallback((queryText) => {
+    if (activitySearchTimeoutRef.current) {
+      clearTimeout(activitySearchTimeoutRef.current);
+    }
+    activitySearchTimeoutRef.current = setTimeout(() => {
+      searchActivities(queryText);
+    }, 280);
+  }, [searchActivities]);
+
+  useEffect(() => {
+    if (detail?.id && open) {
+      searchActivities('');
+    }
+  }, [detail?.id, open, searchActivities]);
+
+  const combinedActivitySuggestions = useMemo(() => {
+    const list = [...activitySuggestions];
+    const seen = new Set(list.map((s) => normalizeFieldText(s.activity)));
+
+    // Incorporar actividades del plan actual si no están en la lista
+    if (Array.isArray(detail?.items)) {
+      detail.items.forEach((it) => {
+        const text = String(it.activity || '').trim();
+        if (text) {
+          const norm = normalizeFieldText(text);
+          if (!seen.has(norm)) {
+            seen.add(norm);
+            list.unshift({
+              id: it.id,
+              code: it.code,
+              activity: text,
+              indicator_type: it.indicator_type || '',
+              indicator: it.indicator || '',
+              target: it.target || '',
+              starts_on: it.starts_on || '',
+              ends_on: it.ends_on || '',
+              custom_values: it.custom_values || {},
+              co_responsibles: it.co_responsibles || [],
+              dependency_name: detail.organizationalUnit?.name || '',
+              term_year: detail.term?.year || '',
+              is_same_plan: true,
+              is_same_dependency: true
+            });
+          }
+        }
+      });
+    }
+
+    return list;
+  }, [activitySuggestions, detail?.items, detail?.organizationalUnit?.name, detail?.term?.year]);
+
+  const handleSelectActivitySuggestion = useCallback((selectedSuggestion, field) => {
+    if (!selectedSuggestion) return;
+    const activityText = typeof selectedSuggestion === 'string'
+      ? selectedSuggestion
+      : (selectedSuggestion.activity || selectedSuggestion.label || '');
+
+    setFieldValue(field, activityText);
+
+    if (typeof selectedSuggestion === 'object' && selectedSuggestion.activity) {
+      setItem((curr) => {
+        const nextCustom = { ...(curr.custom_values || {}) };
+        nextCustom[field.key] = activityText;
+
+        const nextItem = {
+          ...curr,
+          activity: activityText,
+          custom_values: nextCustom
+        };
+
+        // 1. Indicador
+        const indField = activityFields.find(isIndicatorField);
+        if (selectedSuggestion.indicator) {
+          if (!curr.indicator) nextItem.indicator = selectedSuggestion.indicator;
+          if (indField && !nextCustom[indField.key]) nextCustom[indField.key] = selectedSuggestion.indicator;
+        }
+
+        // 2. Tipo de indicador
+        const typeField = activityFields.find((f) => f.key === 'indicator_type' || normalizeFieldText(f.label).includes('tipo de indicador'));
+        if (selectedSuggestion.indicator_type) {
+          if (!curr.indicator_type) nextItem.indicator_type = selectedSuggestion.indicator_type;
+          if (typeField && !nextCustom[typeField.key]) nextCustom[typeField.key] = selectedSuggestion.indicator_type;
+        }
+
+        // 3. Meta
+        const targetField = activityFields.find((f) => f.key === 'target' || normalizeFieldText(f.label).includes('meta'));
+        if (selectedSuggestion.target) {
+          if (!curr.target) nextItem.target = selectedSuggestion.target;
+          if (targetField && !nextCustom[targetField.key]) nextCustom[targetField.key] = selectedSuggestion.target;
+        }
+
+        // 4. Macroactividad y otros campos dinámicos del PED si existen en la sugerencia
+        if (selectedSuggestion.custom_values && typeof selectedSuggestion.custom_values === 'object') {
+          Object.entries(selectedSuggestion.custom_values).forEach(([k, v]) => {
+            if (v && !nextCustom[k] && !['starts_on', 'ends_on', 'fecha_inicio', 'fecha_fin', 'responsible', 'co_responsibles'].includes(k)) {
+              nextCustom[k] = v;
+            }
+          });
+        }
+
+        return nextItem;
+      });
+
+      enqueueSnackbar('Actividad seleccionada del banco. Indicador y meta asociados automáticamente.', { variant: 'info', autoHideDuration: 3000 });
+    }
+  }, [activityFields, enqueueSnackbar]);
+
   const recordValue = (row, field) => {
     if (isCoResponsibleField(field)) {
       const val = row[field.key] || row.co_responsibles || row.custom_values?.[field.key];
@@ -1130,6 +1285,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const fieldValue = (field) => {
     if (!field) return '';
+    if (isActivityField(field)) {
+      return item[field.key] || item.custom_values?.[field.key] || item.activity || '';
+    }
     if (isResponsibleField(field)) {
       const direct = item[field.key];
       const custom = item.custom_values?.[field.key];
@@ -1165,6 +1323,15 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     return '';
   };
   const setFieldValue = (field, value) => {
+    if (isActivityField(field)) {
+      setItem((current) => ({
+        ...current,
+        activity: value,
+        [field.key]: value,
+        custom_values: { ...(current.custom_values || {}), [field.key]: value }
+      }));
+      return;
+    }
     if (isStartDateField(field)) {
       setItem((current) => ({
         ...current,
@@ -1404,6 +1571,150 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         </Box>
       );
     }
+
+    // 3. Campo de Actividad: Autocompletado inteligente con sugerencias de actividades existentes por palabras clave
+    if (isActivityField(field)) {
+      const currentActivityVal = fieldValue(field) || item.activity || '';
+      return (
+        <Box
+          key={field.id || field.key}
+          sx={{
+            gridColumn: { xs: '1 / -1', md: 'span 2' },
+            position: 'relative'
+          }}
+        >
+          <Autocomplete
+            freeSolo
+            autoSelect={false}
+            clearOnBlur={false}
+            handleHomeEndKeys={false}
+            options={combinedActivitySuggestions}
+            getOptionLabel={(option) => {
+              if (typeof option === 'string') return option;
+              return option.activity || option.label || '';
+            }}
+            filterOptions={(options, { inputValue }) => {
+              if (!inputValue || !inputValue.trim()) return options.slice(0, 30);
+              const q = normalizeFieldText(inputValue);
+              const words = q.split(/\s+/).filter(Boolean);
+              return options.filter((opt) => {
+                const text = normalizeFieldText(typeof opt === 'string' ? opt : (opt.activity || opt.label || ''));
+                const code = normalizeFieldText(opt.code || '');
+                const dep = normalizeFieldText(opt.dependency_name || '');
+                return words.every((w) => text.includes(w) || code.includes(w) || dep.includes(w));
+              }).slice(0, 30);
+            }}
+            value={currentActivityVal}
+            inputValue={currentActivityVal}
+            onInputChange={(_, newInputValue, reason) => {
+              setFieldValue(field, newInputValue);
+              if (reason === 'input' || reason === 'clear') {
+                handleActivityInputChange(newInputValue);
+              }
+            }}
+            onChange={(_, newValue) => {
+              if (typeof newValue === 'string') {
+                setFieldValue(field, newValue);
+              } else if (newValue && typeof newValue === 'object') {
+                handleSelectActivitySuggestion(newValue, field);
+              }
+            }}
+            renderOption={(props, option) => {
+              const optActivity = typeof option === 'string' ? option : option.activity;
+              const optCode = typeof option === 'object' ? option.code : null;
+              const optDep = typeof option === 'object' ? option.dependency_name : null;
+              const optYear = typeof option === 'object' ? option.term_year : null;
+              const optInd = typeof option === 'object' ? option.indicator : null;
+              const optTarget = typeof option === 'object' ? option.target : null;
+              const isSameDep = typeof option === 'object' ? option.is_same_dependency : false;
+
+              return (
+                <li {...props} key={option.id || (typeof option === 'string' ? option : option.code) || optActivity}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', py: 0.75, gap: 0.35 }}>
+                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                      <Stack direction="row" spacing={0.75} alignItems="center">
+                        {optCode && (
+                          <Chip
+                            size="small"
+                            label={optCode}
+                            sx={{
+                              height: 20,
+                              fontSize: 10,
+                              fontWeight: 850,
+                              bgcolor: isSameDep ? '#dbeafe' : '#f1f5f9',
+                              color: isSameDep ? '#1e40af' : '#475569'
+                            }}
+                          />
+                        )}
+                        {(optDep || optYear) && (
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: '#64748b', fontSize: 11 }}>
+                            {optDep ? optDep : ''}{optYear ? ` · ${optYear}` : ''}
+                          </Typography>
+                        )}
+                      </Stack>
+                      {isSameDep && (
+                        <Chip
+                          size="small"
+                          label="Esta dependencia"
+                          sx={{ height: 18, fontSize: 9.5, fontWeight: 800, bgcolor: '#f0fdf4', color: '#15803d' }}
+                        />
+                      )}
+                    </Stack>
+                    <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a', lineHeight: 1.35, mt: 0.25 }}>
+                      {optActivity}
+                    </Typography>
+                    {(optInd || optTarget) && (
+                      <Typography variant="caption" sx={{ color: '#64748b', fontSize: 11, display: 'block' }}>
+                        {optInd ? `Indicador: ${optInd.slice(0, 70)}${optInd.length > 70 ? '...' : ''}` : ''}
+                        {optTarget ? ` · Meta: ${optTarget}` : ''}
+                      </Typography>
+                    )}
+                  </Box>
+                </li>
+              );
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                fullWidth
+                size="small"
+                required={field.required || field.key === 'activity'}
+                multiline
+                minRows={2}
+                maxRows={5}
+                label={field.label || 'Actividades'}
+                placeholder="Escriba palabras clave para seleccionar una actividad existente o redacte una nueva..."
+                helperText="💡 Escriba palabras clave para autocompletar actividades existentes del banco institucional o redacte una nueva."
+                InputProps={{
+                  ...params.InputProps,
+                  endAdornment: (
+                    <>
+                      {loadingActivitySuggestions ? <CircularProgress color="primary" size={16} sx={{ mr: 1 }} /> : null}
+                      {params.InputProps.endAdornment}
+                    </>
+                  )
+                }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2.5,
+                    bgcolor: '#ffffff',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': { borderColor: '#86add9' },
+                    '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(104, 157, 214, 0.14)' }
+                  },
+                  '& .MuiFormHelperText-root': {
+                    fontSize: 11,
+                    color: '#64748b',
+                    mt: 0.5
+                  }
+                }}
+              />
+            )}
+          />
+        </Box>
+      );
+    }
+
     const catalogType = field.validation_rules?.catalog_type
       || (['responsible', 'responsable_de_ejecucion', 'co_responsibles'].includes(field.key) ? 'organizational_unit' : undefined);
     const catalogEntries = catalogType
@@ -1790,6 +2101,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const editItem = (row) => {
     setEditingItemId(row.id);
+    const actField = activityFields.find(isActivityField);
+    const initialActivity = row.activity || (actField && row.custom_values?.[actField.key]) || '';
+
     const coRespField = activityFields.find(isCoResponsibleField);
     const initialCoResp = (row.co_responsibles && row.co_responsibles.length > 0)
       ? row.co_responsibles
@@ -1804,11 +2118,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     const initialEndsOn = row.ends_on || (endField && row.custom_values?.[endField.key]) || '';
 
     setItem({
-      macroactivity: '', activity: row.activity || '', indicator_type: row.indicator_type || '',
+      macroactivity: '', activity: initialActivity, indicator_type: row.indicator_type || '',
       starts_on: initialStartsOn, ends_on: initialEndsOn, indicator: row.indicator || '',
       target: row.target || '', co_responsibles: parseCoResponsibles(initialCoResp), budget: '',
       custom_values: {
         ...(row.custom_values || {}),
+        ...(actField ? { [actField.key]: initialActivity } : {}),
         ...(respField ? { [respField.key]: initialResp } : {}),
         ...(coRespField ? { [coRespField.key]: parseCoResponsibles(initialCoResp) } : {}),
         ...(startField ? { [startField.key]: initialStartsOn } : {}),
