@@ -58,6 +58,8 @@ const strategicPlanningService = {
   previewDynamicItems: (id, formData) => api.post(`${root}/action-plans/${id}/items-import/preview`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }).then(data),
   confirmDynamicItems: (importId) => api.post(`${root}/action-items-imports/${importId}/confirm`).then(data),
   updateItem: (id, itemId, payload) => api.patch(`${root}/action-plans/${id}/items/${itemId}`, payload, { timeout: 30000 }).then(data),
+  deleteItem: (id, itemId, payload = {}) => api.delete(`${root}/action-plans/${id}/items/${itemId}`, { data: payload }).then(data),
+  replicateItem: (id, itemId, payload) => api.post(`${root}/action-plans/${id}/items/${itemId}/replicate`, payload, { timeout: 45000 }).then(data),
   reviewExecutionItem: (planId, itemId, payload) => api.post(`${root}/action-plans/${planId}/items/${itemId}/leader-feedback`, payload).then(data),
   sendChatMessage: (id, payload) => api.post(`${root}/action-plans/${id}/chat-messages`, payload).then(data),
   clearChatThread: (id) => api.post(`${root}/action-plans/${id}/chat-clear`).then(data),

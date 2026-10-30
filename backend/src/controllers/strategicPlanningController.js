@@ -1624,6 +1624,144 @@ const deleteActionItem = wrap(async (req, res) => {
   ok(res, null, 'Actividad eliminada lógicamente.');
 });
 
+
+const replicateActionItem = wrap(async (req, res) => {
+  const { id: planId, itemId } = req.params;
+  const { target_plan_ids, move = false, justification } = req.body;
+
+  if (!Array.isArray(target_plan_ids) || target_plan_ids.length === 0) {
+    throw Object.assign(new Error('Debe seleccionar al menos un Plan de Acción destino.'), { statusCode: 422 });
+  }
+
+  const sourceItem = await StrategicActionItem.findByPk(itemId);
+  if (!sourceItem || String(sourceItem.action_plan_id) !== String(planId) || sourceItem.deleted_at) {
+    throw Object.assign(new Error('Actividad no encontrada.'), { statusCode: 404 });
+  }
+
+  const sourcePlan = await StrategicActionPlan.findByPk(planId, {
+    include: [{ model: StrategicTerm, as: 'term' }, { model: StrategicCatalogItem, as: 'organizationalUnit' }]
+  });
+  if (!sourcePlan) throw Object.assign(new Error('Plan de acción origen no encontrado.'), { statusCode: 404 });
+
+  const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(req.user?.role);
+  const isLeader = String(sourcePlan.responsible_user_id) === String(req.user.id);
+  if (!isPlanningAdmin && !isLeader) {
+    throw Object.assign(new Error('No tiene permisos para replicar o transferir actividades de este plan.'), { statusCode: 403 });
+  }
+
+  const targetPlans = await StrategicActionPlan.findAll({
+    where: {
+      id: { [Op.in]: target_plan_ids },
+      deleted_at: null
+    },
+    include: [
+      { model: StrategicTerm, as: 'term' },
+      { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo'] }
+    ]
+  });
+
+  if (targetPlans.length === 0) {
+    throw Object.assign(new Error('No se encontraron planes destino válidos.'), { statusCode: 404 });
+  }
+
+  const replicatedItems = [];
+
+  for (const targetPlan of targetPlans) {
+    if (String(targetPlan.id) === String(sourcePlan.id)) continue;
+
+    const existingItems = await StrategicActionItem.findAll({
+      where: { action_plan_id: targetPlan.id, deleted_at: null },
+      attributes: ['code']
+    });
+
+    const existingCodes = new Set(existingItems.map((it) => it.code));
+    let maxNum = 0;
+    for (const code of existingCodes) {
+      const match = String(code).match(/^ACT-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    }
+
+    let nextNum = Math.max(maxNum + 1, existingItems.length + 1);
+    let candidateCode = `ACT-${String(nextNum).padStart(3, '0')}`;
+    while (existingCodes.has(candidateCode)) {
+      nextNum += 1;
+      candidateCode = `ACT-${String(nextNum).padStart(3, '0')}`;
+    }
+
+    const targetLeaderName = targetPlan.responsibleUser?.nombre || targetPlan.organizationalUnit?.name || '';
+    const newCustomValues = { ...(sourceItem.custom_values || {}) };
+
+    Object.keys(newCustomValues).forEach((key) => {
+      const normKey = key.toLowerCase();
+      if (normKey.includes('responsable') && !normKey.includes('co_') && !normKey.includes('corresponsable')) {
+        newCustomValues[key] = targetLeaderName;
+      }
+    });
+
+    const newItem = await StrategicActionItem.create({
+      action_plan_id: targetPlan.id,
+      strategic_element_id: sourceItem.strategic_element_id || null,
+      code: candidateCode,
+      activity: sourceItem.activity,
+      indicator_type: sourceItem.indicator_type,
+      indicator: sourceItem.indicator,
+      target: sourceItem.target,
+      starts_on: sourceItem.starts_on,
+      ends_on: sourceItem.ends_on,
+      responsible_catalog_item_id: targetPlan.catalog_item_id || null,
+      co_responsibles: Array.isArray(sourceItem.co_responsibles) ? [...sourceItem.co_responsibles] : [],
+      custom_values: newCustomValues,
+      version: 1,
+      status: 'active',
+      created_by: req.user.id
+    });
+
+    ensureActivityFoldersInDrive(newItem.id).catch((err) => {
+      console.warn(`[StrategicDrive] Error creando carpetas para actividad replicada ${newItem.id}:`, err.message);
+    });
+
+    syncSinglePlanOfficialWorkbook(targetPlan.id).catch((err) => {
+      console.warn(`[Drive Auto-sync warning] Error sincronizando plan destino ${targetPlan.id}:`, err.message);
+    });
+
+    await refreshActionRepository(targetPlan.term_id, req, 'activity_replicated');
+    await audit(req, 'action_item.replicate', 'action_item', newItem.id, null, newItem.toJSON(), justification || `Replicada desde plan ${sourcePlan.code} (${sourceItem.code})`);
+
+    replicatedItems.push({
+      item_id: newItem.id,
+      code: newItem.code,
+      action_plan_id: targetPlan.id,
+      action_plan_code: targetPlan.code,
+      dependency_name: targetPlan.organizationalUnit?.name || targetPlan.title
+    });
+  }
+
+  if (move && replicatedItems.length > 0) {
+    const previous = sourceItem.toJSON();
+    await sourceItem.update({
+      deleted_at: new Date(),
+      status: 'deleted',
+      updated_by: req.user.id
+    });
+    await audit(req, 'action_item.move', 'action_item', sourceItem.id, previous, sourceItem.toJSON(), justification || `Movida a ${replicatedItems.map(r => r.action_plan_code).join(', ')}`);
+    await refreshActionRepository(sourcePlan.term_id, req, 'activity_moved');
+    syncSinglePlanOfficialWorkbook(sourcePlan.id).catch((err) => console.warn('[Drive Auto-sync warning]:', err.message));
+  }
+
+  ok(res, {
+    replicated_count: replicatedItems.length,
+    moved: Boolean(move),
+    replications: replicatedItems
+  }, move
+    ? `Actividad trasladada con éxito a ${replicatedItems.length} plan(es) de acción.`
+    : `Actividad replicada con éxito a ${replicatedItems.length} plan(es) de acción.`
+  );
+});
+
 const transitionActionPlan = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
   if (!actionPlan) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
@@ -4177,7 +4315,7 @@ module.exports = {
   applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, reorderFieldDefinitions, previewFieldSchema, confirmFieldSchema,
   downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, searchMeetingParticipants, termDependencies, downloadTermDependencyTemplate,
   termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
-  listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, reviewExecutionActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
+  listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, reviewExecutionActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem, replicateActionItem,
   transitionActionPlan, sendActionPlanChatMessage, clearActionPlanChat, saveMonitoring, createMeeting, updateMeeting,
   improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,

@@ -63,6 +63,7 @@ router.post('/action-plans/:id/items-import/preview', permit('pei_formular'), up
 router.post('/action-items-imports/:importId/confirm', permit('pei_formular'), c.confirmDynamicItems);
 router.patch('/action-plans/:id/items/:itemId', permit('pei_formular'), c.updateActionItem);
 router.delete('/action-plans/:id/items/:itemId', permit('pei_formular'), c.deleteActionItem);
+router.post('/action-plans/:id/items/:itemId/replicate', permit('pei_formular'), c.replicateActionItem);
 router.post('/action-plans/:id/items/:itemId/leader-feedback', permit(), c.reviewExecutionActionItem);
 router.post('/action-plans/:id/transitions', permit(), c.transitionActionPlan);
 router.post('/action-plans/:id/chat-messages', permit(), c.sendActionPlanChatMessage);

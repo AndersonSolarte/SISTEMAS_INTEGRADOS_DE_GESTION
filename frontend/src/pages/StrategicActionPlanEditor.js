@@ -1,17 +1,10 @@
 // PEI StrategicActionPlanEditor Module
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Autocomplete, Avatar, Badge, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, Fab, Grid, IconButton, InputAdornment, Menu, MenuItem, Paper, Stack, Tab, Tabs, Table, TableBody, TableCell,
-  TableContainer, TableHead, TablePagination, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
+  Alert, Autocomplete, Avatar, Badge, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Fab, FormControlLabel, Grid, IconButton, InputAdornment, ListItemIcon, ListItemText, Menu, MenuItem, Paper, Radio, RadioGroup, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tabs, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
 import {
-  Add, ArrowBack, AssignmentTurnedIn, AttachFile, AutoAwesome, CheckBox as CheckBoxIcon, CheckBoxOutlineBlank as CheckBoxOutlineBlankIcon, CheckCircle, CheckCircleOutline,
-  Close, CloudUpload, ContentCopy, DeleteOutline, DeleteSweep, Description, Download, Edit, EditNote, Email,
-  AccessTime, CalendarMonth, ChatBubbleOutline, Folder, History, LockOutlined, MoreTime, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, OpenInNew,
-  PersonSearch, PictureAsPdf as PdfIcon, PlayArrow, PriorityHigh, QrCode2, Refresh, Save, Search, Send,
-  HelpOutline, Sync, TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility,
-  CloudDone as CloudDoneIcon, FolderShared as FolderSharedIcon
+  AccessTime, Add, ArrowBack, AssignmentTurnedIn, AttachFile, AutoAwesome, CalendarMonth, ChatBubbleOutline, CheckBox as CheckBoxIcon, CheckBoxOutlineBlank as CheckBoxOutlineBlankIcon, CheckCircle, CheckCircleOutline, Close, CloudDone as CloudDoneIcon, CloudUpload, ContentCopy, DeleteOutline, DeleteSweep, Description, Download, DriveFileMove, Edit, EditNote, Email, Folder, FolderShared as FolderSharedIcon, HelpOutline, History, HourglassBottom, Image as ImageIcon, InsertDriveFile, KeyboardArrowDown, LockOutlined, MoreTime, MoreVert, OpenInNew, PersonSearch, PictureAsPdf as PdfIcon, PlayArrow, PriorityHigh, QrCode2, Refresh, Save, Search, Send, Sync, TableChart as ExcelIcon, TrendingUp, ViewSidebar, Visibility
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../context/AuthContext';
@@ -446,6 +439,24 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [activitySuggestions, setActivitySuggestions] = useState([]);
   const [loadingActivitySuggestions, setLoadingActivitySuggestions] = useState(false);
   const activitySearchTimeoutRef = useRef(null);
+
+  // Menú contextual de 3 puntos por fila de actividad (Editar / Trasladar / Eliminar)
+  const [rowMenuAnchor, setRowMenuAnchor] = useState(null);
+  const [activeMenuRow, setActiveMenuRow] = useState(null);
+
+  // Modal para Trasladar / Replicar actividad a otros planes
+  const [replicateModalOpen, setReplicateModalOpen] = useState(false);
+  const [replicateTargetItem, setReplicateTargetItem] = useState(null);
+  const [availablePlans, setAvailablePlans] = useState([]);
+  const [loadingAvailablePlans, setLoadingAvailablePlans] = useState(false);
+  const [selectedTargetPlanIds, setSelectedTargetPlanIds] = useState([]);
+  const [replicateSearch, setReplicateSearch] = useState('');
+  const [replicateAsMove, setReplicateAsMove] = useState(false);
+  const [replicating, setReplicating] = useState(false);
+
+  // Modal de confirmación para eliminar actividad
+  const [deleteItemCandidate, setDeleteItemCandidate] = useState(null);
+  const [deletingItem, setDeletingItem] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -2133,6 +2144,108 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     setTimeout(() => document.getElementById('activity-capture-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   };
 
+  const handleOpenRowMenu = (event, row) => {
+    event.stopPropagation();
+    setRowMenuAnchor(event.currentTarget);
+    setActiveMenuRow(row);
+  };
+
+  const handleCloseRowMenu = () => {
+    setRowMenuAnchor(null);
+  };
+
+  const handleOpenReplicateDialog = async (row) => {
+    handleCloseRowMenu();
+    setReplicateTargetItem(row);
+    setSelectedTargetPlanIds([]);
+    setReplicateSearch('');
+    setReplicateAsMove(false);
+    setReplicateModalOpen(true);
+    setLoadingAvailablePlans(true);
+    try {
+      const termId = detail?.term_id || detail?.term?.id;
+      const res = await strategicPlanningService.listActionPlans({ termId, year: detail?.term?.year });
+      const rawList = res?.data || [];
+      const filtered = rawList.filter((p) => String(p.id) !== String(detail?.id));
+      setAvailablePlans(filtered);
+    } catch (err) {
+      console.error('Error fetching plans for replication:', err);
+      enqueueSnackbar('No se pudieron cargar los demás planes de acción de la vigencia.', { variant: 'error' });
+    } finally {
+      setLoadingAvailablePlans(false);
+    }
+  };
+
+  const handleToggleTargetPlan = (planId) => {
+    setSelectedTargetPlanIds((prev) =>
+      prev.includes(planId) ? prev.filter((id) => id !== planId) : [...prev, planId]
+    );
+  };
+
+  const handleSelectAllFilteredPlans = (plansToToggle) => {
+    const idsToToggle = plansToToggle.map((p) => p.id);
+    const allSelected = idsToToggle.every((id) => selectedTargetPlanIds.includes(id));
+    if (allSelected) {
+      setSelectedTargetPlanIds((prev) => prev.filter((id) => !idsToToggle.includes(id)));
+    } else {
+      setSelectedTargetPlanIds((prev) => Array.from(new Set([...prev, ...idsToToggle])));
+    }
+  };
+
+  const handleExecuteReplicate = async () => {
+    if (!replicateTargetItem || selectedTargetPlanIds.length === 0) {
+      return enqueueSnackbar('Seleccione al menos un plan de acción destino.', { variant: 'warning' });
+    }
+    setReplicating(true);
+    try {
+      const res = await strategicPlanningService.replicateItem(detail.id, replicateTargetItem.id, {
+        target_plan_ids: selectedTargetPlanIds,
+        move: replicateAsMove,
+        justification: replicateAsMove ? 'Traslado de actividad entre planes' : 'Replicación masiva de actividad institucional'
+      });
+      const data = res?.data || {};
+      const count = data.replications?.length || selectedTargetPlanIds.length;
+      enqueueSnackbar(
+        replicateAsMove
+          ? `Actividad trasladada exitosamente a ${count} plan(es) de acción y retirada del plan actual.`
+          : `Actividad replicada exitosamente en ${count} plan(es) de acción con sus carpetas en Drive preparadas.`,
+        { variant: 'success' }
+      );
+      setReplicateModalOpen(false);
+      setReplicateTargetItem(null);
+      setSelectedTargetPlanIds([]);
+      await load();
+      onChanged?.();
+    } catch (err) {
+      console.error('Error al replicar/trasladar actividad:', err);
+      enqueueSnackbar(err.response?.data?.error || err.response?.data?.message || 'No fue posible completar la replicación de la actividad.', { variant: 'error' });
+    } finally {
+      setReplicating(false);
+    }
+  };
+
+  const handlePromptDeleteItem = (row) => {
+    handleCloseRowMenu();
+    setDeleteItemCandidate(row);
+  };
+
+  const handleExecuteDeleteItem = async () => {
+    if (!deleteItemCandidate) return;
+    setDeletingItem(true);
+    try {
+      await strategicPlanningService.deleteItem(detail.id, deleteItemCandidate.id);
+      enqueueSnackbar('Actividad eliminada correctamente.', { variant: 'success' });
+      setDeleteItemCandidate(null);
+      await load();
+      onChanged?.();
+    } catch (err) {
+      console.error('Error al eliminar actividad:', err);
+      enqueueSnackbar(err.response?.data?.error || err.response?.data?.message || 'No fue posible eliminar la actividad.', { variant: 'error' });
+    } finally {
+      setDeletingItem(false);
+    }
+  };
+
   const searchMeetingPeople = async (query, setOptions, setSearching) => {
     const value = String(query || '').trim();
     if (value.length < 2) {
@@ -3560,7 +3673,33 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   {recordValue(row, field)}
                                 </TableCell>
                               ))}
-                              <TableCell align="right" sx={{ position: 'sticky', right: 0, bgcolor: 'inherit' }}><Button size="small" variant="outlined" startIcon={<Edit />} onClick={() => editItem(row)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 850 }}>Editar</Button></TableCell>
+                              <TableCell align="right" sx={{ position: 'sticky', right: 0, bgcolor: 'inherit', whiteSpace: 'nowrap' }}>
+                                <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="flex-end">
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<Edit />}
+                                    onClick={() => editItem(row)}
+                                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 850 }}
+                                  >
+                                    Editar
+                                  </Button>
+                                  <Tooltip title="Opciones avanzadas (trasladar, replicar, eliminar)">
+                                    <IconButton
+                                      size="small"
+                                      onClick={(e) => handleOpenRowMenu(e, row)}
+                                      sx={{
+                                        bgcolor: '#f1f5f9',
+                                        color: '#334155',
+                                        border: '1px solid #cbd5e1',
+                                        '&:hover': { bgcolor: '#e2e8f0', color: '#0f172a' }
+                                      }}
+                                    >
+                                      <MoreVert fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Stack>
+                              </TableCell>
                             </TableRow>
                           ))
                         )}
@@ -7672,7 +7811,387 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         />
       )}
 
-      {/* BOTÓN FLOTANTE PARA ACCESO DIRECTO AL CANAL DE COMUNICACIÓN CON PLANEACIÓN Y EFECTIVIDAD */}
+            {/* MENÚ DE ACCIONES DE LA ACTIVIDAD (3 PUNTOS) */}
+      <Menu
+        anchorEl={rowMenuAnchor}
+        open={Boolean(rowMenuAnchor)}
+        onClose={handleCloseRowMenu}
+        PaperProps={{
+          sx: {
+            borderRadius: 2.5,
+            boxShadow: '0 8px 24px rgba(15,23,42,0.14)',
+            minWidth: 260,
+            py: 0.5
+          }
+        }}
+        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+      >
+        <MenuItem
+          onClick={() => {
+            const r = activeMenuRow;
+            handleCloseRowMenu();
+            if (r) editItem(r);
+          }}
+          sx={{ py: 1, fontSize: 13.5, fontWeight: 700, color: '#1e293b' }}
+        >
+          <ListItemIcon sx={{ minWidth: 32, color: '#2563eb' }}>
+            <Edit fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Editar actividad" primaryTypographyProps={{ fontSize: 13.5, fontWeight: 700 }} />
+        </MenuItem>
+
+        <MenuItem
+          onClick={() => {
+            const r = activeMenuRow;
+            if (r) handleOpenReplicateDialog(r);
+          }}
+          sx={{ py: 1, fontSize: 13.5, fontWeight: 700, color: '#0f766e' }}
+        >
+          <ListItemIcon sx={{ minWidth: 32, color: '#0f766e' }}>
+            <DriveFileMove fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Trasladar / Replicar actividad"
+            secondary="Asociar o replicar en otros planes"
+            primaryTypographyProps={{ fontSize: 13.5, fontWeight: 700 }}
+            secondaryTypographyProps={{ fontSize: 11, color: '#64748b' }}
+          />
+        </MenuItem>
+
+        <Divider sx={{ my: 0.5 }} />
+
+        <MenuItem
+          onClick={() => {
+            const r = activeMenuRow;
+            if (r) handlePromptDeleteItem(r);
+          }}
+          sx={{ py: 1, fontSize: 13.5, fontWeight: 700, color: '#dc2626' }}
+        >
+          <ListItemIcon sx={{ minWidth: 32, color: '#dc2626' }}>
+            <DeleteOutline fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Eliminar actividad" primaryTypographyProps={{ fontSize: 13.5, fontWeight: 700, color: '#dc2626' }} />
+        </MenuItem>
+      </Menu>
+
+      {/* MODAL DE TRASLADAR / REPLICAR ACTIVIDAD A OTROS PLANES */}
+      <Dialog
+        open={replicateModalOpen}
+        onClose={() => !replicating && setReplicateModalOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 3.5, overflow: 'hidden' }
+        }}
+      >
+        <DialogTitle sx={{ bgcolor: '#0f766e', color: '#ffffff', py: 2, px: 3 }}>
+          <Stack direction="row" alignItems="center" spacing={1.5}>
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#ffffff', width: 40, height: 40 }}>
+              <DriveFileMove />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" fontWeight={900} sx={{ fontSize: 17, lineHeight: 1.2 }}>
+                Trasladar / Replicar Actividad a otros Planes de Acción
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>
+                Cree esta actividad en múltiples planes de acción para que cada dependencia gestione y cargue sus soportes de forma autónoma.
+              </Typography>
+            </Box>
+          </Stack>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 3, bgcolor: '#f8fafc' }}>
+          {/* Tarjeta resumen de la actividad origen */}
+          {replicateTargetItem && (
+            <Paper variant="outlined" sx={{ p: 2, mb: 2.5, borderRadius: 2.5, bgcolor: '#ffffff', borderColor: '#ccfbf1' }}>
+              <Stack direction="row" alignItems="flex-start" spacing={1.5}>
+                <Chip
+                  label={replicateTargetItem.code || 'ACTIVIDAD'}
+                  size="small"
+                  sx={{ bgcolor: '#0f766e', color: '#ffffff', fontWeight: 900, fontSize: 11 }}
+                />
+                <Box sx={{ flex: 1 }}>
+                  <Typography fontWeight={800} color="#0f172a" sx={{ fontSize: 13.5 }}>
+                    {replicateTargetItem.activity || replicateTargetItem.custom_values?.activity || 'Actividad seleccionada'}
+                  </Typography>
+                  <Stack direction="row" spacing={2} sx={{ mt: 0.75, flexWrap: 'wrap', gap: 1 }}>
+                    {replicateTargetItem.indicator_type && (
+                      <Typography variant="caption" color="#475569">
+                        <strong>Tipo:</strong> {replicateTargetItem.indicator_type}
+                      </Typography>
+                    )}
+                    {replicateTargetItem.indicator && (
+                      <Typography variant="caption" color="#475569">
+                        <strong>Indicador:</strong> {replicateTargetItem.indicator}
+                      </Typography>
+                    )}
+                    {replicateTargetItem.target && (
+                      <Typography variant="caption" color="#475569">
+                        <strong>Meta:</strong> {replicateTargetItem.target}
+                      </Typography>
+                    )}
+                  </Stack>
+                </Box>
+              </Stack>
+            </Paper>
+          )}
+
+          {/* Selector de Modo: Replicar (Copiar) vs Mover (Trasladar) */}
+          <Paper variant="outlined" sx={{ p: 2, mb: 2.5, borderRadius: 2.5, bgcolor: '#ffffff', borderColor: '#e2e8f0' }}>
+            <Typography fontWeight={800} color="#1e293b" sx={{ fontSize: 13, mb: 1 }}>
+              Modalidad de operación:
+            </Typography>
+            <RadioGroup
+              row
+              value={replicateAsMove ? 'move' : 'copy'}
+              onChange={(e) => setReplicateAsMove(e.target.value === 'move')}
+            >
+              <FormControlLabel
+                value="copy"
+                control={<Radio size="small" sx={{ color: '#0f766e', '&.Mui-checked': { color: '#0f766e' } }} />}
+                label={
+                  <Box>
+                    <Typography fontWeight={800} sx={{ fontSize: 13, color: '#0f172a' }}>
+                      Replicar (Copiar)
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                      Mantiene la actividad en este plan y crea una copia independiente en los planes seleccionados.
+                    </Typography>
+                  </Box>
+                }
+                sx={{ mr: 3, alignItems: 'flex-start' }}
+              />
+              <FormControlLabel
+                value="move"
+                control={<Radio size="small" sx={{ color: '#d97706', '&.Mui-checked': { color: '#d97706' } }} />}
+                label={
+                  <Box>
+                    <Typography fontWeight={800} sx={{ fontSize: 13, color: '#0f172a' }}>
+                      Mover (Trasladar)
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                      Transfiere la actividad a los planes destino y la retira de este plan de acción.
+                    </Typography>
+                  </Box>
+                }
+                sx={{ alignItems: 'flex-start' }}
+              />
+            </RadioGroup>
+          </Paper>
+
+          {/* Selección de Planes de Acción Destino */}
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5, bgcolor: '#ffffff', borderColor: '#e2e8f0' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1.5} mb={2}>
+              <Box>
+                <Typography fontWeight={800} color="#1e293b" sx={{ fontSize: 13.5 }}>
+                  Planes de acción destino ({availablePlans.length} disponibles)
+                </Typography>
+                <Typography variant="caption" color="#64748b">
+                  {selectedTargetPlanIds.length} plan(es) seleccionado(s)
+                </Typography>
+              </Box>
+              <TextField
+                size="small"
+                placeholder="Buscar por dependencia, código o líder..."
+                value={replicateSearch}
+                onChange={(e) => setReplicateSearch(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Search fontSize="small" sx={{ color: '#94a3b8' }} />
+                    </InputAdornment>
+                  )
+                }}
+                sx={{ width: { xs: '100%', sm: 300 } }}
+              />
+            </Stack>
+
+            {loadingAvailablePlans ? (
+              <Box sx={{ py: 6, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <CircularProgress size={32} sx={{ color: '#0f766e' }} />
+              </Box>
+            ) : (() => {
+              const termLower = (replicateSearch || '').toLowerCase().trim();
+              const filteredPlans = availablePlans.filter((p) => {
+                if (!termLower) return true;
+                const name = (p.organizationalUnit?.name || p.title || '').toLowerCase();
+                const code = (p.code || '').toLowerCase();
+                const owner = (p.responsibleUser?.nombre || p.responsibleUser?.name || '').toLowerCase();
+                return name.includes(termLower) || code.includes(termLower) || owner.includes(termLower);
+              });
+
+              const allFilteredSelected = filteredPlans.length > 0 && filteredPlans.every((p) => selectedTargetPlanIds.includes(p.id));
+
+              return (
+                <>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1, py: 0.5, bgcolor: '#f1f5f9', borderRadius: 1.5, mb: 1 }}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          size="small"
+                          checked={allFilteredSelected}
+                          indeterminate={filteredPlans.some((p) => selectedTargetPlanIds.includes(p.id)) && !allFilteredSelected}
+                          onChange={() => handleSelectAllFilteredPlans(filteredPlans)}
+                          sx={{ color: '#0f766e', '&.Mui-checked': { color: '#0f766e' } }}
+                        />
+                      }
+                      label={
+                        <Typography fontWeight={700} sx={{ fontSize: 12.5, color: '#334155' }}>
+                          Seleccionar todos los visibles ({filteredPlans.length})
+                        </Typography>
+                      }
+                    />
+                    {selectedTargetPlanIds.length > 0 && (
+                      <Button
+                        size="small"
+                        onClick={() => setSelectedTargetPlanIds([])}
+                        sx={{ fontSize: 11.5, textTransform: 'none', color: '#64748b' }}
+                      >
+                        Limpiar selección
+                      </Button>
+                    )}
+                  </Stack>
+
+                  <Box sx={{ maxHeight: 320, overflowY: 'auto', pr: 0.5 }}>
+                    {filteredPlans.length === 0 ? (
+                      <Typography align="center" color="#94a3b8" sx={{ py: 4, fontSize: 13 }}>
+                        No se encontraron planes de acción coincidentes.
+                      </Typography>
+                    ) : (
+                      filteredPlans.map((p) => {
+                        const isSelected = selectedTargetPlanIds.includes(p.id);
+                        const depName = p.organizationalUnit?.name || p.title || 'Dependencia';
+                        const leaderName = p.responsibleUser?.nombre || p.responsibleUser?.name || 'Líder asignado';
+                        return (
+                          <Paper
+                            key={p.id}
+                            variant="outlined"
+                            onClick={() => handleToggleTargetPlan(p.id)}
+                            sx={{
+                              p: 1.25,
+                              mb: 1,
+                              borderRadius: 2,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              bgcolor: isSelected ? '#f0fdfa' : '#ffffff',
+                              borderColor: isSelected ? '#14b8a6' : '#e2e8f0',
+                              transition: 'all 0.15s ease-in-out',
+                              '&:hover': { bgcolor: isSelected ? '#ccfbf1' : '#f8fafc' }
+                            }}
+                          >
+                            <Checkbox
+                              size="small"
+                              checked={isSelected}
+                              onChange={() => handleToggleTargetPlan(p.id)}
+                              sx={{ color: '#0f766e', '&.Mui-checked': { color: '#0f766e' }, mr: 1 }}
+                            />
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Typography fontWeight={800} color="#0f172a" sx={{ fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                {depName}
+                              </Typography>
+                              <Stack direction="row" spacing={1.5} alignItems="center">
+                                <Typography variant="caption" sx={{ color: '#0f766e', fontWeight: 700 }}>
+                                  {p.code}
+                                </Typography>
+                                <Typography variant="caption" color="#64748b">
+                                  • Líder: {leaderName}
+                                </Typography>
+                              </Stack>
+                            </Box>
+                          </Paper>
+                        );
+                      })
+                    )}
+                  </Box>
+                </>
+              );
+            })()}
+          </Paper>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2.5, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0', justifyContent: 'space-between' }}>
+          <Button
+            onClick={() => setReplicateModalOpen(false)}
+            disabled={replicating}
+            sx={{ textTransform: 'none', fontWeight: 700, color: '#64748b' }}
+          >
+            Cancelar
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={handleExecuteReplicate}
+            disabled={replicating || selectedTargetPlanIds.length === 0}
+            startIcon={replicating ? <CircularProgress size={16} sx={{ color: '#ffffff' }} /> : <DriveFileMove />}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 850,
+              bgcolor: replicateAsMove ? '#d97706' : '#0f766e',
+              '&:hover': { bgcolor: replicateAsMove ? '#b45309' : '#0d5e56' },
+              borderRadius: 2,
+              px: 3
+            }}
+          >
+            {replicating
+              ? 'Procesando en Drive y Base de Datos...'
+              : replicateAsMove
+                ? `Mover a ${selectedTargetPlanIds.length} plan(es)`
+                : `Replicar a ${selectedTargetPlanIds.length} plan(es)`}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN DE ACTIVIDAD */}
+      <Dialog
+        open={Boolean(deleteItemCandidate)}
+        onClose={() => !deletingItem && setDeleteItemCandidate(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ textAlign: 'center', pt: 3 }}>
+          <Avatar sx={{ bgcolor: '#fee2e2', color: '#dc2626', width: 56, height: 56, mx: 'auto', mb: 1.5 }}>
+            <DeleteOutline sx={{ fontSize: 32 }} />
+          </Avatar>
+          <Typography variant="h6" fontWeight={900} color="#1e293b" sx={{ fontSize: 17 }}>
+            ¿Eliminar actividad?
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ textAlign: 'center', pb: 2 }}>
+          <Typography color="#64748b" sx={{ fontSize: 13.5, mb: 1.5 }}>
+            Esta acción retirará la actividad{' '}
+            <strong style={{ color: '#0f172a' }}>{deleteItemCandidate?.code}</strong> de este plan de acción.
+          </Typography>
+          <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: '#f8fafc', borderColor: '#e2e8f0', textAlign: 'left' }}>
+            <Typography fontWeight={700} color="#334155" sx={{ fontSize: 12.5 }}>
+              {deleteItemCandidate?.activity || deleteItemCandidate?.custom_values?.activity || 'Actividad seleccionada'}
+            </Typography>
+          </Paper>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, bgcolor: '#f8fafc', justifyContent: 'center', gap: 1 }}>
+          <Button
+            onClick={() => setDeleteItemCandidate(null)}
+            disabled={deletingItem}
+            sx={{ textTransform: 'none', fontWeight: 700, color: '#64748b', px: 2.5 }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleExecuteDeleteItem}
+            disabled={deletingItem}
+            startIcon={deletingItem ? <CircularProgress size={16} sx={{ color: '#ffffff' }} /> : <DeleteOutline />}
+            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, px: 2.5 }}
+          >
+            {deletingItem ? 'Eliminando...' : 'Sí, eliminar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+{/* BOTÓN FLOTANTE PARA ACCESO DIRECTO AL CANAL DE COMUNICACIÓN CON PLANEACIÓN Y EFECTIVIDAD */}
       {detail?.id && (
         <Tooltip
           title="Aquí podrá comunicarse directamente con el componente de Planeación y Efectividad para sugerencias, reclamos o consultas sobre el plan de acción a su cargo."
