@@ -393,6 +393,22 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   // Paginación de tablas (5 por defecto, con opciones 5, 10, 20, 50)
   const [itemsPage, setItemsPage] = useState(0);
   const [itemsRowsPerPage, setItemsRowsPerPage] = useState(5);
+  const [activityOriginFilter, setActivityOriginFilter] = useState('all');
+
+  const pmItemsCount = useMemo(() => {
+    return (detail?.items || []).filter((it) => it.custom_values?.source_module === 'plan_mejoramiento').length;
+  }, [detail?.items]);
+
+  const filteredTableItems = useMemo(() => {
+    const items = detail?.items || [];
+    if (activityOriginFilter === 'plan_mejoramiento') {
+      return items.filter((it) => it.custom_values?.source_module === 'plan_mejoramiento');
+    }
+    if (activityOriginFilter === 'plan_accion') {
+      return items.filter((it) => it.custom_values?.source_module !== 'plan_mejoramiento');
+    }
+    return items;
+  }, [detail?.items, activityOriginFilter]);
   const [actasPage, setActasPage] = useState(0);
   const [actasRowsPerPage, setActasRowsPerPage] = useState(5);
   const [tab4Page, setTab4Page] = useState(0);
@@ -3656,13 +3672,56 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
                 <Paper variant="outlined" sx={{ borderRadius: 3.5, overflow: 'hidden', borderColor: '#e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                   <Box sx={{ px: 3, py: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center">
-                      <Typography variant="h6" fontWeight={900} color="#0f172a" sx={{ fontSize: 16 }}>
-                        Actividades Registradas ({detail.items?.length || 0})
-                      </Typography>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1.5}>
+                      <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+                        <Typography variant="h6" fontWeight={900} color="#0f172a" sx={{ fontSize: 16 }}>
+                          Actividades Registradas ({filteredTableItems.length})
+                        </Typography>
+                        {pmItemsCount > 0 && (
+                          <Stack direction="row" spacing={0.8} alignItems="center">
+                            <Chip
+                              size="small"
+                              label={`Todas (${detail.items?.length || 0})`}
+                              color={activityOriginFilter === 'all' ? 'primary' : 'default'}
+                              variant={activityOriginFilter === 'all' ? 'filled' : 'outlined'}
+                              onClick={() => { setActivityOriginFilter('all'); setItemsPage(0); }}
+                              sx={{ fontWeight: 800, cursor: 'pointer' }}
+                            />
+                            <Chip
+                              size="small"
+                              label={`Institucionales (${(detail.items?.length || 0) - pmItemsCount})`}
+                              color={activityOriginFilter === 'plan_accion' ? 'primary' : 'default'}
+                              variant={activityOriginFilter === 'plan_accion' ? 'filled' : 'outlined'}
+                              onClick={() => { setActivityOriginFilter('plan_accion'); setItemsPage(0); }}
+                              sx={{ fontWeight: 800, cursor: 'pointer' }}
+                            />
+                            <Chip
+                              size="small"
+                              icon={<TrendingUp sx={{ fontSize: '14px !important', color: activityOriginFilter === 'plan_mejoramiento' ? '#ffffff !important' : '#c2410c !important' }} />}
+                              label={`Plan de Mejoramiento (${pmItemsCount})`}
+                              onClick={() => { setActivityOriginFilter('plan_mejoramiento'); setItemsPage(0); }}
+                              sx={{
+                                fontWeight: 900,
+                                cursor: 'pointer',
+                                ...(activityOriginFilter === 'plan_mejoramiento'
+                                  ? { bgcolor: '#ea580c', color: '#ffffff' }
+                                  : { bgcolor: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' })
+                              }}
+                            />
+                          </Stack>
+                        )}
+                      </Stack>
                       <Chip label={`DIR-PE-FR-003 · Vigencia ${detail.term?.year}`} size="small" sx={{ fontWeight: 800, bgcolor: '#e2e8f0', color: '#334155' }} />
                     </Stack>
                   </Box>
+                  {activityOriginFilter === 'plan_mejoramiento' && (
+                    <Box sx={{ px: 3, py: 1.2, bgcolor: '#fff7ed', borderBottom: '1px solid #fed7aa', display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <TrendingUp sx={{ color: '#ea580c', fontSize: 18 }} />
+                      <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#9a3412' }}>
+                        Actividades articuladas desde Plan de Mejoramiento ({filteredTableItems.length}) — Evidencias sincronizadas bidireccionalmente
+                      </Typography>
+                    </Box>
+                  )}
                   <TableContainer sx={{ maxWidth: '100%', overflowX: 'auto', maxHeight: '55vh' }}>
                     <Table stickyHeader size="small" sx={{ minWidth: Math.max(850, (recordColumns.length + 2) * 180) }}>
                       <TableHead>
@@ -3686,16 +3745,56 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             </TableCell>
                           </TableRow>
                         ) : (
-                          detail.items.slice(itemsPage * itemsRowsPerPage, itemsPage * itemsRowsPerPage + itemsRowsPerPage).map((row) => (
+                          filteredTableItems.slice(itemsPage * itemsRowsPerPage, itemsPage * itemsRowsPerPage + itemsRowsPerPage).map((row) => (
                             <TableRow key={row.id} hover sx={{ '&:nth-of-type(even)': { bgcolor: '#f8fafc' } }}>
                               <TableCell sx={{ position: 'sticky', left: 0, bgcolor: 'inherit', fontWeight: 900, color: '#5688c7', zIndex: 1 }}>
-                                {row.code}
+                                <Stack direction="row" spacing={0.7} alignItems="center">
+                                  <span>{row.code}</span>
+                                  {row.custom_values?.source_module === 'plan_mejoramiento' && (
+                                    <Tooltip title={`Originada en Plan de Mejoramiento (${row.custom_values?.pm_programa || ''})`}>
+                                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#ea580c', flexShrink: 0, boxShadow: '0 0 0 2px #ffedd5' }} />
+                                    </Tooltip>
+                                  )}
+                                </Stack>
                               </TableCell>
-                              {recordColumns.map((field) => (
-                                <TableCell key={field.key} sx={{ maxWidth: 320, whiteSpace: 'normal', fontSize: 13, color: '#334155' }}>
-                                  {recordValue(row, field)}
-                                </TableCell>
-                              ))}
+                              {recordColumns.map((field) => {
+                                const isActivityCol = field.key === 'activity' || (field.label || '').toLowerCase().includes('actividad');
+                                const isPm = row.custom_values?.source_module === 'plan_mejoramiento';
+                                const pmProgram = row.custom_values?.pm_programa || row.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '') || '';
+
+                                return (
+                                  <TableCell key={field.key} sx={{ maxWidth: 320, whiteSpace: 'normal', fontSize: 13, color: '#334155' }}>
+                                    {isActivityCol ? (
+                                      <Stack spacing={0.5} alignItems="flex-start">
+                                        {isPm && (
+                                          <Tooltip title={`Actividad interoperable desde Plan de Mejoramiento${pmProgram ? ` (${pmProgram})` : ''}`}>
+                                            <Chip
+                                              size="small"
+                                              icon={<TrendingUp sx={{ fontSize: '13px !important', color: '#c2410c !important' }} />}
+                                              label={`Plan de Mejoramiento${pmProgram ? ` · ${pmProgram}` : ''}`}
+                                              sx={{
+                                                height: 22,
+                                                fontSize: 10.5,
+                                                fontWeight: 900,
+                                                bgcolor: '#fff7ed',
+                                                color: '#c2410c',
+                                                border: '1px solid #fed7aa',
+                                                borderRadius: 1.5,
+                                                '& .MuiChip-icon': { ml: 0.5 }
+                                              }}
+                                            />
+                                          </Tooltip>
+                                        )}
+                                        <Typography sx={{ fontSize: 13, fontWeight: isPm ? 700 : 500, color: '#1e293b' }}>
+                                          {recordValue(row, field)}
+                                        </Typography>
+                                      </Stack>
+                                    ) : (
+                                      recordValue(row, field)
+                                    )}
+                                  </TableCell>
+                                );
+                              })}
                               <TableCell align="center" sx={{ position: 'sticky', right: 0, bgcolor: 'inherit', width: 72 }}>
                                 <Tooltip title="Opciones de la actividad (Editar, Trasladar, Replicar, Eliminar)">
                                   <IconButton
