@@ -3652,7 +3652,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               {field.label}
                             </TableCell>
                           ))}
-                          <TableCell align="right" sx={{ position: 'sticky', right: 0, bgcolor: '#f1f5f9', zIndex: 3, fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1' }}>Acción</TableCell>
+                          <TableCell align="center" sx={{ position: 'sticky', right: 0, bgcolor: '#f1f5f9', zIndex: 3, fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', width: 72 }}>Acción</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -3673,32 +3673,24 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   {recordValue(row, field)}
                                 </TableCell>
                               ))}
-                              <TableCell align="right" sx={{ position: 'sticky', right: 0, bgcolor: 'inherit', whiteSpace: 'nowrap' }}>
-                                <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="flex-end">
-                                  <Button
+                              <TableCell align="center" sx={{ position: 'sticky', right: 0, bgcolor: 'inherit', width: 72 }}>
+                                <Tooltip title="Opciones de la actividad (Editar, Trasladar, Replicar, Eliminar)">
+                                  <IconButton
                                     size="small"
-                                    variant="outlined"
-                                    startIcon={<Edit />}
-                                    onClick={() => editItem(row)}
-                                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 850 }}
+                                    onClick={(e) => handleOpenRowMenu(e, row)}
+                                    sx={{
+                                      bgcolor: '#f1f5f9',
+                                      color: '#1e293b',
+                                      border: '1px solid #cbd5e1',
+                                      borderRadius: 2,
+                                      p: 0.75,
+                                      transition: 'all 0.15s ease',
+                                      '&:hover': { bgcolor: '#e2e8f0', color: '#0f172a', borderColor: '#94a3b8' }
+                                    }}
                                   >
-                                    Editar
-                                  </Button>
-                                  <Tooltip title="Opciones avanzadas (trasladar, replicar, eliminar)">
-                                    <IconButton
-                                      size="small"
-                                      onClick={(e) => handleOpenRowMenu(e, row)}
-                                      sx={{
-                                        bgcolor: '#f1f5f9',
-                                        color: '#334155',
-                                        border: '1px solid #cbd5e1',
-                                        '&:hover': { bgcolor: '#e2e8f0', color: '#0f172a' }
-                                      }}
-                                    >
-                                      <MoreVert fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                </Stack>
+                                    <MoreVert fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
                               </TableCell>
                             </TableRow>
                           ))
