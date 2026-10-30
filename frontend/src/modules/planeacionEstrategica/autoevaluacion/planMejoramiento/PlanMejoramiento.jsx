@@ -347,6 +347,348 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     lineasAccion: []
   });
 
+  const selectedActionPlan = useMemo(() => {
+    return linkingCandidates.find((p) => String(p.id) === String(selectedActionPlanId)) || linkingCandidates[0] || null;
+  }, [linkingCandidates, selectedActionPlanId]);
+
+  const dynamicFormFields = useMemo(() => {
+    const raw = selectedActionPlan?.form_schema?.fields;
+    const EXCLUDED_ACTION_PLAN_KEYS = new Set([
+      'progress_s1', 'observations_s1', 'progress_s2', 'observations_s2',
+      'total_progress', 'avance_a_ip_2026', 'avance_a_iip_2026',
+      'observaciones', 'observaciones_2', 'total'
+    ]);
+    if (Array.isArray(raw) && raw.length > 0) {
+      const filtered = raw
+        .filter((f) => f && f.active !== false && f.data_type !== 'formula' && !EXCLUDED_ACTION_PLAN_KEYS.has(f.key))
+        .sort((a, b) => (a.position || 0) - (b.position || 0));
+
+      if (!filtered.some((f) => f.key === 'deliverable' || f.key === 'entregable')) {
+        filtered.push({
+          id: 'dyn-deliverable',
+          key: 'entregable',
+          label: 'Entregable',
+          data_type: 'long_text',
+          required: true,
+          position: 99
+        });
+      }
+      return filtered;
+    }
+    return [
+      { key: 'strategic_objective', label: 'Objetivos Estratégicos', data_type: 'list', required: true },
+      { key: 'strategic_guideline', label: 'Lineamientos Estratégicos', data_type: 'strategic_relation', required: true },
+      { key: 'macroactividad', label: 'Macroactividad', data_type: 'long_text', required: true },
+      { key: 'activity', label: 'Actividades', data_type: 'long_text', required: true },
+      { key: 'indicator_type', label: 'Tipo de Indicador', data_type: 'list', required: true },
+      { key: 'starts_on', label: 'Fecha inicio', data_type: 'date', required: true },
+      { key: 'ends_on', label: 'Fecha fin', data_type: 'date', required: true },
+      { key: 'indicator', label: 'Indicador', data_type: 'long_text', required: true },
+      { key: 'target', label: 'Meta', data_type: 'text', required: true },
+      { key: 'responsible', label: 'Responsable de Ejecución', data_type: 'catalog', required: true },
+      { key: 'co_responsibles', label: 'Corresponsable', data_type: 'catalog_multi', required: false },
+      { key: 'entregable', label: 'Entregable', data_type: 'long_text', required: true }
+    ];
+  }, [selectedActionPlan]);
+
+  const renderDynamicFormField = (field) => {
+    const key = field.key;
+    const label = field.label || key;
+    const isRequired = field.required !== false;
+    const dataType = field.data_type || 'text';
+
+    // 1. Responsable de ejecución: precargado automáticamente con el líder del Plan de Acción
+    if (key === 'responsible' || key === 'responsable' || key === 'responsable_de_ejecucion' || (field.validation_rules?.catalog_type === 'organizational_unit' && dataType === 'catalog')) {
+      return (
+        <Paper
+          key={key}
+          elevation={0}
+          sx={{
+            gridColumn: { xs: '1 / -1', md: 'span 6' },
+            p: 1.5,
+            borderRadius: 2.5,
+            bgcolor: '#f8fafc',
+            border: '1px solid #dbeafe',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center'
+          }}
+        >
+          <Stack direction="row" spacing={1} alignItems="center" mb={0.4}>
+            <Typography variant="caption" sx={{ fontWeight: 850, color: '#64748b' }}>
+              {label} {isRequired ? '*' : ''}
+            </Typography>
+            <Chip size="small" label="Líder del Plan" color="primary" sx={{ height: 18, fontSize: 10, fontWeight: 900 }} />
+          </Stack>
+          <Typography variant="body2" sx={{ fontWeight: 900, color: '#0f172a' }}>
+            {selectedActionPlan?.leader_name || 'Líder del Plan asignado'}
+          </Typography>
+        </Paper>
+      );
+    }
+
+    // 2. Corresponsable
+    if (key === 'co_responsibles' || key === 'corresponsable' || key === 'co_responsible') {
+      return (
+        <TextField
+          key={key}
+          label={`${label} (opcional)`}
+          placeholder="Dependencia o proceso corresponsable"
+          value={linkFormData[key] || linkFormData.corresponsable || ''}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLinkFormData((prev) => ({
+              ...prev,
+              [key]: val,
+              corresponsable: val,
+              co_responsible: val,
+              co_responsibles: val ? [val] : []
+            }));
+          }}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 6' } }}
+        />
+      );
+    }
+
+    // 3. Objetivo Estratégico
+    if (key === 'strategic_objective' || key === 'objetivo_estrategico' || key === 'objetivoEstrategico') {
+      const options = field.options?.length ? field.options : (catalogs.strategicObjectives || []);
+      const currentVal = linkFormData[key] || linkFormData.objetivoEstrategico || linkFormData.strategic_objective || '';
+      return (
+        <TextField
+          key={key}
+          select
+          label={`${label} ${isRequired ? '*' : ''}`}
+          value={currentVal}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLinkFormData((prev) => ({
+              ...prev,
+              [key]: val,
+              strategic_objective: val,
+              objetivo_estrategico: val,
+              objetivoEstrategico: val,
+              lineamientoEstrategico: '',
+              strategic_guideline: '',
+              lineamiento_estrategico: ''
+            }));
+          }}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 4' } }}
+        >
+          {withCurrent(options, currentVal).map((item) => (
+            <MenuItem key={item} value={item}>{item}</MenuItem>
+          ))}
+        </TextField>
+      );
+    }
+
+    // 4. Lineamiento Estratégico
+    if (key === 'strategic_guideline' || key === 'lineamiento_estrategico' || key === 'lineamientoEstrategico') {
+      const parentObj = linkFormData.strategic_objective || linkFormData.objetivoEstrategico || '';
+      const cascadedOptions = catalogs.objectiveProjects?.[parentObj] || field.options || [];
+      const currentVal = linkFormData[key] || linkFormData.lineamientoEstrategico || linkFormData.strategic_guideline || '';
+      return (
+        <TextField
+          key={key}
+          select
+          label={`${label} ${isRequired ? '*' : ''}`}
+          value={currentVal}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLinkFormData((prev) => ({
+              ...prev,
+              [key]: val,
+              strategic_guideline: val,
+              lineamiento_estrategico: val,
+              lineamientoEstrategico: val
+            }));
+          }}
+          disabled={!parentObj}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 4' } }}
+        >
+          {withCurrent(cascadedOptions, currentVal).map((item) => (
+            <MenuItem key={item} value={item}>{item}</MenuItem>
+          ))}
+        </TextField>
+      );
+    }
+
+    // 5. Macroactividad
+    if (key === 'macroactividad' || key === 'macroactivity') {
+      const currentVal = linkFormData[key] || linkFormData.macroactividad || linkFormData.macroactivity || '';
+      return (
+        <TextField
+          key={key}
+          label={`${label} ${isRequired ? '*' : ''}`}
+          placeholder="Nombre de la macroactividad"
+          value={currentVal}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLinkFormData((prev) => ({
+              ...prev,
+              [key]: val,
+              macroactividad: val,
+              macroactivity: val
+            }));
+          }}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 4' } }}
+        />
+      );
+    }
+
+    // 6. Actividad
+    if (key === 'activity' || key === 'actividad') {
+      const currentVal = linkFormData[key] || linkFormData.actividad || linkFormData.activity || '';
+      return (
+        <TextField
+          key={key}
+          label={`${label} ${isRequired ? '*' : ''}`}
+          multiline
+          minRows={2}
+          value={currentVal}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLinkFormData((prev) => ({
+              ...prev,
+              [key]: val,
+              actividad: val,
+              activity: val
+            }));
+          }}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 8' } }}
+        />
+      );
+    }
+
+    // 7. Tipo de indicador
+    if (key === 'indicator_type' || key === 'tipo_indicador' || key === 'tipoIndicador' || (dataType === 'list' && key.includes('tipo'))) {
+      const options = field.options?.length ? field.options : ['Resultado', 'Proceso', 'Documental', 'Estructura', 'Impacto', 'Gestión'];
+      const currentVal = linkFormData[key] || linkFormData.tipoIndicador || linkFormData.indicator_type || 'Resultado';
+      return (
+        <TextField
+          key={key}
+          select
+          label={`${label} ${isRequired ? '*' : ''}`}
+          value={currentVal}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLinkFormData((prev) => ({
+              ...prev,
+              [key]: val,
+              tipoIndicador: val,
+              indicator_type: val,
+              tipo_indicador: val
+            }));
+          }}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 4' } }}
+        >
+          {options.map((t) => (
+            <MenuItem key={t} value={t}>{t}</MenuItem>
+          ))}
+        </TextField>
+      );
+    }
+
+    // 8. Fechas
+    if (dataType === 'date' || key.includes('fecha') || key === 'starts_on' || key === 'ends_on') {
+      const isStart = key === 'starts_on' || key === 'fecha_inicio' || key === 'fechaInicio';
+      const currentVal = linkFormData[key] || (isStart ? linkFormData.fechaInicio : linkFormData.fechaFin) || '';
+      return (
+        <TextField
+          key={key}
+          label={`${label} ${isRequired ? '*' : ''}`}
+          type="date"
+          InputLabelProps={{ shrink: true }}
+          value={currentVal}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLinkFormData((prev) => ({
+              ...prev,
+              [key]: val,
+              ...(isStart ? { fechaInicio: val, starts_on: val } : { fechaFin: val, ends_on: val })
+            }));
+          }}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 3' } }}
+        />
+      );
+    }
+
+    // 9. Indicador
+    if (key === 'indicator' || key === 'indicador') {
+      const currentVal = linkFormData[key] || linkFormData.indicador || linkFormData.indicator || '';
+      return (
+        <TextField
+          key={key}
+          label={`${label} ${isRequired ? '*' : ''}`}
+          value={currentVal}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLinkFormData((prev) => ({ ...prev, [key]: val, indicador: val, indicator: val }));
+          }}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 4' } }}
+        />
+      );
+    }
+
+    // 10. Meta
+    if (key === 'target' || key === 'meta') {
+      const currentVal = linkFormData[key] || linkFormData.meta || linkFormData.target || '';
+      return (
+        <TextField
+          key={key}
+          label={`${label} ${isRequired ? '*' : ''}`}
+          value={currentVal}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLinkFormData((prev) => ({ ...prev, [key]: val, meta: val, target: val }));
+          }}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 2' } }}
+        />
+      );
+    }
+
+    // 11. Entregable
+    if (key === 'deliverable' || key === 'entregable') {
+      const currentVal = linkFormData[key] || linkFormData.entregable || linkFormData.deliverable || '';
+      return (
+        <TextField
+          key={key}
+          label={`${label} ${isRequired ? '*' : ''}`}
+          placeholder="Describa el documento, producto o soporte entregable esperado"
+          multiline
+          minRows={2}
+          value={currentVal}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLinkFormData((prev) => ({ ...prev, [key]: val, entregable: val, deliverable: val }));
+          }}
+          sx={{ gridColumn: { xs: '1 / -1', md: 'span 12' } }}
+        />
+      );
+    }
+
+    // Default genérico para cualquier otro campo dinámico agregado al PED
+    const isMulti = dataType === 'long_text' || dataType === 'textarea';
+    const isSelect = dataType === 'list' && Array.isArray(field.options) && field.options.length > 0;
+
+    return (
+      <TextField
+        key={key}
+        select={isSelect}
+        multiline={isMulti}
+        minRows={isMulti ? 2 : undefined}
+        label={`${label} ${isRequired ? '*' : ''}`}
+        value={linkFormData[key] ?? ''}
+        onChange={(e) => setLinkFormData((prev) => ({ ...prev, [key]: e.target.value }))}
+        sx={{ gridColumn: { xs: '1 / -1', md: isMulti ? 'span 12' : 'span 4' } }}
+      >
+        {isSelect ? field.options.map((opt) => (
+          <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+        )) : null}
+      </TextField>
+    );
+  };
+
   const handleDownloadBlankTemplate = async (programa = '') => {
     setDownloadingTemplate(true);
     try {
@@ -884,18 +1226,38 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     setLinkingTarget({ objectiveIndex, activityIndex, activity });
     setLinkingCandidates([]);
     setSelectedActionPlanId('');
+
+    let initObj = activity.objetivoEstrategico || catalogs.strategicObjectives?.[0] || '';
+    if (/^OE1/i.test(initObj)) initObj = 'OE1 Diseñar e implementar estrategias integrales e innovadoras, para arraigar la identidad Universidad CESMAG.';
+    else if (/^OE2/i.test(initObj)) initObj = 'OE2 Articular las labores institucionales (formativas, académicas, docentes, científicas, culturales, extensión, financieras y administrativas) desde una óptica transformadora de la persona para impactar la sociedad desde el reconocimiento de las culturas y las comunidades.';
+    else if (/^OE3/i.test(initObj)) initObj = 'OE3 Desarrollar una arquitectura institucional bajo los principios de ética y buen gobierno';
+
     setLinkFormData({
-      objetivoEstrategico: activity.objetivoEstrategico || catalogs.strategicObjectives?.[0] || '',
+      objetivoEstrategico: initObj,
+      strategic_objective: initObj,
+      objetivo_estrategico: initObj,
       lineamientoEstrategico: activity.proyectoPdi || '',
+      strategic_guideline: activity.proyectoPdi || '',
+      lineamiento_estrategico: activity.proyectoPdi || '',
       macroactividad: '',
+      macroactivity: '',
       actividad: activity.nombre || '',
+      activity: activity.nombre || '',
       tipoIndicador: 'Resultado',
+      indicator_type: 'Resultado',
+      tipo_indicador: 'Resultado',
       fechaInicio: activity.fechaInicio || '',
+      starts_on: activity.fechaInicio || '',
       fechaFin: activity.fechaFin || '',
+      ends_on: activity.fechaFin || '',
       indicador: activity.indicador || '',
+      indicator: activity.indicador || '',
       meta: String(activity.meta || '1'),
+      target: String(activity.meta || '1'),
       corresponsable: '',
+      co_responsible: '',
       entregable: activity.descripcion || '',
+      deliverable: activity.descripcion || '',
       politicas: asStringArray(activity.politicasInstitucionales),
       lineasAccion: asStringArray(activity.lineasAccionPolitica)
     });
@@ -904,7 +1266,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
     try {
       const res = await planMejoramientoService.getActionPlanCandidates(planId, activity.uid);
-      const plans = res?.data?.plans || [];
+      const plans = res?.plans || res?.data?.plans || (Array.isArray(res) ? res : []);
       setLinkingCandidates(plans);
       const recommended = plans.find((p) => p.is_recommended) || plans[0];
       if (recommended) {
@@ -918,20 +1280,26 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   };
 
   const handleConfirmLink = async () => {
-    if (!linkingTarget || !selectedActionPlanId) {
+    const targetPlanId = selectedActionPlanId || linkingCandidates[0]?.id;
+    if (!linkingTarget || !targetPlanId) {
       return enqueueSnackbar('Seleccione un plan de acción destino', { variant: 'warning' });
     }
-    if (!linkFormData.actividad.trim()) {
+    const actName = (linkFormData.actividad || linkFormData.activity || linkingTarget.activity?.nombre || '').trim();
+    if (!actName) {
       return enqueueSnackbar('El nombre de la actividad no puede estar vacío', { variant: 'warning' });
     }
     setLinkingBusy(true);
     try {
       const res = await planMejoramientoService.linkToActionPlan(editor.id, linkingTarget.activity.uid, {
-        action_plan_id: selectedActionPlanId,
-        form_values: linkFormData
+        action_plan_id: targetPlanId,
+        form_values: {
+          ...linkFormData,
+          actividad: actName,
+          activity: actName
+        }
       });
-      const data = res?.data;
-      const linkedPlan = linkingCandidates.find((p) => String(p.id) === String(selectedActionPlanId));
+      const data = res?.data || res;
+      const linkedPlan = linkingCandidates.find((p) => String(p.id) === String(targetPlanId));
 
       setEditor((previous) => ({
         ...previous,
@@ -939,16 +1307,16 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           ...obj,
           actividades: obj.actividades.map((act, ai) => ai !== linkingTarget.activityIndex ? act : {
             ...act,
-            nombre: linkFormData.actividad || act.nombre,
-            indicador: linkFormData.indicador || act.indicador,
-            meta: linkFormData.meta || act.meta,
-            fechaInicio: linkFormData.fechaInicio || act.fechaInicio,
-            fechaFin: linkFormData.fechaFin || act.fechaFin,
-            objetivoEstrategico: linkFormData.objetivoEstrategico || act.objetivoEstrategico,
-            proyectoPdi: linkFormData.lineamientoEstrategico || act.proyectoPdi,
+            nombre: actName,
+            indicador: linkFormData.indicador || linkFormData.indicator || act.indicador,
+            meta: linkFormData.meta || linkFormData.target || act.meta,
+            fechaInicio: linkFormData.fechaInicio || linkFormData.starts_on || act.fechaInicio,
+            fechaFin: linkFormData.fechaFin || linkFormData.ends_on || act.fechaFin,
+            objetivoEstrategico: linkFormData.objetivoEstrategico || linkFormData.strategic_objective || act.objetivoEstrategico,
+            proyectoPdi: linkFormData.lineamientoEstrategico || linkFormData.strategic_guideline || act.proyectoPdi,
             politicasInstitucionales: linkFormData.politicas?.length ? linkFormData.politicas : act.politicasInstitucionales,
             lineasAccionPolitica: linkFormData.lineasAccion?.length ? linkFormData.lineasAccion : act.lineasAccionPolitica,
-            linkedActionPlanId: data?.action_plan_id || selectedActionPlanId,
+            linkedActionPlanId: data?.action_plan_id || targetPlanId,
             linkedActionItemId: data?.action_item_id,
             linkedActionPlanCode: data?.action_plan_code || linkedPlan?.code || '',
             linkedActionPlanName: data?.action_plan_name || linkedPlan?.name || '',
@@ -960,7 +1328,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         })
       }));
 
-      enqueueSnackbar(`Actividad enviada y vinculada exitosamente al Plan de Acción ${data?.action_plan_code || ''}`, { variant: 'success' });
+      enqueueSnackbar(`Actividad enviada y vinculada exitosamente al Plan de Acción ${data?.action_plan_code || linkedPlan?.code || ''}`, { variant: 'success' });
       setLinkModalOpen(false);
       setLinkingTarget(null);
     } catch (err) {
@@ -2330,143 +2698,24 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             )}
           </Paper>
 
-          {/* Paso 2: Formulario oficial del Plan de Acción */}
+          {/* Paso 2: Formulario dinámico del Plan de Acción */}
           <Paper variant="outlined" sx={{ borderRadius: 3.5, p: { xs: 2, md: 2.5 }, bgcolor: '#ffffff', borderColor: '#cbd5e1' }}>
             <Stack direction="row" spacing={1.25} alignItems="center" mb={2}>
               <Box sx={{ width: 32, height: 32, borderRadius: 2, bgcolor: '#e6f1ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 14 }}>
                 2
               </Box>
-              <Typography variant="subtitle1" fontWeight={900} color="#1e293b">
-                Formulario de la Actividad en el Plan de Acción
-              </Typography>
+              <Box>
+                <Typography variant="subtitle1" fontWeight={900} color="#1e293b">
+                  Formulario de la Actividad en el Plan de Acción
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#64748b' }}>
+                  Estructura dinámica sincronizada con el PED oficial vigente ({selectedActionPlan?.year || editor?.periodoInicio || currentYear})
+                </Typography>
+              </Box>
             </Stack>
 
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.6 }}>
-              {/* 1. Objetivos Estratégicos */}
-              <TextField
-                select
-                label="Objetivos Estratégicos *"
-                value={linkFormData.objetivoEstrategico}
-                onChange={(e) => setLinkFormData((prev) => ({ ...prev, objetivoEstrategico: e.target.value, lineamientoEstrategico: '' }))}
-                sx={{ gridColumn: { md: 'span 4' } }}
-              >
-                {withCurrent(catalogs.strategicObjectives, linkFormData.objetivoEstrategico).map((item) => (
-                  <MenuItem key={item} value={item}>{item}</MenuItem>
-                ))}
-              </TextField>
-
-              {/* 2. Lineamientos Estratégicos */}
-              <TextField
-                select
-                label="Lineamientos Estratégicos *"
-                value={linkFormData.lineamientoEstrategico}
-                onChange={(e) => setLinkFormData((prev) => ({ ...prev, lineamientoEstrategico: e.target.value }))}
-                disabled={!linkFormData.objetivoEstrategico}
-                sx={{ gridColumn: { md: 'span 4' } }}
-              >
-                {withCurrent(catalogs.objectiveProjects?.[linkFormData.objetivoEstrategico] || [], linkFormData.lineamientoEstrategico).map((item) => (
-                  <MenuItem key={item} value={item}>{item}</MenuItem>
-                ))}
-              </TextField>
-
-              {/* 3. Macroactividad */}
-              <TextField
-                label="Macroactividad *"
-                placeholder="Nombre de la macroactividad"
-                value={linkFormData.macroactividad}
-                onChange={(e) => setLinkFormData((prev) => ({ ...prev, macroactividad: e.target.value }))}
-                sx={{ gridColumn: { md: 'span 4' } }}
-              />
-
-              {/* 4. Actividad */}
-              <TextField
-                label="Actividades *"
-                multiline
-                minRows={2}
-                value={linkFormData.actividad}
-                onChange={(e) => setLinkFormData((prev) => ({ ...prev, actividad: e.target.value }))}
-                sx={{ gridColumn: { md: 'span 8' } }}
-              />
-
-              {/* 5. Tipo de Indicador */}
-              <TextField
-                select
-                label="Tipo de Indicador *"
-                value={linkFormData.tipoIndicador}
-                onChange={(e) => setLinkFormData((prev) => ({ ...prev, tipoIndicador: e.target.value }))}
-                sx={{ gridColumn: { md: 'span 4' } }}
-              >
-                {['Resultado', 'Proceso', 'Documental', 'Estructura', 'Impacto', 'Gestión'].map((t) => (
-                  <MenuItem key={t} value={t}>{t}</MenuItem>
-                ))}
-              </TextField>
-
-              {/* 6. Fecha inicio */}
-              <TextField
-                label="Fecha inicio *"
-                type="date"
-                InputLabelProps={{ shrink: true }}
-                value={linkFormData.fechaInicio}
-                onChange={(e) => setLinkFormData((prev) => ({ ...prev, fechaInicio: e.target.value }))}
-                sx={{ gridColumn: { md: 'span 3' } }}
-              />
-
-              {/* 7. Fecha fin */}
-              <TextField
-                label="Fecha fin *"
-                type="date"
-                InputLabelProps={{ shrink: true }}
-                value={linkFormData.fechaFin}
-                onChange={(e) => setLinkFormData((prev) => ({ ...prev, fechaFin: e.target.value }))}
-                sx={{ gridColumn: { md: 'span 3' } }}
-              />
-
-              {/* 8. Indicador */}
-              <TextField
-                label="Indicador *"
-                value={linkFormData.indicador}
-                onChange={(e) => setLinkFormData((prev) => ({ ...prev, indicador: e.target.value }))}
-                sx={{ gridColumn: { md: 'span 4' } }}
-              />
-
-              {/* 9. Meta */}
-              <TextField
-                label="Meta *"
-                value={linkFormData.meta}
-                onChange={(e) => setLinkFormData((prev) => ({ ...prev, meta: e.target.value }))}
-                sx={{ gridColumn: { md: 'span 2' } }}
-              />
-
-              {/* 10. Responsable de Ejecución */}
-              <Paper elevation={0} sx={{ gridColumn: { md: 'span 6' }, p: 1.5, borderRadius: 2.5, bgcolor: '#f8fafc', border: '1px solid #dbeafe', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <Stack direction="row" spacing={1} alignItems="center" mb={0.4}>
-                  <Typography variant="caption" sx={{ fontWeight: 850, color: '#64748b' }}>Responsable de Ejecución *</Typography>
-                  <Chip size="small" label="Líder del Plan" color="primary" sx={{ height: 18, fontSize: 10, fontWeight: 900 }} />
-                </Stack>
-                <Typography variant="body2" sx={{ fontWeight: 900, color: '#0f172a' }}>
-                  {linkingCandidates.find((p) => String(p.id) === String(selectedActionPlanId))?.leader_name || 'Líder del Plan asignado'}
-                </Typography>
-              </Paper>
-
-              {/* 11. Corresponsable */}
-              <TextField
-                label="Corresponsable"
-                placeholder="Dependencia o proceso corresponsable (opcional)"
-                value={linkFormData.corresponsable}
-                onChange={(e) => setLinkFormData((prev) => ({ ...prev, corresponsable: e.target.value }))}
-                sx={{ gridColumn: { md: 'span 6' } }}
-              />
-
-              {/* 12. Entregable */}
-              <TextField
-                label="Entregable *"
-                placeholder="Describa el documento, producto o soporte entregable esperado"
-                multiline
-                minRows={2}
-                value={linkFormData.entregable}
-                onChange={(e) => setLinkFormData((prev) => ({ ...prev, entregable: e.target.value }))}
-                sx={{ gridColumn: { md: 'span 12' } }}
-              />
+              {dynamicFormFields.map((field) => renderDynamicFormField(field))}
             </Box>
           </Paper>
         </DialogContent>
@@ -2481,9 +2730,14 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           <Button
             variant="contained"
             color="success"
-            disabled={linkingBusy || !selectedActionPlanId || linkingCandidates.length === 0 || !linkFormData.actividad.trim()}
+            disabled={
+              linkingBusy ||
+              loadingCandidates ||
+              linkingCandidates.length === 0 ||
+              !(linkFormData.actividad?.trim() || linkFormData.activity?.trim() || linkingTarget?.activity?.nombre?.trim())
+            }
             onClick={handleConfirmLink}
-            startIcon={linkingBusy ? <CircularProgress size={18} color="inherit" /> : <AddIcon />}
+            startIcon={linkingBusy ? <CircularProgress size={18} color="inherit" /> : <LinkIcon />}
             sx={{
               textTransform: 'none',
               fontWeight: 900,
@@ -2495,7 +2749,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               boxShadow: '0 4px 14px rgba(22, 163, 74, 0.3)'
             }}
           >
-            {linkingBusy ? 'Enviando y creando en Drive…' : '+ Enviar y Crear en Plan de Acción'}
+            {linkingBusy ? 'Enviando y creando en Drive…' : 'Enviar y Crear en Plan de Acción'}
           </Button>
         </DialogActions>
       </Dialog>

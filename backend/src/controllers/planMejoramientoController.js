@@ -1072,7 +1072,7 @@ const getActionPlanCandidates = async (req, res) => {
         deleted_at: null
       },
       include: [
-        { model: StrategicTerm, as: 'term', required: false },
+        { model: StrategicTerm, as: 'term', attributes: ['id', 'year', 'strategic_plan_id'], required: false },
         { model: StrategicCatalogItem, as: 'organizationalUnit', required: false },
         { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false },
         {
@@ -1101,7 +1101,7 @@ const getActionPlanCandidates = async (req, res) => {
     const planDoc = String(plan.asignacion?.usuario_documento || plan.asignacion?.usuario_username || '').trim();
     const userSessionDoc = String(req.user?.username || req.user?.documento || '').trim();
 
-    const mappedPlans = actionPlans.map((p) => {
+    const mappedPlans = await Promise.all(actionPlans.map(async (p) => {
       const unitName = p.organizationalUnit?.name || p.title || '';
       const unitNorm = normalize(unitName);
       const leader = p.responsibleUser || p.currentResponsibility?.responsibleUser;
@@ -1136,6 +1136,14 @@ const getActionPlanCandidates = async (req, res) => {
         recommendationReason = `Programa coincidente: ${plan.programa}`;
       }
 
+      let schema = p.metadata?.form_schema || null;
+      if (!schema && p.term?.strategic_plan_id) {
+        try {
+          const { captureActionPlanSchema } = require('../services/strategicActionPlanSchemaService');
+          schema = await captureActionPlanSchema(p.term.strategic_plan_id);
+        } catch (_) {}
+      }
+
       return {
         id: p.id,
         code: p.code,
@@ -1149,9 +1157,10 @@ const getActionPlanCandidates = async (req, res) => {
         year: p.term?.year || year,
         is_recommended: Boolean(isRecommended),
         recommendation_reason: recommendationReason,
-        same_responsible: sameResponsible
+        same_responsible: sameResponsible,
+        form_schema: schema
       };
-    });
+    }));
 
     // Ordenar: primero los del mismo responsable, luego los del programa coincidente, luego por código
     mappedPlans.sort((a, b) => {
