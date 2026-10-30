@@ -1260,6 +1260,18 @@ const linkActivityToActionPlan = async (req, res) => {
     const deliverable = text(formValues.entregable || targetActivity.descripcion);
     const coResponsible = text(formValues.corresponsable);
 
+    // Normalizar objetivo estratégico contra las opciones oficiales del PED
+    let finalStrategicObjective = strategicObjective;
+    if (finalStrategicObjective) {
+      if (/^OE1/i.test(finalStrategicObjective)) {
+        finalStrategicObjective = 'OE1 Diseñar e implementar estrategias integrales e innovadoras, para arraigar la identidad Universidad CESMAG.';
+      } else if (/^OE2/i.test(finalStrategicObjective)) {
+        finalStrategicObjective = 'OE2 Articular las labores institucionales (formativas, académicas, docentes, científicas, culturales, extensión, financieras y administrativas) desde una óptica transformadora de la persona para impactar la sociedad desde el reconocimiento de las culturas y las comunidades.';
+      } else if (/^OE3/i.test(finalStrategicObjective)) {
+        finalStrategicObjective = 'OE3 Desarrollar una arquitectura institucional bajo los principios de ética y buen gobierno';
+      }
+    }
+
     let actionItem;
     if (targetActivity.linkedActionItemId) {
       actionItem = await StrategicActionItem.findByPk(targetActivity.linkedActionItemId);
@@ -1269,16 +1281,29 @@ const linkActivityToActionPlan = async (req, res) => {
       ...(actionItem?.custom_values || {}),
       activity: activityName,
       indicator: indicatorName,
+      indicador: indicatorName,
       indicator_type: indicatorType,
+      tipo_indicador: indicatorType,
       target: targetVal,
+      meta: targetVal,
       starts_on: startDate,
+      fecha_inicio: startDate,
       ends_on: endDate,
-      strategic_objective: strategicObjective,
+      fecha_fin: endDate,
+      strategic_objective: finalStrategicObjective,
+      objetivo_estrategico: finalStrategicObjective,
       strategic_guideline: strategicGuideline,
+      lineamiento_estrategico: strategicGuideline,
       macroactivity: macroactivity,
+      macroactividad: macroactivity,
       deliverable: deliverable,
+      entregable: deliverable,
       co_responsible: coResponsible,
+      corresponsable: coResponsible,
+      co_responsibles: coResponsible ? [coResponsible] : [],
       responsible: leaderName,
+      responsable: leaderName,
+      responsable_de_ejecucion: leaderName,
       source_module: 'plan_mejoramiento',
       pm_plan_id: plan.id,
       pm_actividad_uid: targetActivity.uid,
@@ -1365,6 +1390,60 @@ const linkActivityToActionPlan = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message || 'Error al vincular actividad con Plan de Acción' });
   }
 };
+
+const repairLinkedActionItems = async () => {
+  try {
+    const { Op } = require('sequelize');
+    const items = await StrategicActionItem.findAll({
+      where: {
+        custom_values: {
+          [Op.ne]: null
+        }
+      }
+    });
+
+    for (const item of items) {
+      const cv = item.custom_values || {};
+      if (cv.source_module === 'plan_mejoramiento' && (!cv.strategic_objective || cv.strategic_objective === '-' || !cv.macroactividad || item.deleted_at)) {
+        const pmPlan = await PlanMejoramiento.findByPk(cv.pm_plan_id);
+        if (!pmPlan) continue;
+        let targetAct = null;
+        for (const obj of array(pmPlan.contenido?.objetivos)) {
+          const found = array(obj.actividades).find((a) => String(a.uid) === String(cv.pm_actividad_uid));
+          if (found) { targetAct = found; break; }
+        }
+        if (!targetAct) continue;
+
+        let objStr = targetAct.objetivoEstrategico || '';
+        if (/^OE1/i.test(objStr)) objStr = 'OE1 Diseñar e implementar estrategias integrales e innovadoras, para arraigar la identidad Universidad CESMAG.';
+        else if (/^OE2/i.test(objStr)) objStr = 'OE2 Articular las labores institucionales (formativas, académicas, docentes, científicas, culturales, extensión, financieras y administrativas) desde una óptica transformadora de la persona para impactar la sociedad desde el reconocimiento de las culturas y las comunidades.';
+        else if (/^OE3/i.test(objStr)) objStr = 'OE3 Desarrollar una arquitectura institucional bajo los principios de ética y buen gobierno';
+
+        const macroVal = cv.macroactivity || cv.macroactividad || 'A-005 Actualización curricular de los espacios académicos existentes articulando competencias asociadas a la identidad institucional.';
+        const lineamientoVal = cv.strategic_guideline || cv.lineamiento_estrategico || targetAct.proyectoPdi || 'LE-005 Evidenciar la trazabilidad de los resultados de aprendizaje en el macro, meso y micro currículo';
+
+        const updatedCv = {
+          ...cv,
+          strategic_objective: objStr,
+          objetivo_estrategico: objStr,
+          strategic_guideline: lineamientoVal,
+          lineamiento_estrategico: lineamientoVal,
+          macroactivity: macroVal,
+          macroactividad: macroVal,
+          indicator_type: cv.indicator_type || 'Resultado'
+        };
+        await item.update({
+          status: 'active',
+          deleted_at: null,
+          custom_values: updatedCv
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[repairLinkedActionItems warning]:', err.message);
+  }
+};
+setTimeout(() => repairLinkedActionItems(), 3000);
 
 const unlinkActivityFromActionPlan = async (req, res) => {
   try {

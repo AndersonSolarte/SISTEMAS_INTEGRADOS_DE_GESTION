@@ -1237,6 +1237,17 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
     const directKeys = new Set(['indicator_type', 'starts_on', 'ends_on', 'indicator', 'target', 'co_responsibles']);
     let value = field.key === 'activity' ? row.activity : directKeys.has(field.key) ? row[field.key] : row.custom_values?.[field.key];
+    if (value === undefined || value === null || value === '' || value === '—') {
+      if (field.key === 'macroactividad' || field.key === 'macroactivity') {
+        value = row.custom_values?.macroactividad || row.custom_values?.macroactivity || row.macroactivity;
+      } else if (field.key === 'strategic_objective' || field.key === 'objetivo_estrategico') {
+        value = row.custom_values?.strategic_objective || row.custom_values?.objetivo_estrategico;
+      } else if (field.key === 'strategic_guideline' || field.key === 'lineamiento_estrategico') {
+        value = row.custom_values?.strategic_guideline || row.custom_values?.lineamiento_estrategico;
+      } else if (field.key === 'indicator_type' || field.key === 'tipo_indicador') {
+        value = row.indicator_type || row.custom_values?.indicator_type || row.custom_values?.tipo_indicador;
+      }
+    }
     const catalogType = field.validation_rules?.catalog_type;
     if (catalogType && value) {
       let ids = [];

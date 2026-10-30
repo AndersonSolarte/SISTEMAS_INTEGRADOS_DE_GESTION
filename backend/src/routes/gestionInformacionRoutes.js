@@ -46,6 +46,7 @@ const {
 } = require('../controllers/gestionInformacionController');
 const { ROLES } = require('../constants/roles');
 const { createExcelUpload } = require('../middlewares/excelUpload');
+const { allowAutoevaluacionUpload, allowAutoevaluacionDataset, cleanupDeniedUpload } = require('../middlewares/autoevaluacionDatasetPermission');
 const {
   getDatabaseHealth,
   getSystemTablesCatalog,
@@ -244,7 +245,7 @@ router.get('/caracterizacion/export', auth, canImportDatabaseData, exportCaracte
 router.get('/matriculados-incidencias', auth, canViewEstadisticaInstitucionalByPermission, getMatriculadosIncidencias);
 router.get('/resumen', auth, canViewEstadisticaInstitucionalByPermission, getResumen);
 router.get('/cargues', auth, canImportDatabaseData, getCargues);
-router.get('/template', auth, canImportDatabaseData, downloadTemplate);
+router.get('/template', auth, allowAutoevaluacionDataset(canImportDatabaseData), downloadTemplate);
 router.get('/contexto-externo-general/dashboard', auth, canViewEstadisticaInstitucionalByPermission, getContextoExternoGeneralDashboard);
 router.get('/contexto-externo-general/template', auth, canImportDatabaseData, downloadContextoExternoGeneralTemplate);
 router.get('/contexto-externo-general/export', auth, canImportDatabaseData, downloadContextoExternoGeneralData);
@@ -285,7 +286,11 @@ router.put('/autoevaluacion/aspectos/:id', auth, canManageBasesByPermission, upd
 router.put('/autoevaluacion/participantes/:id', auth, canManageBasesByPermission, updateAutoevaluacionParticipante);
 router.delete('/autoevaluacion/participantes/:id', auth, canManageBasesByPermission, deleteAutoevaluacionParticipante);
 router.put('/autoevaluacion/programas/:id', auth, canManageBasesByPermission, updateAutoevaluacionPrograma);
-router.post('/import', auth, canImportDatabaseData, upload.single('file'), importFromExcel);
+router.post('/import', auth,
+  allowAutoevaluacionUpload(canImportDatabaseData),
+  upload.single('file'),
+  cleanupDeniedUpload(allowAutoevaluacionDataset(canImportDatabaseData)),
+  importFromExcel);
 router.delete('/clear', auth, canImportDatabaseData, clearByCategoria);
 router.post('/', auth, canManageBasesByPermission, createEstadistica);
 router.put('/:id', auth, canManageBasesByPermission, updateEstadistica);
