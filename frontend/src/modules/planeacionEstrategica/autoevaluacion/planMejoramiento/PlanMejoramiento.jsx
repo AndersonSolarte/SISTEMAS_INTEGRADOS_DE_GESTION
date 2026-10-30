@@ -331,6 +331,21 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [selectedActionPlanId, setSelectedActionPlanId] = useState('');
   const [linkingBusy, setLinkingBusy] = useState(false);
+  const [linkFormData, setLinkFormData] = useState({
+    objetivoEstrategico: '',
+    lineamientoEstrategico: '',
+    macroactividad: '',
+    actividad: '',
+    tipoIndicador: 'Resultado',
+    fechaInicio: '',
+    fechaFin: '',
+    indicador: '',
+    meta: '1',
+    corresponsable: '',
+    entregable: '',
+    politicas: [],
+    lineasAccion: []
+  });
 
   const handleDownloadBlankTemplate = async (programa = '') => {
     setDownloadingTemplate(true);
@@ -869,6 +884,21 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     setLinkingTarget({ objectiveIndex, activityIndex, activity });
     setLinkingCandidates([]);
     setSelectedActionPlanId('');
+    setLinkFormData({
+      objetivoEstrategico: activity.objetivoEstrategico || catalogs.strategicObjectives?.[0] || '',
+      lineamientoEstrategico: activity.proyectoPdi || '',
+      macroactividad: '',
+      actividad: activity.nombre || '',
+      tipoIndicador: 'Resultado',
+      fechaInicio: activity.fechaInicio || '',
+      fechaFin: activity.fechaFin || '',
+      indicador: activity.indicador || '',
+      meta: String(activity.meta || '1'),
+      corresponsable: '',
+      entregable: activity.descripcion || '',
+      politicas: asStringArray(activity.politicasInstitucionales),
+      lineasAccion: asStringArray(activity.lineasAccionPolitica)
+    });
     setLinkModalOpen(true);
     setLoadingCandidates(true);
 
@@ -891,10 +921,14 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     if (!linkingTarget || !selectedActionPlanId) {
       return enqueueSnackbar('Seleccione un plan de acción destino', { variant: 'warning' });
     }
+    if (!linkFormData.actividad.trim()) {
+      return enqueueSnackbar('El nombre de la actividad no puede estar vacío', { variant: 'warning' });
+    }
     setLinkingBusy(true);
     try {
       const res = await planMejoramientoService.linkToActionPlan(editor.id, linkingTarget.activity.uid, {
-        action_plan_id: selectedActionPlanId
+        action_plan_id: selectedActionPlanId,
+        form_values: linkFormData
       });
       const data = res?.data;
       const linkedPlan = linkingCandidates.find((p) => String(p.id) === String(selectedActionPlanId));
@@ -905,6 +939,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           ...obj,
           actividades: obj.actividades.map((act, ai) => ai !== linkingTarget.activityIndex ? act : {
             ...act,
+            nombre: linkFormData.actividad || act.nombre,
+            indicador: linkFormData.indicador || act.indicador,
+            meta: linkFormData.meta || act.meta,
+            fechaInicio: linkFormData.fechaInicio || act.fechaInicio,
+            fechaFin: linkFormData.fechaFin || act.fechaFin,
+            objetivoEstrategico: linkFormData.objetivoEstrategico || act.objetivoEstrategico,
+            proyectoPdi: linkFormData.lineamientoEstrategico || act.proyectoPdi,
+            politicasInstitucionales: linkFormData.politicas?.length ? linkFormData.politicas : act.politicasInstitucionales,
+            lineasAccionPolitica: linkFormData.lineasAccion?.length ? linkFormData.lineasAccion : act.lineasAccionPolitica,
             linkedActionPlanId: data?.action_plan_id || selectedActionPlanId,
             linkedActionItemId: data?.action_item_id,
             linkedActionPlanCode: data?.action_plan_code || linkedPlan?.code || '',
@@ -917,7 +960,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         })
       }));
 
-      enqueueSnackbar(`Actividad vinculada exitosamente al Plan de Acción ${data?.action_plan_code || ''}`, { variant: 'success' });
+      enqueueSnackbar(`Actividad enviada y vinculada exitosamente al Plan de Acción ${data?.action_plan_code || ''}`, { variant: 'success' });
       setLinkModalOpen(false);
       setLinkingTarget(null);
     } catch (err) {
@@ -2181,7 +2224,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         open={linkModalOpen}
         onClose={() => !linkingBusy && setLinkModalOpen(false)}
         fullWidth
-        maxWidth="md"
+        maxWidth="lg"
         PaperProps={{ sx: { borderRadius: 3.5, p: 1 } }}
       >
         <DialogTitle sx={{ pb: 1 }}>
@@ -2194,112 +2237,238 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                 Vincular Actividad con Plan de Acción Institucional
               </Typography>
               <Typography variant="body2" sx={{ color: '#64748b' }}>
-                Interoperabilidad bidireccional de evidencias y seguimiento semestral
+                Complete el formulario oficial del Plan de Acción y envíe para registrar la actividad de forma sincronizada
               </Typography>
             </Box>
           </Stack>
         </DialogTitle>
         <DialogContent dividers sx={{ pt: 2 }}>
-          {/* Resumen de la actividad de origen */}
-          <Paper elevation={0} sx={{ p: 2, mb: 2.5, borderRadius: 2.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-            <Typography variant="caption" sx={{ fontWeight: 900, color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Actividad en Plan de Mejoramiento
-            </Typography>
-            <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#0f172a', mt: 0.5 }}>
-              {linkingTarget?.activity?.nombre || 'Sin nombre'}
-            </Typography>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 1 }}>
-              <Typography variant="caption" sx={{ color: '#64748b' }}>
-                <strong>Programa:</strong> {editor?.programa || 'General'}
-              </Typography>
-              <Typography variant="caption" sx={{ color: '#64748b' }}>
-                <strong>Vigencia:</strong> {editor?.periodoInicio || currentYear}
-              </Typography>
-              <Typography variant="caption" sx={{ color: '#64748b' }}>
-                <strong>Meta:</strong> {linkingTarget?.activity?.meta || 1}
-              </Typography>
-            </Stack>
-          </Paper>
-
-          {/* Explicación de Drive */}
+          {/* Resumen de origen y estructura en Drive */}
           <Alert severity="info" sx={{ mb: 2.5, borderRadius: 2.5, '& .MuiAlert-message': { width: '100%' } }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 0.5 }}>
               Estructura organizada en Google Drive
             </Typography>
             <Typography variant="body2" sx={{ color: '#334155' }}>
-              Al vincular esta actividad, se generará automáticamente en Google Drive la jerarquía oficial:
+              Al enviar esta actividad, se generará automáticamente en Google Drive la jerarquía oficial:
             </Typography>
             <Box sx={{ mt: 1, p: 1.5, borderRadius: 2, bgcolor: '#f1f5f9', fontFamily: 'monospace', fontSize: 13, color: '#0f172a' }}>
               📁 <strong>Plan de Acción ({editor?.periodoInicio || currentYear})</strong><br />
               &nbsp;&nbsp;└── 📁 <strong>Plan de Mejoramiento - {editor?.programa || 'Programa'}</strong><br />
-              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── 📁 <strong>{linkingTarget?.activity?.nombre || 'Nombre de la actividad'}</strong> (Evidencias sincronizadas)
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── 📁 <strong>{linkFormData.actividad || linkingTarget?.activity?.nombre || 'Nombre de la actividad'}</strong> (Evidencias sincronizadas)
             </Box>
           </Alert>
 
-          {/* Selector de Plan de Acción candidato */}
-          <Typography variant="subtitle2" sx={{ fontWeight: 950, color: '#0f172a', mb: 1 }}>
-            Seleccione el Plan de Acción destino:
-          </Typography>
+          {/* Paso 1: Seleccionar el Plan de Acción destino */}
+          <Paper variant="outlined" sx={{ borderRadius: 3, p: 2, mb: 2.5, bgcolor: '#f8fafc', borderColor: '#cbd5e1' }}>
+            <Stack direction="row" spacing={1.25} alignItems="center" mb={1.5}>
+              <Box sx={{ width: 28, height: 28, borderRadius: 2, bgcolor: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 13 }}>
+                1
+              </Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 950, color: '#0f172a' }}>
+                Seleccione el Plan de Acción destino ({editor?.periodoInicio || currentYear}):
+              </Typography>
+            </Stack>
 
-          {loadingCandidates ? (
-            <Box sx={{ py: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-              <CircularProgress size={32} sx={{ color: '#16a34a', mb: 1.5 }} />
-              <Typography variant="body2" sx={{ color: '#64748b' }}>Buscando planes de acción vigentes para {editor?.periodoInicio || currentYear}…</Typography>
+            {loadingCandidates ? (
+              <Box sx={{ py: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <CircularProgress size={28} sx={{ color: '#16a34a', mb: 1 }} />
+                <Typography variant="body2" sx={{ color: '#64748b' }}>Buscando planes de acción vigentes…</Typography>
+              </Box>
+            ) : linkingCandidates.length === 0 ? (
+              <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                No se encontraron Planes de Acción registrados para la vigencia {editor?.periodoInicio || currentYear}. Puede generar la vigencia desde el módulo de Planeación Estratégica.
+              </Alert>
+            ) : (
+              <RadioGroup
+                value={selectedActionPlanId}
+                onChange={(e) => setSelectedActionPlanId(e.target.value)}
+              >
+                <Stack spacing={1}>
+                  {linkingCandidates.map((plan) => {
+                    const isSelected = String(plan.id) === String(selectedActionPlanId);
+                    return (
+                      <Paper
+                        key={plan.id}
+                        elevation={0}
+                        onClick={() => setSelectedActionPlanId(plan.id)}
+                        sx={{
+                          p: 1.5,
+                          borderRadius: 2.5,
+                          border: '2px solid',
+                          borderColor: isSelected ? '#16a34a' : '#e2e8f0',
+                          bgcolor: isSelected ? '#f0fdf4' : 'white',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          '&:hover': { borderColor: isSelected ? '#16a34a' : '#cbd5e1' }
+                        }}
+                      >
+                        <Stack direction="row" alignItems="center" spacing={1.5}>
+                          <Radio checked={isSelected} value={plan.id} sx={{ color: '#16a34a', '&.Mui-checked': { color: '#16a34a' } }} />
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                              <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{plan.title || plan.name || plan.code}</Typography>
+                              <Chip size="small" label={plan.code} sx={{ fontWeight: 800, bgcolor: '#e0f2fe', color: '#0284c7' }} />
+                              {plan.is_recommended && (
+                                <Chip
+                                  size="small"
+                                  label={plan.recommendation_reason || (plan.same_responsible ? 'Mismo responsable' : 'Programa coincidente')}
+                                  color="success"
+                                  sx={{ fontWeight: 900 }}
+                                />
+                              )}
+                            </Stack>
+                            <Typography variant="body2" sx={{ color: '#64748b', mt: 0.3 }}>
+                              <strong>Responsable / Líder:</strong> {plan.leader_name || plan.responsible_name || 'Sin asignar'} {plan.leader_cargo ? `(${plan.leader_cargo})` : ''} · <strong>Dependencia:</strong> {plan.unit_name || 'Sin especificar'}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                      </Paper>
+                    );
+                  })}
+                </Stack>
+              </RadioGroup>
+            )}
+          </Paper>
+
+          {/* Paso 2: Formulario oficial del Plan de Acción */}
+          <Paper variant="outlined" sx={{ borderRadius: 3.5, p: { xs: 2, md: 2.5 }, bgcolor: '#ffffff', borderColor: '#cbd5e1' }}>
+            <Stack direction="row" spacing={1.25} alignItems="center" mb={2}>
+              <Box sx={{ width: 32, height: 32, borderRadius: 2, bgcolor: '#e6f1ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 14 }}>
+                2
+              </Box>
+              <Typography variant="subtitle1" fontWeight={900} color="#1e293b">
+                Formulario de la Actividad en el Plan de Acción
+              </Typography>
+            </Stack>
+
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.6 }}>
+              {/* 1. Objetivos Estratégicos */}
+              <TextField
+                select
+                label="Objetivos Estratégicos *"
+                value={linkFormData.objetivoEstrategico}
+                onChange={(e) => setLinkFormData((prev) => ({ ...prev, objetivoEstrategico: e.target.value, lineamientoEstrategico: '' }))}
+                sx={{ gridColumn: { md: 'span 4' } }}
+              >
+                {withCurrent(catalogs.strategicObjectives, linkFormData.objetivoEstrategico).map((item) => (
+                  <MenuItem key={item} value={item}>{item}</MenuItem>
+                ))}
+              </TextField>
+
+              {/* 2. Lineamientos Estratégicos */}
+              <TextField
+                select
+                label="Lineamientos Estratégicos *"
+                value={linkFormData.lineamientoEstrategico}
+                onChange={(e) => setLinkFormData((prev) => ({ ...prev, lineamientoEstrategico: e.target.value }))}
+                disabled={!linkFormData.objetivoEstrategico}
+                sx={{ gridColumn: { md: 'span 4' } }}
+              >
+                {withCurrent(catalogs.objectiveProjects?.[linkFormData.objetivoEstrategico] || [], linkFormData.lineamientoEstrategico).map((item) => (
+                  <MenuItem key={item} value={item}>{item}</MenuItem>
+                ))}
+              </TextField>
+
+              {/* 3. Macroactividad */}
+              <TextField
+                label="Macroactividad *"
+                placeholder="Nombre de la macroactividad"
+                value={linkFormData.macroactividad}
+                onChange={(e) => setLinkFormData((prev) => ({ ...prev, macroactividad: e.target.value }))}
+                sx={{ gridColumn: { md: 'span 4' } }}
+              />
+
+              {/* 4. Actividad */}
+              <TextField
+                label="Actividades *"
+                multiline
+                minRows={2}
+                value={linkFormData.actividad}
+                onChange={(e) => setLinkFormData((prev) => ({ ...prev, actividad: e.target.value }))}
+                sx={{ gridColumn: { md: 'span 8' } }}
+              />
+
+              {/* 5. Tipo de Indicador */}
+              <TextField
+                select
+                label="Tipo de Indicador *"
+                value={linkFormData.tipoIndicador}
+                onChange={(e) => setLinkFormData((prev) => ({ ...prev, tipoIndicador: e.target.value }))}
+                sx={{ gridColumn: { md: 'span 4' } }}
+              >
+                {['Resultado', 'Proceso', 'Documental', 'Estructura', 'Impacto', 'Gestión'].map((t) => (
+                  <MenuItem key={t} value={t}>{t}</MenuItem>
+                ))}
+              </TextField>
+
+              {/* 6. Fecha inicio */}
+              <TextField
+                label="Fecha inicio *"
+                type="date"
+                InputLabelProps={{ shrink: true }}
+                value={linkFormData.fechaInicio}
+                onChange={(e) => setLinkFormData((prev) => ({ ...prev, fechaInicio: e.target.value }))}
+                sx={{ gridColumn: { md: 'span 3' } }}
+              />
+
+              {/* 7. Fecha fin */}
+              <TextField
+                label="Fecha fin *"
+                type="date"
+                InputLabelProps={{ shrink: true }}
+                value={linkFormData.fechaFin}
+                onChange={(e) => setLinkFormData((prev) => ({ ...prev, fechaFin: e.target.value }))}
+                sx={{ gridColumn: { md: 'span 3' } }}
+              />
+
+              {/* 8. Indicador */}
+              <TextField
+                label="Indicador *"
+                value={linkFormData.indicador}
+                onChange={(e) => setLinkFormData((prev) => ({ ...prev, indicador: e.target.value }))}
+                sx={{ gridColumn: { md: 'span 4' } }}
+              />
+
+              {/* 9. Meta */}
+              <TextField
+                label="Meta *"
+                value={linkFormData.meta}
+                onChange={(e) => setLinkFormData((prev) => ({ ...prev, meta: e.target.value }))}
+                sx={{ gridColumn: { md: 'span 2' } }}
+              />
+
+              {/* 10. Responsable de Ejecución */}
+              <Paper elevation={0} sx={{ gridColumn: { md: 'span 6' }, p: 1.5, borderRadius: 2.5, bgcolor: '#f8fafc', border: '1px solid #dbeafe', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <Stack direction="row" spacing={1} alignItems="center" mb={0.4}>
+                  <Typography variant="caption" sx={{ fontWeight: 850, color: '#64748b' }}>Responsable de Ejecución *</Typography>
+                  <Chip size="small" label="Líder del Plan" color="primary" sx={{ height: 18, fontSize: 10, fontWeight: 900 }} />
+                </Stack>
+                <Typography variant="body2" sx={{ fontWeight: 900, color: '#0f172a' }}>
+                  {linkingCandidates.find((p) => String(p.id) === String(selectedActionPlanId))?.leader_name || 'Líder del Plan asignado'}
+                </Typography>
+              </Paper>
+
+              {/* 11. Corresponsable */}
+              <TextField
+                label="Corresponsable"
+                placeholder="Dependencia o proceso corresponsable (opcional)"
+                value={linkFormData.corresponsable}
+                onChange={(e) => setLinkFormData((prev) => ({ ...prev, corresponsable: e.target.value }))}
+                sx={{ gridColumn: { md: 'span 6' } }}
+              />
+
+              {/* 12. Entregable */}
+              <TextField
+                label="Entregable *"
+                placeholder="Describa el documento, producto o soporte entregable esperado"
+                multiline
+                minRows={2}
+                value={linkFormData.entregable}
+                onChange={(e) => setLinkFormData((prev) => ({ ...prev, entregable: e.target.value }))}
+                sx={{ gridColumn: { md: 'span 12' } }}
+              />
             </Box>
-          ) : linkingCandidates.length === 0 ? (
-            <Alert severity="warning" sx={{ borderRadius: 2.5 }}>
-              No se encontraron Planes de Acción registrados para la vigencia {editor?.periodoInicio || currentYear}. Puede generar la vigencia desde el módulo de Planeación Estratégica.
-            </Alert>
-          ) : (
-            <RadioGroup
-              value={selectedActionPlanId}
-              onChange={(e) => setSelectedActionPlanId(e.target.value)}
-            >
-              <Stack spacing={1.2}>
-                {linkingCandidates.map((plan) => {
-                  const isSelected = String(plan.id) === String(selectedActionPlanId);
-                  return (
-                    <Paper
-                      key={plan.id}
-                      elevation={0}
-                      onClick={() => setSelectedActionPlanId(plan.id)}
-                      sx={{
-                        p: 1.8,
-                        borderRadius: 2.5,
-                        border: '2px solid',
-                        borderColor: isSelected ? '#16a34a' : '#e2e8f0',
-                        bgcolor: isSelected ? '#f0fdf4' : 'white',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        '&:hover': { borderColor: isSelected ? '#16a34a' : '#cbd5e1' }
-                      }}
-                    >
-                      <Stack direction="row" alignItems="center" spacing={1.5}>
-                        <Radio checked={isSelected} value={plan.id} sx={{ color: '#16a34a', '&.Mui-checked': { color: '#16a34a' } }} />
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                            <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{plan.title || plan.name || plan.code}</Typography>
-                            <Chip size="small" label={plan.code} sx={{ fontWeight: 800, bgcolor: '#e0f2fe', color: '#0284c7' }} />
-                            {plan.is_recommended && (
-                              <Chip
-                                size="small"
-                                label={plan.recommendation_reason || (plan.same_responsible ? 'Mismo responsable' : 'Programa coincidente')}
-                                color="success"
-                                sx={{ fontWeight: 900 }}
-                              />
-                            )}
-                          </Stack>
-                          <Typography variant="body2" sx={{ color: '#64748b', mt: 0.4 }}>
-                            <strong>Responsable / Líder:</strong> {plan.leader_name || plan.responsible_name || 'Sin asignar'} {plan.leader_cargo ? `(${plan.leader_cargo})` : ''} · <strong>Dependencia:</strong> {plan.unit_name || 'Sin especificar'}
-                          </Typography>
-                        </Box>
-                      </Stack>
-                    </Paper>
-                  );
-                })}
-              </Stack>
-            </RadioGroup>
-          )}
+          </Paper>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button
@@ -2312,18 +2481,21 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           <Button
             variant="contained"
             color="success"
-            disabled={linkingBusy || !selectedActionPlanId || linkingCandidates.length === 0}
+            disabled={linkingBusy || !selectedActionPlanId || linkingCandidates.length === 0 || !linkFormData.actividad.trim()}
             onClick={handleConfirmLink}
-            startIcon={linkingBusy ? <CircularProgress size={18} color="inherit" /> : <LinkIcon />}
+            startIcon={linkingBusy ? <CircularProgress size={18} color="inherit" /> : <AddIcon />}
             sx={{
               textTransform: 'none',
               fontWeight: 900,
               bgcolor: '#16a34a',
               '&:hover': { bgcolor: '#15803d' },
-              px: 3
+              px: 3.5,
+              py: 1.1,
+              borderRadius: 2.5,
+              boxShadow: '0 4px 14px rgba(22, 163, 74, 0.3)'
             }}
           >
-            {linkingBusy ? 'Vinculando y creando carpetas…' : 'Confirmar y Vincular'}
+            {linkingBusy ? 'Enviando y creando en Drive…' : '+ Enviar y Crear en Plan de Acción'}
           </Button>
         </DialogActions>
       </Dialog>

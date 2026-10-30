@@ -1247,48 +1247,68 @@ const linkActivityToActionPlan = async (req, res) => {
       actionPlan.organizationalUnit?.name ||
       'Director del Programa';
 
+    const formValues = req.body.form_values || req.body.activity_data || {};
+    const activityName = text(formValues.actividad || formValues.nombre || targetActivity.nombre);
+    const indicatorName = text(formValues.indicador || targetActivity.indicador);
+    const indicatorType = text(formValues.tipoIndicador || formValues.tipo_indicador || 'Resultado');
+    const targetVal = String(formValues.meta || targetActivity.meta || '1');
+    const startDate = formValues.fechaInicio || formValues.fecha_inicio || targetActivity.fechaInicio || `${actionPlan.term?.year || 2026}-01-01`;
+    const endDate = formValues.fechaFin || formValues.fecha_fin || targetActivity.fechaFin || `${actionPlan.term?.year || 2026}-12-31`;
+    const strategicObjective = text(formValues.objetivoEstrategico || targetActivity.objetivoEstrategico);
+    const strategicGuideline = text(formValues.lineamientoEstrategico || targetActivity.proyectoPdi);
+    const macroactivity = text(formValues.macroactividad);
+    const deliverable = text(formValues.entregable || targetActivity.descripcion);
+    const coResponsible = text(formValues.corresponsable);
+
     let actionItem;
     if (targetActivity.linkedActionItemId) {
       actionItem = await StrategicActionItem.findByPk(targetActivity.linkedActionItemId);
     }
 
+    const customValuesPayload = {
+      ...(actionItem?.custom_values || {}),
+      activity: activityName,
+      indicator: indicatorName,
+      indicator_type: indicatorType,
+      target: targetVal,
+      starts_on: startDate,
+      ends_on: endDate,
+      strategic_objective: strategicObjective,
+      strategic_guideline: strategicGuideline,
+      macroactivity: macroactivity,
+      deliverable: deliverable,
+      co_responsible: coResponsible,
+      responsible: leaderName,
+      source_module: 'plan_mejoramiento',
+      pm_plan_id: plan.id,
+      pm_actividad_uid: targetActivity.uid,
+      pm_programa: plan.programa,
+      drive_subfolder: `Plan de Mejoramiento - ${plan.programa}`
+    };
+
     if (actionItem && !actionItem.deleted_at) {
       await actionItem.update({
-        activity: targetActivity.nombre || actionItem.activity,
-        indicator: targetActivity.indicador || actionItem.indicator,
-        target: String(targetActivity.meta || actionItem.target || '1'),
-        starts_on: targetActivity.fechaInicio || actionItem.starts_on,
-        ends_on: targetActivity.fechaFin || actionItem.ends_on,
-        custom_values: {
-          ...(actionItem.custom_values || {}),
-          source_module: 'plan_mejoramiento',
-          pm_plan_id: plan.id,
-          pm_actividad_uid: targetActivity.uid,
-          pm_programa: plan.programa,
-          drive_subfolder: `Plan de Mejoramiento - ${plan.programa}`,
-          responsible: leaderName
-        },
+        activity: activityName,
+        indicator: indicatorName,
+        indicator_type: indicatorType,
+        target: targetVal,
+        starts_on: startDate,
+        ends_on: endDate,
+        custom_values: customValuesPayload,
         updated_by: req.user.id
       });
     } else {
       actionItem = await StrategicActionItem.create({
         action_plan_id: actionPlan.id,
         code: candidateCode,
-        activity: targetActivity.nombre,
-        indicator: targetActivity.indicador || '',
-        indicator_type: 'Resultado',
-        target: String(targetActivity.meta || '1'),
-        starts_on: targetActivity.fechaInicio || `${actionPlan.term?.year || 2026}-01-01`,
-        ends_on: targetActivity.fechaFin || `${actionPlan.term?.year || 2026}-12-31`,
+        activity: activityName,
+        indicator: indicatorName,
+        indicator_type: indicatorType,
+        target: targetVal,
+        starts_on: startDate,
+        ends_on: endDate,
         responsible_catalog_item_id: actionPlan.catalog_item_id || null,
-        custom_values: {
-          source_module: 'plan_mejoramiento',
-          pm_plan_id: plan.id,
-          pm_actividad_uid: targetActivity.uid,
-          pm_programa: plan.programa,
-          drive_subfolder: `Plan de Mejoramiento - ${plan.programa}`,
-          responsible: leaderName
-        },
+        custom_values: customValuesPayload,
         version: 1,
         status: 'active',
         created_by: req.user.id
