@@ -110,7 +110,8 @@ const withCurrent = (options = [], current = '') => current && !options.includes
 const asStringArray = (value) => Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
 const withCurrentMany = (options = [], current = []) => Array.from(new Set([...(options || []), ...asStringArray(current)]));
 const percent = (activity) => {
-  const rawVal = Number(activity?.metaAlcanzada ?? 0);
+  const rawStr = String(activity?.metaAlcanzada ?? '').replace(',', '.').replace('%', '').trim();
+  const rawVal = Number(rawStr);
   const goal = Number(activity?.meta ?? 0);
   if (!Number.isFinite(rawVal) || rawVal <= 0) return 0;
   // Compatibilidad hacia atrás: si digitaban decimales como 0.5 cuando la meta era 1
@@ -1116,10 +1117,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       let localUser = {};
       try { localUser = JSON.parse(localStorage.getItem('user') || '{}'); } catch (_) { localUser = {}; }
       const progress = percent(activity);
+      const rawAlcStr = String(activity.metaAlcanzada ?? '').replace(',', '.').replace('%', '').trim();
+      let valAlc = parseFloat(rawAlcStr);
+      if (isNaN(valAlc)) valAlc = progress;
+      else if (valAlc <= 1 && valAlc > 0) valAlc = Math.round(valAlc * 100);
+
       const record = {
         id: makeLocalId(),
         fecha: activity.fechaSeguimiento,
-        valorAlcanzado: Number(activity.metaAlcanzada || 0),
+        valorAlcanzado: valAlc,
         metaPlaneada: Number(activity.meta || 0),
         porcentaje: progress,
         ponderacionActividad: activityWeight(objective),
@@ -1138,12 +1144,13 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         actividadNombre: activity.nombre,
         indicadorPlaneado: activity.indicador
       };
-      setEditor((previous) => ({
-        ...previous,
-        objetivos: previous.objetivos.map((item, oi) => oi !== objectiveIndex ? item : {
+      const nextEditor = {
+        ...editorRef.current,
+        objetivos: (editorRef.current.objetivos || []).map((item, oi) => oi !== objectiveIndex ? item : {
           ...item,
-          actividades: item.actividades.map((current, ai) => ai !== activityIndex ? current : {
+          actividades: (item.actividades || []).map((current, ai) => ai !== activityIndex ? current : {
             ...current,
+            metaAlcanzada: progress,
             evidencia: record.evidenciaCarpetaUrl,
             evidenceFolderId: uploadedEvidence?.carpetaId || current.evidenceFolderId || '',
             evidenceFolderUrl: record.evidenciaCarpetaUrl,
@@ -1151,9 +1158,11 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             seguimientos: [...(current.seguimientos || []), record]
           })
         })
-      }));
+      };
+      setEditor(nextEditor);
       setEvidenceFiles((previous) => { const next = { ...previous }; delete next[key]; return next; });
-      enqueueSnackbar('Seguimiento registrado con trazabilidad', { variant: 'success' });
+      await persistPlan(nextEditor);
+      enqueueSnackbar('Seguimiento registrado y sincronizado exitosamente con el Plan de Acción', { variant: 'success' });
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || error.message || 'No fue posible registrar el seguimiento', { variant: 'error' });
     } finally {
@@ -2462,7 +2471,14 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                       InputProps={{
                         endAdornment: <InputAdornment position="end">%</InputAdornment>
                       }}
-                      value={activity.metaAlcanzada ?? ''}
+                      value={(() => {
+                        const raw = activity.metaAlcanzada;
+                        if (raw === null || raw === undefined || raw === '') return '';
+                        const str = String(raw).replace(',', '.').replace('%', '').trim();
+                        const n = parseFloat(str);
+                        if (!isNaN(n) && n > 0 && n <= 1) return Math.round(n * 100);
+                        return isNaN(n) ? '' : Math.round(n);
+                      })()}
                       onChange={(e) => {
                         const val = e.target.value;
                         if (val === '') {

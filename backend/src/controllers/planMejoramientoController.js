@@ -257,8 +257,78 @@ const ensureActivityUids = async (plan) => {
   if (changed) await plan.update({ contenido: { ...content, objetivos: objectives } });
   return plan;
 };
+const reconcileLinkedActivities = async (plan) => {
+  try {
+    const content = plan.contenido || {};
+    let modified = false;
+    for (const obj of array(content.objetivos)) {
+      for (const act of array(obj.actividades)) {
+        if (!act.linkedActionItemId) continue;
+        const actionItem = await StrategicActionItem.findByPk(act.linkedActionItemId, {
+          include: [
+            { model: StrategicEvidence, as: 'evidence', where: { deleted_at: null }, required: false },
+            { model: StrategicMonitoringResult, as: 'monitoringResults', where: { deleted_at: null }, required: false }
+          ]
+        });
+        if (!actionItem) continue;
+
+        // 1. Reconciliar carpeta de evidencias en Drive
+        if (!act.evidenceFolderUrl || act.evidenceFolderUrl.includes('Pendiente')) {
+          const folderRes = await ensureActivityFoldersInDrive(actionItem.id).catch(() => null);
+          if (Array.isArray(folderRes) && folderRes[0]?.folderUrl) {
+            act.evidenceFolderUrl = folderRes[0].folderUrl;
+            act.evidenceFolderId = folderRes[0].folderId || act.evidenceFolderId;
+            act.evidenceDriveStatus = 'synced';
+            modified = true;
+          }
+        }
+
+        // 2. Reconciliar evidencias cargadas en Plan de Acción
+        const evidences = actionItem.evidence || [];
+        if (evidences.length > 0) {
+          act.evidenceDriveStatus = 'synced';
+          const existingUrls = new Set((act.seguimientos || []).map((s) => s.evidenciaUrl));
+          for (const ev of evidences) {
+            const fileUrl = ev.drive_file_id ? `https://drive.google.com/file/d/${ev.drive_file_id}/view` : '';
+            if (fileUrl && !existingUrls.has(fileUrl)) {
+              act.evidencia = ev.original_name;
+              act.seguimientos = act.seguimientos || [];
+              act.seguimientos.push({
+                id: `seg-pa-${ev.id}`,
+                fecha: ev.created_at ? new Date(ev.created_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+                valorAlcanzado: act.meta || 1,
+                metaPlaneada: act.meta || 1,
+                porcentaje: 100,
+                verificacion: 'pendiente',
+                observaciones: `Evidencia radicada desde Plan de Acción (${actionItem.code}): ${ev.original_name}`,
+                evidenciaUrl: fileUrl,
+                evidenciaCarpetaUrl: act.evidenceFolderUrl,
+                evidenciaArchivo: {
+                  nombreOriginal: ev.original_name,
+                  url: fileUrl,
+                  driveFileId: ev.drive_file_id,
+                  driveFolderId: ev.drive_folder_id
+                },
+                registradoAt: ev.created_at || new Date().toISOString(),
+                registradoPor: 'Líder del Plan de Acción'
+              });
+              modified = true;
+            }
+          }
+        }
+      }
+    }
+    if (modified) {
+      await plan.update({ contenido: content });
+    }
+  } catch (reconcileErr) {
+    console.warn('[reconcileLinkedActivities warning]:', reconcileErr.message);
+  }
+};
+
 const serializeForRequest = async (plan, req) => {
   await ensureActivityUids(plan);
+  await reconcileLinkedActivities(plan);
   const result = await serializeWithAssignment(plan);
   if (!req.planCollaboratorOnly) return result;
   const activityAssignments = array(result.asignacion?.actividades).filter((item) => item.user_id === req.user?.id && item.activo && ACTIONABLE_ACTIVITY_STATES.includes(item.estado_flujo));
@@ -954,16 +1024,44 @@ const syncLinkedActionPlansTracking = async (plan, req) => {
         });
         if (!actionItem || !actionItem.actionPlan?.term_id) continue;
 
-        const rawProgress = Number(act.metaAlcanzada ?? 0);
-        const progressClamped = Math.min(100, Math.max(0, Math.round(Number.isFinite(rawProgress) ? rawProgress : 0)));
+        // 1. Interpretar porcentaje de avance de 0 a 100 de forma precisa
+        const rawStr = String(act.metaAlcanzada ?? '').replace(',', '.').replace('%', '').trim();
+        let numVal = parseFloat(rawStr);
+        if (isNaN(numVal)) numVal = 0;
+        let progressClamped = 0;
+        if (numVal <= 1 && numVal > 0) {
+          progressClamped = Math.round(numVal * 100);
+        } else {
+          progressClamped = Math.min(100, Math.max(0, Math.round(numVal)));
+        }
+
+        // Si existen seguimientos en el historial, tomar el último
+        if (Array.isArray(act.seguimientos) && act.seguimientos.length > 0) {
+          const lastSeg = act.seguimientos[act.seguimientos.length - 1];
+          if (lastSeg && Number.isFinite(Number(lastSeg.porcentaje))) {
+            progressClamped = Math.min(100, Math.max(0, Math.round(Number(lastSeg.porcentaje))));
+          }
+        }
+
+        // 2. Determinar el período aplicable (S1 o S2) según la fecha del corte o fechas de la actividad
+        let cutDate = act.fechaSeguimiento;
+        if (!cutDate && Array.isArray(act.seguimientos) && act.seguimientos.length > 0) {
+          cutDate = act.seguimientos[act.seguimientos.length - 1]?.fecha;
+        }
+        if (!cutDate) cutDate = act.fechaFin || act.fechaInicio || actionItem.ends_on || actionItem.starts_on;
 
         let cutMonth = 1;
-        if (act.fechaSeguimiento) {
-          const parts = String(act.fechaSeguimiento).split('-');
-          if (parts.length >= 2) cutMonth = parseInt(parts[1], 10) || 1;
+        if (cutDate) {
+          const matchMonth = String(cutDate).match(/^\d{4}-(\d{1,2})/);
+          if (matchMonth) cutMonth = parseInt(matchMonth[1], 10);
+          else {
+            const parts = String(cutDate).split('-');
+            if (parts.length >= 2) cutMonth = parseInt(parts[1], 10) || 1;
+          }
         } else {
           cutMonth = new Date().getMonth() + 1;
         }
+
         const isS1 = cutMonth <= 7;
         const targetPosition = isS1 ? 1 : 2;
 

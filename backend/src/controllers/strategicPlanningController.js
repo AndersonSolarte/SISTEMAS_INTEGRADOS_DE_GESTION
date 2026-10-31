@@ -13,7 +13,7 @@ const {
   StrategicMeeting, StrategicMeetingParticipant, StrategicMeetingSchedule, StrategicMinuteVersion, StrategicMinuteProposal,
   StrategicMinuteSignature, StrategicUserSignature, StrategicMonitoringResult, StrategicEvidence,
   StrategicSyncJob, StrategicBudgetImport, StrategicBudgetMovement, StrategicHistoricalImport,
-  StrategicAuditEvent, StrategicNotification, GoogleCalendarConnection, User
+  StrategicAuditEvent, StrategicNotification, GoogleCalendarConnection, User, PlanMejoramiento
 } = require('../models');
 const { formatPersonName } = require('../utils/formatPersonName');
 const { getOAuthConfiguration, createAuthorizationUrl, createConnectedOAuthClient } = require('../services/meetingCalendarOAuthService');
@@ -3568,6 +3568,84 @@ const uploadEvidence = wrap(async (req, res) => {
 
   await refreshActionRepository(item.actionPlan.term_id, req, 'evidence_uploaded');
   await audit(req, 'evidence.upload', 'evidence', evidence.id, null, { ...evidence.toJSON(), storage_key: '[PRIVATE]' });
+
+  // Sincronización bidireccional automática con Plan de Mejoramiento si la actividad proviene de allí
+  try {
+    const isPm = item.custom_values?.source_module === 'plan_mejoramiento' || item.custom_values?.pm_plan_id;
+    if (isPm) {
+      const pmPlanId = item.custom_values?.pm_plan_id;
+      const pmActivityUid = item.custom_values?.pm_actividad_uid;
+
+      let pmPlan = pmPlanId ? await PlanMejoramiento.findByPk(pmPlanId) : null;
+      if (!pmPlan) {
+        const allPmPlans = await PlanMejoramiento.findAll();
+        for (const p of allPmPlans) {
+          const objs = p.contenido?.objetivos || [];
+          for (const o of objs) {
+            const match = (o.actividades || []).find((a) => String(a.uid) === String(pmActivityUid) || String(a.linkedActionItemId) === String(item.id));
+            if (match) { pmPlan = p; break; }
+          }
+          if (pmPlan) break;
+        }
+      }
+
+      if (pmPlan) {
+        const content = { ...(pmPlan.contenido || {}) };
+        let modified = false;
+        const objs = (content.objetivos || []).map((obj) => ({
+          ...obj,
+          actividades: (obj.actividades || []).map((act) => {
+            const isTarget = (pmActivityUid && String(act.uid) === String(pmActivityUid)) || (String(act.linkedActionItemId) === String(item.id));
+            if (!isTarget) return act;
+
+            const folderUrl = evidence.drive_folder_id
+              ? `https://drive.google.com/drive/folders/${evidence.drive_folder_id}`
+              : (act.evidenceFolderUrl || '');
+
+            const fileUrl = evidence.drive_file_id
+              ? `https://drive.google.com/file/d/${evidence.drive_file_id}/view`
+              : (evidence.webViewLink || '');
+
+            const newSeg = {
+              id: `seg-pa-${evidence.id}`,
+              fecha: new Date().toISOString().slice(0, 10),
+              valorAlcanzado: act.meta || 1,
+              metaPlaneada: act.meta || 1,
+              porcentaje: 100,
+              verificacion: 'pendiente',
+              observaciones: `Evidencia radicada desde Plan de Acción (${item.code}): ${evidence.original_name}`,
+              evidenciaUrl: fileUrl,
+              evidenciaCarpetaUrl: folderUrl,
+              evidenciaArchivo: {
+                nombreOriginal: evidence.original_name,
+                url: fileUrl,
+                driveFileId: evidence.drive_file_id,
+                driveFolderId: evidence.drive_folder_id
+              },
+              registradoAt: new Date().toISOString(),
+              registradoPor: req.user?.nombre || req.user?.email || 'Líder del Plan de Acción'
+            };
+
+            modified = true;
+            return {
+              ...act,
+              evidencia: evidence.original_name,
+              evidenceFolderUrl: folderUrl,
+              evidenceFolderId: evidence.drive_folder_id || act.evidenceFolderId,
+              evidenceDriveStatus: 'synced',
+              seguimientos: [...(act.seguimientos || []).filter((s) => s.id !== newSeg.id), newSeg]
+            };
+          })
+        }));
+
+        if (modified) {
+          await pmPlan.update({ contenido: { ...content, objetivos: objs } });
+        }
+      }
+    }
+  } catch (syncPmErr) {
+    console.warn('[Sync to PlanMejoramiento warning]:', syncPmErr.message);
+  }
   res.status(201);
   ok(res, evidence, driveSyncSuccess
     ? 'Evidencia cargada y respaldada de inmediato en la carpeta de la actividad en Google Drive.'
