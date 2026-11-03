@@ -1293,7 +1293,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       const currentYearPlan = Number(editor?.periodoInicio) || currentYear;
       const plans = rawPlans.filter((p) => {
         const planYear = Number(p.year) || (String(p.code || p.title).match(/(20\d\d)/) ? parseInt(String(p.code || p.title).match(/(20\d\d)/)[1], 10) : null);
-        return !planYear || planYear === currentYearPlan;
+        const matchesYear = !planYear || planYear === currentYearPlan;
+        const matchesResponsible = Boolean(p.same_responsible);
+        return matchesYear && matchesResponsible;
       });
       setLinkingCandidates(plans);
       const recommended = plans.find((p) => p.is_recommended) || plans[0];
@@ -2667,7 +2669,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               </Box>
             ) : linkingCandidates.length === 0 ? (
               <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                No se encontraron Planes de Acción registrados para la vigencia {editor?.periodoInicio || currentYear}. Puede generar la vigencia desde el módulo de Planeación Estratégica.
+                No se encontraron Planes de Acción registrados para la vigencia {editor?.periodoInicio || currentYear} a cargo de {linkingTarget?.activity?.responsableNombre || 'este responsable'}. El Plan de Acción institucional y el Plan de Mejoramiento deben tener el mismo responsable asignado.
               </Alert>
             ) : (
               <RadioGroup

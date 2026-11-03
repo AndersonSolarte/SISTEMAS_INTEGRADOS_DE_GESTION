@@ -1286,18 +1286,11 @@ const getActionPlanCandidates = async (req, res) => {
       };
     }));
 
-    // Ordenar: primero los del mismo responsable en la vigencia actual, luego del mismo responsable, luego programa coincidente, luego por vigencia
-    mappedPlans.sort((a, b) => {
-      if (a.same_responsible && a.year === baseYear && !(b.same_responsible && b.year === baseYear)) return -1;
-      if (!(a.same_responsible && a.year === baseYear) && b.same_responsible && b.year === baseYear) return 1;
-      if (a.same_responsible && !b.same_responsible) return -1;
-      if (!a.same_responsible && b.same_responsible) return 1;
-      if (a.is_recommended && !b.is_recommended) return -1;
-      if (!a.is_recommended && b.is_recommended) return 1;
-      if (a.year === baseYear && b.year !== baseYear) return -1;
-      if (a.year !== baseYear && b.year === baseYear) return 1;
-      return (a.code || '').localeCompare(b.code || '');
-    });
+    // Regla estricta: Solo asociar con los planes de acción actuales (vigencia baseYear) que correspondan al MISMO responsable
+    const matchedResponsiblePlans = mappedPlans.filter((p) => p.same_responsible && p.year === baseYear);
+
+    // Ordenar por código
+    matchedResponsiblePlans.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
 
     return res.json({
       success: true,
@@ -1314,7 +1307,8 @@ const getActionPlanCandidates = async (req, res) => {
           linkedActionItemId: targetActivity.linkedActionItemId || null
         },
         program: plan.programa,
-        plans: mappedPlans
+        responsible: targetActivity.responsableNombre || plan.asignacion?.usuario_nombre || '',
+        plans: matchedResponsiblePlans
       }
     });
   } catch (error) {
@@ -1370,6 +1364,47 @@ const linkActivityToActionPlan = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: `Solo se permite vincular actividades al Plan de Acción de la vigencia actual (${baseYear}). No está permitido vincular a vigencias diferentes (${planYear}).`
+      });
+    }
+
+    // Validar que el responsable del plan de acción coincida con el responsable de la actividad o del plan de mejoramiento
+    const leaderUser = actionPlan.responsibleUser || actionPlan.currentResponsibility?.responsibleUser;
+    const leaderId = actionPlan.responsible_user_id || actionPlan.currentResponsibility?.responsible_user_id || leaderUser?.id;
+    const leaderFullName = leaderUser?.nombre || 'Sin asignar';
+    const leaderDoc = String(leaderUser?.username || '').trim();
+
+    const normalizeStr = (str) =>
+      String(str || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, ' ')
+        .trim();
+
+    const actRespNorm = normalizeStr(targetActivity.responsableNombre);
+    const planRespNorm = normalizeStr(plan.asignacion?.usuario_nombre);
+    const leaderNorm = normalizeStr(leaderFullName);
+    const actDoc = String(targetActivity.responsableDocumento || targetActivity.responsableUsername || '').trim();
+    const planDoc = String(plan.asignacion?.usuario_documento || plan.asignacion?.usuario_username || '').trim();
+    const userSessionDoc = String(req.user?.username || req.user?.documento || '').trim();
+    const userSessionNorm = normalizeStr(req.user?.nombre);
+
+    const isSameResponsible = Boolean(
+      (targetActivity.responsableId && leaderId && String(targetActivity.responsableId) === String(leaderId)) ||
+      (plan.asignacion?.usuario_id && leaderId && String(plan.asignacion.usuario_id) === String(leaderId)) ||
+      (req.user?.id && leaderId && String(req.user.id) === String(leaderId)) ||
+      (actDoc && leaderDoc && actDoc === leaderDoc) ||
+      (planDoc && leaderDoc && planDoc === leaderDoc) ||
+      (userSessionDoc && leaderDoc && userSessionDoc === leaderDoc) ||
+      (actRespNorm && leaderNorm && (actRespNorm.includes(leaderNorm) || leaderNorm.includes(actRespNorm))) ||
+      (planRespNorm && leaderNorm && (planRespNorm.includes(leaderNorm) || leaderNorm.includes(planRespNorm))) ||
+      (userSessionNorm && leaderNorm && (userSessionNorm.includes(leaderNorm) || leaderNorm.includes(userSessionNorm)))
+    );
+
+    if (!isSameResponsible) {
+      return res.status(400).json({
+        success: false,
+        message: `El Plan de Acción seleccionado tiene como responsable a "${leaderFullName}", el cual no coincide con el responsable de la actividad "${targetActivity.responsableNombre || 'este responsable'}". El Plan de Acción y el Plan de Mejoramiento deben tener el mismo responsable.`
       });
     }
 
