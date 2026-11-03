@@ -278,9 +278,40 @@ test('liquidación usa valores nativos de botón y permite rechazar sin bloquear
   assert.match(html, /name="accion" value="rechazar" formnovalidate>Rechazar financiación<\/button>/);
   assert.doesNotMatch(html, /id="form-accion"/);
   assert.doesNotMatch(html, /onclick="document\.getElementById\('form-accion'\)/);
-  assert.match(html, /function suggestRequestedDays\(target\)/);
-  assert.match(html, /daysInput\.value = '2'/);
-  assert.match(html, /Al ingresar un valor se propondrán 2 día\(s\)/);
+  assert.doesNotMatch(html, /suggestRequestedDays|daysInput\.value = '2'|se propondrán/);
+  assert.match(html, /Los días inician en 0/);
+  assert.match(html, /function validateRows\(\)/);
+  assert.match(html, /invalid\.scrollIntoView/);
+  assert.match(html, /input\.setAttribute\('aria-invalid'/);
+});
+
+test('rechaza conceptos base y nuevos con valor sin días o días sin valor', () => {
+  for (const [valor, dias] of [['43000', '0'], ['43000', ''], ['0', '2'], ['', '2']]) {
+    const base = _internals.parseLiquidationBody({
+      liquidationRowsVersion: '2', baseIncluded0: '1', valorDiario0: valor, dias0: dias
+    });
+    assert.match(base.error, /Complete el valor diario y el número de días/);
+    const extra = _internals.parseLiquidationBody({
+      liquidationRowsVersion: '2', extraCount: '1', extraDetalle0: 'Taxi',
+      extraValorDiario0: valor, extraDias0: dias
+    });
+    assert.match(extra.error, /Debe asignar valor diario y mínimo 1 día/);
+  }
+});
+
+test('los conceptos nuevos requieren nombre y los completos calculan el anticipo', () => {
+  assert.ok(_internals.parseLiquidationBody({}).error);
+  assert.ok(_internals.parseLiquidationBody({
+    extraCount: '1', extraValorDiario0: '10000', extraDias0: '1'
+  }).error);
+  const result = _internals.parseLiquidationBody({
+    liquidationRowsVersion: '2', baseIncluded0: '1', valorDiario0: '43000', dias0: '2',
+    baseIncluded1: '1', valorDiario1: '0', dias1: '0',
+    extraCount: '1', extraDetalle0: 'Taxi', extraValorDiario0: '10000', extraDias0: '1'
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.totalAnticipo, 96000);
+  assert.equal(result.detalles.length, 2);
 });
 
 test('las dos modalidades de prueba de liquidación envían una sola acción válida', () => {

@@ -2211,7 +2211,7 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
 };
 
 const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit = false, demoTechnicianOnly = false } = {}) => {
-  const suggestedDays = Math.max(1, Math.trunc(getEffectiveViaticosDays(solicitud.datos_salida || {}, solicitud.datos_viaticos || {})));
+  const liquidationInstructions = 'Los días inician en 0. Digite el valor diario y los días de cada concepto utilizado; ambos deben ser mayores que 0. Deje ambos en 0 o elimine los conceptos que no apliquen.';
   const rows = `<tr hidden><td colspan="5"><input type="hidden" name="liquidationRowsVersion" value="2"></td></tr>${BASE_DETAIL_NAMES.map((name, index) => `<tr data-liquidation-row><td><input type="hidden" name="baseIncluded${index}" value="1">${escapeHtml(name)}</td><td><div class="currency-input"><span aria-hidden="true">$</span><input class="valor-diario" inputmode="numeric" type="number" min="0" step="1" name="valorDiario${index}" value="0" aria-label="Valor diario en pesos para ${escapeHtml(name)}" oninput="window.calcLiquidation && window.calcLiquidation()"></div></td><td><input class="dias" inputmode="numeric" type="number" min="0" step="1" name="dias${index}" value="0" oninput="window.calcLiquidation && window.calcLiquidation()"></td><td class="row-total">$0</td><td><button class="remove-row" type="button" aria-label="Eliminar ${escapeHtml(name)}">Eliminar</button></td></tr>`).join('')}`;
   const calculator = `<script>
 (function() {
@@ -2248,20 +2248,78 @@ const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit 
   }
   window.calcLiquidation = recalculate;
 
-  function suggestRequestedDays(target) {
-    if (!target || !target.classList || !target.classList.contains('valor-diario') || parseVal(target.value) <= 0) return;
-    var row = target.closest('tr[data-liquidation-row]');
-    var daysInput = row ? row.querySelector('.dias') : null;
-    if (daysInput && parseVal(daysInput.value) <= 0) daysInput.value = '${suggestedDays}';
+  function validateRows() {
+    var body = document.getElementById('liquidacion-detalles');
+    var firstInvalid = null;
+    var usedRows = 0;
+    function validateField(input, message) {
+      if (!input) return;
+      input.setCustomValidity(message);
+      var invalid = !input.validity.valid;
+      input.setAttribute('aria-invalid', String(invalid));
+      var container = input.closest('td') || input.parentNode;
+      var error = container.querySelector('[data-field-error="' + input.name + '"]');
+      if (!error) {
+        error = document.createElement('div');
+        error.id = 'error-' + input.name;
+        error.setAttribute('data-field-error', input.name);
+        error.style.cssText = 'color:#b91c1c;font-size:13px;margin-top:5px';
+        container.appendChild(error);
+        input.setAttribute('aria-describedby', error.id);
+      }
+      error.textContent = invalid ? input.validationMessage : '';
+      input.style.borderColor = invalid ? '#dc2626' : '';
+      var currency = input.closest('.currency-input');
+      if (currency) currency.style.borderColor = invalid ? '#dc2626' : '';
+      if (invalid && !firstInvalid) firstInvalid = input;
+    }
+    body.querySelectorAll('tr[data-liquidation-row]').forEach(function(row) {
+      var value = row.querySelector('.valor-diario');
+      var days = row.querySelector('.dias');
+      var name = row.querySelector('.detalle-extra');
+      var used = parseVal(value.value) !== 0 || parseVal(days.value) !== 0 || Boolean(name);
+      if (used) usedRows += 1;
+      validateField(name, name && !name.value.trim() ? 'Escriba el nombre del concepto.' : '');
+      validateField(value, used && !(Number(value.value) > 0) ? 'Ingrese un valor diario en pesos mayor que 0.' : '');
+      validateField(days, used && !(Number.isInteger(Number(days.value)) && Number(days.value) > 0) ? 'Ingrese una cantidad de días entera mayor que 0.' : '');
+    });
+    if (!usedRows && !firstInvalid) {
+      var firstValue = body.querySelector('.valor-diario');
+      validateField(firstValue, 'Ingrese al menos un concepto con valor y días mayores que 0.');
+      if (!firstValue) firstInvalid = document.getElementById('agregar-concepto');
+    }
+    return firstInvalid;
   }
 
   function init() {
     var body = document.getElementById('liquidacion-detalles');
     var addBtn = document.getElementById('agregar-concepto');
     var countInput = document.getElementById('extra-count');
+    var form = document.getElementById('liquidacion-form');
+    var attempted = false;
+    var summary = document.createElement('div');
+    summary.setAttribute('role', 'alert');
+    summary.style.cssText = 'color:#b91c1c;margin:12px 0;font-weight:700';
+    form.querySelector('.liquidation-panel').prepend(summary);
+    form.noValidate = true;
+    form.addEventListener('submit', function(event) {
+      if (event.submitter && event.submitter.value === 'rechazar') return;
+      attempted = true;
+      var invalid = validateRows() || form.querySelector(':invalid');
+      summary.textContent = invalid ? 'No se envió la liquidación. Corrija los campos señalados: cada concepto utilizado requiere nombre, valor y días mayores que 0.' : '';
+      if (invalid) {
+        event.preventDefault();
+        invalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        invalid.focus({ preventScroll: true });
+        invalid.reportValidity();
+      }
+    });
 
     if (body) {
-      body.addEventListener('input', function(e) { suggestRequestedDays(e.target); recalculate(); });
+      body.addEventListener('input', function() {
+        recalculate();
+        if (attempted && !validateRows()) summary.textContent = '';
+      });
       body.addEventListener('change', recalculate);
       body.addEventListener('keyup', recalculate);
       body.addEventListener('paste', function() { setTimeout(recalculate, 50); });
@@ -2324,7 +2382,7 @@ const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit 
   const formAction = demoCanSubmit
     ? `/api/desplazamientos-viaticos/prueba/liquidacion/${token}`
     : demo ? '#' : `/api/desplazamientos-viaticos/accion/${token}`;
-  return page('Generar liquidación de viáticos y gastos de viaje', `<form id="liquidacion-form" method="post" action="${formAction}"><input id="extra-count" type="hidden" name="extraCount" value="0">${demoNotice}${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true })}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados. Al ingresar un valor se propondrán ${suggestedDays} día(s), que puede ajustar según el concepto.</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</section></form>${calculator}`);
+return page('Generar liquidación de viáticos y gastos de viaje', `<form id="liquidacion-form" method="post" action="${formAction}"><input id="extra-count" type="hidden" name="extraCount" value="0">${demoNotice}${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true })}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados. ${liquidationInstructions}</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</section></form>${calculator}`);
 };
 
 const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {}) => {
