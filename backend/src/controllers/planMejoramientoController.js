@@ -1134,6 +1134,26 @@ const getActionPlanCandidates = async (req, res) => {
     }
     if (!targetActivity) return res.status(404).json({ success: false, message: 'Actividad no encontrada' });
 
+    // Si la actividad no tiene responsable, no se puede asociar
+    const hasActivityResponsible = Boolean(
+      targetActivity.responsableNombre?.trim() ||
+      targetActivity.responsableDocumento ||
+      targetActivity.responsableId
+    );
+    if (!hasActivityResponsible) {
+      return res.json({
+        success: true,
+        data: {
+          year: new Date().getFullYear(),
+          activity: targetActivity,
+          program: plan.programa,
+          responsible: '',
+          plans: [],
+          message: 'La actividad no tiene un responsable asignado. Si no hay responsable que coincida entre el Plan de Acción y el Plan de Mejoramiento, no se puede asociar.'
+        }
+      });
+    }
+
     const currentYear = new Date().getFullYear();
     let baseYear = Number(plan.periodo_inicio) || currentYear;
     if (targetActivity.fechaInicio) {
@@ -1368,6 +1388,19 @@ const linkActivityToActionPlan = async (req, res) => {
       });
     }
 
+    // Validar que la actividad tenga un responsable asignado antes de permitir asociar
+    const hasActivityResponsible = Boolean(
+      targetActivity.responsableNombre?.trim() ||
+      targetActivity.responsableDocumento ||
+      targetActivity.responsableId
+    );
+    if (!hasActivityResponsible) {
+      return res.status(400).json({
+        success: false,
+        message: 'No es posible asociar la actividad: no tiene ningún responsable asignado. Si no hay responsable que coincida entre el Plan de Acción y el Plan de Mejoramiento, no se puede asociar.'
+      });
+    }
+
     // Validar que el responsable del plan de acción coincida con el responsable de la actividad o del plan de mejoramiento
     const leaderUser = actionPlan.responsibleUser || actionPlan.currentResponsibility?.responsibleUser;
     const leaderId = actionPlan.responsible_user_id || actionPlan.currentResponsibility?.responsible_user_id || leaderUser?.id;
@@ -1405,7 +1438,7 @@ const linkActivityToActionPlan = async (req, res) => {
     if (!isSameResponsible) {
       return res.status(400).json({
         success: false,
-        message: `El Plan de Acción seleccionado tiene como responsable a "${leaderFullName}", el cual no coincide con el responsable de la actividad "${targetActivity.responsableNombre || 'este responsable'}". El Plan de Acción y el Plan de Mejoramiento deben tener el mismo responsable.`
+        message: `No es posible asociar la actividad: el responsable del Plan de Acción ("${leaderFullName}") no coincide con el responsable de la actividad ("${targetActivity.responsableNombre || 'este responsable'}"). Si no hay un responsable que coincida entre el Plan de Acción y el Plan de Mejoramiento, no se puede asociar.`
       });
     }
 
@@ -1577,8 +1610,30 @@ const linkActivityToActionPlan = async (req, res) => {
       console.warn('[Sync Official Workbook warning]:', err.message)
     );
 
-    // 1. Notificación por correo electrónico a planeacionestrategica@unicesmag.edu.co
+    // 1. Notificación por correo electrónico y campana a planeacionestrategica@unicesmag.edu.co y al perfil de planeación y efectividad
     try {
+      const planningUsers = await User.findAll({
+        where: {
+          [Op.or]: [
+            { role: 'planeacion_efectividad' },
+            { role: 'planeacion_estrategica' },
+            { dependencia: { [Op.iLike]: '%planeacion%' } }
+          ],
+          estado: 'activo'
+        },
+        attributes: ['id', 'email', 'nombre', 'role']
+      });
+
+      const recipientEmails = new Set(['planeacionestrategica@unicesmag.edu.co']);
+      for (const u of planningUsers) {
+        if (u.email && u.email.includes('@')) {
+          recipientEmails.add(u.email.trim().toLowerCase());
+        }
+      }
+      if (actionPlan.responsibleUser?.email) {
+        recipientEmails.add(actionPlan.responsibleUser.email.trim().toLowerCase());
+      }
+
       const emailSubject = `[Plan de Mejoramiento] Nueva actividad articulada al Plan de Acción ${actionPlan.code} - ${plan.programa || ''}`;
       const emailHtml = `
         <div style="font-family: Arial, sans-serif; color: #1e293b; max-width: 600px; line-height: 1.6;">
@@ -1622,25 +1677,15 @@ const linkActivityToActionPlan = async (req, res) => {
         </div>
       `;
 
-      sendStrategicPlanningEmail({
-        to: 'planeacionestrategica@unicesmag.edu.co',
-        subject: emailSubject,
-        html: emailHtml
-      }).catch((emailErr) => console.warn('[PM Email Notification warning]:', emailErr.message));
-    } catch (err) {
-      console.warn('[PM Email warning]:', err.message);
-    }
+      for (const toEmail of Array.from(recipientEmails)) {
+        sendStrategicPlanningEmail({
+          to: toEmail,
+          subject: emailSubject,
+          html: emailHtml
+        }).catch((emailErr) => console.warn(`[PM Email Notification warning to ${toEmail}]:`, emailErr.message));
+      }
 
-    // 2. Notificaciones en campana para Planeación y Efectividad y los involucrados
-    try {
-      const planningUsers = await User.findAll({
-        where: {
-          role: { [Op.in]: ['planeacion_efectividad', 'planeacion_estrategica'] },
-          estado: 'activo'
-        },
-        attributes: ['id']
-      });
-
+      // 2. Notificaciones en campana para Planeación y Efectividad y los involucrados
       const recipientUserIds = new Set(planningUsers.map((u) => u.id));
       if (actionPlan.responsible_user_id) recipientUserIds.add(actionPlan.responsible_user_id);
       if (req.user?.id) recipientUserIds.add(req.user.id);
@@ -1667,7 +1712,7 @@ const linkActivityToActionPlan = async (req, res) => {
 
       await Promise.all(notifPromises);
     } catch (notifError) {
-      console.warn('[StrategicNotification create error]:', notifError.message);
+      console.warn('[Notification error in linkActivityToActionPlan]:', notifError.message);
     }
 
     return res.json({

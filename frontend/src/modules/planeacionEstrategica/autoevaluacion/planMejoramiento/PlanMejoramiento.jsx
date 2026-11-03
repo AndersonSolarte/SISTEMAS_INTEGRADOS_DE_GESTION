@@ -1237,6 +1237,10 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     if (!activity?.nombre?.trim()) {
       return enqueueSnackbar('Asigne un nombre a la actividad antes de vincularla', { variant: 'warning' });
     }
+    const hasActivityResp = Boolean(activity?.responsableNombre?.trim() || activity?.responsableDocumento || activity?.responsableId);
+    if (!hasActivityResp) {
+      return enqueueSnackbar('Debe seleccionar primero un Responsable para la actividad antes de vincularla con el Plan de Acción institucional.', { variant: 'warning' });
+    }
     let planId = editor?.id;
     if (!planId) {
       const saved = await persistPlan(editor);
@@ -1313,7 +1317,10 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const handleConfirmLink = async () => {
     const targetPlanId = selectedActionPlanId || linkingCandidates[0]?.id;
     if (!linkingTarget || !targetPlanId) {
-      return enqueueSnackbar('Seleccione un plan de acción destino', { variant: 'warning' });
+      return enqueueSnackbar('Seleccione un plan de acción destino que coincida con el responsable de la actividad', { variant: 'warning' });
+    }
+    if (linkingCandidates.length === 0) {
+      return enqueueSnackbar('No es posible asociar: no hay ningún Plan de Acción disponible que coincida con el responsable.', { variant: 'warning' });
     }
     const actName = (linkFormData.actividad || linkFormData.activity || linkingTarget.activity?.nombre || '').trim();
     if (!actName) {
@@ -2276,23 +2283,32 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                                 </Button>
                               </Stack>
                             ) : (
-                              <Button
-                                variant="contained"
-                                color="success"
-                                startIcon={<LinkIcon />}
-                                disabled={linkingBusy}
-                                onClick={() => handleOpenLinkDialog(objectiveIndex, activityIndex, activity)}
-                                sx={{
-                                  textTransform: 'none',
-                                  fontWeight: 850,
-                                  bgcolor: '#16a34a',
-                                  '&:hover': { bgcolor: '#15803d' },
-                                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
-                                  px: 2.2
-                                }}
-                              >
-                                Vincular con Plan de Acción
-                              </Button>
+                              (() => {
+                                const hasActivityResp = Boolean(activity.responsableNombre?.trim() || activity.responsableDocumento || activity.responsableId);
+                                return (
+                                  <Tooltip title={!hasActivityResp ? "Debe asignar primero un Responsable a la actividad para poder vincularla con el Plan de Acción institucional" : ""}>
+                                    <span>
+                                      <Button
+                                        variant="contained"
+                                        color="success"
+                                        startIcon={<LinkIcon />}
+                                        disabled={linkingBusy || !hasActivityResp}
+                                        onClick={() => handleOpenLinkDialog(objectiveIndex, activityIndex, activity)}
+                                        sx={{
+                                          textTransform: 'none',
+                                          fontWeight: 850,
+                                          bgcolor: !hasActivityResp ? '#94a3b8' : '#16a34a',
+                                          '&:hover': { bgcolor: !hasActivityResp ? '#94a3b8' : '#15803d' },
+                                          boxShadow: !hasActivityResp ? 'none' : '0 4px 12px rgba(22, 163, 74, 0.25)',
+                                          px: 2.2
+                                        }}
+                                      >
+                                        Vincular con Plan de Acción
+                                      </Button>
+                                    </span>
+                                  </Tooltip>
+                                );
+                              })()
                             )}
                           </Box>
                         </Box>
@@ -2670,7 +2686,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               </Box>
             ) : linkingCandidates.length === 0 ? (
               <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                No se encontraron Planes de Acción registrados para la vigencia actual ({editor?.periodoInicio || currentYear}) ni para la siguiente ({Number(editor?.periodoInicio || currentYear) + 1}) a cargo de <strong>{linkingTarget?.activity?.responsableNombre || 'este responsable'}</strong>. Para vincular, el responsable debe tener cargado su Plan de Acción institucional.
+                No es posible asociar: no se encontraron Planes de Acción registrados a cargo de <strong>{linkingTarget?.activity?.responsableNombre || 'este responsable'}</strong> para la vigencia actual ({editor?.periodoInicio || currentYear}) ni para la siguiente ({Number(editor?.periodoInicio || currentYear) + 1}). <strong>Si no hay un responsable que coincida entre el Plan de Acción institucional y el Plan de Mejoramiento, no se puede asociar.</strong>
               </Alert>
             ) : (
               <RadioGroup
@@ -2775,6 +2791,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               linkingBusy ||
               loadingCandidates ||
               linkingCandidates.length === 0 ||
+              !selectedActionPlanId ||
               Boolean(currentModalDuplicate) ||
               !(linkFormData.actividad?.trim() || linkFormData.activity?.trim() || linkingTarget?.activity?.nombre?.trim())
             }
