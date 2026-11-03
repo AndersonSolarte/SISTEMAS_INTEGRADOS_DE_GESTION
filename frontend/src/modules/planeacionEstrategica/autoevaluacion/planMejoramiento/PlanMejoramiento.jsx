@@ -1291,9 +1291,10 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       const res = await planMejoramientoService.getActionPlanCandidates(planId, activity.uid);
       const rawPlans = res?.plans || res?.data?.plans || (Array.isArray(res) ? res : []);
       const currentYearPlan = Number(editor?.periodoInicio) || currentYear;
+      const allowedYears = [currentYearPlan, currentYearPlan + 1];
       const plans = rawPlans.filter((p) => {
         const planYear = Number(p.year) || (String(p.code || p.title).match(/(20\d\d)/) ? parseInt(String(p.code || p.title).match(/(20\d\d)/)[1], 10) : null);
-        const matchesYear = !planYear || planYear === currentYearPlan;
+        const matchesYear = !planYear || allowedYears.includes(planYear);
         const matchesResponsible = Boolean(p.same_responsible);
         return matchesYear && matchesResponsible;
       });
@@ -2658,7 +2659,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                 1
               </Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 950, color: '#0f172a' }}>
-                Seleccione el Plan de Acción destino ({editor?.periodoInicio || currentYear}):
+                Seleccione el Plan de Acción destino ({editor?.periodoInicio || currentYear} - {Number(editor?.periodoInicio || currentYear) + 1}):
               </Typography>
             </Stack>
 
@@ -2669,7 +2670,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               </Box>
             ) : linkingCandidates.length === 0 ? (
               <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                No se encontraron Planes de Acción registrados para la vigencia {editor?.periodoInicio || currentYear} a cargo de {linkingTarget?.activity?.responsableNombre || 'este responsable'}. El Plan de Acción institucional y el Plan de Mejoramiento deben tener el mismo responsable asignado.
+                No se encontraron Planes de Acción registrados para la vigencia actual ({editor?.periodoInicio || currentYear}) ni para la siguiente ({Number(editor?.periodoInicio || currentYear) + 1}) a cargo de <strong>{linkingTarget?.activity?.responsableNombre || 'este responsable'}</strong>. Para vincular, el responsable debe tener cargado su Plan de Acción institucional.
               </Alert>
             ) : (
               <RadioGroup
@@ -2701,7 +2702,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                               <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{plan.title || plan.name || plan.code}</Typography>
                               <Chip size="small" label={plan.code} sx={{ fontWeight: 800, bgcolor: '#e0f2fe', color: '#0284c7' }} />
-                              <Chip size="small" label={`Vigencia ${plan.year}`} sx={{ fontWeight: 850, bgcolor: plan.year === (editor?.periodoInicio || currentYear) ? '#dcfce7' : '#fef3c7', color: plan.year === (editor?.periodoInicio || currentYear) ? '#15803d' : '#b45309' }} />
+                              <Chip
+                                size="small"
+                                label={`Vigencia ${plan.year}`}
+                                sx={{
+                                  fontWeight: 850,
+                                  bgcolor: plan.year === (editor?.periodoInicio || currentYear) ? '#dcfce7' : '#e0e7ff',
+                                  color: plan.year === (editor?.periodoInicio || currentYear) ? '#15803d' : '#3730a3'
+                                }}
+                              />
                               {plan.is_recommended && (
                                 <Chip
                                   size="small"
