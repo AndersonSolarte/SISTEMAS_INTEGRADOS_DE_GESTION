@@ -1289,7 +1289,12 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
     try {
       const res = await planMejoramientoService.getActionPlanCandidates(planId, activity.uid);
-      const plans = res?.plans || res?.data?.plans || (Array.isArray(res) ? res : []);
+      const rawPlans = res?.plans || res?.data?.plans || (Array.isArray(res) ? res : []);
+      const currentYearPlan = Number(editor?.periodoInicio) || currentYear;
+      const plans = rawPlans.filter((p) => {
+        const planYear = Number(p.year) || (String(p.code || p.title).match(/(20\d\d)/) ? parseInt(String(p.code || p.title).match(/(20\d\d)/)[1], 10) : null);
+        return !planYear || planYear === currentYearPlan;
+      });
       setLinkingCandidates(plans);
       const recommended = plans.find((p) => p.is_recommended) || plans[0];
       if (recommended) {
@@ -2644,21 +2649,6 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           </Stack>
         </DialogTitle>
         <DialogContent dividers sx={{ pt: 2 }}>
-          {/* Resumen de origen y estructura en Drive */}
-          <Alert severity="info" sx={{ mb: 2.5, borderRadius: 2.5, '& .MuiAlert-message': { width: '100%' } }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 0.5 }}>
-              Estructura organizada en Google Drive
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#334155' }}>
-              Al enviar esta actividad, se generará automáticamente en Google Drive la jerarquía oficial:
-            </Typography>
-            <Box sx={{ mt: 1, p: 1.5, borderRadius: 2, bgcolor: '#f1f5f9', fontFamily: 'monospace', fontSize: 13, color: '#0f172a' }}>
-              📁 <strong>Plan de Acción ({editor?.periodoInicio || currentYear})</strong><br />
-              &nbsp;&nbsp;└── 📁 <strong>Plan de Mejoramiento - {editor?.programa || 'Programa'}</strong><br />
-              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── 📁 <strong>{linkFormData.actividad || linkingTarget?.activity?.nombre || 'Nombre de la actividad'}</strong> (Evidencias sincronizadas)
-            </Box>
-          </Alert>
-
           {/* Paso 1: Seleccionar el Plan de Acción destino */}
           <Paper variant="outlined" sx={{ borderRadius: 3, p: 2, mb: 2.5, bgcolor: '#f8fafc', borderColor: '#cbd5e1' }}>
             <Stack direction="row" spacing={1.25} alignItems="center" mb={1.5}>

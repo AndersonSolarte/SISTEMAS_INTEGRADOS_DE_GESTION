@@ -1146,31 +1146,27 @@ const getActionPlanCandidates = async (req, res) => {
       if (matchEnd) endYear = parseInt(matchEnd[1], 10);
     }
 
-    // Regla de vigencias: Vigencia actual (ej: 2026), anteriores nunca (< baseYear o cerradas),
-    // posteriores inmediatas válidas sí (ej: 2027), pero nunca vigencias lejanas (2030, 2040, etc.)
+    // Regla de vigencias: ÚNICAMENTE la vigencia actual (ej: 2026).
+    // No se permite vincular actividades hacia vigencias anteriores ni posteriores (ej. 2027).
     const allowedYears = [baseYear];
-    const maxAllowedFuture = Math.min(Math.max(baseYear + 1, endYear), baseYear + 1);
-    for (let y = baseYear + 1; y <= maxAllowedFuture; y += 1) {
-      if (!allowedYears.includes(y)) allowedYears.push(y);
-    }
 
     const { Op } = require('sequelize');
 
-    // 1. Obtener los IDs de términos activos o planeados para las vigencias permitidas
+    // 1. Obtener los IDs de términos activos o planeados para la vigencia actual permitida
     const terms = await StrategicTerm.findAll({
       where: {
-        year: { [Op.in]: allowedYears },
+        year: baseYear,
         status: { [Op.notIn]: ['closed', 'archived', 'inactive'] }
       },
       attributes: ['id', 'year', 'strategic_plan_id', 'status']
     });
     const validTermIds = terms.map((t) => t.id);
 
-    // 2. Condición obligatoria de vigencia: solo vigencia actual y posterior inmediata (ej: 2026, 2027)
+    // 2. Condición obligatoria de vigencia: solo vigencia actual (ej: 2026)
     const yearScopeConditions = [
       ...(validTermIds.length ? [{ term_id: { [Op.in]: validTermIds } }] : []),
-      ...allowedYears.map((y) => ({ code: { [Op.iLike]: `%${y}%` } })),
-      ...allowedYears.map((y) => ({ title: { [Op.iLike]: `%${y}%` } }))
+      { code: { [Op.iLike]: `%${baseYear}%` } },
+      { title: { [Op.iLike]: `%${baseYear}%` } }
     ];
 
     const actionPlans = await StrategicActionPlan.findAll({
@@ -1194,11 +1190,11 @@ const getActionPlanCandidates = async (req, res) => {
       order: [['code', 'ASC']]
     });
 
-    // Filtrar estrictamente para descartar cualquier plan que tenga año anterior a baseYear o mayor al permitido
+    // Filtrar estrictamente para descartar cualquier plan que NO sea de la vigencia actual
     const strictlyFilteredPlans = actionPlans.filter((p) => {
       const planYear = p.term?.year || (String(p.code || p.title).match(/(20\d\d)/) ? parseInt(String(p.code || p.title).match(/(20\d\d)/)[1], 10) : null);
-      if (!planYear) return true;
-      return allowedYears.includes(planYear);
+      if (!planYear) return false;
+      return planYear === baseYear;
     });
 
     const normalize = (str) =>
@@ -1361,6 +1357,21 @@ const linkActivityToActionPlan = async (req, res) => {
       ]
     });
     if (!actionPlan) return res.status(404).json({ success: false, message: 'Plan de Acción no encontrado' });
+
+    // Validar que el plan de acción destino pertenezca exclusivamente a la vigencia actual
+    const currentYear = new Date().getFullYear();
+    let baseYear = Number(plan.periodo_inicio) || currentYear;
+    if (targetActivity.fechaInicio) {
+      const match = String(targetActivity.fechaInicio).match(/(\d{4})/);
+      if (match) baseYear = parseInt(match[1], 10);
+    }
+    const planYear = actionPlan.term?.year || (String(actionPlan.code || actionPlan.title).match(/(20\d\d)/) ? parseInt(String(actionPlan.code || actionPlan.title).match(/(20\d\d)/)[1], 10) : null);
+    if (planYear && planYear !== baseYear) {
+      return res.status(400).json({
+        success: false,
+        message: `Solo se permite vincular actividades al Plan de Acción de la vigencia actual (${baseYear}). No está permitido vincular a vigencias diferentes (${planYear}).`
+      });
+    }
 
     const existingItems = await StrategicActionItem.findAll({
       where: { action_plan_id: actionPlan.id, deleted_at: null },
