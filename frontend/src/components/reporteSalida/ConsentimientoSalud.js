@@ -50,7 +50,7 @@ export default function ConsentimientoSalud({ value, onChange, withoutAttachment
           onChange={(event) => onChange(event.target.checked ? { accepted: true, version: policy.version, policyHash: policy.hash, withoutAttachment, clientAcceptedAt: new Date().toISOString() } : null)}
         />}
         label={withoutAttachment
-          ? 'Declaro que no cuento con soportes, me comprometo a entregarlos cuando sean requeridos y autorizo su verificación y el tratamiento de mis datos personales y sensibles.'
+          ? 'Autorizo la verificación de soportes y el tratamiento de mis datos personales y sensibles, y acepto la declaración de entrega posterior de soportes.'
           : 'Autorizo la verificación de soportes y el tratamiento de mis datos personales y sensibles.'}
       />
       <Box sx={{ pl: '38px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1.5, rowGap: 0.5 }}>

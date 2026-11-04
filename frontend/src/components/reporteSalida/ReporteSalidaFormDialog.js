@@ -1397,7 +1397,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const isPersonal = form.salida.tipo === 'diligencia_personal';
   const canShowSaludConsentimiento = category === 'salud'
-    && hasCompletedSalidaTime && Boolean(adjuntoFile || noCuentaAdjuntoSalud);
+    && hasCompletedSalidaTime;
   const validationIssues = useMemo(() => {
     const issues = [];
     if (canShowSaludConsentimiento && (!consentimientoSalud?.accepted || Boolean(consentimientoSalud.withoutAttachment) !== noCuentaAdjuntoSalud)) {
@@ -3160,7 +3160,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   )}
                 </Box>
               )}
-              {Boolean(subtype) && !requiresViaticosFlow && hasCompletedSalidaTime && (
+              {canShowSaludConsentimiento && <Box sx={{ mt: 2 }}><ConsentimientoSalud value={consentimientoSalud} onChange={setConsentimientoSalud} withoutAttachment={noCuentaAdjuntoSalud} noAttachmentDeclaration={DECLARACION_SIN_ADJUNTO_SALUD} /></Box>}
+              {Boolean(subtype) && !requiresViaticosFlow && hasCompletedSalidaTime && (category !== 'salud' || consentimientoSalud?.accepted) && (
                 <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <TextField
                     sx={motivoInputSx}
@@ -3350,7 +3351,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               </Box>
             )}
 
-            {canShowSaludConsentimiento && <ConsentimientoSalud value={consentimientoSalud} onChange={setConsentimientoSalud} withoutAttachment={noCuentaAdjuntoSalud} noAttachmentDeclaration={DECLARACION_SIN_ADJUNTO_SALUD} />}
             <Alert severity="info" icon={false} sx={{ mt: 1, '& .MuiAlert-message': { width: '100%' } }}>
               <Typography sx={{ fontSize: 13, color: '#0f172a', textAlign: 'center' }}>
                 Al registrar esta solicitud, autoriza el tratamiento de sus datos de acuerdo a la <a href="https://www.unicesmag.edu.co/documentos/DATOS-UNICESMAG.pdf" target="_blank" rel="noopener noreferrer" style={{ color: '#0284c7', fontWeight: 600, textDecoration: 'none' }}>Política de Tratamiento de Datos de UNICESMAG</a>.

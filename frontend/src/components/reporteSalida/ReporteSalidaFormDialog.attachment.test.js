@@ -96,18 +96,26 @@ describe('adjunto del formulario de reporte de salida', () => {
     expect(screen.getByText('Archivo adjuntado correctamente')).toBeInTheDocument();
   });
 
-  test('presenta la aceptación después de completar las fechas y adjuntar el soporte', async () => {
+  test('muestra siempre la autorización en el paso de soportes y deja la observación para el final', async () => {
     render(<ReporteSalidaFormDialog open documento={documento} user={user} onClose={jest.fn()} />);
     expect(screen.queryByText(/Autorizo la verificación de soportes/)).not.toBeInTheDocument();
     expect(document.querySelector('input[type="file"]')).toBeNull();
     selectUrgencias();
     expect(document.querySelector('input[type="file"]')).toBeNull();
     completeDates();
-    expect(screen.queryByText(/Autorizo la verificación de soportes/)).not.toBeInTheDocument();
-    fireEvent.change(document.querySelector('input[type="file"]'), { target: { files: [new File(['pdf'], 'soporte.pdf', { type: 'application/pdf' })] } });
     const checkbox = await screen.findByRole('checkbox', { name: /Autorizo la verificación de soportes/ });
     await waitFor(() => expect(checkbox).toBeEnabled());
     expect(checkbox).not.toBeChecked();
+    expect(screen.queryByLabelText(/Motivo \/ observación/)).not.toBeInTheDocument();
+    fireEvent.click(checkbox);
+    expect(screen.getByLabelText(/Motivo \/ observación/)).toBeVisible();
+    fireEvent.change(document.querySelector('input[type="file"]'), { target: { files: [new File(['pdf'], 'soporte.pdf', { type: 'application/pdf' })] } });
+    expect(checkbox).not.toBeChecked();
+    expect(screen.queryByLabelText(/Motivo \/ observación/)).not.toBeInTheDocument();
+    fireEvent.click(checkbox);
+    const observation = screen.getByLabelText(/Motivo \/ observación/);
+    expect(observation).toBeVisible();
+    expect(checkbox.compareDocumentPosition(observation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Registrar solicitud' })).toBeDisabled();
   });
 
@@ -117,17 +125,20 @@ describe('adjunto del formulario de reporte de salida', () => {
     completeDates();
     fireEvent.click(screen.getByRole('radio', { name: 'No cuento con archivos adjuntos en este momento' }));
     expect(document.querySelector('input[type="file"]')).toBeNull();
-    const checkbox = await screen.findByRole('checkbox', { name: /Declaro que no cuento con soportes/ });
+    const checkbox = await screen.findByRole('checkbox', { name: /Autorizo.*y acepto la declaración/ });
     await waitFor(() => expect(checkbox).toBeEnabled());
     expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    expect(screen.queryByLabelText(/Motivo \/ observación/)).not.toBeInTheDocument();
     fireEvent.click(checkbox);
     expect(checkbox).toBeChecked();
+    expect(screen.getByLabelText(/Motivo \/ observación/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Leer autorización' }));
     expect(screen.getAllByText(/Declaro que al momento de radicar esta solicitud/)).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Autorización de Salud y Bienestar' })).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('radio', { name: 'Adjuntar soporte' }));
-    expect(screen.queryByRole('checkbox', { name: /Declaro que no cuento con soportes/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /y acepto la declaración/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Motivo \/ observación/)).not.toBeInTheDocument();
     fireEvent.change(document.querySelector('input[type="file"]'), { target: { files: [new File(['pdf'], 'soporte.pdf', { type: 'application/pdf' })] } });
     const newCheckbox = await screen.findByRole('checkbox', { name: /Autorizo la verificación de soportes/ });
     await waitFor(() => expect(newCheckbox).toBeEnabled());
