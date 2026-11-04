@@ -1,5 +1,5 @@
 const fs = require('fs');
-const { buildSaludConsentimientoPdfSection } = require('./saludConsentimientoPdf');
+const { appendSaludConsentimientoPdf } = require('./saludConsentimientoPdf');
 const { SALUD_CONSENTIMIENTO_TRACE_TEXT } = require('./saludConsentimiento');
 const path = require('path');
 const { execFile } = require('child_process');
@@ -1601,9 +1601,8 @@ const buildPdfBuffer = async (solicitud) => {
       const isPropiasCargoOficio = isOficioSalida(salida, solicitud);
       if (isPropiasCargoOficio) {
         const docDefinition = sanitizePdfDefinition(buildOficioPdfDefinition(solicitud, ghDirectorNombre, ghDirectorCargo));
-        // El anexo usa el texto institucional versionado, sin quitar sus tildes.
-        docDefinition.content.push(...buildSaludConsentimientoPdfSection(solicitud));
         const pdfDoc = printer.createPdfKitDocument(docDefinition);
+        appendSaludConsentimientoPdf(pdfDoc, solicitud, PDF_FONT_FILES);
         const docChunks = [];
         pdfDoc.on('data', chunk => docChunks.push(chunk));
         pdfDoc.on('end', () => resolve(Buffer.concat(docChunks)));
@@ -2367,8 +2366,8 @@ const buildPdfBuffer = async (solicitud) => {
       };
 
       const sanitizedDefinition = sanitizePdfDefinition(docDefinition);
-      sanitizedDefinition.content.push(...buildSaludConsentimientoPdfSection(solicitud));
       const pdfDoc = printer.createPdfKitDocument(sanitizedDefinition, pdfOptions);
+      appendSaludConsentimientoPdf(pdfDoc, solicitud, PDF_FONT_FILES);
       const docChunks = [];
       pdfDoc.on('data', chunk => docChunks.push(chunk));
       pdfDoc.on('end', () => resolve(Buffer.concat(docChunks)));
