@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Link, Typography } from '@mui/material';
+import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Typography } from '@mui/material';
 import reporteSalidaService from '../../services/reporteSalidaService';
 
 export default function ConsentimientoSalud({ value, onChange }) {
@@ -34,7 +34,6 @@ export default function ConsentimientoSalud({ value, onChange }) {
       />
       <Box sx={{ pl: '33px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1.5, rowGap: 0.5 }}>
         <Button size="small" onClick={() => setExpanded(true)} disabled={!policy} sx={{ p: 0, minWidth: 0, fontSize: 12, fontWeight: 500, textTransform: 'none' }}>Leer autorización</Button>
-        <Link href="https://www.unicesmag.edu.co/documentos/DATOS-UNICESMAG.pdf" target="_blank" rel="noopener noreferrer" underline="hover" sx={{ fontSize: 12, color: 'text.secondary' }}>Política de tratamiento de datos</Link>
       </Box>
       {!accepted && <Typography id="consentimiento-salud-requisito" role="alert" color="error" sx={{ pl: '33px', mt: 0.5, fontSize: 12 }}>Debe aceptar la autorización para radicar.</Typography>}
       <Dialog open={expanded} onClose={() => setExpanded(false)} maxWidth="sm" fullWidth aria-labelledby="salud-autorizacion-titulo">
