@@ -3025,8 +3025,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               )}
 
               {Boolean(subtype) && isSaludAdjuntoSection && (
-                <Box sx={{ mt: 1.5 }}>
-                  <Typography id="salud-soporte-label" sx={{ fontSize: 13, fontWeight: 600 }}>Soporte de la solicitud</Typography>
+                <Box sx={{ mt: 1.5, p: { xs: 1.25, sm: 1.5 }, border: '1px solid #e2e8f0', borderRadius: 2, bgcolor: '#f8fafc' }}>
+                  <Typography id="salud-soporte-label" sx={{ fontSize: 13, fontWeight: 700, color: '#334155', mb: 1 }}>Soporte de la solicitud</Typography>
                   <RadioGroup row aria-labelledby="salud-soporte-label" value={noCuentaAdjuntoSalud ? 'sin_soporte' : 'adjuntar'} onChange={(e) => {
                     const withoutAttachment = e.target.value === 'sin_soporte';
                     setNoCuentaAdjuntoSalud(withoutAttachment);
@@ -3035,9 +3035,19 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       setAdjuntoFile(null);
                       setAdjuntoError('');
                     }
-                  }} sx={{ '& .MuiFormControlLabel-label': { fontSize: 13 } }}>
-                    <FormControlLabel value="adjuntar" control={<Radio size="small" />} label="Adjuntar soporte" />
-                    <FormControlLabel value="sin_soporte" control={<Radio size="small" />} label="No cuento con archivos adjuntos en este momento" />
+                  }} sx={{
+                    display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(180px, 0.8fr) minmax(0, 1.5fr)' }, gap: 1,
+                    '& .MuiFormControlLabel-root': {
+                      m: 0, px: 1, py: 0.25, minHeight: 44, borderWidth: 1, borderStyle: 'solid', borderRadius: 1.5,
+                      transition: 'border-color 160ms ease, background-color 160ms ease',
+                      '&:hover': { borderColor: '#93b4f5' },
+                      '&:focus-within': { outline: '2px solid #93b4f5', outlineOffset: 2 }
+                    },
+                    '& .MuiFormControlLabel-label': { fontSize: 13, lineHeight: 1.5 },
+                    '& .MuiRadio-root': { p: 0.75, mr: 0.5 }
+                  }}>
+                    <FormControlLabel value="adjuntar" control={<Radio size="small" />} label="Adjuntar soporte" sx={{ borderColor: !noCuentaAdjuntoSalud ? '#2563eb' : '#dbe3ee', bgcolor: !noCuentaAdjuntoSalud ? '#eff6ff' : '#fff', color: !noCuentaAdjuntoSalud ? '#1e40af' : '#475569', '& .MuiFormControlLabel-label': { fontWeight: !noCuentaAdjuntoSalud ? 600 : 400 } }} />
+                    <FormControlLabel value="sin_soporte" control={<Radio size="small" />} label="No cuento con archivos adjuntos en este momento" sx={{ borderColor: noCuentaAdjuntoSalud ? '#2563eb' : '#dbe3ee', bgcolor: noCuentaAdjuntoSalud ? '#eff6ff' : '#fff', color: noCuentaAdjuntoSalud ? '#1e40af' : '#475569', '& .MuiFormControlLabel-label': { fontWeight: noCuentaAdjuntoSalud ? 600 : 400 } }} />
                   </RadioGroup>
                 </Box>
               )}
