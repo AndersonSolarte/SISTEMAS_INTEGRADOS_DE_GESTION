@@ -84,6 +84,7 @@ app.use('/api/planeacion/gestion-informacion/saber-pro', require('./routes/saber
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta', require('./routes/consultaValidacionRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta/extraccion', require('./routes/documentExtractionRoutes'));
 app.use('/api/admin/activity', require('./routes/activityRoutes'));
+app.use('/api/politicas-institucionales', require('./routes/institutionalPolicyRoutes'));
 
 app.get('/api/health', (req, res) => res.json({ success: true, status: 'OK' }));
 

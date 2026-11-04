@@ -143,6 +143,13 @@ const saveActionItem = async ({ req, actionPlan, payload, item = null }) => sequ
     custom_values: { ...preservedCustomValues, ...incomingCustomValues },
     updated_by: req.user.id
   };
+  const { policyDimensions } = require('./activityPolicyStatisticsService');
+  const policyCatalog = await require('./institutionalPolicyCatalogService').listPolicies();
+  values.custom_values.policy_statistics = policyDimensions(
+    values.custom_values.institutional_policy || values.custom_values.politicas,
+    values.custom_values.institutional_policy_lines || values.custom_values.lineasAccionPolitica,
+    policyCatalog, preservedCustomValues.policy_statistics
+  );
   if (!values.activity) {
     const firstCustomVal = Object.values(values.custom_values || {}).find((val) => String(val || '').trim().length > 0);
     if (firstCustomVal) {

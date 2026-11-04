@@ -4,10 +4,11 @@ const clean = (value) => String(value ?? '').normalize('NFC').replace(/\s+/g, ' 
 const key = (value) => clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
 const uniqueLines = (lines) => Array.from(new Map(lines.map((line) => [key(line), clean(line)])).values());
 
-const parsePolicyWorkbook = (input) => {
+const parsePolicyWorkbook = (input, { withSummary = false } = {}) => {
   const workbook = XLSX.read(input, { type: 'buffer' });
   const policies = new Map();
   let recognizedSheets = 0;
+  let processedRows = 0;
   for (const name of workbook.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' });
     const headerIndex = rows.findIndex((row) => row.some((cell) => ['politica', 'politicas', 'politicas institucionales'].includes(key(cell)))
@@ -22,6 +23,7 @@ const parsePolicyWorkbook = (input) => {
       const line = clean(rows[index][lineColumn]);
       if (!policyName && !line) continue;
       if (!policyName || !line) throw Object.assign(new Error(`Complete política y línea de acción en ${name}, fila ${index + 1}.`), { status: 422 });
+      processedRows += 1;
       const normalized = key(policyName);
       const policy = policies.get(normalized) || { name: policyName, normalized_key: normalized, actionLines: [] };
       policy.actionLines.push(line);
@@ -29,13 +31,16 @@ const parsePolicyWorkbook = (input) => {
     }
   }
   if (!recognizedSheets || !policies.size) throw Object.assign(new Error('El Excel debe contener las columnas Políticas y Líneas de Acción y al menos una fila completa.'), { status: 422 });
-  return Array.from(policies.values()).map((policy) => ({ ...policy, actionLines: uniqueLines(policy.actionLines) }));
+  const result = Array.from(policies.values()).map((policy) => ({ ...policy, actionLines: uniqueLines(policy.actionLines) }));
+  if (!withSummary) return result;
+  const uniqueCount = result.reduce((sum, policy) => sum + policy.actionLines.length, 0);
+  return { policies: result, processedRows, uniqueLines: uniqueCount, duplicateRows: processedRows - uniqueCount };
 };
 
-const importPolicies = async (policies, { source, userId = null } = {}) => {
+const importPolicies = async (policies, { source, userId = null, transaction: existingTransaction } = {}) => {
   const InstitutionalPolicy = require('../models/InstitutionalPolicy');
   const { sequelize } = require('../config/database');
-  return sequelize.transaction(async (transaction) => {
+  const apply = async (transaction) => {
     let created = 0;
     let addedLines = 0;
     for (const policy of policies) {
@@ -50,7 +55,8 @@ const importPolicies = async (policies, { source, userId = null } = {}) => {
       await row.update({ action_lines: merged, source, updated_by: userId }, { transaction });
     }
     return { importedPolicies: policies.length, created, addedLines };
-  });
+  };
+  return existingTransaction ? apply(existingTransaction) : sequelize.transaction(apply);
 };
 
 const listPolicies = async () => {

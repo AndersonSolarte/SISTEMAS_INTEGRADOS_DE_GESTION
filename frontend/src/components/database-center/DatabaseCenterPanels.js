@@ -26,6 +26,7 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import CloudDoneRoundedIcon from '@mui/icons-material/CloudDoneRounded';
 import gestionInformacionService from '../../services/gestionInformacionService';
+import InstitutionalPoliciesDialog from './InstitutionalPoliciesDialog';
 import TurnstileVerification from '../security/TurnstileVerification';
 import GoogleIdentityVerification from '../security/GoogleIdentityVerification';
 
@@ -562,6 +563,7 @@ export function DatabaseBackupPanel({ enqueueSnackbar, canDownload = false, canR
 }
 
 export function DatabaseCatalogPanel({ enqueueSnackbar }) {
+  const [policiesDialogOpen, setPoliciesDialogOpen] = useState(false);
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -583,7 +585,7 @@ export function DatabaseCatalogPanel({ enqueueSnackbar }) {
   useEffect(() => { load(); }, [load]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return tables.filter((row) => (!moduleFilter || row.module === moduleFilter) && (!q || `${row.table_name} ${row.module}`.toLowerCase().includes(q)));
+    return tables.filter((row) => (!moduleFilter || row.module === moduleFilter) && (!q || `${row.table_name} ${row.display_name || ''} ${row.module}`.toLowerCase().includes(q)));
   }, [tables, search, moduleFilter]);
   const modules = useMemo(() => Array.from(new Set(tables.map((row) => row.module))).sort(), [tables]);
   const groupedRows = useMemo(() => {
@@ -668,7 +670,7 @@ export function DatabaseCatalogPanel({ enqueueSnackbar }) {
                             </IconButton>
                           </Tooltip>
                         )}
-                        <Typography sx={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 13 }}>{row.table_name}</Typography>
+                        <Typography sx={{ fontFamily: row.display_name && row.display_name !== row.table_name ? 'inherit' : 'monospace', fontWeight: 800, fontSize: 13 }}>{row.display_name || row.table_name}</Typography>
                         {row.sensitive && <Tooltip title="Información restringida"><LockRoundedIcon sx={{ fontSize: 15, color: '#b45309' }} /></Tooltip>}
                         {hasSubdatasets && (
                           <Chip
@@ -684,7 +686,10 @@ export function DatabaseCatalogPanel({ enqueueSnackbar }) {
                     <TableCell align="right">{Number(row.estimated_rows || 0).toLocaleString('es-CO')}</TableCell>
                     <TableCell align="right">{row.size_pretty}</TableCell><TableCell align="right">{row.column_count}</TableCell>
                     <TableCell align="center"><Chip size="small" color="success" label="Disponible" sx={{ fontWeight: 800 }} /></TableCell>
-                    <TableCell align="center"><Button size="small" variant="outlined" endIcon={<MoreVertRoundedIcon />} disabled={Boolean(exporting)} onClick={(event) => { setSelected(row); setAnchor(event.currentTarget); }} sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}>Exportar tabla</Button></TableCell>
+                    <TableCell align="center"><Stack direction="row" spacing={1} justifyContent="center">
+                      {row.table_name === 'institutional_policies' && <Button size="small" onClick={() => setPoliciesDialogOpen(true)}>Consultar</Button>}
+                      <Button size="small" variant="outlined" endIcon={<MoreVertRoundedIcon />} disabled={Boolean(exporting)} onClick={(event) => { setSelected(row); setAnchor(event.currentTarget); }} sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}>Exportar tabla</Button>
+                    </Stack></TableCell>
                   </TableRow>
                   {hasSubdatasets && isExpanded && (
                     <TableRow sx={{ bgcolor: '#f8fafc' }}>
@@ -754,6 +759,7 @@ export function DatabaseCatalogPanel({ enqueueSnackbar }) {
         <MenuItem onClick={() => exportTable('csv')}>Descargar CSV</MenuItem>
         <MenuItem onClick={() => exportTable('json')}>Descargar JSON</MenuItem>
       </Menu>
+      <InstitutionalPoliciesDialog open={policiesDialogOpen} onClose={() => setPoliciesDialogOpen(false)} />
     </Paper>
   );
 }

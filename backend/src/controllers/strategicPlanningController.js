@@ -403,6 +403,33 @@ const applyInstitutionalTemplate = wrap(async (req, res) => {
   ok(res, full, 'Plantilla institucional DIR-PE-FR-003 versión 5 aplicada.');
 });
 
+const createInstitutionalPolicyFields = wrap(async (req, res) => {
+  const fields = await sequelize.transaction(async (transaction) => {
+    const plan = await StrategicPlan.findByPk(req.params.planId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!plan) throw Object.assign(new Error('PED no encontrado.'), { statusCode: 404 });
+    const where = { strategic_plan_id: plan.id, configuration_version: plan.configuration_version };
+    let position = (await StrategicFieldDefinition.max('position', { where, transaction })) || 0;
+    const result = [];
+    for (const [key, label, role, data_type] of [
+      ['institutional_policy', 'Política institucional', 'policy', 'catalog'],
+      ['institutional_policy_lines', 'Líneas de acción', 'lines', 'catalog_multi']
+    ]) {
+      const existing = await StrategicFieldDefinition.findOne({ where: { ...where, key }, transaction });
+      if (existing && existing.validation_rules?.shared_catalog !== 'institutional_policies') {
+        throw Object.assign(new Error(`El código ${key} ya pertenece a otro campo.`), { statusCode: 409 });
+      }
+      const values = { ...where, key, label, data_type, required: req.body.required === true,
+        position: existing?.position || ++position, active: true, options: [],
+        validation_rules: { shared_catalog: 'institutional_policies', role, allow_free_text: true, policy_key: 'institutional_policy' } };
+      result.push(existing ? await existing.update({ active: true, required: values.required }, { transaction }) : await StrategicFieldDefinition.create(values, { transaction }));
+    }
+    await audit(req, 'field.create_policy_pair', 'strategic_plan', plan.id, null, fieldsToAudit(result), null, transaction);
+    return result;
+  });
+  res.status(201); ok(res, fields, 'Política y líneas de acción configuradas.');
+});
+const fieldsToAudit = (fields) => fields.map((field) => field.toJSON());
+
 const createFieldDefinition = wrap(async (req, res) => {
   const plan = await StrategicPlan.findByPk(req.params.planId);
   if (!plan) throw Object.assign(new Error('PED no encontrado.'), { statusCode: 404 });
@@ -4500,7 +4527,7 @@ const markAllStrategicNotificationsRead = wrap(async (req, res) => {
 module.exports = {
   bootstrap, listPlans, createPlan, updatePlan, deletePlan, createLevel, updateLevel, deleteLevel,
   createElement, updateElement, deleteElement, listStructure, upsertCatalog, updateCatalog, deleteCatalog,
-  applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, reorderFieldDefinitions, previewFieldSchema, confirmFieldSchema,
+  applyInstitutionalTemplate, createInstitutionalPolicyFields, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, reorderFieldDefinitions, previewFieldSchema, confirmFieldSchema,
   downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, searchMeetingParticipants, termDependencies, downloadTermDependencyTemplate,
   termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
   listActionPlans, getMyActionPlans, getActionPlan, createActionPlan, updateActionPlan, updateStage1Timeline, deleteActionPlan, bulkDeleteActionPlans, bulkCreateActionPlans, addActionItem, reviewExecutionActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem, replicateActionItem, searchActivitySuggestions,

@@ -34,3 +34,30 @@ test('does not invent relationships for future plans or include inactive guideli
   ]);
   assert.deepEqual(result.objectiveProjects['OE1 Objective'], []);
 });
+
+test('an explicit PED is read even when another PED is active', async () => {
+  const { StrategicPlan, StrategicLevel, StrategicElement } = require('../models');
+  const { readActionPlanStrategicCatalog } = require('./improvementStrategicCatalogService');
+  const original = [StrategicPlan.findOne, StrategicLevel.findAll, StrategicElement.findAll];
+  StrategicPlan.findOne = async ({ where }) => {
+    assert.equal(where.id, 'linked-ped');
+    assert.equal(where.status, undefined);
+    return { id: 'linked-ped', code: 'LINKED', configuration_version: 3 };
+  };
+  StrategicLevel.findAll = async ({ where }) => {
+    assert.equal(where.strategic_plan_id, 'linked-ped');
+    assert.equal(where.configuration_version, 3);
+    return levels;
+  };
+  StrategicElement.findAll = async ({ where }) => {
+    assert.equal(where.strategic_plan_id, 'linked-ped');
+    return [{ id: 'o', level_id: 'objectives', code: 'OE9', name: 'Linked objective' }];
+  };
+  try {
+    const catalog = await readActionPlanStrategicCatalog('linked-ped');
+    assert.equal(catalog.strategicSource.id, 'linked-ped');
+    assert.deepEqual(catalog.strategicObjectives, ['OE9 Linked objective']);
+  } finally {
+    [StrategicPlan.findOne, StrategicLevel.findAll, StrategicElement.findAll] = original;
+  }
+});

@@ -6,13 +6,14 @@ const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u03
 const matches = (option, value) => value && (normalize(option.label) === normalize(value)
   || normalize(option.name) === normalize(value) || (code(value) && option.code === code(value)));
 
-export default function StrategicObjectiveFields({ relations = [], objective, guideline, onObjectiveChange, onGuidelineChange }) {
+export default function StrategicObjectiveFields({ relations = [], objective, guideline, onObjectiveChange, onGuidelineChange, onRefresh }) {
   const selected = relations.find((item) => matches(item, objective)) || null;
   const lines = selected?.guidelines || [];
   const selectedLine = lines.find((item) => matches(item, guideline)) || null;
   return <>
     <Autocomplete
       options={relations}
+      onOpen={onRefresh}
       value={selected}
       getOptionLabel={(option) => option.label}
       isOptionEqualToValue={(option, value) => option.id === value.id}
@@ -23,6 +24,7 @@ export default function StrategicObjectiveFields({ relations = [], objective, gu
     />
     <Autocomplete
       options={lines}
+      onOpen={onRefresh}
       value={selectedLine}
       getOptionLabel={(option) => option.label}
       isOptionEqualToValue={(option, value) => option.id === value.id}

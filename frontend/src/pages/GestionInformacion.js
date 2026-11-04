@@ -1,3 +1,4 @@
+import institutionalPolicyService from '../services/institutionalPolicyService';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import InfraestructuraFisicaDashboard from '../components/infraestructura/InfraestructuraFisicaDashboard';
@@ -524,6 +525,7 @@ function CaracterizacionExportMenu({ onExportSummary, onExportRecords, disabled 
 }
 
 const BASES = [
+  { key: 'politicas_institucionales', label: 'Políticas institucionales', description: 'Catálogo institucional compartido de políticas y líneas de acción.' },
   { key: 'poblacional', label: 'Poblacional', description: 'Históricos de inscritos, admitidos, matriculados y graduados.' },
   { key: 'gestion_riesgo_ambiente', label: 'Gestión del Riesgo y Ambiente', description: 'Seguridad y salud en el trabajo, gestión ambiental y seguridad vial.' },
   { key: 'georreferencia', label: 'Georreferencia', description: 'Catálogo oficial DIVIPOLA para departamentos y municipios.' },
@@ -2658,12 +2660,13 @@ function GestionInformacion() {
       || explicitGiModules.includes('infraestructura_fisica.gestionar');
   }, [user?.role, explicitGiModules]);
   const visibleBaseKeys = useMemo(() => {
-    const keys = getVisibleBaseKeysForUser(user);
+    const keys = [...getVisibleBaseKeysForUser(user)];
+    if (canViewDatabaseData) keys.push('politicas_institucionales');
     if (user?.role === ROLES.PLANEACION_ESTRATEGICA && isPlaneacionGpInfoContext) {
       return keys.filter((key) => key !== 'gestion_procesos');
     }
     return keys;
-  }, [isPlaneacionGpInfoContext, user]);
+  }, [isPlaneacionGpInfoContext, user, canViewDatabaseData]);
   const visiblePoblacionalDashboardKeys = useMemo(() => getVisiblePoblacionalDashboardKeysForUser(user), [user]);
   const canAccessSecurityApplication = useMemo(() => canViewSecurityApplication(user), [user]);
   const canAccessOficinaJuridica = useMemo(() => canViewOficinaJuridica(user), [user]);
@@ -4561,7 +4564,9 @@ function GestionInformacion() {
       const effectiveSubcategoria = baseSeleccionada === 'georreferencia'
         ? GEOREFERENCIA_CANONICAL_SUBBASE
         : subcategoria;
-      const response = isPesvParkingSelection
+      const response = baseSeleccionada === 'politicas_institucionales'
+        ? await institutionalPolicyService.template()
+        : isPesvParkingSelection
         ? await gestionInformacionService.downloadPesvParqueaderosTemplate()
         : await gestionInformacionService.downloadTemplate(
           backendCategoria,
@@ -4601,7 +4606,9 @@ function GestionInformacion() {
       const effectiveSubcategoria = baseSeleccionada === 'georreferencia'
         ? GEOREFERENCIA_CANONICAL_SUBBASE
         : subcategoria;
-      const response = isPesvParkingSelection
+      const response = baseSeleccionada === 'politicas_institucionales'
+        ? await institutionalPolicyService.import(importFile)
+        : isPesvParkingSelection
         ? await gestionInformacionService.importPesvParqueaderos(importFile, true)
         : await gestionInformacionService.importExcel(
           backendCategoria,
@@ -8168,7 +8175,7 @@ const renderCategoryBars = (items = [], options = {}) => {
           </Typography>
         </Paper>
       )}
-      {visibleBases.filter((base) => base.key !== 'registros_calificados_acreditacion').map((base) => (
+      {visibleBases.filter((base) => !['registros_calificados_acreditacion', 'politicas_institucionales'].includes(base.key)).map((base) => (
         <Paper
           key={base.key}
           elevation={0}
@@ -17804,14 +17811,16 @@ const renderCategoryBars = (items = [], options = {}) => {
                 </Paper>
               </Box>
 
+              {baseSeleccionada !== 'politicas_institucionales' && (
               <Box sx={{ mt: 1.5, p: 1.4, borderRadius: 2, border: '1px dashed #fecaca', bgcolor: '#fffafa' }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between">
                   <Box><Typography sx={{ color: '#991b1b', fontWeight: 900, fontSize: 13 }}>Acción administrativa</Typography><Typography variant="caption" sx={{ color: '#7f1d1d' }}>Elimina los datos asociados al destino seleccionado y requiere confirmación.</Typography></Box>
-                  <Button color="error" variant="outlined" startIcon={<DeleteSweepIcon />} onClick={handleClearDataset} disabled={!isSelectionValid || clearing} sx={{ whiteSpace: 'nowrap', fontWeight: 800 }}>
+                  <Button color="error" variant="outlined" startIcon={<DeleteSweepIcon />} onClick={handleClearDataset} disabled={!isSelectionValid || clearing || baseSeleccionada === 'politicas_institucionales'} sx={{ whiteSpace: 'nowrap', fontWeight: 800 }}>
                     {clearing ? 'Eliminando...' : 'Eliminar datos de esta tabla'}
                   </Button>
                 </Stack>
               </Box>
+              )}
               {baseSeleccionada === 'poblacional' && subBaseSeleccionada === 'Matriculados' && (
                 <Alert severity="info" sx={{ mt: 2.2, borderRadius: 2 }}>
                   La subbase <strong>Matriculados</strong> solo acepta la plantilla institucional de 20 columnas (AÑO, NOMBRE IES, TIPO DOCUMENTO, NUMERO DOCUMENTO, CODIGO ESTUDIANTE, SEXO BIOLOGICO, PRIMER NOMBRE, SEGUNDO NOMBRE, PRIMER APELLIDO, SEGUNDO APELLIDO, PROGRAMA, FECHA NACIMIENTO, EDAD, PAIS, DEPARTAMENTO NACIMIENTO, MUNICIPIO NACIMIENTO, ES_REINTEGRO_ESTD_ANTES_DE1998, ESTRATO, PERIODO, FACULTAD). Puedes cargar Excel o CSV; si falta una columna o el orden no coincide, el archivo sera rechazado.

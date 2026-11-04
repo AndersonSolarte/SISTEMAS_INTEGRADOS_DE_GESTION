@@ -16,8 +16,6 @@ const evidenceUpload = multer({
 });
 router.use(auth, controller.ensureAccess);
 router.get('/catalogs', controller.getCatalogs);
-router.post('/politicas', controller.saveInstitutionalPolicy);
-router.post('/politicas/importar', controller.ensureManager, tariffUpload.single('file'), controller.importInstitutionalPolicies);
 router.get('/ejecucion/badge', controller.executionBadge);
 router.get('/tarifas/plantilla', controller.downloadTariffTemplate);
 router.post('/tarifas/importar', controller.ensureManager, tariffUpload.single('file'), controller.importTariffs);

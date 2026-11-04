@@ -89,37 +89,22 @@ test('genera la plantilla institucional diligenciada sin perder sus fórmulas', 
   assert.match(reopened.getWorksheet('PM').getCell('P11').value.formula, /^SUMIF\(PERSONAL!/);
 });
 
-test('agrupa únicamente las líneas de acción de cada política institucional', async () => {
-  const originalFindAll = Documento.findAll;
-  const originalPolicyFindAll = InstitutionalPolicy.findAll;
-  InstitutionalPolicy.findAll = async () => [];
-  Documento.findAll = async () => [{
-    titulo: 'Política de calidad',
-    estado: 'vigente',
-    datos_originales: {
-      hoja: 'POLÍTICAS',
-      linea_de_accion: 'Primera línea; Segunda línea'
-    }
-  }, {
-    titulo: 'Política de inclusión',
-    estado: 'vigente',
-    datos_originales: {
-      hoja: 'POLÍTICAS',
-      linea_de_accion_1: 'Línea inclusiva'
-    }
-  }];
+test('Mejoramiento reads exactly the shared policy table, without document fallback', async () => {
+  const originalPolicies = InstitutionalPolicy.findAll;
+  const originalDocuments = Documento.findAll;
+  Documento.findAll = async () => { assert.fail('Document lists must not replace the shared catalog'); };
+  InstitutionalPolicy.findAll = async () => [
+    { id: 1, name: 'Policy A', action_lines: ['A1', 'A2'] },
+    { id: 2, name: 'Policy B', action_lines: ['B1'] }
+  ];
   try {
-    assert.deepEqual(await readInstitutionalPolicies(), [{
-      name: 'Política de calidad',
-      actionLines: ['Primera línea', 'Segunda línea']
-    }, {
-      name: 'Política de inclusión',
-      actionLines: ['Línea inclusiva']
-    }]);
-  } finally {
-    Documento.findAll = originalFindAll;
-    InstitutionalPolicy.findAll = originalPolicyFindAll;
-  }
+    assert.deepEqual(await readInstitutionalPolicies(), [
+      { id: 1, name: 'Policy A', actionLines: ['A1', 'A2'] },
+      { id: 2, name: 'Policy B', actionLines: ['B1'] }
+    ]);
+    InstitutionalPolicy.findAll = async () => [];
+    assert.deepEqual(await readInstitutionalPolicies(), []);
+  } finally { InstitutionalPolicy.findAll = originalPolicies; Documento.findAll = originalDocuments; }
 });
 
 test('el director asignado puede formular objetivos, actividades y presupuesto sin alterar los insumos de autoevaluación', () => {

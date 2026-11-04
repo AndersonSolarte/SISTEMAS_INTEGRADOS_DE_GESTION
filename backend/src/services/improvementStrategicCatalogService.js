@@ -26,9 +26,11 @@ const buildStrategicCatalog = (plan, levels, elements) => {
     strategicSource: { id: plan.id, code: plan.code } };
 };
 
-const readActionPlanStrategicCatalog = async () => {
+const readActionPlanStrategicCatalog = async (planId = null) => {
   const { StrategicPlan, StrategicLevel, StrategicElement } = require('../models');
-  const plan = await StrategicPlan.findOne({ where: { status: 'active', deleted_at: null }, order: [['starts_on', 'DESC']] });
+  const plan = planId
+    ? await StrategicPlan.findOne({ where: { id: planId, deleted_at: null } })
+    : await StrategicPlan.findOne({ where: { status: 'active', deleted_at: null }, order: [['starts_on', 'DESC']] });
   if (!plan) return { strategicObjectives: [], objectiveProjects: {}, strategicRelations: [] };
   const [levels, elements] = await Promise.all([
     StrategicLevel.findAll({ where: { strategic_plan_id: plan.id, configuration_version: plan.configuration_version, active: true }, order: [['position', 'ASC']] }),

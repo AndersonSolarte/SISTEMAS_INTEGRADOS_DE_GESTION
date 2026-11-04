@@ -3,13 +3,7 @@ import api from './api';
 const unwrap = (response) => response.data?.data;
 
 const planMejoramientoService = {
-  catalogs: () => api.get('/autoevaluacion/planes-mejoramiento/catalogs').then(unwrap),
-  savePolicy: (name, actionLines = []) => api.post('/autoevaluacion/planes-mejoramiento/politicas', { name, actionLines }).then(unwrap),
-  importPolicies: (file) => {
-    const data = new FormData();
-    data.append('file', file);
-    return api.post('/autoevaluacion/planes-mejoramiento/politicas/importar', data).then(unwrap);
-  },
+  catalogs: (params = {}) => api.get('/autoevaluacion/planes-mejoramiento/catalogs', { params }).then(unwrap),
   downloadTariffTemplate: () => api.get('/autoevaluacion/planes-mejoramiento/tarifas/plantilla', { responseType: 'blob' }),
   importTariffs: (file, vigencia) => {
     const formData = new FormData();

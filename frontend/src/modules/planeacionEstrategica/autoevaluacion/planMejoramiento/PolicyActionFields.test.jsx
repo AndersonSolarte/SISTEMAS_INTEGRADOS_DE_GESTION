@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import PolicyActionFields from './PolicyActionFields';
 
@@ -13,24 +13,18 @@ const policies = [
   { name: 'Política de Bienestar', actionLines: ['Atención integral'] }
 ];
 
-function Form({ refresh = jest.fn(), initialPolicy = [], create }) {
+function Form({ refresh = jest.fn(), initialPolicy = [] }) {
   const [policy, setPolicy] = useState(initialPolicy);
   const [lines, setLines] = useState([]);
-  const [catalog, setCatalog] = useState(policies);
-  const add = async (name, actionLines) => {
-    const result = create ? await create(name, actionLines) : { name, actionLines };
-    setCatalog((previous) => [...previous.filter((item) => item.name !== name), result]);
-    return result;
-  };
-  return <><PolicyActionFields policies={catalog} selectedPolicies={policy} selectedLines={lines}
-    onPolicyChange={(value) => { setPolicy(value); setLines([]); }} onLinesChange={setLines} onRefresh={refresh} onCreate={add} />
+  return <><PolicyActionFields policies={policies} selectedPolicies={policy} selectedLines={lines}
+    onPolicyChange={(value) => { setPolicy(value); setLines([]); }} onLinesChange={setLines} onRefresh={refresh} />
     <output data-testid="selection">{lines.join(',')}</output></>;
 }
 
 test('selecting one policy immediately opens only its action lines beside it', async () => {
   const refresh = jest.fn(async () => {});
   render(<Form refresh={refresh} />);
-  expect(screen.getByRole('combobox', { name: 'Líneas de acción' })).toBeDisabled();
+  expect(screen.getByRole('combobox', { name: 'Líneas de acción' })).toBeEnabled();
   fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Política institucional' }));
   fireEvent.click(await screen.findByRole('option', { name: 'Política de Calidad' }));
   expect(screen.getByRole('combobox', { name: 'Líneas de acción' })).toBeEnabled();
@@ -49,38 +43,33 @@ test('a previously saved policy shows its own lines when reopened', async () => 
   expect(await screen.findByRole('option', { name: 'Atención integral' })).toBeInTheDocument();
   expect(screen.queryByRole('option', { name: 'Mejora continua' })).not.toBeInTheDocument();
 });
+test('shows every catalog line when no policy is selected and picks up new data', async () => {
+  const props = { selectedPolicies: [], selectedLines: [], onPolicyChange: jest.fn(), onLinesChange: jest.fn() };
+  const { rerender } = render(<PolicyActionFields {...props} policies={policies} />);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Líneas de acción' }));
+  expect(await screen.findByRole('option', { name: 'Mejora continua' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Atención integral' })).toBeInTheDocument();
+  rerender(<PolicyActionFields {...props} policies={[...policies, { name: 'Nueva', actionLines: ['Nueva línea institucional'] }]} />);
+  expect(await screen.findByRole('option', { name: 'Nueva línea institucional' })).toBeInTheDocument();
+});
 
-test('a saved policy absent from Excel remains available for adding its own lines', async () => {
-  render(<Form initialPolicy={['POLÍTICA CURRICULAR']} />);
-  expect(screen.getByRole('combobox', { name: 'Política institucional' })).toHaveValue('POLÍTICA CURRICULAR');
+test('policies missing from the central catalog cannot be created from Improvement', async () => {
+  render(<Form />);
+  const input = screen.getByRole('combobox', { name: 'Política institucional' });
+  await act(async () => {
+    fireEvent.change(input, { target: { value: 'Nueva política' } });
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', keyCode: 13 });
+  });
   expect(screen.getByRole('combobox', { name: 'Líneas de acción' })).toBeEnabled();
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Política institucional' }));
-  expect(await screen.findByRole('option', { name: 'Política de Calidad' })).toBeInTheDocument();
-  expect(screen.queryByRole('option', { name: 'POLÍTICA CURRICULAR' })).not.toBeInTheDocument();
+  expect(screen.getByTestId('selection')).toHaveTextContent('');
 });
 
-test('typing a new policy and line saves both to the reusable catalog', async () => {
-  const create = jest.fn(async (name, actionLines) => ({ name, actionLines }));
-  render(<Form create={create} />);
-  const policy = screen.getByRole('combobox', { name: 'Política institucional' });
-  fireEvent.change(policy, { target: { value: 'Política Curricular' } });
-  fireEvent.keyDown(policy, { key: 'Enter', code: 'Enter', keyCode: 13 });
-  await waitFor(() => expect(create).toHaveBeenCalledWith('Política Curricular', []));
-  const line = screen.getByRole('combobox', { name: 'Líneas de acción' });
-  await waitFor(() => expect(line).toBeEnabled());
-  fireEvent.change(line, { target: { value: 'Actualizar los currículos' } });
-  fireEvent.keyDown(line, { key: 'Enter', code: 'Enter', keyCode: 13 });
-  await waitFor(() => expect(create).toHaveBeenCalledWith('Política Curricular', ['Actualizar los currículos']));
-  await waitFor(() => expect(screen.getByTestId('selection')).toHaveTextContent('Actualizar los currículos'));
-});
-
-test('a failed catalog save shows the error and does not select an unsaved policy', async () => {
-  render(<Form create={async () => { throw new Error('Unavailable'); }} />);
-  const policy = screen.getByRole('combobox', { name: 'Política institucional' });
-  fireEvent.change(policy, { target: { value: 'Nueva política' } });
-  fireEvent.keyDown(policy, { key: 'Enter', code: 'Enter', keyCode: 13 });
-  expect(await screen.findByText('No fue posible crear la política.')).toBeInTheDocument();
-  expect(screen.getByRole('combobox', { name: 'Líneas de acción' })).toBeDisabled();
+test('new action lines cannot be created from Improvement', () => {
+  render(<Form initialPolicy={['Política de Bienestar']} />);
+  const input = screen.getByRole('combobox', { name: 'Líneas de acción' });
+  fireEvent.change(input, { target: { value: 'Nueva línea' } });
+  fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', keyCode: 13 });
+  expect(screen.getByTestId('selection')).toHaveTextContent('');
 });
 
 test('saved policy names in uppercase still resolve to their own catalog lines', async () => {

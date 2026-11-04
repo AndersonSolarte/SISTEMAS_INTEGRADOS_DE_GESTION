@@ -25,6 +25,7 @@ const {
 const quoteIdentifier = (value) => `"${String(value).replace(/"/g, '""')}"`;
 
 const MODULE_RULES = [
+  [/^institutional_policies$/, 'Políticas institucionales'],
   [/^autoevaluacion/, 'Autoevaluación'],
   [/^instrument_/, 'Formularios e instrumentos'],
   [/^plan_accion/, 'Plan de Acción'],
@@ -141,9 +142,12 @@ const getSystemTablesCatalog = async (req, res) => {
       });
     } catch (_) {}
 
+    const policyTable = rows.find((row) => row.table_name === 'institutional_policies');
+    if (policyTable) policyTable.estimated_rows = await require('../models/InstitutionalPolicy').count();
     const data = rows.map((row) => ({
       ...row,
       module: resolveModule(row.table_name),
+      display_name: row.table_name === 'institutional_policies' ? 'Políticas institucionales' : row.table_name,
       sensitive: isSensitiveTable(row.table_name),
       subdatasets: row.table_name === 'poblacional_contexto_externo_general' ? contextoExternoSubdatasets : undefined
     }));
@@ -165,6 +169,10 @@ const exportTableData = async (req, res) => {
     }
     if (!['csv', 'json', 'xlsx'].includes(format)) {
       return res.status(400).json({ success: false, message: 'Formato no permitido' });
+    }
+
+    if (tableName === 'institutional_policies') {
+      return require('./institutionalPolicyController').exportData({ query: { format } }, res);
     }
 
     const rawRows = await sequelize.query(`SELECT * FROM public.${quoteIdentifier(tableName)}`, { type: QueryTypes.SELECT });

@@ -47,3 +47,14 @@ test('rejects empty policy names and malformed or blank action lines', () => {
     assert.throws(() => preparePolicy(value), { status: 422 });
   }
 });
+
+test('reports all processed rows separately from distinct lines and repeated rows', () => {
+  const result = parsePolicyWorkbook(workbook([
+    ['Políticas', 'Líneas de Acción'], ['Política A', 'Línea 1'],
+    ['Política A', 'Línea 1'], ['Política A', 'Línea 2']
+  ]), { withSummary: true });
+  assert.equal(result.processedRows, 3);
+  assert.equal(result.uniqueLines, 2);
+  assert.equal(result.duplicateRows, 1);
+  assert.equal(result.policies.length, 1);
+});

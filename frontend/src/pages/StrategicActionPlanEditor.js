@@ -9,6 +9,7 @@ import {
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../context/AuthContext';
 import strategicPlanningService from '../services/strategicPlanningService';
+import InstitutionalPolicyActivityField from '../components/InstitutionalPolicyActivityField';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import RichTextEditor, { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
 import MeetingCalendarScheduler from '../components/meetingMinute/MeetingCalendarScheduler';
@@ -1453,6 +1454,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
   };
   const renderConfiguredField = (field) => {
+    if (field.validation_rules?.shared_catalog === 'institutional_policies') {
+      return <InstitutionalPolicyActivityField key={field.id} field={field} values={item.custom_values || {}}
+        onChange={(changes) => setItem((current) => ({ ...current, custom_values: { ...current.custom_values, ...changes } }))} />;
+    }
     // 1. Campo de Responsable: precargado automáticamente con el líder del Plan de Acción
     if (isResponsibleField(field)) {
       const currentRespVal = fieldValue(field) || defaultResponsibleText;

@@ -626,13 +626,20 @@ export default function StrategicPlanningPlatform({ onBack }) {
   };
 
   const saveField = async () => {
+    if (fieldForm.preset) {
+      setSaving(true);
+      try { await strategicPlanningService.createPolicyFields(plan.id, { required: fieldForm.required }); setOpenField(false); await load(); enqueueSnackbar('Política y líneas de acción listas.', { variant: 'success' }); }
+      catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudieron configurar los campos.', { variant: 'error' }); }
+      finally { setSaving(false); }
+      return;
+    }
     if (!fieldForm.key.trim() || !fieldForm.label.trim() || !fieldForm.data_type) return enqueueSnackbar('Complete nombre, código y tipo del campo.', { variant: 'warning' });
     const options = fieldOptions.map((item) => String(item || '').trim()).filter(Boolean);
     if (fieldForm.data_type === 'list' && !options.length) return enqueueSnackbar('Agregue al menos una opción para la lista desplegable.', { variant: 'warning' });
     if (fieldForm.data_type === 'list' && new Set(options.map((item) => item.toLocaleLowerCase('es'))).size !== options.length) return enqueueSnackbar('La lista contiene opciones repetidas. Revísela antes de guardar.', { variant: 'warning' });
     setSaving(true);
     try {
-      const payload = { key: fieldForm.key, label: fieldForm.label, data_type: fieldForm.data_type, required: fieldForm.required, options: fieldForm.data_type === 'list' ? options : [], formula: fieldForm.formula || null, validation_rules: fieldForm.catalog_type ? { catalog_type: fieldForm.catalog_type } : {} };
+      const payload = { key: fieldForm.key, label: fieldForm.label, data_type: fieldForm.data_type, required: fieldForm.required, options: fieldForm.data_type === 'list' ? options : [], formula: fieldForm.formula || null, validation_rules: { ...(fieldForm.validation_rules || {}), ...(fieldForm.catalog_type ? { catalog_type: fieldForm.catalog_type } : {}) } };
       if (fieldForm.id) await strategicPlanningService.updateField(plan.id, fieldForm.id, { ...payload, justification: 'Edición desde constructor de campos' });
       else await strategicPlanningService.createField(plan.id, payload);
       const wasEditing = Boolean(fieldForm.id); setOpenField(false); setFieldForm({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '', catalog_type: '', list_source: 'manual', selected_level_id: '', selected_element_ids: [] }); setFieldOptions([]); setFieldOptionDraft(''); await load();
@@ -644,7 +651,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const openFieldEditor = (field) => {
     const savedOptions = Array.isArray(field.options) ? field.options : (field.options ? [field.options] : []);
     const normalizedOptions = savedOptions.flatMap((option) => String(option).split(/\r?\n/)).map((option) => option.trim()).filter(Boolean);
-    setFieldForm({ id: field.id, key: field.key, label: field.label, data_type: field.data_type, required: field.required, options_text: normalizedOptions.join('\n'), formula: field.formula || '', catalog_type: field.validation_rules?.catalog_type || '', list_source: field.validation_rules?.list_source || 'manual', selected_level_id: field.validation_rules?.selected_level_id || '', selected_element_ids: field.validation_rules?.selected_element_ids || [] });
+    setFieldForm({ validation_rules: field.validation_rules, id: field.id, key: field.key, label: field.label, data_type: field.data_type, required: field.required, options_text: normalizedOptions.join('\n'), formula: field.formula || '', catalog_type: field.validation_rules?.catalog_type || '', list_source: field.validation_rules?.list_source || 'manual', selected_level_id: field.validation_rules?.selected_level_id || '', selected_element_ids: field.validation_rules?.selected_element_ids || [] });
     setFieldOptions(normalizedOptions);
     setFieldOptionDraft('');
     setOpenField(true);
@@ -1459,7 +1466,9 @@ export default function StrategicPlanningPlatform({ onBack }) {
                             />
                           </TableCell>
                           <TableCell>
-                            {isChoice ? (
+                            {field.validation_rules?.shared_catalog === 'institutional_policies' ? (
+                              <Tooltip title="Opciones actualizadas desde el Centro de Bases de Datos"><Chip size="small" color="primary" variant="outlined" label="Catálogo institucional dinámico" /></Tooltip>
+                            ) : isChoice ? (
                               <Stack direction="row" spacing={0.75} alignItems="center">
                                 <Chip
                                   size="small"
@@ -3183,26 +3192,28 @@ export default function StrategicPlanningPlatform({ onBack }) {
       </Dialog>
 
       {/* DIÁLOGO: AGREGAR O EDITAR CAMPO INDIVIDUAL */}
-      <Dialog open={openField} onClose={() => setOpenField(false)} fullWidth maxWidth="md">
+      <Dialog open={openField} onClose={() => setOpenField(false)} fullWidth maxWidth="md" PaperProps={{ sx: { borderRadius: 4 } }}>
         <DialogTitle fontWeight={900}>{fieldForm.id ? 'Editar columna del Plan de Acción' : 'Agregar nueva columna al Plan de Acción'}</DialogTitle>
-        <DialogContent>
-          <Grid container spacing={2} mt={0.25}>
-            <Grid item xs={12} md={7}>
-              <TextField required fullWidth label="Nombre visible para el usuario" placeholder="Ejemplo: Resultado esperado" value={fieldForm.label} onChange={(e) => { const label = e.target.value; setFieldForm({ ...fieldForm, label, key: fieldForm.id ? fieldForm.key : label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') }); }} />
-            </Grid>
-            <Grid item xs={12} md={5}>
+        <DialogContent sx={{ pt: '16px !important' }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
+            <Box>
+              <Autocomplete freeSolo options={['Políticas institucionales']} value={fieldForm.label}
+                onInputChange={(_, label) => setFieldForm((current) => ({ ...current, label, preset: !current.id && label === 'Políticas institucionales', key: current.id ? current.key : label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') }))}
+                renderInput={(params) => <TextField {...params} required label="Nombre del campo" placeholder="Seleccione o escriba un nombre" helperText="Use un campo predefinido o cree uno propio." />} />
+            </Box>
+            <Box sx={{ display: fieldForm.preset ? 'none' : undefined }}>
               <TextField required fullWidth disabled={Boolean(fieldForm.id)} label="Código interno" value={fieldForm.key} onChange={(e) => setFieldForm({ ...fieldForm, key: e.target.value })} helperText="Identificador en base de datos" />
-            </Grid>
-            <Grid item xs={12} md={7}>
-              <TextField required fullWidth select label="Tipo de dato" value={fieldForm.data_type} onChange={(e) => setFieldForm({ ...fieldForm, data_type: e.target.value, catalog_type: ['catalog', 'catalog_multi'].includes(e.target.value) ? fieldForm.catalog_type : '' })}>
+            </Box>
+            <Box sx={{ display: fieldForm.preset ? 'none' : undefined }}>
+              <TextField required fullWidth select disabled={Boolean(fieldForm.validation_rules?.shared_catalog)} label="Tipo de dato" value={fieldForm.data_type} onChange={(e) => setFieldForm({ ...fieldForm, data_type: e.target.value, catalog_type: ['catalog', 'catalog_multi'].includes(e.target.value) ? fieldForm.catalog_type : '' })}>
                 {Object.entries(FIELD_TYPE_LABEL).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
               </TextField>
-            </Grid>
-            <Grid item xs={12} md={5}>
+            </Box>
+            <Box>
               <FormControlLabel control={<Switch checked={fieldForm.required} onChange={(e) => setFieldForm({ ...fieldForm, required: e.target.checked })} />} label="Campo obligatorio" />
-            </Grid>
-            {fieldForm.data_type === 'list' && (
-              <Grid item xs={12}>
+            </Box>
+            {!fieldForm.preset && fieldForm.data_type === 'list' && (
+              <Box sx={{ gridColumn: '1 / -1' }}>
                 <Alert severity="info" sx={{ mb: 1.5 }}>Agregue solamente las opciones que el usuario podrá seleccionar en el formulario de actividades.</Alert>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="flex-start">
                   <TextField
@@ -3242,10 +3253,10 @@ export default function StrategicPlanningPlatform({ onBack }) {
                     </Stack>
                   ))}
                 </Paper>
-              </Grid>
+              </Box>
             )}
-            {['catalog', 'catalog_multi'].includes(fieldForm.data_type) && (
-              <Grid item xs={12}>
+            {!fieldForm.preset && !fieldForm.validation_rules?.shared_catalog && ['catalog', 'catalog_multi'].includes(fieldForm.data_type) && (
+              <Box sx={{ gridColumn: '1 / -1' }}>
                 <Alert severity="info" sx={{ mb: 1.25 }}>Seleccione una tabla institucional para alimentar las opciones disponibles.</Alert>
                 <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}>
                   <TextField fullWidth select label="Tabla que alimentará este campo" value={fieldForm.catalog_type} onChange={(e) => setFieldForm({ ...fieldForm, catalog_type: e.target.value })} helperText="Las opciones activas aparecerán automáticamente en el formulario.">
@@ -3254,22 +3265,26 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   </TextField>
                   <Button variant="outlined" startIcon={<Add />} onClick={() => setOpenCatalog(true)} sx={{ minWidth: 190, alignSelf: 'flex-start', minHeight: 56 }}>Crear nueva tabla</Button>
                 </Stack>
-              </Grid>
+              </Box>
             )}
             {fieldForm.data_type === 'formula' && (
-              <Grid item xs={12}>
+              <Box sx={{ gridColumn: '1 / -1' }}>
                 <TextField fullWidth label="Fórmula" placeholder="avance_periodo_1 + avance_periodo_2" value={fieldForm.formula} onChange={(e) => setFieldForm({ ...fieldForm, formula: e.target.value })} />
-              </Grid>
+              </Box>
             )}
-            <Grid item xs={12}>
-              <Alert severity="info">Este campo se aplicará a los Planes de Acción del PED seleccionado.</Alert>
-            </Grid>
-          </Grid>
+            <Box sx={{ gridColumn: '1 / -1' }}>
+              {fieldForm.preset ? <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: '#f5f8ff' }}>
+                <Typography fontWeight={800} mb={1}>Dos campos conectados al catálogo institucional</Typography>
+                <Stack direction="row" spacing={1} mb={2}><Chip label="Política institucional" color="primary" variant="outlined" /><Chip label="Líneas de acción" color="primary" variant="outlined" /></Stack>
+                <Typography variant="body2" color="text.secondary">Seleccione una política para filtrar sus líneas. Ambos campos permiten escribir valores propios en la actividad.</Typography>
+              </Paper> : <Typography variant="body2" color="text.secondary">Disponible en los Planes de Acción de este PED.</Typography>}
+            </Box>
+          </Box>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 3, gap: 1 }}>
           <Button onClick={() => setOpenField(false)}>Cancelar</Button>
-          <Button variant="contained" disabled={saving || !fieldForm.key.trim() || !fieldForm.label.trim() || (fieldForm.data_type === 'list' && !fieldOptions.some((option) => String(option).trim()))} onClick={saveField}>
-            {saving ? 'Guardando…' : fieldForm.id ? 'Actualizar campo' : 'Crear campo'}
+          <Button variant="contained" disabled={saving || !fieldForm.key.trim() || !fieldForm.label.trim() || (!fieldForm.preset && fieldForm.data_type === 'list' && !fieldOptions.some((option) => String(option).trim()))} onClick={saveField}>
+            {saving ? 'Guardando…' : fieldForm.id ? 'Actualizar campo' : fieldForm.preset ? 'Agregar los dos campos' : 'Crear campo'}
           </Button>
         </DialogActions>
       </Dialog>

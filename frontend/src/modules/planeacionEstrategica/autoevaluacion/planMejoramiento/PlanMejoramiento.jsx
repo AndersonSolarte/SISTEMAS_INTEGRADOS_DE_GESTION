@@ -284,8 +284,6 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [autoSaveNonce, setAutoSaveNonce] = useState(0);
   const [tariffYear, setTariffYear] = useState(currentYear);
   const [importingTariffs, setImportingTariffs] = useState(false);
-  const [importingPolicies, setImportingPolicies] = useState(false);
-  const policiesInputRef = useRef(null);
   const [evidenceFiles, setEvidenceFiles] = useState({});
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const evidenceUploadLock = useRef(false);
@@ -835,9 +833,13 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     document.addEventListener('visibilitychange', refresh);
     return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, [editor, loadPlans]);
+  const catalogRequestVersion = useRef(0);
+  const catalogActionPlanIds = [...new Set((editor?.objetivos || []).flatMap((objective) => objective.actividades || []).map((activity) => activity.linkedActionPlanId).filter(Boolean))].sort().join(',');
   const loadCatalogs = useCallback(async () => {
+    const version = ++catalogRequestVersion.current;
     try {
-      const data = await planMejoramientoService.catalogs();
+      const data = await planMejoramientoService.catalogs({ actionPlanIds: catalogActionPlanIds });
+      if (version !== catalogRequestVersion.current) return null;
       setCatalogs(data || {});
       if (data?.tariffVersion?.vigencia) setTariffYear(Number(data.tariffVersion.vigencia));
       return data;
@@ -845,8 +847,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar las listas automáticas de la plantilla', { variant: 'warning' });
       return null;
     }
-  }, [enqueueSnackbar]);
-  useEffect(() => { loadCatalogs(); }, [loadCatalogs]);
+  }, [enqueueSnackbar, catalogActionPlanIds]);
+  useEffect(() => {
+    loadCatalogs();
+    const refresh = () => { if (!document.hidden) loadCatalogs(); };
+    const interval = setInterval(refresh, 15000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { clearInterval(interval); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [loadCatalogs]);
 
   useEffect(() => {
     const program = editor?.programa;
@@ -1157,20 +1166,6 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     } finally {
       setImportingTariffs(false);
     }
-  };
-
-  const importPolicies = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    setImportingPolicies(true);
-    try {
-      const result = await planMejoramientoService.importPolicies(file);
-      setCatalogs((previous) => ({ ...previous, institutionalPolicies: result.policies }));
-      enqueueSnackbar(`Catálogo actualizado: ${result.importedPolicies} políticas y ${result.addedLines} líneas nuevas.`, { variant: 'success' });
-    } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar las políticas.', { variant: 'error' });
-    } finally { setImportingPolicies(false); }
   };
 
   const uploadEvidenceImmediately = async (objectiveIndex, activityIndex, selectedFiles) => {
@@ -2251,12 +2246,6 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
           {tab === 2 && (
             <Stack spacing={2.5}>
-              {!executionMode && <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <input ref={policiesInputRef} hidden type="file" accept=".xlsx" onChange={importPolicies} />
-                <Tooltip title="Añadir políticas y líneas desde un Excel con las columnas Políticas y Líneas de Acción">
-                  <span><Button size="small" startIcon={importingPolicies ? <CircularProgress size={16} /> : <UploadFileIcon />} disabled={importingPolicies} onClick={() => policiesInputRef.current?.click()} sx={{ textTransform: 'none' }}>Actualizar políticas</Button></span>
-                </Tooltip>
-              </Box>}
               {editor.objetivos.length === 0 && (
                 <Alert severity="info" sx={{ borderRadius: 2.5 }}>
                   Los aspectos trasladados están disponibles como insumos. Cree un objetivo y seleccione el factor, la característica y el aspecto que desea trabajar.
@@ -2417,7 +2406,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                           )}
                           <TextField select label="Alcance" value={activity.alcance} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'alcance', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}><MenuItem value="PROGRAMA">Programa</MenuItem><MenuItem value="INSTITUCIONAL">Institucional</MenuItem></TextField>
                           <StrategicObjectiveFields
-                            relations={catalogs.strategicRelations || []}
+                            relations={(activity.linkedActionPlanId ? catalogs.strategicByActionPlan?.[activity.linkedActionPlanId]?.strategicRelations : catalogs.strategicRelations) || []}
+                            onRefresh={loadCatalogs}
                             objective={activity.objetivoEstrategico}
                             guideline={activity.proyectoPdi}
                             onObjectiveChange={(objetivoEstrategico, proyectoPdi) => updateActivity(objectiveIndex, activityIndex, { objetivoEstrategico, proyectoPdi })}
@@ -2430,11 +2420,6 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                             onPolicyChange={(values) => updateActivityPolicies(objectiveIndex, activityIndex, values)}
                             onLinesChange={(values) => updateActivity(objectiveIndex, activityIndex, 'lineasAccionPolitica', values)}
                             onRefresh={loadCatalogs}
-                            onCreate={async (name, actionLines) => {
-                              const result = await planMejoramientoService.savePolicy(name, actionLines);
-                              setCatalogs((previous) => ({ ...previous, institutionalPolicies: result.policies }));
-                              return result.policy;
-                            }}
                           />
                           <Box sx={{ gridColumn: { md: 'span 12' }, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 1, pt: 1.5, borderTop: '1px dashed #cbd5e1' }}>
                             {activity.linkedActionItemId ? (

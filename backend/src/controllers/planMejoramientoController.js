@@ -1,10 +1,11 @@
+const { enrichImprovementPolicyDimensions } = require('../services/activityPolicyStatisticsService');
 const { clampProgress, periodCuts, latestResult, fulfillment, periodContribution, trackCurrentFollowup } = require('../services/improvementMonitoringRules');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const { Op } = require('sequelize');
-const { Autoevaluacion, AutoevaluacionPrograma, Documento, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission, StrategicPlan, StrategicTerm, StrategicCatalogItem, StrategicResponsibility, StrategicActionPlan, StrategicActionItem, StrategicMonitoringPeriod, StrategicMonitoringResult, StrategicEvidence, StrategicNotification } = require('../models');
+const { Autoevaluacion, AutoevaluacionPrograma, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission, StrategicPlan, StrategicTerm, StrategicCatalogItem, StrategicResponsibility, StrategicActionPlan, StrategicActionItem, StrategicMonitoringPeriod, StrategicMonitoringResult, StrategicEvidence, StrategicNotification } = require('../models');
 const planMejoramientoDriveService = require('../services/planMejoramientoDriveService');
 const { ensureActivityFoldersInDrive } = require('../services/strategicPlanningDriveService');
 const { syncSinglePlanOfficialWorkbook } = require('../services/actionPlanRepositoryDriveService');
@@ -1041,6 +1042,7 @@ const create = async (req, res) => {
   try {
     if (req.planExecutionOnly) return res.status(403).json({ success: false, message: 'El ejecutor no puede crear planes de mejoramiento' });
     const payload = normalizePayload(req.body);
+    payload.contenido = await enrichImprovementPolicyDimensions(payload.contenido);
     const plan = await PlanMejoramiento.create({ ...payload, creado_por: req.user?.id, actualizado_por: req.user?.id });
     return res.status(201).json({ success: true, data: serialize(plan) });
   } catch (error) {
@@ -1068,6 +1070,7 @@ const update = async (req, res) => {
         : mergeExecutionContent(plan.contenido || {}, payload.contenido || {}, new Set(delegated.filter((item) => ['asignada', 'en_ejecucion', 'devuelta'].includes(item.estado_flujo)).map((item) => String(item.actividad_uid))));
     }
     payload.contenido = trackCurrentFollowup(plan.contenido, payload.contenido);
+    payload.contenido = await enrichImprovementPolicyDimensions(payload.contenido, plan.contenido);
     await plan.update({ ...payload, actualizado_por: req.user?.id });
     await syncLinkedActionPlansTracking(plan, req);
     return res.json({ success: true, data: await serializeForRequest(plan, req, false) });
@@ -1093,6 +1096,13 @@ const syncLinkedActionPlansTracking = async (plan, req) => {
       const custom = { ...(actionItem.custom_values || {}) };
       const signatures = { ...(custom.pm_tracking_signatures || {}) };
       let changed = false;
+      if (act.policyStatistics) {
+        const policyFields = { institutional_policy: array(act.politicasInstitucionales)[0] || '',
+          institutional_policy_lines: array(act.lineasAccionPolitica), policy_statistics: act.policyStatistics };
+        if (Object.entries(policyFields).some(([key, value]) => JSON.stringify(custom[key]) !== JSON.stringify(value))) {
+          Object.assign(custom, policyFields); changed = true;
+        }
+      }
       const typeChanged = Boolean(act.tipoIndicador && act.tipoIndicador !== actionItem.indicator_type);
       const indicators = resolveActivityIndicators(act);
       const indicatorsChanged = Object.entries(indicators).some(([key, value]) => value !== (custom[key] || ''));
@@ -1900,78 +1910,7 @@ const priceValues = (sheet, start, end, group) => {
 
 const normalizeKey = (value) => text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 
-const catalogValues = (value) => {
-  if (Array.isArray(value)) return value.flatMap(catalogValues);
-  if (value && typeof value === 'object') return Object.values(value).flatMap(catalogValues);
-  return text(value).split(/\r?\n|;|\|/).map(text).filter(Boolean);
-};
-
-const readInstitutionalPolicies = async () => {
-  const catalog = await policyCatalog.listPolicies();
-  if (catalog.length) return catalog;
-  try {
-    const documents = await Documento.findAll({
-      attributes: ['titulo', 'estado', 'datos_originales'],
-      where: { estado: 'vigente' },
-      order: [['titulo', 'ASC']]
-    });
-    const policies = new Map();
-    documents.forEach((document) => {
-      if (normalizeKey(document.estado) !== 'vigente') return;
-      let source = document.datos_originales && typeof document.datos_originales === 'object' ? document.datos_originales : {};
-      if (!Object.keys(source).length && typeof document.datos_originales === 'string') {
-        try { source = JSON.parse(document.datos_originales); } catch (_) { source = {}; }
-      }
-      const sheet = normalizeKey(source.hoja);
-      const policyFields = Object.entries(source).filter(([key]) => {
-        const normalized = normalizeKey(key);
-        return normalized === 'politica' || normalized === 'politica_institucional' || normalized === 'nombre_politica';
-      });
-      const isPolicyDocument = sheet === 'politicas' || policyFields.length > 0;
-      if (!isPolicyDocument) return;
-
-      const name = text(policyFields[0]?.[1] || document.titulo);
-      if (!name) return;
-      const actionLines = Object.entries(source)
-        .filter(([key]) => {
-          const normalized = normalizeKey(key);
-          return normalized.includes('linea') && normalized.includes('accion');
-        })
-        .flatMap(([, value]) => catalogValues(value));
-      const current = policies.get(name) || new Set();
-      actionLines.forEach((line) => current.add(line));
-      policies.set(name, current);
-    });
-    return Array.from(policies.entries()).map(([name, actionLines]) => ({
-      name,
-      actionLines: Array.from(actionLines).sort((a, b) => a.localeCompare(b, 'es'))
-    }));
-  } catch (_) {
-    return [];
-  }
-};
-const importInstitutionalPolicies = async (req, res) => {
-  try {
-    if (!req.file?.buffer) return res.status(422).json({ success: false, message: 'Seleccione un archivo Excel de políticas.' });
-    const policies = policyCatalog.parsePolicyWorkbook(req.file.buffer);
-    const summary = await policyCatalog.importPolicies(policies, { source: req.file.originalname, userId: req.user?.id });
-    return res.json({ success: true, data: { ...summary, policies: await policyCatalog.listPolicies() } });
-  } catch (error) {
-    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'No fue posible actualizar el catálogo de políticas.' });
-  }
-};
-const saveInstitutionalPolicy = async (req, res) => {
-  if (req.planCollaboratorOnly) return res.status(403).json({ success: false, message: 'No tiene permiso para modificar el catálogo de políticas.' });
-  try {
-    const policy = policyCatalog.preparePolicy(req.body);
-    await policyCatalog.importPolicies([policy], { source: 'Registro desde Plan de Mejoramiento', userId: req.user?.id });
-    const policies = await policyCatalog.listPolicies();
-    const saved = policies.find((item) => policyCatalog.preparePolicy(item).normalized_key === policy.normalized_key);
-    return res.json({ success: true, data: { policy: saved, policies } });
-  } catch (error) {
-    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'No fue posible guardar la política y sus líneas.' });
-  }
-};
+const readInstitutionalPolicies = () => policyCatalog.listPolicies();
 const tariffCategories = new Set(['personal', 'activos', 'publicidad', 'papeleria', 'espacios', 'diversos']);
 const parseTariffWorkbook = (workbook) => {
   const sheet = workbook.getWorksheet('TARIFAS') || workbook.worksheets[0];
@@ -2077,7 +2016,19 @@ const getCatalogs = async (req, res) => {
   try {
     if (!catalogsPromise) catalogsPromise = readCatalogs().catch((error) => { catalogsPromise = null; throw error; });
     const [catalogs, institutionalPolicies, strategicCatalog] = await Promise.all([catalogsPromise, readInstitutionalPolicies(), readActionPlanStrategicCatalog()]);
-    return res.json({ success: true, data: { ...catalogs, ...strategicCatalog, institutionalPolicies } });
+    const actionPlanIds = [...new Set(String(req.query?.actionPlanIds || '').split(',').filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))].slice(0, 100);
+    const actionPlans = actionPlanIds.length ? await StrategicActionPlan.findAll({
+      where: { id: { [Op.in]: actionPlanIds }, deleted_at: null }, attributes: ['id'],
+      include: [{ model: StrategicTerm, as: 'term', attributes: ['strategic_plan_id'], required: true }]
+    }) : [];
+    const byPed = new Map();
+    const strategicByActionPlan = {};
+    for (const actionPlan of actionPlans) {
+      const pedId = actionPlan.term.strategic_plan_id;
+      if (!byPed.has(pedId)) byPed.set(pedId, await readActionPlanStrategicCatalog(pedId));
+      strategicByActionPlan[actionPlan.id] = byPed.get(pedId);
+    }
+    return res.json({ success: true, data: { ...catalogs, ...strategicCatalog, institutionalPolicies, strategicByActionPlan } });
   } catch (error) {
     return res.status(500).json({ success: false, message: `No fue posible leer los catálogos de la plantilla: ${error.message}` });
   }
@@ -2762,4 +2713,4 @@ const importPlanExcel = async (req, res) => {
 };
 
 module.exports = {
-  saveInstitutionalPolicy, importInstitutionalPolicies, reconcileLinkedActivities, readActivityEvidence, getActionPlanCandidates, linkActivityToActionPlan, unlinkActivityFromActionPlan, syncLinkedActionPlansTracking, ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, syncDriveRepository, uploadActivityEvidence, exportExcel, downloadPlanTemplate, importPlanExcel, buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, planStateForAssignment };
+  reconcileLinkedActivities, readActivityEvidence, getActionPlanCandidates, linkActivityToActionPlan, unlinkActivityFromActionPlan, syncLinkedActionPlansTracking, ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, syncDriveRepository, uploadActivityEvidence, exportExcel, downloadPlanTemplate, importPlanExcel, buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, planStateForAssignment };
