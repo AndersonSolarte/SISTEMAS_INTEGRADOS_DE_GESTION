@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const policy = require('../config/saludConsentimiento.json');
+const SALUD_CONSENTIMIENTO_TRACE_TEXT = 'Aceptó la verificación de soportes del permiso de salud y el tratamiento de sus datos personales y sensibles para las finalidades informadas.';
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const policyHash = sha256(JSON.stringify(policy));
@@ -37,7 +38,7 @@ const buildSaludConsentimiento = ({ user, consent, request, now = new Date() }) 
 const buildSaludConsentimientoTrace = (record) => ({
   event: 'consentimiento_salud_aceptado', at: record.acceptedAt,
   actor: record.actor,
-  detail: { observacion: `Autorización expresa de Salud y Bienestar. Versión: ${record.policy.version}. SHA-256: ${record.evidenceHash}`, transactionId: record.transactionId, policyHash: record.policy.hash }
+  detail: { observacion: SALUD_CONSENTIMIENTO_TRACE_TEXT, transactionId: record.transactionId, policyHash: record.policy.hash }
 });
 
-module.exports = { getSaludConsentimientoPolicy, isSalidaSalud, validateSaludConsentimiento, buildSaludConsentimiento, buildSaludConsentimientoTrace };
+module.exports = { SALUD_CONSENTIMIENTO_TRACE_TEXT, getSaludConsentimientoPolicy, isSalidaSalud, validateSaludConsentimiento, buildSaludConsentimiento, buildSaludConsentimientoTrace };

@@ -38,7 +38,9 @@ test('evidencia conserva el texto y la identidad autenticada con hora del servid
   const trace = buildSaludConsentimientoTrace(record);
   assert.equal(trace.at, record.acceptedAt);
   assert.equal(trace.actor.userId, 7);
-  assert.ok(trace.detail.observacion.includes(evidenceHash));
+  assert.match(trace.detail.observacion, /Aceptó la verificación/);
+  assert.match(trace.detail.observacion, /datos personales y sensibles/);
+  assert.equal(trace.detail.observacion.includes(evidenceHash), false);
 });
 
 test('anexo PDF conserva todo el oficio y completa la aceptación en hora de Colombia', () => {
@@ -78,7 +80,7 @@ test('los PDF reales corto y oficio incluyen el texto y la evidencia de aceptaci
     const solicitud = {
       id: 123, consecutivo: `TEST-SALUD-${crypto.randomUUID()}`, created_at: record.acceptedAt,
       solicitante_snapshot: { nombre: record.actor.nombre, username: record.actor.documento },
-      jefe_snapshot: {}, trazabilidad: [buildSaludConsentimientoTrace(record)],
+      jefe_snapshot: {}, trazabilidad: [{ ...buildSaludConsentimientoTrace(record), detail: { observacion: `Autorización anterior. SHA-256: ${record.evidenceHash}` } }],
       datos_formulario: {
         tx_id: crypto.randomUUID(), consentimiento_salud: record,
         personal: { nombre: record.actor.nombre, documento: record.actor.documento },
@@ -90,6 +92,8 @@ test('los PDF reales corto y oficio incluyen el texto y la evidencia de aceptaci
     try {
       const pdf = await pdfParse(await fs.readFile(attachment.path));
       const text = pdf.text.replace(/\s+/g, ' ');
+      const beforeAnnex = text.slice(0, text.indexOf(policy.paragraphs[0]));
+      assert.equal(beforeAnnex.includes(record.evidenceHash), false, 'La trazabilidad anterior debe mostrar el texto de aceptación sin el hash');
       for (const paragraph of policy.paragraphs) assert.ok(text.includes(paragraph), `Falta texto del oficio en ${duracionTipo}`);
       for (const value of [policy.declaration, record.evidenceHash, record.transactionId, '10:23:45', record.actor.documento]) assert.ok(text.includes(value), value);
       assert.ok(pdf.numpages >= 2);

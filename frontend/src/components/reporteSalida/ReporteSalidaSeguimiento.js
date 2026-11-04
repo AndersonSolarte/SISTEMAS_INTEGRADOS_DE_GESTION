@@ -1240,7 +1240,10 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
           const dateStr = traceDate ? new Date(traceDate).toLocaleString('es-CO', { timeZone: 'America/Bogota' }) : '';
           const userStr = typeof t.actor === 'object' ? (t.actor?.nombre || t.actor?.correo || 'Sistema') : (t.actor || t.userId || 'Sistema');
           const eventLabel = t.event === 'consentimiento_salud_aceptado' ? 'Autorización de Salud y Bienestar aceptada' : t.event;
-          return `[${dateStr}] ${userStr}: ${eventLabel}${t.detail?.observacion ? ` - ${t.detail.observacion}` : ''}`;
+          const traceDetail = t.event === 'consentimiento_salud_aceptado'
+            ? 'Aceptó la verificación de soportes del permiso de salud y el tratamiento de sus datos personales y sensibles para las finalidades informadas.'
+            : t.detail?.observacion;
+          return `[${dateStr}] ${userStr}: ${eventLabel}${traceDetail ? ` - ${traceDetail}` : ''}`;
         }).join('\n');
       }
 

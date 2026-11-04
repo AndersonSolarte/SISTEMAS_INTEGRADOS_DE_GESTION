@@ -1,5 +1,6 @@
 const fs = require('fs');
 const { buildSaludConsentimientoPdfSection } = require('./saludConsentimientoPdf');
+const { SALUD_CONSENTIMIENTO_TRACE_TEXT } = require('./saludConsentimiento');
 const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -2290,6 +2291,7 @@ const buildPdfBuffer = async (solicitud) => {
           if (detail.observacion || t.observacion) detailStr = detail.observacion || t.observacion;
           if (detail.error || t.error) detailStr = `Error: ${detail.error || t.error}`;
           if (detail.justificacion || t.justificacion) detailStr = `Justificación: ${detail.justificacion || t.justificacion}`;
+          if (t.event === 'consentimiento_salud_aceptado') detailStr = SALUD_CONSENTIMIENTO_TRACE_TEXT;
 
           if (!detailStr) {
             if (t.event.includes('radicada')) detailStr = 'Se registró la solicitud en el sistema.';
