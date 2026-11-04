@@ -1236,9 +1236,11 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       let trazabilidadStr = '';
       if (Array.isArray(row.trazabilidad)) {
         trazabilidadStr = row.trazabilidad.map(t => {
-          const dateStr = t.timestamp ? new Date(t.timestamp).toLocaleString('es-CO') : '';
-          const userStr = t.actor || t.userId || 'Sistema';
-          return `[${dateStr}] ${userStr}: ${t.event}`;
+          const traceDate = t.at || t.timestamp;
+          const dateStr = traceDate ? new Date(traceDate).toLocaleString('es-CO', { timeZone: 'America/Bogota' }) : '';
+          const userStr = typeof t.actor === 'object' ? (t.actor?.nombre || t.actor?.correo || 'Sistema') : (t.actor || t.userId || 'Sistema');
+          const eventLabel = t.event === 'consentimiento_salud_aceptado' ? 'Autorización de Salud y Bienestar aceptada' : t.event;
+          return `[${dateStr}] ${userStr}: ${eventLabel}${t.detail?.observacion ? ` - ${t.detail.observacion}` : ''}`;
         }).join('\n');
       }
 

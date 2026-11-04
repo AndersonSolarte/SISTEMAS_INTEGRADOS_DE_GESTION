@@ -11,6 +11,7 @@ jest.mock('../../context/AuthContext', () => ({
 jest.mock('../../services/reporteSalidaService', () => ({
   __esModule: true,
   default: {
+    getConfig: jest.fn(() => Promise.resolve({ data: {} })),
     getCatalogoLaboral: jest.fn(() => Promise.resolve({ data: {} })),
     searchEstudiantesMatriculados: jest.fn(),
     uploadAdjunto: jest.fn(),
@@ -46,6 +47,7 @@ describe('adjunto del formulario de reporte de salida', () => {
   };
 
   beforeEach(() => {
+    reporteSalidaService.getConfig.mockResolvedValue({ data: {} });
     cronogramaMovilidadService.misActividadesAsignadas.mockResolvedValue({ actividades: [] });
     reporteSalidaService.getCatalogoLaboral.mockResolvedValue({ data: {} });
   });

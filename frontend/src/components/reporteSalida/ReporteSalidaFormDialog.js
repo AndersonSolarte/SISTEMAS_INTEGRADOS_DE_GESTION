@@ -56,6 +56,7 @@ import {
   DESPLAZAMIENTO_VIATICOS_QUESTION_VISIBLE
 } from '../../config/reporteSalida';
 import CategoriaTabs from './CategoriaTabs';
+import ConsentimientoSalud from './ConsentimientoSalud';
 import CamposDuracionSalida, { TimeAutocomplete } from './CamposDuracionSalida';
 import DuracionSelector from './DuracionSelector';
 import SolicitudViaticosFields, { ViaticosQuestion } from './SolicitudViaticosFields';
@@ -703,6 +704,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [showPropiasCargoWarning, setShowPropiasCargoWarning] = useState(false);
   const [activeCategory, setActiveCategory] = useState('salud');
   const [form, setForm] = useState(INITIAL_FORM);
+  const [consentimientoSalud, setConsentimientoSalud] = useState(null);
   const [isSalidaMultiple, setIsSalidaMultiple] = useState(false);
   const [participantes, setParticipantes] = useState([]);
   const [jefe, setJefe] = useState(null);
@@ -1098,6 +1100,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     if (!session.shouldInitialize) return;
 
     setActiveCategory('salud');
+    setConsentimientoSalud(null);
     setForm({
       ...INITIAL_FORM,
       personal: {
@@ -1392,6 +1395,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const isPersonal = form.salida.tipo === 'diligencia_personal';
   const validationIssues = useMemo(() => {
     const issues = [];
+    if (category === 'salud' && !consentimientoSalud?.accepted) {
+      issues.push('Debe aceptar la autorización para verificación de información y tratamiento de datos personales de Salud y Bienestar.');
+    }
+    if (category === 'salud' && isSalidaMultiple) {
+      issues.push('Los permisos de Salud y Bienestar deben radicarse individualmente con autorización personal.');
+    }
     if (isSalidaMultiple) {
       if (participantes.length < 2) {
         issues.push('Debe agregar al menos un participante adicional a la salida grupal (mínimo 2 personas en total).');
@@ -1580,6 +1589,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     return issues;
   }, [
     category,
+    consentimientoSalud,
     isSalidaMultiple,
     participantes,
     form.laboral.cargo,
@@ -1846,6 +1856,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   };
 
   const submit = async () => {
+    if (validationIssues.length > 0) return;
     setSubmitting(true);
     setErrorMessage('');
     try {
@@ -1866,6 +1877,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           source: jefe.source || 'recurso_humano_administrativos'
         } : null),
         ...form,
+        consentimientoSalud: category === 'salud' ? consentimientoSalud : undefined,
         reposicion_minutos: Math.round(declaredReposicionMinutes),
         reposicion_minutos_por_dia: isDiligenciaPersonal ? Math.round(dailyJornadaMinutes) : null
       };
@@ -3346,6 +3358,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               </Box>
             )}
 
+            {category === 'salud' && <ConsentimientoSalud value={consentimientoSalud} onChange={setConsentimientoSalud} />}
             <Alert severity="info" icon={false} sx={{ mt: 1, '& .MuiAlert-message': { width: '100%' } }}>
               <Typography sx={{ fontSize: 13, color: '#0f172a', textAlign: 'center' }}>
                 Al registrar esta solicitud, autoriza el tratamiento de sus datos de acuerdo a la <a href="https://www.unicesmag.edu.co/documentos/DATOS-UNICESMAG.pdf" target="_blank" rel="noopener noreferrer" style={{ color: '#0284c7', fontWeight: 600, textDecoration: 'none' }}>Política de Tratamiento de Datos de UNICESMAG</a>.

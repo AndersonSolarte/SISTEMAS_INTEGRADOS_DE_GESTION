@@ -1,0 +1,20 @@
+{
+    "version":  "202610050-500-v1",
+    "source":  "202610050-500 AUTORIZACIÓN VERIFICACIÓN PERMISOS.docx",
+    "title":  "AUTORIZACIÓN PARA LA VERIFICACIÓN DE LA INFORMACIÓN SUMINISTRADA Y TRATAMIENTO DE DATOS PERSONALES",
+    "paragraphs":  [
+                       "Autorizo de manera previa, expresa e informada a la UNIVERSIDAD CESMAG para que, directamente o a través de las personas o dependencias autorizadas, verifique la autenticidad, veracidad y correspondencia de la información y los documentos que presento para sustentar esta solicitud de permiso.",
+                       "En desarrollo de esta autorización, la Universidad podrá acudir directamente a las entidades, instituciones o profesionales que hayan expedido los documentos o prestado los servicios invocados como justificación, con el fin de corroborar la efectiva ocurrencia de los hechos informados, la prestación del servicio, las fechas, los horarios de atención, las horas de ingreso y salida y el tiempo de permanencia, según corresponda, así como solicitar la confirmación de la autenticidad y contenido de los soportes presentados.",
+                       "Cuando estas verificaciones impliquen el tratamiento de datos personales sensibles, particularmente relacionados con la salud, autorizo expresamente su tratamiento para las finalidades señaladas, limitado a la información estrictamente necesaria para comprobar los hechos que sustentan la solicitud. Esta autorización no comprende el acceso, consulta o divulgación de mi historia clínica, diagnósticos, antecedentes, evolución clínica ni detalles del tratamiento que no sean necesarios para dicha verificación.",
+                       "La información obtenida será utilizada exclusivamente para verificar los hechos que fundamentan la solicitud, gestionar el permiso y, cuando haya lugar, adelantar las actuaciones administrativas o laborales correspondientes, bajo criterios de necesidad, confidencialidad, seguridad y acceso restringido.",
+                       "Declaro que la información y los documentos suministrados corresponden a la realidad y que he sido informado(a) sobre la finalidad del tratamiento de mis datos personales, mis derechos como titular y el carácter facultativo de la autorización para el tratamiento de datos sensibles."
+                   ],
+    "declarationTitle":  "Manifestación expresa de autorización:",
+    "declaration":  "AUTORIZO el tratamiento de mis datos personales, incluidos los datos sensibles en los términos y para las finalidades anteriormente señaladas.",
+    "fields":  [
+                   "Nombre: __________________________________",
+                   "Documento de identidad: ___________________",
+                   "Firma: ___________________________________",
+                   "Fecha: ___________________________________"
+               ]
+}

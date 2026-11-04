@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { getSaludConsentimientoPolicy, isSalidaSalud, validateSaludConsentimiento, buildSaludConsentimiento, buildSaludConsentimientoTrace } = require('../services/saludConsentimiento');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
@@ -4203,6 +4204,12 @@ const radicarSolicitud = async (req, res) => {
     const salida = req.body.salida || {};
     const reposicion = req.body.reposicion || {};
 
+    const consentimientoError = validateSaludConsentimiento(salida, req.body.consentimientoSalud, isSalidaMultiple);
+    if (consentimientoError) return res.status(400).json({ success: false, message: consentimientoError });
+    const consentimientoSalud = isSalidaSalud(salida)
+      ? buildSaludConsentimiento({ user: req.user, consent: req.body.consentimientoSalud, request: req })
+      : null;
+
     if (isSalidaMultiple) {
       // Validate group payload
       const participantes = req.body.participantes || [];
@@ -4936,6 +4943,7 @@ const radicarSolicitud = async (req, res) => {
       jefe_snapshot: jefeSnapshot,
       datos_formulario: {
         tx_id: crypto.randomUUID(),
+        consentimiento_salud: consentimientoSalud,
         adjunto_path: !isSaludNoAdjuntoDeclarado && req.body.datos_formulario?.adjunto_path ? sanitizeText(req.body.datos_formulario.adjunto_path, 255) : null,
         adjunto_metadata: !isSaludNoAdjuntoDeclarado
           ? sanitizeAttachmentMetadata(req.body.datos_formulario?.adjunto_metadata)
@@ -5025,7 +5033,10 @@ const radicarSolicitud = async (req, res) => {
       reposicion_perfil_laboral: isDiligenciaPersonal ? reposicionLaboralProfile : {},
       reposicion_estado: reposicionEstado,
       aprobacion_jefe_token_hash: hashToken(token),
-      trazabilidad: [{ event: 'radicada', actor: buildSnapshot(req.user), at: now.toISOString() }]
+      trazabilidad: [
+        ...(consentimientoSalud ? [buildSaludConsentimientoTrace(consentimientoSalud)] : []),
+        { event: 'radicada', actor: buildSnapshot(req.user), at: now.toISOString() }
+      ]
     });
 
     await associateStoredSupportWithSolicitud(solicitud);
@@ -7580,7 +7591,7 @@ const editarSolicitudAdmin = async (req, res) => {
 const getFeatureConfig = async (req, res) => {
   try {
     const enabled = await getReporteSalidaFeatureState();
-    res.json({ success: true, data: { enabled, canToggle: isAdminUser(req.user) } });
+    res.json({ success: true, data: { enabled, canToggle: isAdminUser(req.user), consentimientoSalud: getSaludConsentimientoPolicy() } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'No se pudo consultar la configuracion del reporte de salida' });
   }
