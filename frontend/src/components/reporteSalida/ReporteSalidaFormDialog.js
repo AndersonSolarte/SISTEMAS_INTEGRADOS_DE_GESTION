@@ -3359,11 +3359,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
             )}
 
             {category === 'salud' && <ConsentimientoSalud value={consentimientoSalud} onChange={setConsentimientoSalud} />}
-            <Alert severity="info" icon={false} sx={{ mt: 1, '& .MuiAlert-message': { width: '100%' } }}>
+            {category !== 'salud' && <Alert severity="info" icon={false} sx={{ mt: 1, '& .MuiAlert-message': { width: '100%' } }}>
               <Typography sx={{ fontSize: 13, color: '#0f172a', textAlign: 'center' }}>
                 Al registrar esta solicitud, autoriza el tratamiento de sus datos de acuerdo a la <a href="https://www.unicesmag.edu.co/documentos/DATOS-UNICESMAG.pdf" target="_blank" rel="noopener noreferrer" style={{ color: '#0284c7', fontWeight: 600, textDecoration: 'none' }}>Política de Tratamiento de Datos de UNICESMAG</a>.
               </Typography>
-            </Alert>
+            </Alert>}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2, bgcolor: '#ffffff', borderTop: '1px solid #e2e8f0', gap: 1, flexWrap: 'wrap' }}>

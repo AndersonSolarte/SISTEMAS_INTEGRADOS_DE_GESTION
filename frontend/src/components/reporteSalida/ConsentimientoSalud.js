@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Typography } from '@mui/material';
+import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Link, Typography } from '@mui/material';
 import reporteSalidaService from '../../services/reporteSalidaService';
 
 export default function ConsentimientoSalud({ value, onChange }) {
@@ -24,26 +24,24 @@ export default function ConsentimientoSalud({ value, onChange }) {
 
   const accepted = Boolean(policy && value?.accepted && value.policyHash === policy.hash);
   return (
-    <Box sx={{ border: '1px solid', borderColor: accepted ? 'success.main' : 'error.main', borderRadius: 2, p: 2 }}>
-      <Typography sx={{ fontWeight: 800 }}>Autorización para permisos de Salud y Bienestar</Typography>
-      <Typography variant="body2" sx={{ mt: 1 }}>Lea la autorización completa para la verificación de la información suministrada y el tratamiento de datos personales, incluidos los datos sensibles.</Typography>
-      <Button onClick={() => setExpanded(true)} disabled={!policy} sx={{ my: 1 }}>Ver más: leer autorización completa</Button>
+    <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 1.5 }}>
       {loadError && <Alert severity="error">No se pudo cargar la autorización. <Button onClick={() => setAttempt((previous) => previous + 1)}>Reintentar</Button></Alert>}
       {!policy && !loadError && <Typography role="status">Cargando autorización…</Typography>}
       <FormControlLabel
-        control={<Checkbox required checked={accepted} disabled={!policy} color="primary" inputProps={{ 'aria-describedby': 'consentimiento-salud-requisito' }} onChange={(event) => onChange(event.target.checked ? { accepted: true, version: policy.version, policyHash: policy.hash, clientAcceptedAt: new Date().toISOString() } : null)} />}
-        label={policy?.declaration || 'AUTORIZO el tratamiento de mis datos personales, incluidos los datos sensibles en los términos y para las finalidades anteriormente señaladas.'}
+        sx={{ m: 0, alignItems: 'flex-start', '& .MuiFormControlLabel-label': { fontSize: 13, lineHeight: 1.6, pt: '5px' } }}
+        control={<Checkbox size="small" required checked={accepted} disabled={!policy} color="primary" sx={{ p: '5px', mr: 0.5 }} inputProps={{ 'aria-describedby': !accepted ? 'consentimiento-salud-requisito' : undefined }} onChange={(event) => onChange(event.target.checked ? { accepted: true, version: policy.version, policyHash: policy.hash, clientAcceptedAt: new Date().toISOString() } : null)} />}
+        label="Autorizo la verificación de soportes y el tratamiento de mis datos personales y sensibles."
       />
-      {!accepted && <Typography id="consentimiento-salud-requisito" role="alert" color="error" variant="body2">Falta aceptar esta autorización obligatoria para radicar el permiso de Salud y Bienestar.</Typography>}
-      {accepted && <Typography color="success.main" variant="body2">Autorización seleccionada. La fecha y hora de confirmación quedarán registradas al radicar la solicitud.</Typography>}
-      <Dialog open={expanded} onClose={() => setExpanded(false)} maxWidth="md" fullWidth aria-labelledby="salud-autorizacion-titulo">
-        <DialogTitle id="salud-autorizacion-titulo">{policy?.title}</DialogTitle>
-        <DialogContent dividers>
+      <Box sx={{ pl: '33px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1.5, rowGap: 0.5 }}>
+        <Button size="small" onClick={() => setExpanded(true)} disabled={!policy} sx={{ p: 0, minWidth: 0, fontSize: 12, fontWeight: 500, textTransform: 'none' }}>Leer autorización</Button>
+        <Link href="https://www.unicesmag.edu.co/documentos/DATOS-UNICESMAG.pdf" target="_blank" rel="noopener noreferrer" underline="hover" sx={{ fontSize: 12, color: 'text.secondary' }}>Política de tratamiento de datos</Link>
+      </Box>
+      {!accepted && <Typography id="consentimiento-salud-requisito" role="alert" color="error" sx={{ pl: '33px', mt: 0.5, fontSize: 12 }}>Debe aceptar la autorización para radicar.</Typography>}
+      <Dialog open={expanded} onClose={() => setExpanded(false)} maxWidth="sm" fullWidth aria-labelledby="salud-autorizacion-titulo">
+        <DialogTitle id="salud-autorizacion-titulo" sx={{ fontSize: 16, fontWeight: 600 }}>Autorización de Salud y Bienestar</DialogTitle>
+        <DialogContent dividers sx={{ '& p': { fontSize: 13, lineHeight: 1.75 } }}>
           {policy?.paragraphs.map((paragraph, index) => <Typography key={index} paragraph>{paragraph}</Typography>)}
-          <Typography paragraph sx={{ fontWeight: 700 }}>{policy?.declarationTitle}</Typography>
-          <Typography paragraph>☐ {policy?.declaration}</Typography>
-          {policy?.fields.map((field) => <Typography key={field} paragraph>{field}</Typography>)}
-          <Alert severity="info">Al radicar, el sistema registra la aceptación con su cuenta institucional, nombre, documento, fecha y hora de Colombia y un código de integridad.</Alert>
+          <Typography sx={{ mb: 0 }}>{policy?.declaration}</Typography>
         </DialogContent>
         <DialogActions><Button onClick={() => setExpanded(false)}>Cerrar</Button></DialogActions>
       </Dialog>
