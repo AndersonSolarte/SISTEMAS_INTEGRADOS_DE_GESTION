@@ -1610,28 +1610,29 @@ const linkActivityToActionPlan = async (req, res) => {
       console.warn('[Sync Official Workbook warning]:', err.message)
     );
 
-    // 1. Notificación por correo electrónico y campana a planeacionestrategica@unicesmag.edu.co y al perfil de planeación y efectividad
+    // 1. Notificación por correo electrónico y campana:
+    // REGLA ESTRICTA: Solo se notifica al usuario líder de Planeación y Efectividad (role: 'planeacion_efectividad')
+    // y al responsable del Plan de Acción. A ningún usuario administrador ni a nadie más.
     try {
-      const planningUsers = await User.findAll({
+      const planningEfectividadUsers = await User.findAll({
         where: {
-          [Op.or]: [
-            { role: 'planeacion_efectividad' },
-            { role: 'planeacion_estrategica' },
-            { dependencia: { [Op.iLike]: '%planeacion%' } }
-          ],
+          role: 'planeacion_efectividad',
           estado: 'activo'
         },
         attributes: ['id', 'email', 'nombre', 'role']
       });
 
-      const recipientEmails = new Set(['planeacionestrategica@unicesmag.edu.co']);
-      for (const u of planningUsers) {
-        if (u.email && u.email.includes('@')) {
+      const leaderEmail = (actionPlan.responsibleUser?.email || actionPlan.currentResponsibility?.responsibleUser?.email || '').trim().toLowerCase();
+      const leaderUserId = actionPlan.responsible_user_id || actionPlan.currentResponsibility?.responsible_user_id;
+
+      const recipientEmails = new Set();
+      for (const u of planningEfectividadUsers) {
+        if (u.email && u.email.includes('@') && u.role !== 'administrador') {
           recipientEmails.add(u.email.trim().toLowerCase());
         }
       }
-      if (actionPlan.responsibleUser?.email) {
-        recipientEmails.add(actionPlan.responsibleUser.email.trim().toLowerCase());
+      if (leaderEmail && leaderEmail.includes('@')) {
+        recipientEmails.add(leaderEmail);
       }
 
       const emailSubject = `[Plan de Mejoramiento] Nueva actividad articulada al Plan de Acción ${actionPlan.code} - ${plan.programa || ''}`;
@@ -1685,10 +1686,16 @@ const linkActivityToActionPlan = async (req, res) => {
         }).catch((emailErr) => console.warn(`[PM Email Notification warning to ${toEmail}]:`, emailErr.message));
       }
 
-      // 2. Notificaciones en campana para Planeación y Efectividad y los involucrados
-      const recipientUserIds = new Set(planningUsers.map((u) => u.id));
-      if (actionPlan.responsible_user_id) recipientUserIds.add(actionPlan.responsible_user_id);
-      if (req.user?.id) recipientUserIds.add(req.user.id);
+      // 2. Notificaciones en campana: estrictamente para Planeación y Efectividad y el responsable del Plan de Acción
+      const recipientUserIds = new Set();
+      for (const u of planningEfectividadUsers) {
+        if (u.role !== 'administrador') {
+          recipientUserIds.add(u.id);
+        }
+      }
+      if (leaderUserId) {
+        recipientUserIds.add(leaderUserId);
+      }
 
       const notifPromises = Array.from(recipientUserIds).map((uid) =>
         StrategicNotification.create({
