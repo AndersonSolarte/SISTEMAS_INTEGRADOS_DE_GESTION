@@ -6,9 +6,9 @@ const { buildSaludConsentimientoPdfSection } = require('./saludConsentimientoPdf
 
 const policy = getSaludConsentimientoPolicy();
 const consent = { accepted: true, version: policy.version, policyHash: policy.hash, clientAcceptedAt: '2099-01-01T00:00:00Z' };
-const buildEvidence = () => buildSaludConsentimiento({
+const buildEvidence = (withoutAttachment = false) => buildSaludConsentimiento({
   user: { id: 7, nombre: 'PERSONA DE PRUEBA', username: '123456', email: 'prueba@unicesmag.edu.co' },
-  consent, request: { ip: '127.0.0.1', get: () => 'test-agent' }, now: new Date('2026-11-04T15:23:45Z')
+  consent: { ...consent, withoutAttachment }, salida: { noCuentaAdjunto: withoutAttachment }, request: { ip: '127.0.0.1', get: () => 'test-agent' }, now: new Date('2026-11-04T15:23:45Z')
 });
 
 test('todas las modalidades de salud exigen aceptación expresa y la versión vigente', () => {
@@ -41,6 +41,19 @@ test('evidencia conserva el texto y la identidad autenticada con hora del servid
   assert.match(trace.detail.observacion, /Aceptó la verificación/);
   assert.match(trace.detail.observacion, /datos personales y sensibles/);
   assert.equal(trace.detail.observacion.includes(evidenceHash), false);
+});
+
+test('la aceptación sin adjuntos incluye el compromiso de entrega y se renueva al cambiar el soporte', () => {
+  const salida = { tipo: 'cita_eps', noCuentaAdjunto: true };
+  assert.ok(validateSaludConsentimiento(salida, consent));
+  assert.equal(validateSaludConsentimiento(salida, { ...consent, withoutAttachment: true }), null);
+  assert.ok(validateSaludConsentimiento({ ...salida, noCuentaAdjunto: false }, { ...consent, withoutAttachment: true }));
+  const record = buildEvidence(true);
+  assert.equal(record.withoutAttachment, true);
+  assert.match(record.noAttachmentDeclaration, /me comprometo a conservarlos/);
+  const text = JSON.stringify(buildSaludConsentimientoPdfSection({ datos_formulario: { consentimiento_salud: record } }));
+  assert.ok(text.includes(record.noAttachmentDeclaration));
+  assert.equal(buildEvidence().noAttachmentDeclaration, null);
 });
 
 test('anexo PDF conserva todo el oficio y completa la aceptación en hora de Colombia', () => {
@@ -76,7 +89,7 @@ test('los PDF reales corto y oficio incluyen el texto y la evidencia de aceptaci
   const { ensureReporteSalidaPdf } = require('./reporteSalidaPdfService');
   const pdfParse = require('pdf-parse');
   for (const duracionTipo of ['menos_media_jornada', '3_mas_dias']) {
-    const record = buildEvidence();
+    const record = buildEvidence(duracionTipo === '3_mas_dias');
     const solicitud = {
       id: 123, consecutivo: `TEST-SALUD-${crypto.randomUUID()}`, created_at: record.acceptedAt,
       solicitante_snapshot: { nombre: record.actor.nombre, username: record.actor.documento },
@@ -95,6 +108,7 @@ test('los PDF reales corto y oficio incluyen el texto y la evidencia de aceptaci
       const beforeAnnex = text.slice(0, text.indexOf(policy.paragraphs[0]));
       assert.equal(beforeAnnex.includes(record.evidenceHash), false, 'La trazabilidad anterior debe mostrar el texto de aceptación sin el hash');
       for (const paragraph of policy.paragraphs) assert.ok(text.includes(paragraph), `Falta texto del oficio en ${duracionTipo}`);
+      if (record.withoutAttachment) assert.ok(text.includes(record.noAttachmentDeclaration));
       for (const value of [policy.declaration, record.evidenceHash, record.transactionId, '10:23:45', record.actor.documento]) assert.ok(text.includes(value), value);
       assert.ok(pdf.numpages >= 2);
     } finally {

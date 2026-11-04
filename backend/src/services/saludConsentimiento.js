@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const policy = require('../config/saludConsentimiento.json');
 const SALUD_CONSENTIMIENTO_TRACE_TEXT = 'Aceptó la verificación de soportes del permiso de salud y el tratamiento de sus datos personales y sensibles para las finalidades informadas.';
+const SALUD_SIN_ADJUNTO_DECLARATION = 'Declaro que al momento de radicar esta solicitud no cuento con archivos adjuntos o soportes para cargar en el sistema. Entiendo que la Oficina de Gestion del Talento Humano y/o Seguridad y Salud en el Trabajo podran requerir en cualquier momento los soportes correspondientes; por tanto, me comprometo a conservarlos despues de la atencion o tramite y a suministrarlos oportunamente cuando sean solicitados.';
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const policyHash = sha256(JSON.stringify(policy));
@@ -15,10 +16,13 @@ const validateSaludConsentimiento = (salida, consent, isMultiple = false) => {
   if (consent.version !== policy.version || consent.policyHash !== policyHash) {
     return 'La autorización de Salud y Bienestar cambió. Abra nuevamente el formulario, lea el texto y acepte la versión vigente.';
   }
+  if ((salida.noCuentaAdjunto === true) !== (consent.withoutAttachment === true)) {
+    return 'Debe aceptar nuevamente la autorización y, si no cuenta con soportes, la declaración de entrega posterior.';
+  }
   return null;
 };
 
-const buildSaludConsentimiento = ({ user, consent, request, now = new Date() }) => {
+const buildSaludConsentimiento = ({ user, consent, request, salida = {}, now = new Date() }) => {
   // Identidad, texto, fecha y evidencia se generan en el servidor.
   const record = {
     accepted: true,
@@ -27,6 +31,8 @@ const buildSaludConsentimiento = ({ user, consent, request, now = new Date() }) 
     timeZone: 'America/Bogota',
     actor: { userId: user.id, nombre: user.nombre || '', documento: user.username || '', correo: user.email || '' },
     method: 'casilla expresa en sesión institucional autenticada',
+    withoutAttachment: salida.noCuentaAdjunto === true,
+    noAttachmentDeclaration: salida.noCuentaAdjunto === true ? SALUD_SIN_ADJUNTO_DECLARATION : null,
     clientAcceptedAt: typeof consent.clientAcceptedAt === 'string' ? consent.clientAcceptedAt.slice(0, 40) : null,
     ip: String(request.ip || '').slice(0, 100),
     userAgent: String(request.get?.('user-agent') || '').slice(0, 500),
@@ -41,4 +47,4 @@ const buildSaludConsentimientoTrace = (record) => ({
   detail: { observacion: SALUD_CONSENTIMIENTO_TRACE_TEXT, transactionId: record.transactionId, policyHash: record.policy.hash }
 });
 
-module.exports = { SALUD_CONSENTIMIENTO_TRACE_TEXT, getSaludConsentimientoPolicy, isSalidaSalud, validateSaludConsentimiento, buildSaludConsentimiento, buildSaludConsentimientoTrace };
+module.exports = { SALUD_CONSENTIMIENTO_TRACE_TEXT, SALUD_SIN_ADJUNTO_DECLARATION, getSaludConsentimientoPolicy, isSalidaSalud, validateSaludConsentimiento, buildSaludConsentimiento, buildSaludConsentimientoTrace };

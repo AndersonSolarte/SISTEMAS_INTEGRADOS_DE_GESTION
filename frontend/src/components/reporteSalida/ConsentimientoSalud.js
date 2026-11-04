@@ -8,7 +8,7 @@ const pendingConsentGlow = keyframes`
   50% { box-shadow: 0 0 0 6px rgba(211, 47, 47, 0.14), 0 0 12px rgba(211, 47, 47, 0.12); }
 `;
 
-export default function ConsentimientoSalud({ value, onChange }) {
+export default function ConsentimientoSalud({ value, onChange, withoutAttachment = false, noAttachmentDeclaration = '' }) {
   const [policy, setPolicy] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -25,10 +25,10 @@ export default function ConsentimientoSalud({ value, onChange }) {
   }, [attempt]);
 
   useEffect(() => {
-    if (value?.accepted && (!policy || value.policyHash !== policy.hash)) onChange(null);
-  }, [value, policy, onChange]);
+    if (value?.accepted && (!policy || value.policyHash !== policy.hash || Boolean(value.withoutAttachment) !== withoutAttachment)) onChange(null);
+  }, [value, policy, onChange, withoutAttachment]);
 
-  const accepted = Boolean(policy && value?.accepted && value.policyHash === policy.hash);
+  const accepted = Boolean(policy && value?.accepted && value.policyHash === policy.hash && Boolean(value.withoutAttachment) === withoutAttachment);
   return (
     <Box sx={{ border: '1px solid #dbe4ef', borderRadius: 2, bgcolor: '#fff', p: { xs: 1.5, sm: 2 }, boxShadow: '0 1px 3px rgba(15, 23, 42, 0.03)' }}>
       {loadError && <Alert severity="error">No se pudo cargar la autorización. <Button onClick={() => setAttempt((previous) => previous + 1)}>Reintentar</Button></Alert>}
@@ -47,9 +47,11 @@ export default function ConsentimientoSalud({ value, onChange }) {
             '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 3 }
           }}
           inputProps={{ 'aria-invalid': policy && !accepted ? true : undefined, 'aria-describedby': !accepted ? 'consentimiento-salud-requisito' : undefined }}
-          onChange={(event) => onChange(event.target.checked ? { accepted: true, version: policy.version, policyHash: policy.hash, clientAcceptedAt: new Date().toISOString() } : null)}
+          onChange={(event) => onChange(event.target.checked ? { accepted: true, version: policy.version, policyHash: policy.hash, withoutAttachment, clientAcceptedAt: new Date().toISOString() } : null)}
         />}
-        label="Autorizo la verificación de soportes y el tratamiento de mis datos personales y sensibles."
+        label={withoutAttachment
+          ? 'Declaro que no cuento con soportes, me comprometo a entregarlos cuando sean requeridos y autorizo su verificación y el tratamiento de mis datos personales y sensibles.'
+          : 'Autorizo la verificación de soportes y el tratamiento de mis datos personales y sensibles.'}
       />
       <Box sx={{ pl: '38px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1.5, rowGap: 0.5 }}>
         <Button size="small" onClick={() => setExpanded(true)} disabled={!policy} sx={{ p: 0, minWidth: 0, fontSize: 12, fontWeight: 500, textTransform: 'none' }}>Leer autorización</Button>
@@ -58,6 +60,7 @@ export default function ConsentimientoSalud({ value, onChange }) {
       <Dialog open={expanded} onClose={() => setExpanded(false)} maxWidth="sm" fullWidth aria-labelledby="salud-autorizacion-titulo">
         <DialogTitle id="salud-autorizacion-titulo" sx={{ fontSize: 16, fontWeight: 600 }}>Autorización de Salud y Bienestar</DialogTitle>
         <DialogContent dividers sx={{ '& p': { fontSize: 13, lineHeight: 1.75 } }}>
+          {withoutAttachment && <Typography paragraph>{noAttachmentDeclaration}</Typography>}
           {policy?.paragraphs.map((paragraph, index) => <Typography key={index} paragraph>{paragraph}</Typography>)}
           <Typography sx={{ mb: 0 }}>{policy?.declaration}</Typography>
         </DialogContent>

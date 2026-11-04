@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { getSaludConsentimientoPolicy, isSalidaSalud, validateSaludConsentimiento, buildSaludConsentimiento, buildSaludConsentimientoTrace } = require('../services/saludConsentimiento');
+const { SALUD_SIN_ADJUNTO_DECLARATION: DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD, getSaludConsentimientoPolicy, isSalidaSalud, validateSaludConsentimiento, buildSaludConsentimiento, buildSaludConsentimientoTrace } = require('../services/saludConsentimiento');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
@@ -34,7 +34,6 @@ const EVANGELIZACION_VICERRECTORIA_EMAIL = getDependencyEmail('Vicerrectoria par
 const FINANCIAL_VICERRECTOR_EMAIL = process.env.REPORTE_SALIDA_VICERRECTORIA_FINANCIERA_EMAIL || 'jcnandar@unicesmag.edu.co';
 const FINANCIAL_VICERRECTORIA_OFFICE_EMAIL = getDependencyEmail('Vicerrectoria Financiera y de Desarrollo Institucional') || 'viceadfin@unicesmag.edu.co';
 const INVESTIGATION_VICERRECTOR_EMAIL = process.env.REPORTE_SALIDA_VICERRECTORIA_INVESTIGACION_EMAIL || 'jajimenez@unicesmag.edu.co';
-const DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD = 'Declaro que al momento de radicar esta solicitud no cuento con archivos adjuntos o soportes para cargar en el sistema. Entiendo que la Oficina de Gestion del Talento Humano y/o Seguridad y Salud en el Trabajo podran requerir en cualquier momento los soportes correspondientes; por tanto, me comprometo a conservarlos despues de la atencion o tramite y a suministrarlos oportunamente cuando sean solicitados.';
 
 const featureDisabled = (res) =>
   res.status(403).json({ success: false, message: 'El formulario de reporte de salida aun no esta habilitado.' });
@@ -4207,7 +4206,7 @@ const radicarSolicitud = async (req, res) => {
     const consentimientoError = validateSaludConsentimiento(salida, req.body.consentimientoSalud, isSalidaMultiple);
     if (consentimientoError) return res.status(400).json({ success: false, message: consentimientoError });
     const consentimientoSalud = isSalidaSalud(salida)
-      ? buildSaludConsentimiento({ user: req.user, consent: req.body.consentimientoSalud, request: req })
+      ? buildSaludConsentimiento({ user: req.user, consent: req.body.consentimientoSalud, request: req, salida })
       : null;
 
     if (isSalidaMultiple) {
@@ -4655,7 +4654,7 @@ const radicarSolicitud = async (req, res) => {
     const selectedVicerrectoriaName = canonicalVicerrectoriaName(req.body.laboral?.vicerrectoria || req.user.vicerrectoria || '');
     const isSaludNoAdjuntoDeclarado = (salida.categoria || salida.category) === 'salud' && salida.noCuentaAdjunto === true;
     const declaracionSinAdjunto = isSaludNoAdjuntoDeclarado
-      ? sanitizeText(salida.declaracionSinAdjunto || DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD, 1200)
+      ? DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD
       : '';
     const isDocenteAcademicoRadicando =
       isDocenteCargo(req.body.laboral?.cargo || req.user.cargo || '') &&

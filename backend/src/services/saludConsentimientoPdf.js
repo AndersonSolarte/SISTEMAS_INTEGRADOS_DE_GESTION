@@ -12,6 +12,10 @@ const buildSaludConsentimientoPdfSection = (solicitud) => {
   return [
     { text: policy.title, bold: true, fontSize: 11, pageBreak: 'before', margin: [0, 0, 0, 12] },
     ...policy.paragraphs.map((text) => ({ text, fontSize: 10, alignment: 'justify', margin: [0, 0, 0, 10] })),
+    ...(record.withoutAttachment && record.noAttachmentDeclaration ? [
+      { text: 'Declaración de soportes pendientes aceptada', bold: true, fontSize: 10, margin: [0, 4, 0, 8] },
+      { text: record.noAttachmentDeclaration, fontSize: 10, alignment: 'justify', margin: [0, 0, 0, 10] }
+    ] : []),
     {
       unbreakable: true,
       stack: [

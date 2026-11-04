@@ -19,6 +19,8 @@ import {
   ListSubheader,
   IconButton,
   Checkbox,
+  Radio,
+  RadioGroup,
   FormControlLabel,
   CircularProgress,
   Switch,
@@ -810,6 +812,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   }, [subtype, open]);
 
   const setAdjuntoFromFile = (file) => {
+    setConsentimientoSalud(null);
     if (!file) {
       setAdjuntoFile(null);
       setAdjuntoError('');
@@ -1393,9 +1396,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   }, [reposicionHasAnyValue, reposicionMinutes, reposicionPlanComplete, form.reposicion.fecha, form.reposicion.fechaFin, form.reposicion.horaInicio, form.reposicion.horaFin]);
 
   const isPersonal = form.salida.tipo === 'diligencia_personal';
+  const canShowSaludConsentimiento = category === 'salud'
+    && hasCompletedSalidaTime && Boolean(adjuntoFile || noCuentaAdjuntoSalud);
   const validationIssues = useMemo(() => {
     const issues = [];
-    if (category === 'salud' && !consentimientoSalud?.accepted) {
+    if (canShowSaludConsentimiento && (!consentimientoSalud?.accepted || Boolean(consentimientoSalud.withoutAttachment) !== noCuentaAdjuntoSalud)) {
       issues.push('Debe aceptar la autorización para verificación de información y tratamiento de datos personales de Salud y Bienestar.');
     }
     if (category === 'salud' && isSalidaMultiple) {
@@ -1589,6 +1594,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     return issues;
   }, [
     category,
+    canShowSaludConsentimiento,
     consentimientoSalud,
     isSalidaMultiple,
     participantes,
@@ -1952,7 +1958,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const shouldShowOptionalPersonalAttachment = !isSalidaMultiple
     && category === 'personales'
     && ['diligencia_personal', 'compensatorio'].includes(subtype);
-  const shouldShowAdjuntoSection = Boolean(subtype) && (category === 'propias_cargo' || category === 'salud' || REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype) || shouldShowOptionalPersonalAttachment);
+  const shouldShowAdjuntoSection = Boolean(subtype) && (category !== 'salud' || hasCompletedSalidaTime) && (category === 'propias_cargo' || category === 'salud' || REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype) || shouldShowOptionalPersonalAttachment);
   const isSaludAdjuntoSection = category === 'salud' && shouldShowAdjuntoSection;
   const hideAdjuntoUploadByDeclaration = isSaludAdjuntoSection && noCuentaAdjuntoSalud;
   const canPasteAdjunto = open && shouldShowAdjuntoSection && !hideAdjuntoUploadByDeclaration && !submitting;
@@ -2994,7 +3000,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 />
               )}
 
-              {subtype === 'urgencia_medica' && (
+              {subtype === 'urgencia_medica' && hasCompletedSalidaTime && (
                 <Alert severity="info" sx={{ mt: 2, borderRadius: 2 }}>
                   Para urgencias medicas debe adjuntar el soporte si cuenta con el documento. Si aun no lo tiene, marque la opcion "No cuento con archivos adjuntos en este momento" y conserve los soportes para entregarlos cuando sean requeridos.
                 </Alert>
@@ -3020,33 +3026,19 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
               {Boolean(subtype) && isSaludAdjuntoSection && (
                 <Box sx={{ mt: 1.5 }}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={noCuentaAdjuntoSalud}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setNoCuentaAdjuntoSalud(checked);
-                          if (checked) {
-                            setAdjuntoFile(null);
-                            setAdjuntoError('');
-                          }
-                        }}
-                        color="primary"
-                      />
+                  <Typography id="salud-soporte-label" sx={{ fontSize: 13, fontWeight: 600 }}>Soporte de la solicitud</Typography>
+                  <RadioGroup row aria-labelledby="salud-soporte-label" value={noCuentaAdjuntoSalud ? 'sin_soporte' : 'adjuntar'} onChange={(e) => {
+                    const withoutAttachment = e.target.value === 'sin_soporte';
+                    setNoCuentaAdjuntoSalud(withoutAttachment);
+                    setConsentimientoSalud(null);
+                    if (withoutAttachment) {
+                      setAdjuntoFile(null);
+                      setAdjuntoError('');
                     }
-                    label={
-                      <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#1e3a8a', textAlign: 'left' }}>
-                        No cuento con archivos adjuntos en este momento
-                      </Typography>
-                    }
-                    sx={{ mb: noCuentaAdjuntoSalud ? 1 : 0, display: 'flex', alignItems: 'center', textAlign: 'left' }}
-                  />
-                  {noCuentaAdjuntoSalud && (
-                    <Alert severity="info" sx={{ borderRadius: 2, border: '1px solid #93c5fd', bgcolor: '#eff6ff', color: '#1e3a8a' }}>
-                      {DECLARACION_SIN_ADJUNTO_SALUD}
-                    </Alert>
-                  )}
+                  }} sx={{ '& .MuiFormControlLabel-label': { fontSize: 13 } }}>
+                    <FormControlLabel value="adjuntar" control={<Radio size="small" />} label="Adjuntar soporte" />
+                    <FormControlLabel value="sin_soporte" control={<Radio size="small" />} label="No cuento con archivos adjuntos en este momento" />
+                  </RadioGroup>
                 </Box>
               )}
 
@@ -3358,7 +3350,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               </Box>
             )}
 
-            {category === 'salud' && <ConsentimientoSalud value={consentimientoSalud} onChange={setConsentimientoSalud} />}
+            {canShowSaludConsentimiento && <ConsentimientoSalud value={consentimientoSalud} onChange={setConsentimientoSalud} withoutAttachment={noCuentaAdjuntoSalud} noAttachmentDeclaration={DECLARACION_SIN_ADJUNTO_SALUD} />}
             <Alert severity="info" icon={false} sx={{ mt: 1, '& .MuiAlert-message': { width: '100%' } }}>
               <Typography sx={{ fontSize: 13, color: '#0f172a', textAlign: 'center' }}>
                 Al registrar esta solicitud, autoriza el tratamiento de sus datos de acuerdo a la <a href="https://www.unicesmag.edu.co/documentos/DATOS-UNICESMAG.pdf" target="_blank" rel="noopener noreferrer" style={{ color: '#0284c7', fontWeight: 600, textDecoration: 'none' }}>Política de Tratamiento de Datos de UNICESMAG</a>.
