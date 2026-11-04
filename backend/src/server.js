@@ -345,6 +345,7 @@ testConnection()
       await AutoevaluacionParticipante.sync();
       await AutoevaluacionPrograma.sync();
       await PlanMejoramiento.sync();
+      await require('./models/InstitutionalPolicy').sync();
       await PlanMejoramientoTarifaVersion.sync();
       await PlanMejoramientoAsignacion.sync();
       await PlanMejoramientoFlujoHistorial.sync();

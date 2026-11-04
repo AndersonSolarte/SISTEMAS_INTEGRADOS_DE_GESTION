@@ -1,0 +1,142 @@
+[
+  {
+    "name": "Política de Permanencia y Graduación Estudiantil",
+    "actionLines": [
+      "Seguimiento y Análisis",
+      "Comunicación y participación",
+      "Gestión de la información",
+      "Vinculacion de la permanencia con la academia e investigación",
+      "Programas y estrategias de apoyo integral",
+      "Vinculacion con el núcleo familiar",
+      "Gestión y asignación de recursos"
+    ]
+  },
+  {
+    "name": "Política de Bienestar Institucional",
+    "actionLines": [
+      "Acompañamiento integral para la permanencia y graduación exitosa",
+      "Desarrollo humano y salud",
+      "Espiritualidad franciscano-capuchina",
+      "Deporte",
+      "Arte y cultura",
+      "Cultura de paz y sana convivencia"
+    ]
+  },
+  {
+    "name": "Política de Egresados",
+    "actionLines": [
+      "Fomento al seguimiento a la actividad profesional del egresado UNICESMAG",
+      "Vinculación del egresado a la vida institucional",
+      "Formación a lo largo de la vida.",
+      "Estructuración de Canales de Comunicación"
+    ]
+  },
+  {
+    "name": "Política de Gestión del Talento Humano",
+    "actionLines": [
+      "Mejora continua.",
+      "Selección, vinculación y contratación",
+      "Inducción, entrenamiento en el cargo, reinducción y capacitación",
+      "Desarrollo integral y permanencia",
+      "Reconocimientos, distinciones y estímulos",
+      "Seguridad y salud en el Trabajo",
+      "Experiencia de vinculación laboral"
+    ]
+  },
+  {
+    "name": "Política de Adquisición, Mantenimiento, Renovación y Actualización de la Infraestructura Física",
+    "actionLines": [
+      "Adquisición",
+      "Mantenimiento",
+      "Renovacion",
+      "Actualización",
+      "Las estrategias son transversales para todas las líneas de acción"
+    ]
+  },
+  {
+    "name": "Política de Relaciones Interinstitucionales",
+    "actionLines": [
+      "Análisis sistemático e incorporación de tendencias",
+      "Actualización curricular",
+      "Relaciones interinstitucionales",
+      "Procesos de movilidad",
+      "Cooperación internacional",
+      "Estrategia transversal a todas las líneas de acción"
+    ]
+  },
+  {
+    "name": "Política de Adquisición, Mantenimiento, Renovación y Actualización de la Infraestructura Tecnológica",
+    "actionLines": [
+      "Proyección y seguimiento",
+      "Adquisición",
+      "Mantenimiento",
+      "Renovación",
+      "Estrategias transversal"
+    ]
+  },
+  {
+    "name": "Política de Proyección Social y Extensión",
+    "actionLines": [
+      "Vinculación e Interacción con la comunidad",
+      "Integración académica",
+      "Impacto y transformación social",
+      "Desarrollo de programas y proyectos sociales",
+      "Extensión Universitaria",
+      "Transferencia de conocimiento y tecnología",
+      "Voluntariado y responsabilidad social Universitaria"
+    ]
+  },
+  {
+    "name": "Política de Investigaciones",
+    "actionLines": [
+      "Investigación en sentido estricto",
+      "Investigación formativa",
+      "Innovación",
+      "Creación artística y cultural",
+      "Editorial",
+      "Articulación con la extensión",
+      "Articulación con egresados",
+      "Articulación con los posgrados",
+      "Ética de la investigación"
+    ]
+  },
+  {
+    "name": "Política de Regionalización",
+    "actionLines": [
+      "Cobertura académica regional.",
+      "Alianzas estratégicas.",
+      "Oferta académica integral y pertinente.",
+      "Redes de conocimiento e investigación.",
+      "Diversificar las Modalidades académicas"
+    ]
+  },
+  {
+    "name": "Política de Reducción de Consumo de Papel",
+    "actionLines": [
+      "Fomentar una cultura institucional de compromiso ambiental en la comunidad UNICESMAG, en coherencia con la identided franciscano-capuchina, los Objetivos de Desanollo Sostenible y los estándares intemacionales como el Ul GreenMetric, asimismo, integrando esta política de manera transversal con las demás políticas institucionales para fortalecer una gestón ambiental articulada y sostenible.",
+      "Realizar diagnósticos periódicos sobre el uso del papel y los procesos documentales institucionales, identificando oportunidades de mejora, simplificación y aulomatización en articulación con las áreas responsables, para reducir la dependencia del soporte físico.",
+      "Estandarizar la gestión de las comunicaciones intemas y extemas, promoviendo su digitalización bajo criterios de eficiencia, coherencia, trazabilidad y reducción del uso de papel.",
+      "Fortalecer la gestión integral de documentos físicos, electrónicos y digitales, asegurando su administración conforme al marco normativo vigente y avanzando en la transición hacia formatos digitales legalmente válidos.",
+      "Promover el uso estratégico y eciente de las plataformas y heramientas digitales institucionales, tanto licenciadas como de acceso abierto, que contnbuyan a la reducción del consumo de papel, optimicen los procesos académicos y administativos, y fortalezcan la cultura digital universitaria."
+    ]
+  },
+  {
+    "name": "Política de Seguridad de la Información",
+    "actionLines": [
+      "Fomentar una cultura de seguridad de la información.",
+      "Gestión y asignación de recursos.",
+      "Protección de la información (lntegridad, Disponibilidad y Confidencialidad).",
+      "Prevención de incidentes o eventos de ciberseguridad.",
+      "Cumplimiento Normativo."
+    ]
+  },
+  {
+    "name": "Política de Seguridad del Paciente",
+    "actionLines": [
+      "Cumplimiento normativo y fortalecimiento institucional para la seguridad del paciente",
+      "Promoción de una cultura de seguridad del paciente y fortalecimiento de las competencias del talento humano",
+      "Gestión integral de riesgos, incidentes y eventos adversos en la atención en salud",
+      "Procesos seguros de atención en salud acordes con el alcance de los servicios habilitados"
+    ]
+  }
+]

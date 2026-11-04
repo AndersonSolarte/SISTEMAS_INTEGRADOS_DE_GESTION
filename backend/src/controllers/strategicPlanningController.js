@@ -2514,6 +2514,14 @@ const saveMonitoring = wrap(async (req, res) => {
   const period = await StrategicMonitoringPeriod.findByPk(req.params.periodId);
   if (!item || !period) throw Object.assign(new Error('Actividad o periodo no encontrado.'), { statusCode: 404 });
   const result = await upsertMonitoring({ req, actionItem: item, periodId: period.id, payload: req.body });
+  const linkedPlans = item.custom_values?.pm_plan_id
+    ? [await PlanMejoramiento.findByPk(item.custom_values.pm_plan_id)]
+    : await PlanMejoramiento.findAll();
+  for (const plan of linkedPlans.filter(Boolean)) {
+    if ((plan.contenido?.objetivos || []).some((o) => (o.actividades || []).some((a) => String(a.linkedActionItemId) === String(item.id)))) {
+      await require('./planMejoramientoController').reconcileLinkedActivities(plan);
+    }
+  }
   await refreshActionRepository(period.term_id, req, 'monitoring_updated');
   ok(res, result, 'Seguimiento guardado.');
 });
@@ -3609,9 +3617,9 @@ const uploadEvidence = wrap(async (req, res) => {
             const newSeg = {
               id: `seg-pa-${evidence.id}`,
               fecha: new Date().toISOString().slice(0, 10),
-              valorAlcanzado: act.meta || 1,
+              valorAlcanzado: Number(act.metaAlcanzada || 0),
               metaPlaneada: act.meta || 1,
-              porcentaje: 100,
+              porcentaje: Number(act.metaAlcanzada || 0),
               verificacion: 'pendiente',
               observaciones: `Evidencia radicada desde Plan de Acción (${item.code}): ${evidence.original_name}`,
               evidenciaUrl: fileUrl,
@@ -3632,6 +3640,11 @@ const uploadEvidence = wrap(async (req, res) => {
               evidencia: evidence.original_name,
               evidenceFolderUrl: folderUrl,
               evidenceFolderId: evidence.drive_folder_id || act.evidenceFolderId,
+              ultimaEvidencia: {
+                nombre: evidence.original_name, driveFileId: evidence.drive_file_id,
+                url: fileUrl, carpetaId: evidence.drive_folder_id, carpetaUrl: folderUrl,
+                cargadoAt: evidence.created_at || evidence.createdAt
+              },
               evidenceDriveStatus: 'synced',
               seguimientos: [...(act.seguimientos || []).filter((s) => s.id !== newSeg.id), newSeg]
             };

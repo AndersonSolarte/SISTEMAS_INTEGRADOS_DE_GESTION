@@ -545,6 +545,25 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   }, [open, load]);
 
   useEffect(() => {
+    if (!open || !planId || tab !== 'workflow' || saving || evalModalOpen) return undefined;
+    let disposed = false;
+    let pending = false;
+    const refresh = async () => {
+      if (document.hidden || pending) return;
+      pending = true;
+      try {
+        const response = await strategicPlanningService.getActionPlan(planId);
+        if (!disposed && response?.data) setDetail(response.data);
+      } catch { /* Keep the current data and retry on the next refresh. */ }
+      finally { pending = false; }
+    };
+    const timer = window.setInterval(refresh, 5000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { disposed = true; window.clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [open, planId, tab, saving, evalModalOpen]);
+
+  useEffect(() => {
     if (tab === 'export' && planId && !autoSyncedTabRef.current) {
       autoSyncedTabRef.current = true;
       setSyncingDriveExcel(true);

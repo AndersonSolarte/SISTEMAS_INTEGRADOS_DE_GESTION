@@ -16,6 +16,8 @@ const evidenceUpload = multer({
 });
 router.use(auth, controller.ensureAccess);
 router.get('/catalogs', controller.getCatalogs);
+router.post('/politicas', controller.saveInstitutionalPolicy);
+router.post('/politicas/importar', controller.ensureManager, tariffUpload.single('file'), controller.importInstitutionalPolicies);
 router.get('/ejecucion/badge', controller.executionBadge);
 router.get('/tarifas/plantilla', controller.downloadTariffTemplate);
 router.post('/tarifas/importar', controller.ensureManager, tariffUpload.single('file'), controller.importTariffs);
@@ -38,6 +40,8 @@ router.post('/:id/actividades/:uid/desvincular-plan-accion', controller.unlinkAc
 router.post('/:id/actividades/:uid/correcciones/:correctionId', controller.activityCorrectionAction);
 router.post('/:id/repositorio-drive/sincronizar', controller.syncDriveRepository);
 router.post('/:id/actividades/:uid/evidencias', evidenceUpload.single('file'), controller.uploadActivityEvidence);
+router.get('/:id/actividades/:uid/evidencias', controller.readActivityEvidence);
+router.get('/:id/actividades/:uid/evidencias/:fileId', controller.readActivityEvidence);
 router.post('/:id/evidencias', evidenceUpload.single('file'), controller.uploadEvidence);
 router.get('/:id/export', controller.exportExcel);
 router.get('/:id', controller.get);

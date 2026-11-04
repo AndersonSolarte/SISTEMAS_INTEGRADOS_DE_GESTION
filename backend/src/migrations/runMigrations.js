@@ -619,6 +619,8 @@ const runMigrations = async () => {
     await models.AutoevaluacionParticipante.sync();
     await models.AutoevaluacionPrograma.sync();
     await models.PlanMejoramiento.sync();
+    await models.InstitutionalPolicy.sync();
+    await require('../services/institutionalPolicyCatalogService').seedInstitutionalPolicies();
     await models.PlanMejoramientoTarifaVersion.sync();
     await models.PlanMejoramientoAsignacion.sync();
     await models.PlanMejoramientoFlujoHistorial.sync();

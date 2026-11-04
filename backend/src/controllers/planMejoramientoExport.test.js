@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const ExcelJS = require('exceljs');
 
-const { Documento, PlanMejoramientoAsignacion, PlanMejoramientoActividadAsignacion, UserModulePermission } = require('../models');
+const { InstitutionalPolicy, Documento, PlanMejoramientoAsignacion, PlanMejoramientoActividadAsignacion, UserModulePermission } = require('../models');
 const { buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, ensureAccess, planStateForAssignment } = require('./planMejoramientoController');
 
 const samplePlan = () => ({
@@ -91,6 +91,8 @@ test('genera la plantilla institucional diligenciada sin perder sus fórmulas', 
 
 test('agrupa únicamente las líneas de acción de cada política institucional', async () => {
   const originalFindAll = Documento.findAll;
+  const originalPolicyFindAll = InstitutionalPolicy.findAll;
+  InstitutionalPolicy.findAll = async () => [];
   Documento.findAll = async () => [{
     titulo: 'Política de calidad',
     estado: 'vigente',
@@ -116,6 +118,7 @@ test('agrupa únicamente las líneas de acción de cada política institucional'
     }]);
   } finally {
     Documento.findAll = originalFindAll;
+    InstitutionalPolicy.findAll = originalPolicyFindAll;
   }
 });
 

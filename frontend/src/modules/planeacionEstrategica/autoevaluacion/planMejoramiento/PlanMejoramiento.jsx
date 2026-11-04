@@ -1,3 +1,7 @@
+import ActivityIndicatorFields, { resolveActivityIndicators } from './ActivityIndicatorFields';
+import StrategicObjectiveFields from './StrategicObjectiveFields';
+import PolicyActionFields from './PolicyActionFields';
+import { uploadEvidenceBatch } from '../../../../utils/uploadEvidenceBatch';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, InputAdornment, LinearProgress, MenuItem, Paper, Radio, RadioGroup, Stack,
@@ -13,8 +17,8 @@ import {
   EditRounded as EditIcon,
   ExpandMoreRounded as ExpandMoreIcon,
   FactCheckRounded as CheckIcon,
-  FolderOpenRounded as FolderOpenIcon,
-  CloudSyncRounded as CloudSyncIcon,
+  VisibilityRounded as VisibilityIcon,
+  ContentCopyRounded as CopyIcon,
   CalendarMonthRounded as CalendarIcon,
   FlagRounded as ObjectiveIcon,
   LinkOffRounded as LinkOffIcon,
@@ -32,6 +36,7 @@ import { useSnackbar } from 'notistack';
 import * as XLSX from 'xlsx';
 import planMejoramientoService from '../../../../services/planMejoramientoService';
 import gestionInformacionService from '../../../../services/gestionInformacionService';
+import { canApplyTrackingRefresh } from './trackingRefreshGuard';
 
 const actionTypeForScore = (score) => Number(String(score ?? '').replace(',', '.')) >= 4 ? 'Fortalecimiento' : 'Mejoramiento';
 const PROCESSES = ['DIRECCIONAMIENTO ESTRATÉGICO', 'DOCENCIA', 'INVESTIGACIÓN', 'EXTENSIÓN', 'BIENESTAR', 'GESTIÓN ADMINISTRATIVA', 'ASEGURAMIENTO DE LA CALIDAD'];
@@ -49,7 +54,7 @@ const currentYear = new Date().getFullYear();
 const makeLocalId = () => window.crypto?.randomUUID?.() || `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const emptyActivity = () => ({
   uid: makeLocalId(),
-  nombre: '', descripcion: '', indicador: '', meta: '', fechaInicio: '', fechaFin: '', recursos: '',
+  nombre: '', descripcion: '', indicador: '', tipoIndicador: 'Resultado', meta: '', fechaInicio: '', fechaFin: '', recursos: '',
   procesoResponsable: '', responsableId: null, responsableNombre: '', responsableDocumento: '', responsableEmail: '',
   responsableDependencia: '', responsableVicerrectoria: '', cargoResponsable: '', alcance: 'PROGRAMA', ejeEstrategico: '', objetivoEstrategico: '',
   proyectoPdi: '', politicasInstitucionales: [], lineasAccionPolitica: [],
@@ -108,25 +113,9 @@ const driveRepositorySignature = (plan) => JSON.stringify((plan?.objetivos || []
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const withCurrent = (options = [], current = '') => current && !options.includes(current) ? [current, ...options] : options;
 const asStringArray = (value) => Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
-const withCurrentMany = (options = [], current = []) => Array.from(new Set([...(options || []), ...asStringArray(current)]));
 const percent = (activity) => {
-  const rawStr = String(activity?.metaAlcanzada ?? '').replace(',', '.').replace('%', '').trim();
-  const rawVal = Number(rawStr);
-  const goal = Number(activity?.meta ?? 0);
-  if (!Number.isFinite(rawVal) || rawVal <= 0) return 0;
-  // Compatibilidad hacia atrás: si digitaban decimales como 0.5 cuando la meta era 1
-  if (rawVal <= 1 && rawVal > 0 && goal === 1) {
-    return Math.round(rawVal * 100);
-  }
-  // Si la meta es 1 o 100, el avance se interpreta como porcentaje directo de 0 a 100
-  if (goal === 1 || goal === 100 || goal <= 0) {
-    return Math.min(100, Math.max(0, Math.round(rawVal)));
-  }
-  // Si rawVal es mayor que la meta pero está dentro de 100, probablemente fue ingresado como porcentaje
-  if (rawVal > goal && rawVal <= 100) {
-    return Math.min(100, Math.round(rawVal));
-  }
-  return Math.min(100, Math.max(0, Math.round((rawVal / goal) * 100)));
+  const value = Number(String(activity?.metaAlcanzada ?? '').replace(',', '.').replace('%', '').trim());
+  return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
 };
 const objectiveProgress = (objective) => {
   const activities = objective?.actividades || [];
@@ -284,6 +273,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const { enqueueSnackbar } = useSnackbar();
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [plansLoadError, setPlansLoadError] = useState('');
+  const plansRetryRef = useRef(0);
   const [catalogs, setCatalogs] = useState({});
   const [opportunities, setOpportunities] = useState([]);
   const [loadingOpportunities, setLoadingOpportunities] = useState(false);
@@ -293,7 +284,11 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [autoSaveNonce, setAutoSaveNonce] = useState(0);
   const [tariffYear, setTariffYear] = useState(currentYear);
   const [importingTariffs, setImportingTariffs] = useState(false);
+  const [importingPolicies, setImportingPolicies] = useState(false);
+  const policiesInputRef = useRef(null);
   const [evidenceFiles, setEvidenceFiles] = useState({});
+  const [uploadingEvidence, setUploadingEvidence] = useState(false);
+  const evidenceUploadLock = useRef(false);
   const [recordingFollowUp, setRecordingFollowUp] = useState('');
   const [driveSyncStatus, setDriveSyncStatus] = useState('idle');
   const [driveSyncMessage, setDriveSyncMessage] = useState('');
@@ -307,6 +302,78 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [associationObjectiveIndex, setAssociationObjectiveIndex] = useState('new');
   const [associationNewObjectiveText, setAssociationNewObjectiveText] = useState('');
   const [evidenceOpportunity, setEvidenceOpportunity] = useState(null);
+  const [evidencePreview, setEvidencePreview] = useState(null);
+  const [evidenceFilesList, setEvidenceFilesList] = useState([]);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceError, setEvidenceError] = useState('');
+  const [previewFile, setPreviewFile] = useState(null);
+  const evidenceRequest = useRef(0);
+  useEffect(() => () => { if (previewFile?.url) URL.revokeObjectURL(previewFile.url); }, [previewFile]);
+  const closeEvidencePreview = () => {
+    evidenceRequest.current += 1;
+    setEvidencePreview(null);
+    setPreviewFile(null);
+  };
+  const copyEvidenceUrl = async (url) => {
+    if (!url) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = url;
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        const focused = document.activeElement;
+        document.body.appendChild(input);
+        try {
+          input.select();
+          if (!document.execCommand('copy')) throw new Error('Clipboard unavailable');
+        } finally {
+          input.remove();
+          focused?.focus();
+        }
+      }
+      enqueueSnackbar('URL copiada', { variant: 'success' });
+    } catch {
+      enqueueSnackbar('No fue posible copiar. Seleccione la URL y cópiela manualmente.', { variant: 'warning' });
+    }
+  };
+  const openEvidencePreview = async (activity) => {
+    const request = ++evidenceRequest.current;
+    const context = { name: activity.nombre, uid: activity.uid, planId: editor.id };
+    setEvidencePreview(context);
+    setPreviewFile(null);
+    setEvidenceFilesList([]);
+    setEvidenceError('');
+    setEvidenceLoading(true);
+    try {
+      const files = await planMejoramientoService.listActivityEvidence(editor.id, activity.uid);
+      if (request === evidenceRequest.current) {
+        setEvidenceFilesList(files || []);
+        const first = files?.[0];
+        if (first) await viewEvidenceFile(first, context);
+      }
+    } catch {
+      if (request === evidenceRequest.current) setEvidenceError('No fue posible cargar las evidencias. Verifique la conexión del repositorio institucional.');
+    } finally {
+      if (request === evidenceRequest.current) setEvidenceLoading(false);
+    }
+  };
+  const viewEvidenceFile = async (file, context = evidencePreview) => {
+    const request = ++evidenceRequest.current;
+    setEvidenceLoading(true);
+    setEvidenceError('');
+    setPreviewFile(null);
+    try {
+      const response = await planMejoramientoService.readActivityEvidence(context.planId, context.uid, file.id);
+      if (request === evidenceRequest.current) setPreviewFile({ url: URL.createObjectURL(response.data), type: response.data.type, name: file.name, id: file.id });
+    } catch {
+      if (request === evidenceRequest.current) setEvidenceError('No fue posible abrir esta evidencia.');
+    } finally {
+      if (request === evidenceRequest.current) setEvidenceLoading(false);
+    }
+  };
   const [editor, setEditor] = useState(null);
   const [assignmentPlan, setAssignmentPlan] = useState(null);
   const [tab, setTab] = useState(0);
@@ -316,6 +383,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [expandedFollowUpActivity, setExpandedFollowUpActivity] = useState(null);
   const editorRef = useRef(null);
   const lastSavedSnapshotRef = useRef('');
+  const trackingRevisionRef = useRef(0);
   const saveInFlightRef = useRef(false);
   const queuedSaveRef = useRef(false);
   const tariffInputRef = useRef(null);
@@ -575,34 +643,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       );
     }
 
-    // 7. Tipo de indicador
-    if (key === 'indicator_type' || key === 'tipo_indicador' || key === 'tipoIndicador' || (dataType === 'list' && key.includes('tipo'))) {
-      const options = field.options?.length ? field.options : ['Resultado', 'Proceso', 'Documental', 'Estructura', 'Impacto', 'Gestión'];
-      const currentVal = linkFormData[key] || linkFormData.tipoIndicador || linkFormData.indicator_type || 'Resultado';
-      return (
-        <TextField
-          key={key}
-          select
-          label={`${label} ${isRequired ? '*' : ''}`}
-          value={currentVal}
-          onChange={(e) => {
-            const val = e.target.value;
-            setLinkFormData((prev) => ({
-              ...prev,
-              [key]: val,
-              tipoIndicador: val,
-              indicator_type: val,
-              tipo_indicador: val
-            }));
-          }}
-          sx={{ gridColumn: { xs: '1 / -1', md: 'span 4' } }}
-        >
-          {options.map((t) => (
-            <MenuItem key={t} value={t}>{t}</MenuItem>
-          ))}
-        </TextField>
-      );
-    }
+    // Three indicators are authored in the activity; do not ask for one type here.
+    if (['indicator_type', 'tipo_indicador', 'tipoIndicador'].includes(key)) return null;
 
     // 8. Fechas
     if (dataType === 'date' || key.includes('fecha') || key === 'starts_on' || key === 'ends_on') {
@@ -767,13 +809,32 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       }
 
       const storedPlans = await planMejoramientoService.list();
-      setPlans(Array.isArray(storedPlans) ? storedPlans : []);
+      if (!Array.isArray(storedPlans)) throw new Error('El servidor no devolvió la lista de planes. Intente cargarla nuevamente.');
+      setPlans(storedPlans);
+      setPlansLoadError('');
+      plansRetryRef.current = 0;
     }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar los planes', { variant: 'error' }); }
+    catch (error) { setPlansLoadError(error.response?.data?.message || error.message || 'No fue posible cargar los planes'); }
     finally { setLoading(false); }
   }, [enqueueSnackbar]);
 
   useEffect(() => { loadPlans(!executionMode); }, [loadPlans, executionMode]);
+  useEffect(() => {
+    if (loading || !plansLoadError || plansRetryRef.current >= 3) return undefined;
+    const timer = window.setTimeout(() => {
+      plansRetryRef.current += 1;
+      loadPlans(false);
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [plansLoadError, loading, loadPlans]);
+
+  useEffect(() => {
+    if (editor) return undefined;
+    const refresh = () => { if (!document.hidden) loadPlans(false); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [editor, loadPlans]);
   const loadCatalogs = useCallback(async () => {
     try {
       const data = await planMejoramientoService.catalogs();
@@ -827,6 +888,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             tipoAccion: scores.length ? (scores.some((score) => score < 4) ? 'Mejoramiento' : 'Fortalecimiento') : objective.tipoAccion,
             actividades: (objective.actividades?.length ? objective.actividades : [emptyActivity()]).map((activity) => ({
               ...activity,
+              ...resolveActivityIndicators(activity),
               uid: activity.uid || makeLocalId(),
               politicasInstitucionales: asStringArray(activity.politicasInstitucionales),
               lineasAccionPolitica: asStringArray(activity.lineasAccionPolitica),
@@ -862,6 +924,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     }
 
     const requestSnapshot = planSnapshot(plan);
+    trackingRevisionRef.current += 1;
     saveInFlightRef.current = true;
     setSaving(true);
     setSaveStatus('saving');
@@ -982,12 +1045,21 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   };
 
   const updateObjective = (index, key, value) => setEditor((previous) => ({ ...previous, objetivos: previous.objetivos.map((item, i) => i === index ? { ...item, [key]: value } : item) }));
-  const updateActivity = (objectiveIndex, activityIndex, key, value) => setEditor((previous) => ({
-    ...previous,
-    objetivos: previous.objetivos.map((objective, oi) => oi !== objectiveIndex ? objective : {
-      ...objective, actividades: objective.actividades.map((activity, ai) => ai === activityIndex ? { ...activity, [key]: value } : activity)
-    })
-  }));
+  const updateActivity = (objectiveIndex, activityIndex, key, value) => {
+    trackingRevisionRef.current += 1;
+    const previous = editorRef.current;
+    const changes = typeof key === 'object' ? key : { [key]: value };
+    if (key === 'indicadorResultado') changes.indicador = value;
+    const next = {
+      ...previous,
+      objetivos: previous.objetivos.map((objective, oi) => oi !== objectiveIndex ? objective : {
+        ...objective, actividades: objective.actividades.map((activity, ai) => ai === activityIndex ? { ...activity, ...changes } : activity)
+      })
+    };
+    editorRef.current = next;
+    setSaveStatus('pending');
+    setEditor(next);
+  };
   const policyActionLines = (selectedPolicies = []) => {
     const selected = new Set(asStringArray(selectedPolicies));
     return Array.from(new Set((catalogs.institutionalPolicies || [])
@@ -1087,7 +1159,64 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     }
   };
 
+  const importPolicies = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setImportingPolicies(true);
+    try {
+      const result = await planMejoramientoService.importPolicies(file);
+      setCatalogs((previous) => ({ ...previous, institutionalPolicies: result.policies }));
+      enqueueSnackbar(`Catálogo actualizado: ${result.importedPolicies} políticas y ${result.addedLines} líneas nuevas.`, { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar las políticas.', { variant: 'error' });
+    } finally { setImportingPolicies(false); }
+  };
+
+  const uploadEvidenceImmediately = async (objectiveIndex, activityIndex, selectedFiles) => {
+    const files = Array.from(selectedFiles || []);
+    if (!files.length || evidenceUploadLock.current) return;
+    const file = files[files.length - 1];
+    evidenceUploadLock.current = true;
+    setUploadingEvidence(true);
+    const initial = editorRef.current.objetivos[objectiveIndex]?.actividades?.[activityIndex];
+    const key = initial?.uid || `${objectiveIndex}_${activityIndex}`;
+    setEvidenceFiles((previous) => ({ ...previous, [key]: file }));
+    try {
+      const planId = await flushCurrentPlanForExport();
+      const current = editorRef.current;
+      const activity = current.objetivos[objectiveIndex]?.actividades?.[activityIndex];
+      const uid = activity?.uid;
+      if (!uid) throw new Error('Guarde la actividad antes de adjuntar evidencias.');
+      const uploaded = await uploadEvidenceBatch(files, {
+        upload: (currentFile) => planMejoramientoService.uploadActivityEvidence(planId, uid, currentFile),
+        onStart: (currentFile, index, total) => setEvidenceFiles((previous) => ({ ...previous, [uid]: { name: `${index + 1}/${total}: ${currentFile.name}` } })),
+        onUploaded: (result, currentFile) => setEvidenceFiles((previous) => ({ ...previous, [uid]: { name: currentFile.name, uploaded: result } }))
+      });
+      const latest = editorRef.current;
+      if (latest.id !== planId) return;
+      const next = { ...latest, objetivos: latest.objetivos.map((objective) => ({
+        ...objective, actividades: objective.actividades.map((item) => item.uid !== uid ? item : {
+          ...item, evidenceFolderId: uploaded.carpetaId, evidenceFolderUrl: uploaded.carpetaUrl,
+          evidencia: uploaded.carpetaUrl, evidenceDriveStatus: 'synced', ultimaEvidencia: uploaded
+        })
+      })) };
+      editorRef.current = next;
+      setEditor(next);
+      setEvidenceFiles((previous) => ({ ...previous, [uid]: { name: file.name, uploaded } }));
+      const saved = await persistPlan(next);
+      if (!saved) throw new Error('La evidencia se cargó en Drive, pero no fue posible guardar el plan. Vuelva a guardar los cambios.');
+      enqueueSnackbar('Evidencia cargada y sincronizada en los repositorios de Drive', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || error.message || 'No fue posible sincronizar la evidencia. Vuelva a adjuntarla para reintentar.', { variant: 'error' });
+    } finally {
+      evidenceUploadLock.current = false;
+      setUploadingEvidence(false);
+    }
+  };
+
   const registerFollowUp = async (objectiveIndex, activityIndex) => {
+    if (evidenceUploadLock.current) return;
     const objective = editor.objetivos[objectiveIndex];
     const activity = objective?.actividades?.[activityIndex];
     if (!activity?.fechaSeguimiento) return enqueueSnackbar('Ingrese la fecha del seguimiento', { variant: 'warning' });
@@ -1113,14 +1242,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       }
       planId = editorRef.current?.id || planId;
 
-      const uploadedEvidence = evidenceFile ? await planMejoramientoService.uploadActivityEvidence(planId, activityKey, evidenceFile) : null;
+      const uploadedEvidence = evidenceFile?.uploaded || (evidenceFile ? await planMejoramientoService.uploadActivityEvidence(planId, activityKey, evidenceFile) : activity.ultimaEvidencia || null);
+      if (uploadedEvidence) setEvidenceFiles((previous) => ({ ...previous, [activityKey]: { name: uploadedEvidence.nombre, uploaded: uploadedEvidence } }));
       let localUser = {};
       try { localUser = JSON.parse(localStorage.getItem('user') || '{}'); } catch (_) { localUser = {}; }
       const progress = percent(activity);
       const rawAlcStr = String(activity.metaAlcanzada ?? '').replace(',', '.').replace('%', '').trim();
       let valAlc = parseFloat(rawAlcStr);
       if (isNaN(valAlc)) valAlc = progress;
-      else if (valAlc <= 1 && valAlc > 0) valAlc = Math.round(valAlc * 100);
+
 
       const record = {
         id: makeLocalId(),
@@ -1160,8 +1290,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         })
       };
       setEditor(nextEditor);
+      const saved = await persistPlan(nextEditor);
+      if (!saved) throw new Error('No fue posible guardar el corte de seguimiento. Se conservaron los cambios para reintentar.');
       setEvidenceFiles((previous) => { const next = { ...previous }; delete next[key]; return next; });
-      await persistPlan(nextEditor);
       enqueueSnackbar('Seguimiento registrado y sincronizado exitosamente con el Plan de Acción', { variant: 'success' });
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || error.message || 'No fue posible registrar el seguimiento', { variant: 'error' });
@@ -1270,9 +1401,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       macroactivity: '',
       actividad: activity.nombre || '',
       activity: activity.nombre || '',
-      tipoIndicador: 'Resultado',
-      indicator_type: 'Resultado',
-      tipo_indicador: 'Resultado',
+      tipoIndicador: activity.tipoIndicador || 'Resultado',
+      indicator_type: activity.tipoIndicador || 'Resultado',
+      tipo_indicador: activity.tipoIndicador || 'Resultado',
       fechaInicio: activity.fechaInicio || '',
       starts_on: activity.fechaInicio || '',
       fechaFin: activity.fechaFin || '',
@@ -1350,6 +1481,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             ...act,
             nombre: actName,
             indicador: linkFormData.indicador || linkFormData.indicator || act.indicador,
+            tipoIndicador: linkFormData.tipoIndicador || linkFormData.indicator_type || act.tipoIndicador || 'Resultado',
             meta: linkFormData.meta || linkFormData.target || act.meta,
             fechaInicio: linkFormData.fechaInicio || linkFormData.starts_on || act.fechaInicio,
             fechaFin: linkFormData.fechaFin || linkFormData.ends_on || act.fechaFin,
@@ -1693,6 +1825,46 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     enqueueSnackbar(`${rows.length} registros exportados a Excel`, { variant: 'success' });
   };
 
+  useEffect(() => {
+    if (!editor?.id || tab !== 4 || uploadingEvidence || recordingFollowUp) return undefined;
+    const planId = editor.id;
+    let disposed = false;
+    let pending = false;
+    const refresh = async () => {
+      const current = editorRef.current;
+      const requestRevision = trackingRevisionRef.current;
+      const mayRefresh = (value) => canApplyTrackingRefresh({
+        focused: Boolean(document.activeElement?.matches('input, textarea, [role="combobox"]')),
+        pending: saveInFlightRef.current,
+        revision: trackingRevisionRef.current, requestRevision,
+        snapshot: planSnapshot(value), savedSnapshot: lastSavedSnapshotRef.current
+      });
+      if (document.hidden || pending || current?.id !== planId || !mayRefresh(current)) return;
+      pending = true;
+      try {
+        const remote = await planMejoramientoService.get(planId);
+        const latest = editorRef.current;
+        if (disposed || latest?.id !== planId || !mayRefresh(latest)) return;
+        const activities = new Map((remote?.contenido?.objetivos || []).flatMap((o) => o.actividades || []).map((a) => [a.uid, a]));
+        const fields = ['metaAlcanzada', 'fechaSeguimiento', 'observaciones', 'evidencia', 'evidenceFolderId', 'evidenceFolderUrl', 'evidenceDriveStatus', 'seguimientos', 'ultimaEvidencia'];
+        const next = { ...latest, objetivos: latest.objetivos.map((objective) => ({ ...objective,
+          actividades: objective.actividades.map((activity) => {
+            const source = activities.get(activity.uid);
+            return source ? { ...activity, ...Object.fromEntries(fields.filter((key) => source[key] !== undefined).map((key) => [key, source[key]])) } : activity;
+          })
+        })) };
+        editorRef.current = next;
+        lastSavedSnapshotRef.current = planSnapshot(next);
+        setEditor(next);
+      } catch { /* Retry without interrupting edits or discarding local data. */ }
+      finally { pending = false; }
+    };
+    const timer = window.setInterval(refresh, 5000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { disposed = true; window.clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [editor?.id, tab, uploadingEvidence, recordingFollowUp]);
+
   if (!editor) {
     return (
       <Box>
@@ -1728,7 +1900,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             </Stack>
           </Stack>
         </Paper>
-        {loading ? <Box sx={{ py: 10, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box> : plans.length === 0 ? (
+        {plansLoadError && <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" onClick={() => { plansRetryRef.current = 0; loadPlans(false); }}>Reintentar</Button>}>{plansLoadError}. Los planes guardados se conservan.</Alert>}
+        {loading ? <Box sx={{ py: 10, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box> : plansLoadError && plans.length === 0 ? null : plans.length === 0 ? (
           <Alert severity="info" sx={{ borderRadius: 3 }}>{executionMode ? 'Aún no tiene planes de mejoramiento asignados.' : 'Aún no hay planes registrados. Cree el primero para iniciar la formulación.'}</Alert>
         ) : (
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' }, gap: 2.5 }}>
@@ -2078,6 +2251,12 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
           {tab === 2 && (
             <Stack spacing={2.5}>
+              {!executionMode && <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <input ref={policiesInputRef} hidden type="file" accept=".xlsx" onChange={importPolicies} />
+                <Tooltip title="Añadir políticas y líneas desde un Excel con las columnas Políticas y Líneas de Acción">
+                  <span><Button size="small" startIcon={importingPolicies ? <CircularProgress size={16} /> : <UploadFileIcon />} disabled={importingPolicies} onClick={() => policiesInputRef.current?.click()} sx={{ textTransform: 'none' }}>Actualizar políticas</Button></span>
+                </Tooltip>
+              </Box>}
               {editor.objetivos.length === 0 && (
                 <Alert severity="info" sx={{ borderRadius: 2.5 }}>
                   Los aspectos trasladados están disponibles como insumos. Cree un objetivo y seleccione el factor, la característica y el aspecto que desea trabajar.
@@ -2210,9 +2389,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                       <Paper key={activityIndex} elevation={0} sx={{ p: 2, borderRadius: 2.5, border: '1px dashed #94a3b8', bgcolor: 'white' }}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}><Typography sx={{ fontWeight: 900, color: '#1d4ed8' }}>Actividad {activityIndex + 1}</Typography>{objective.actividades.length > 1 && <IconButton size="small" color="error" onClick={() => removeActivity(objectiveIndex, activityIndex)}><DeleteIcon /></IconButton>}</Stack>
                         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5 }}>
-                          <TextField label="Nombre de la actividad" value={activity.nombre} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'nombre', e.target.value)} sx={{ gridColumn: { md: 'span 6' } }} />
-                          <TextField label="Indicador" value={activity.indicador} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'indicador', e.target.value)} sx={{ gridColumn: { md: 'span 4' } }} />
+                          <TextField label="Nombre de la actividad" value={activity.nombre} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'nombre', e.target.value)} sx={{ gridColumn: { md: 'span 10' } }} />
                           <TextField label="Meta" type="number" value={activity.meta} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'meta', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
+                          <ActivityIndicatorFields activity={activity} onChange={(field, value) => updateActivity(objectiveIndex, activityIndex, field, value)} />
                           <TextField label="Descripción" value={activity.descripcion} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'descripcion', e.target.value)} multiline minRows={2} sx={{ gridColumn: { md: 'span 8' } }} />
                           <TextField label="Recursos" value={activity.recursos} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'recursos', e.target.value)} sx={{ gridColumn: { md: 'span 4' } }} />
                           <TextField label="Fecha inicio" type="date" InputLabelProps={{ shrink: true }} value={activity.fechaInicio} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'fechaInicio', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }} />
@@ -2237,28 +2416,25 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                             </Paper>
                           )}
                           <TextField select label="Alcance" value={activity.alcance} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'alcance', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}><MenuItem value="PROGRAMA">Programa</MenuItem><MenuItem value="INSTITUCIONAL">Institucional</MenuItem></TextField>
-                          <TextField select label="Objetivo estratégico" value={activity.objetivoEstrategico} onChange={(e) => setEditor((previous) => ({ ...previous, objetivos: previous.objetivos.map((obj, oi) => oi !== objectiveIndex ? obj : { ...obj, actividades: obj.actividades.map((act, ai) => ai === activityIndex ? { ...act, objetivoEstrategico: e.target.value, proyectoPdi: '' } : act) }) }))} sx={{ gridColumn: { md: 'span 4' } }}>{withCurrent(catalogs.strategicObjectives, activity.objetivoEstrategico).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
-                          <TextField select label="Lineamiento estratégico" value={activity.proyectoPdi} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'proyectoPdi', e.target.value)} sx={{ gridColumn: { md: 'span 5' } }} disabled={!activity.objetivoEstrategico}>{withCurrent(catalogs.objectiveProjects?.[activity.objetivoEstrategico], activity.proyectoPdi).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
-                          <Autocomplete
-                            multiple
-                            disableCloseOnSelect
-                            options={withCurrentMany((catalogs.institutionalPolicies || []).map((policy) => policy.name), activity.politicasInstitucionales)}
-                            value={asStringArray(activity.politicasInstitucionales)}
-                            onChange={(_event, values) => updateActivityPolicies(objectiveIndex, activityIndex, values)}
-                            renderOption={(props, option, { selected }) => <li {...props}><Checkbox checked={selected} sx={{ mr: 1 }} />{option}</li>}
-                            renderInput={(params) => <TextField {...params} label="Políticas institucionales" helperText={(catalogs.institutionalPolicies || []).length ? 'Puede seleccionar una o varias políticas.' : 'No hay políticas institucionales vigentes registradas.'} />}
-                            sx={{ gridColumn: { md: 'span 6' } }}
+                          <StrategicObjectiveFields
+                            relations={catalogs.strategicRelations || []}
+                            objective={activity.objetivoEstrategico}
+                            guideline={activity.proyectoPdi}
+                            onObjectiveChange={(objetivoEstrategico, proyectoPdi) => updateActivity(objectiveIndex, activityIndex, { objetivoEstrategico, proyectoPdi })}
+                            onGuidelineChange={(value) => updateActivity(objectiveIndex, activityIndex, 'proyectoPdi', value)}
                           />
-                          <Autocomplete
-                            multiple
-                            disableCloseOnSelect
-                            options={policyActionLines(activity.politicasInstitucionales)}
-                            value={asStringArray(activity.lineasAccionPolitica).filter((line) => policyActionLines(activity.politicasInstitucionales).includes(line))}
-                            onChange={(_event, values) => updateActivity(objectiveIndex, activityIndex, 'lineasAccionPolitica', values)}
-                            disabled={!asStringArray(activity.politicasInstitucionales).length}
-                            renderOption={(props, option, { selected }) => <li {...props}><Checkbox checked={selected} sx={{ mr: 1 }} />{option}</li>}
-                            renderInput={(params) => <TextField {...params} label="Líneas de acción de las políticas" helperText={asStringArray(activity.politicasInstitucionales).length ? 'Solo se muestran las líneas de las políticas seleccionadas.' : 'Seleccione primero una o varias políticas.'} />}
-                            sx={{ gridColumn: { md: 'span 6' } }}
+                          <PolicyActionFields
+                            policies={catalogs.institutionalPolicies || []}
+                            selectedPolicies={asStringArray(activity.politicasInstitucionales)}
+                            selectedLines={asStringArray(activity.lineasAccionPolitica)}
+                            onPolicyChange={(values) => updateActivityPolicies(objectiveIndex, activityIndex, values)}
+                            onLinesChange={(values) => updateActivity(objectiveIndex, activityIndex, 'lineasAccionPolitica', values)}
+                            onRefresh={loadCatalogs}
+                            onCreate={async (name, actionLines) => {
+                              const result = await planMejoramientoService.savePolicy(name, actionLines);
+                              setCatalogs((previous) => ({ ...previous, institutionalPolicies: result.policies }));
+                              return result.policy;
+                            }}
                           />
                           <Box sx={{ gridColumn: { md: 'span 12' }, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 1, pt: 1.5, borderTop: '1px dashed #cbd5e1' }}>
                             {activity.linkedActionItemId ? (
@@ -2377,22 +2553,13 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
           {tab === 4 && (
             <Stack spacing={2.2}>
-              <Alert severity="info">Las actividades formuladas se cargan automáticamente. Registre cada corte de seguimiento, adjunte su evidencia y verifique el cumplimiento; los registros anteriores permanecen en la trazabilidad.</Alert>
-              <Alert
-                severity={driveSyncStatus === 'error' ? 'warning' : driveSyncStatus === 'synced' ? 'success' : 'info'}
-                icon={driveSyncStatus === 'syncing' ? <CircularProgress size={20} /> : <CloudSyncIcon />}
-                action={driveSyncStatus === 'error' ? (
-                  <Button color="inherit" size="small" onClick={() => syncEvidenceRepository({ notify: true, force: true })} sx={{ fontWeight: 900 }}>Reintentar</Button>
-                ) : null}
-              >
-                {driveSyncStatus === 'syncing'
-                  ? 'Creando y verificando las carpetas de evidencias en Google Drive…'
-                  : driveSyncMessage || 'El enlace de cada actividad se genera automáticamente en el Drive exclusivo de Planes de Mejoramiento.'}
-              </Alert>
+              {driveSyncStatus === 'error' && <Alert severity="warning" action={
+                <Button color="inherit" size="small" onClick={() => syncEvidenceRepository({ notify: true, force: true })}>Reintentar</Button>
+              }>{driveSyncMessage}</Alert>}
               {editor.objetivos.map((objective, objectiveIndex) => (
                 <Paper key={objective.codigo || objectiveIndex} elevation={0} sx={{ p: 2.3, borderRadius: 3.5, border: '1px solid #bfdbfe', bgcolor: '#f8fbff' }}>
                   <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1.5} onClick={() => setExpandedFollowUpObjective((current) => current === objectiveIndex ? null : objectiveIndex)} sx={{ mb: expandedFollowUpObjective === objectiveIndex ? 1.5 : 0, cursor: 'pointer' }}>
-                    <Box><Stack direction="row" spacing={1} alignItems="center"><Chip size="small" label={objective.codigo} color="primary" sx={{ fontWeight: 900 }} /><Typography sx={{ fontWeight: 950 }}>{objective.objetivo || 'Objetivo pendiente de formulación'}</Typography></Stack><Typography variant="body2" sx={{ color: '#64748b', mt: 0.6 }}>{objective.actividades.length} actividad{objective.actividades.length === 1 ? '' : 'es'} · Cada actividad aporta {activityWeight(objective).toFixed(1)}% al resultado del objetivo.</Typography></Box>
+                    <Box><Stack direction="row" spacing={1} alignItems="center"><Chip size="small" label={objective.codigo} color="primary" sx={{ fontWeight: 900 }} /><Typography sx={{ fontWeight: 950 }}>{objective.objetivo || 'Objetivo pendiente de formulación'}</Typography></Stack><Typography variant="body2" sx={{ color: '#64748b', mt: 0.6 }}>{objective.actividades.length} actividad{objective.actividades.length === 1 ? '' : 'es'}</Typography></Box>
                     <Stack direction="row" spacing={1} alignItems="center"><Box sx={{ minWidth: { xs: 200, md: 230 } }}><Stack direction="row" justifyContent="space-between"><Typography variant="caption" sx={{ fontWeight: 850, color: '#64748b' }}>Resultado del objetivo</Typography><Typography variant="caption" sx={{ fontWeight: 950, color: '#1d4ed8' }}>{objectiveProgress(objective).toFixed(1)}%</Typography></Stack><LinearProgress variant="determinate" value={objectiveProgress(objective)} sx={{ mt: 0.6, height: 9, borderRadius: 8 }} /></Box><IconButton size="small" sx={{ transform: expandedFollowUpObjective === objectiveIndex ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .2s' }}><ExpandMoreIcon /></IconButton></Stack>
                   </Stack>
                   <Collapse in={expandedFollowUpObjective === objectiveIndex} timeout="auto" unmountOnExit>
@@ -2402,9 +2569,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1} onClick={() => { if (!collaboratorActivityIsEditable(activity)) setExpandedFollowUpActivity((current) => current === (activity.uid || `${objectiveIndex}-${activityIndex}`) ? null : (activity.uid || `${objectiveIndex}-${activityIndex}`)); }} sx={{ mb: followUpActivityIsExpanded(activity, objectiveIndex, activityIndex) ? 1.5 : 0, cursor: collaboratorActivityIsEditable(activity) ? 'default' : 'pointer' }}>
                     <Box>
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap"><Chip size="small" label={`Actividad ${activityIndex + 1}`} sx={{ fontWeight: 900, bgcolor: '#e0f2fe', color: '#0369a1' }} /><Typography sx={{ fontWeight: 950 }}>{activity.nombre || 'Actividad pendiente de nombrar'}</Typography></Stack>
-                      <Typography variant="body2" sx={{ color: '#64748b', mt: 0.35 }}>{activity.indicador || 'Indicador pendiente'} · Meta: {activity.meta || 0} · Periodo: {activity.fechaInicio || '—'} a {activity.fechaFin || '—'} · Responsable: {activity.responsableNombre || activity.cargoResponsable || 'Pendiente'}</Typography>
+                      <Box component="details" onClick={(event) => event.stopPropagation()} sx={{ mt: 0.5, color: '#64748b', fontSize: 13 }}>
+                        <Box component="summary" sx={{ cursor: 'pointer', width: 'fit-content' }}>Ver detalle</Box>
+                        <Typography variant="body2" sx={{ mt: 1 }}>{activity.indicador || 'Indicador pendiente'}</Typography>
+                        <Typography variant="body2">Meta: {activity.meta || 0}</Typography>
+                        <Typography variant="body2">Periodo: {activity.fechaInicio || '?'} a {activity.fechaFin || '?'}</Typography>
+                        <Typography variant="body2">Responsable: {activity.responsableNombre || activity.cargoResponsable || 'Pendiente'}</Typography>
+                      </Box>
                     </Box>
-                    <Stack direction="row" spacing={0.8} alignItems="center"><Stack spacing={0.7} alignItems={{ xs: 'flex-start', md: 'flex-end' }}><Chip label={`${percent(activity).toFixed(1)}% ejecutado`} sx={{ fontWeight: 900, bgcolor: percent(activity) >= 100 ? '#dcfce7' : '#fff7ed', color: percent(activity) >= 100 ? '#166534' : '#9a3412' }} /><Typography variant="caption" sx={{ fontWeight: 850, color: '#475569' }}>Aporte al objetivo: {activityContribution(objective, activity).toFixed(1)} de {activityWeight(objective).toFixed(1)}%</Typography></Stack><IconButton size="small" disabled={collaboratorActivityIsEditable(activity)} sx={{ transform: followUpActivityIsExpanded(activity, objectiveIndex, activityIndex) ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .2s' }}><ExpandMoreIcon /></IconButton></Stack>
+                    <Stack direction="row" spacing={0.8} alignItems="center"><Stack spacing={0.7} alignItems={{ xs: 'flex-start', md: 'flex-end' }}><Chip label={`${percent(activity).toFixed(1)}% ejecutado`} sx={{ fontWeight: 900, bgcolor: percent(activity) >= 100 ? '#dcfce7' : '#fff7ed', color: percent(activity) >= 100 ? '#166534' : '#9a3412' }} /></Stack><IconButton size="small" disabled={collaboratorActivityIsEditable(activity)} sx={{ transform: followUpActivityIsExpanded(activity, objectiveIndex, activityIndex) ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .2s' }}><ExpandMoreIcon /></IconButton></Stack>
                   </Stack>
                   <Collapse in={followUpActivityIsExpanded(activity, objectiveIndex, activityIndex)} timeout="auto" unmountOnExit>
                   <Box>
@@ -2483,13 +2656,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   <LinearProgress variant="determinate" value={percent(activity)} sx={{ mb: 2, height: 8, borderRadius: 8, bgcolor: '#e2e8f0', '& .MuiLinearProgress-bar': { borderRadius: 8, bgcolor: percent(activity) >= 100 ? '#16a34a' : '#2563eb' } }} />
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5 }}>
                     {activity.linkedActionItemId && (
-                      <Alert severity="success" icon={<LinkIcon />} sx={{ gridColumn: { md: 'span 12' }, py: 0.3, bgcolor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 2 }}>
-                        Actividad vinculada al Plan de Acción <strong>{activity.linkedActionPlanCode || activity.linkedActionPlanName}</strong>. El seguimiento sincroniza automáticamente el avance y las evidencias al periodo semestral correspondiente (Mes 1-7: S1 / Mes 8-12: S2).
-                      </Alert>
+                      <Box sx={{ gridColumn: { md: 'span 12' } }}>
+                        <Tooltip title={activity.linkedActionPlanCode || activity.linkedActionPlanName || 'Plan de Acción'}>
+                          <Chip size="small" icon={<LinkIcon />} label="Vinculada a Plan de Acción" sx={{ bgcolor: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', fontWeight: 700 }} />
+                        </Tooltip>
+                      </Box>
                     )}
                     <TextField
                       disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))}
-                      label="Valor alcanzado (%)"
+                      label="Cumplimiento (%)"
                       type="number"
                       inputProps={{ min: 0, max: 100, step: 1 }}
                       InputProps={{
@@ -2500,7 +2675,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                         if (raw === null || raw === undefined || raw === '') return '';
                         const str = String(raw).replace(',', '.').replace('%', '').trim();
                         const n = parseFloat(str);
-                        if (!isNaN(n) && n > 0 && n <= 1) return Math.round(n * 100);
+
                         return isNaN(n) ? '' : Math.round(n);
                       })()}
                       onChange={(e) => {
@@ -2522,56 +2697,34 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                       <MenuItem value="pendiente">Pendiente de verificación</MenuItem><MenuItem value="verificado">Cumplimiento verificado</MenuItem><MenuItem value="requiere_ajustes">Requiere ajustes</MenuItem>
                     </TextField>
                     <TextField
-                      label="Carpeta automática de evidencias en Google Drive"
+                      label="Evidencias"
                       value={activity.evidenceFolderUrl || ''}
                       placeholder={driveSyncStatus === 'syncing' ? 'Creando carpeta…' : 'Pendiente de sincronización'}
-                      InputProps={{ readOnly: true }}
+                      InputProps={{ readOnly: true, endAdornment: (
+                        <InputAdornment position="end">
+                          <Tooltip title={activity.evidenceFolderUrl ? 'Copiar URL' : 'Carpeta pendiente de sincronización'}>
+                            <span><IconButton aria-label="Copiar URL de evidencias" disabled={!activity.evidenceFolderUrl} onClick={() => copyEvidenceUrl(activity.evidenceFolderUrl)} color="primary"><CopyIcon /></IconButton></span>
+                          </Tooltip>
+                          <Tooltip title={activity.evidenceFolderUrl ? 'Previsualizar evidencias' : 'Carpeta pendiente de sincronización'}>
+                            <span><IconButton aria-label="Previsualizar evidencias" disabled={!activity.evidenceFolderUrl} onClick={() => openEvidencePreview(activity)} color="primary"><VisibilityIcon /></IconButton></span>
+                          </Tooltip>
+                        </InputAdornment>
+                      ) }}
                       InputLabelProps={{ shrink: true }}
-                      sx={{ gridColumn: { md: 'span 4' } }}
+                      sx={{ gridColumn: { md: 'span 5' } }}
                     />
-                    <Button
-                      component="a"
-                      href={activity.evidenceFolderUrl || undefined}
-                      target="_blank"
-                      rel="noreferrer"
-                      disabled={!activity.evidenceFolderUrl}
-                      variant="outlined"
-                      startIcon={<FolderOpenIcon />}
-                      sx={{ gridColumn: { md: 'span 1' }, minHeight: 56, textTransform: 'none', fontWeight: 900 }}
-                    >
-                      Abrir
-                    </Button>
                     <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Observaciones y retroalimentación" value={activity.observaciones} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'observaciones', e.target.value)} multiline minRows={2} sx={{ gridColumn: { md: 'span 12' } }} />
                   </Box>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mt: 1.5 }}>
-                    <Button disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} component="label" variant="outlined" startIcon={<AttachIcon />} sx={{ textTransform: 'none', fontWeight: 850 }}>
-                      {evidenceFiles[activity.uid || `${objectiveIndex}_${activityIndex}`]?.name || 'Adjuntar evidencia'}
-                      <input hidden type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.zip" onChange={(event) => setEvidenceFiles((previous) => ({ ...previous, [activity.uid || `${objectiveIndex}_${activityIndex}`]: event.target.files?.[0] || null }))} />
+                    <Button disabled={uploadingEvidence || executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} component="label" variant="outlined" startIcon={<AttachIcon />} sx={{ textTransform: 'none', fontWeight: 850 }}>
+                      {uploadingEvidence ? 'Sincronizando archivos...' : 'Adjuntar evidencias'}
+                      <input hidden multiple type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.zip" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ''; uploadEvidenceImmediately(objectiveIndex, activityIndex, files); }} />
                     </Button>
-                    <Button variant="contained" disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo)) || recordingFollowUp === (activity.uid || `${objectiveIndex}_${activityIndex}`)} onClick={() => registerFollowUp(objectiveIndex, activityIndex)} sx={{ textTransform: 'none', fontWeight: 900 }}>
-                      {recordingFollowUp === (activity.uid || `${objectiveIndex}_${activityIndex}`) ? 'Registrando…' : 'Registrar corte de seguimiento'}
+                    <Button variant="contained" disabled={uploadingEvidence || executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo)) || recordingFollowUp === (activity.uid || `${objectiveIndex}_${activityIndex}`)} onClick={() => registerFollowUp(objectiveIndex, activityIndex)} sx={{ textTransform: 'none', fontWeight: 900 }}>
+                      {recordingFollowUp === (activity.uid || `${objectiveIndex}_${activityIndex}`) ? 'Registrando…' : 'Registrar corte'}
                     </Button>
                   </Stack>
-                  {(activity.seguimientos || []).length > 0 && (
-                    <Box sx={{ mt: 2.2 }}>
-                      <Typography sx={{ mb: 1, fontWeight: 950, color: '#334155' }}>Historial y trazabilidad ({activity.seguimientos.length})</Typography>
-                      <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 2.5 }}>
-                        <Table size="small">
-                          <TableHead><TableRow sx={{ bgcolor: '#f8fafc' }}><TableCell sx={{ fontWeight: 900 }}>Fecha</TableCell><TableCell sx={{ fontWeight: 900 }}>Avance</TableCell><TableCell sx={{ fontWeight: 900 }}>Verificación</TableCell><TableCell sx={{ fontWeight: 900 }}>Evidencia</TableCell><TableCell sx={{ fontWeight: 900 }}>Observaciones</TableCell><TableCell sx={{ fontWeight: 900 }}>Registrado por</TableCell></TableRow></TableHead>
-                          <TableBody>{activity.seguimientos.map((record) => (
-                            <TableRow key={record.id}>
-                              <TableCell>{record.fecha}</TableCell>
-                              <TableCell><strong>{Number(record.porcentaje || 0).toFixed(1)}%</strong><Typography variant="caption" display="block">{record.valorAlcanzado} de {record.metaPlaneada}</Typography><Typography variant="caption" display="block">Aporte: {Number(record.aporteObjetivo ?? (Number(record.porcentaje || 0) * activityWeight(objective) / 100)).toFixed(1)}%</Typography></TableCell>
-                              <TableCell><Chip size="small" label={record.verificacion === 'verificado' ? 'Verificado' : record.verificacion === 'requiere_ajustes' ? 'Requiere ajustes' : 'Pendiente'} color={record.verificacion === 'verificado' ? 'success' : record.verificacion === 'requiere_ajustes' ? 'warning' : 'default'} /></TableCell>
-                              <TableCell>{record.evidenciaUrl ? <Button component="a" href={record.evidenciaUrl} target="_blank" rel="noreferrer" size="small" startIcon={<AttachIcon />} sx={{ textTransform: 'none' }}>Ver soporte</Button> : '—'}</TableCell>
-                              <TableCell>{record.observaciones || '—'}</TableCell>
-                              <TableCell>{record.registradoPor || 'Usuario del sistema'}<Typography variant="caption" display="block">{record.registradoAt ? new Date(record.registradoAt).toLocaleString('es-CO') : ''}</Typography></TableCell>
-                            </TableRow>
-                          ))}</TableBody>
-                        </Table>
-                      </TableContainer>
-                    </Box>
-                  )}
+                  {activity.ultimaEvidencia?.nombre && <Typography variant="body2" sx={{ mt: 1, color: '#64748b' }}>Último documento: {activity.ultimaEvidencia.nombre}</Typography>}
                   </Box>
                   </Collapse>
                 </Paper>
@@ -2633,6 +2786,29 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             <Button variant="contained" disabled={associationObjectiveIndex === 'new' && !associationNewObjectiveText.trim()} onClick={associateOpportunityToObjective} sx={{ textTransform: 'none', fontWeight: 900 }}>{associationObjectiveIndex === 'new' ? 'Crear y asociar' : 'Confirmar asociación'}</Button>
           </Stack>
         </Box>
+      </Dialog>
+      <Dialog open={Boolean(evidencePreview)} onClose={closeEvidencePreview} fullWidth maxWidth="lg" PaperProps={{ sx: { borderRadius: 3.5 } }}>
+        <DialogTitle>Vista previa de evidencias{evidencePreview?.name ? `: ${evidencePreview.name}` : ''}</DialogTitle>
+        <DialogContent dividers>
+          {evidenceError && <Alert severity="error" sx={{ mb: 2 }}>{evidenceError}</Alert>}
+          {evidenceLoading && <LinearProgress aria-label="Cargando evidencias" sx={{ mb: 2 }} />}
+          {!evidenceLoading && !evidenceError && evidenceFilesList.length === 0 && <Typography>No hay archivos de evidencia en esta actividad.</Typography>}
+          {evidenceFilesList.length > 1 && <TextField select fullWidth label="Evidencia" value={previewFile?.id || ''} disabled={evidenceLoading} onChange={(event) => {
+            const file = evidenceFilesList.find((item) => item.id === event.target.value);
+            if (file) viewEvidenceFile(file);
+          }} sx={{ mb: 2 }}>
+            {evidenceFilesList.map((file) => <MenuItem key={file.id} value={file.id}>{file.name}</MenuItem>)}
+          </TextField>}
+          {previewFile && (previewFile.type === 'application/pdf'
+            ? <Box component="iframe" title={previewFile.name} src={previewFile.url} sx={{ width: '100%', height: '60vh', border: 0 }} />
+            : /^image\/(png|jpeg|webp)$/.test(previewFile.type)
+              ? <Box component="img" alt={previewFile.name} src={previewFile.url} sx={{ display: 'block', maxWidth: '100%', maxHeight: '60vh', mx: 'auto', objectFit: 'contain' }} />
+              : <Alert severity="info">Este formato se puede consultar descargando el archivo.</Alert>)}
+          {previewFile && <Button component="a" href={previewFile.url} download={previewFile.name} startIcon={<DownloadIcon />}>Descargar evidencia</Button>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeEvidencePreview}>Cerrar</Button>
+        </DialogActions>
       </Dialog>
       <Dialog open={Boolean(evidenceOpportunity)} onClose={() => setEvidenceOpportunity(null)} fullWidth maxWidth="md" PaperProps={{ sx: { borderRadius: 3.5 } }}>
         <Box sx={{ p: { xs: 2.2, md: 3 } }}>

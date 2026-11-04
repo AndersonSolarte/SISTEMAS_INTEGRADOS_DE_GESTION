@@ -45,13 +45,19 @@ const buildDriveClient = () => {
     return google.drive({ version: 'v3', auth });
   }
 
+  // Reuse the configured institutional connection without requiring a second OAuth.
+  const hasIndependentConfiguration = Boolean(clientId || clientSecret || refreshToken || email || key);
+  if (!hasIndependentConfiguration) {
+    return require('./actionPlanRepositoryDriveService').buildActionRepositoryDriveClient();
+  }
+
   const error = new Error('El Drive de Planes de Mejoramiento no está configurado. Defina sus credenciales independientes de Google Drive.');
   error.statusCode = 503;
   throw error;
 };
 
 const repositoryRootId = () => {
-  const rootId = String(process.env[ROOT_ENV] || '').trim();
+  const rootId = String(process.env[ROOT_ENV] || process.env.SIAC_ACTION_REPOSITORY_ROOT_ID || process.env.SIAC_PEI_DRIVE_ROOT_ID || '').trim();
   if (!rootId) {
     const error = new Error(`Configure ${ROOT_ENV} con el ID de la carpeta raíz del Drive de Planes de Mejoramiento.`);
     error.statusCode = 503;
@@ -173,6 +179,9 @@ const ensurePlanRepository = async (plan) => {
 };
 
 const uploadActivityEvidence = async (plan, activityUid, file) => {
+  const sourceActivity = (plan.contenido?.objetivos || []).flatMap((o) => o.actividades || [])
+    .find((a) => String(a.uid) === String(activityUid));
+  if (!sourceActivity) throw Object.assign(new Error('Actividad no encontrada'), { statusCode: 404 });
   const synchronized = await ensurePlanRepository(plan);
   const activity = synchronized.activities.find((item) => String(item.uid) === String(activityUid));
   if (!activity) {
@@ -193,11 +202,29 @@ const uploadActivityEvidence = async (plan, activityUid, file) => {
     fields: 'id,name,mimeType,size,webViewLink,createdTime', supportsAllDrives: true
   });
   const uploaded = response.data;
+  let linkedEvidence = null;
+  if (sourceActivity.linkedActionItemId) {
+    const strategic = require('./strategicPlanningDriveService');
+    const { StrategicActionItem, StrategicActionPlan, StrategicMonitoringPeriod } = require('../models');
+    const item = await StrategicActionItem.findByPk(sourceActivity.linkedActionItemId, { include: [{ model: StrategicActionPlan, as: 'actionPlan' }] });
+    const month = Number(String(sourceActivity.fechaSeguimiento || new Date().toISOString().slice(0, 10)).slice(5, 7));
+    const period = await StrategicMonitoringPeriod.findOne({ where: { term_id: item?.actionPlan?.term_id, position: month <= 7 ? 1 : 2 } });
+    if (!period) throw new Error('No existe periodo de seguimiento para sincronizar la evidencia vinculada.');
+    const target = await strategic.getActivityDriveFolder(item.id, period.id);
+    const linkedDrive = strategic.buildWritableDriveClient();
+    const result = await linkedDrive.files.create({
+      requestBody: { name: originalName, parents: [target.folderId] },
+      media: { mimeType: file.mimetype || 'application/octet-stream', body: Readable.from(file.buffer) },
+      fields: 'id,webViewLink', supportsAllDrives: true
+    });
+    linkedEvidence = { driveFileId: result.data.id, folderId: target.folderId, periodId: period.id, url: result.data.webViewLink };
+  }
   return {
     content: synchronized.content,
     evidence: {
       nombre: uploaded.name || originalName,
       driveFileId: uploaded.id,
+      linkedEvidence,
       url: uploaded.webViewLink || `https://drive.google.com/file/d/${uploaded.id}/view`,
       carpetaId: activity.folderId,
       carpetaUrl: activity.folderUrl,
@@ -208,7 +235,54 @@ const uploadActivityEvidence = async (plan, activityUid, file) => {
   };
 };
 
+const readActivityEvidence = async (activity, fileId) => {
+  const folderId = activity.evidenceFolderId
+    || String(activity.evidenceFolderUrl || '').match(/\/folders\/([\w-]+)/)?.[1];
+  if (!folderId || !/^[\w-]+$/.test(folderId)) {
+    const error = new Error('La actividad aún no tiene carpeta de evidencias sincronizada.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const clients = activity.linkedActionItemId
+    ? [() => require('./strategicPlanningDriveService').buildWritableDriveClient(), buildDriveClient]
+    : [buildDriveClient];
+  let lastError;
+  for (const createClient of clients) {
+    try {
+      const drive = createClient();
+      if (!fileId) {
+        const files = [];
+        let pageToken;
+        do {
+          const result = await drive.files.list({
+            q: `'${escapeQuery(folderId)}' in parents and trashed=false and mimeType!='${DRIVE_FOLDER}'`,
+            fields: 'nextPageToken,files(id,name,mimeType,size,createdTime)', pageSize: 100,
+            orderBy: 'createdTime desc,name',
+            pageToken, supportsAllDrives: true, includeItemsFromAllDrives: true
+          });
+          files.push(...(result.data.files || []));
+          pageToken = result.data.nextPageToken;
+        } while (pageToken);
+        return files;
+      }
+      const { data: metadata } = await drive.files.get({ fileId, fields: 'id,name,mimeType,parents,trashed', supportsAllDrives: true });
+      if (metadata.trashed || !metadata.parents?.includes(folderId)) {
+        const error = new Error('La evidencia no pertenece a esta actividad.');
+        error.statusCode = 404;
+        throw error;
+      }
+      const native = metadata.mimeType.startsWith('application/vnd.google-apps.');
+      const response = native
+        ? await drive.files.export({ fileId, mimeType: 'application/pdf' }, { responseType: 'stream' })
+        : await drive.files.get({ fileId, alt: 'media', supportsAllDrives: true }, { responseType: 'stream' });
+      return { stream: response.data, mimeType: native ? 'application/pdf' : metadata.mimeType };
+    } catch (error) { lastError = error; }
+  }
+  throw lastError;
+};
+
 module.exports = {
+  readActivityEvidence,
   ROOT_ENV,
   cleanName,
   buildDriveClient,

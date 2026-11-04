@@ -1,3 +1,4 @@
+const { clampProgress, fulfillment } = require('./improvementMonitoringRules');
 const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
@@ -11,7 +12,8 @@ const {
   StrategicActionItemVersion,
   StrategicWorkflowEvent,
   StrategicAuditEvent,
-  StrategicMonitoringResult
+  StrategicMonitoringResult,
+  StrategicMonitoringPeriod
 } = require('../models');
 const { DEFAULT_WORKFLOW } = require('./strategicPlanningBootstrap');
 const { reconcileLegacyActionPlans } = require('./strategicLegacyActionPlanService');
@@ -214,7 +216,21 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
   }, { transaction });
   const rows = await StrategicMonitoringResult.findAll({ where: { action_item_id: actionItem.id, deleted_at: null }, transaction });
   const average = rows.length ? rows.reduce((sum, row) => sum + Number(row.physical_progress || 0), 0) / rows.length : 0;
-  await actionItem.update({ current_progress: average, updated_by: req.user.id }, { transaction });
+  const linked = actionItem.custom_values?.pm_plan_id || actionItem.custom_values?.source_module === 'plan_mejoramiento';
+  let currentProgress = average;
+  const custom = { ...(actionItem.custom_values || {}) };
+  if (linked) {
+    const periods = await StrategicMonitoringPeriod.findAll({ where: { id: { [Op.in]: rows.map((r) => r.monitoring_period_id) } }, transaction });
+    currentProgress = fulfillment(rows);
+    const period = periods.find((p) => String(p.id) === String(periodId));
+    if (period) {
+      custom[`progress_s${period.position}`] = clampProgress(progress);
+      custom[`observations_s${period.position}`] = payload.observations || '';
+      const cutDate = payload.fechaSeguimiento || payload.cut_date || String(period.ends_on || '').slice(0, 10);
+      custom.pm_monitoring_dates = { ...(custom.pm_monitoring_dates || {}), [period.position]: cutDate };
+    }
+  }
+  await actionItem.update({ current_progress: currentProgress, custom_values: custom, updated_by: req.user.id }, { transaction });
   await audit(req, 'monitoring.upsert', 'monitoring_result', result.id, previous, result.toJSON(), payload.justification, transaction);
   return result;
 });

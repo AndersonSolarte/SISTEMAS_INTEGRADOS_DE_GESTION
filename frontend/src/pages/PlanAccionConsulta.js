@@ -1,3 +1,4 @@
+import { uploadEvidenceBatch } from '../utils/uploadEvidenceBatch';
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   Box, Paper, Stack, Typography, Chip, Button, Alert,
@@ -160,7 +161,7 @@ export default function PlanAccionConsulta({
   const [monitoringForm, setMonitoringForm] = useState({
     period_id: '',
     description: '',
-    file: null
+    files: []
   });
   const [isDragging, setIsDragging] = useState(false);
   const [savingMonitoring, setSavingMonitoring] = useState(false);
@@ -366,7 +367,7 @@ export default function PlanAccionConsulta({
     setMonitoringForm({
       period_id: defaultPeriodId,
       description: '',
-      file: null
+      files: []
     });
     setIsDragging(false);
     setMonitoringModalOpen(true);
@@ -386,7 +387,7 @@ export default function PlanAccionConsulta({
       enqueueSnackbar('Por favor seleccione el semestre o período de seguimiento.', { variant: 'warning' });
       return;
     }
-    if (!monitoringForm.file) {
+    if (!monitoringForm.files?.length) {
       enqueueSnackbar('Por favor adjunte el documento de soporte o evidencia que desea radicar.', { variant: 'warning' });
       return;
     }
@@ -394,13 +395,16 @@ export default function PlanAccionConsulta({
     setSavingMonitoring(true);
     try {
       // 1. Subir documento de evidencia oficial
-      const formData = new FormData();
-      formData.append('file', monitoringForm.file);
-      formData.append('monitoring_period_id', monitoringForm.period_id);
-      if (monitoringForm.description?.trim()) {
-        formData.append('description', monitoringForm.description.trim());
-      }
-      await strategicPlanningService.uploadEvidence(targetItem.id, formData);
+      const files = monitoringForm.files;
+      await uploadEvidenceBatch(files, { upload: async (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('monitoring_period_id', monitoringForm.period_id);
+        if (monitoringForm.description?.trim()) formData.append('description', monitoringForm.description.trim());
+        return strategicPlanningService.uploadEvidence(targetItem.id, formData);
+      }, onUploaded: (_result, _file, index) => {
+        setMonitoringForm((previous) => ({ ...previous, files: files.slice(index + 1) }));
+      } });
 
       // 2. Notificar actualización de estado como 'submitted' sin alterar la calificación de Planeación
       try {
@@ -414,7 +418,7 @@ export default function PlanAccionConsulta({
       enqueueSnackbar('Documento de evidencia radicado exitosamente. Queda disponible para revisión y valoración de Planeación y Efectividad.', { variant: 'success' });
       setMonitoringModalOpen(false);
       setTargetItem(null);
-      setMonitoringForm({ period_id: '', description: '', file: null });
+      setMonitoringForm({ period_id: '', description: '', files: [] });
       setIsDragging(false);
       await cargarPlanes();
     } catch (err) {
@@ -557,6 +561,26 @@ export default function PlanAccionConsulta({
   };
 
   // Actualizar actas y estado del plan desde el repositorio
+  useEffect(() => {
+    if (!selectedPlan?.id || monitoringModalOpen || savingMonitoring) return undefined;
+    let disposed = false;
+    let pending = false;
+    const planId = selectedPlan.id;
+    const refresh = async () => {
+      if (document.hidden || pending) return;
+      pending = true;
+      try {
+        const response = await strategicPlanningService.getActionPlan(planId);
+        if (!disposed && response?.data) setSelectedPlan((previous) => previous?.id === planId ? { ...previous, ...response.data } : previous);
+      } catch { /* Preserve the current view while the connection recovers. */ }
+      finally { pending = false; }
+    };
+    const timer = window.setInterval(refresh, 5000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { disposed = true; window.clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [selectedPlan?.id, monitoringModalOpen, savingMonitoring]);
+
   const handleRefreshActas = async () => {
     if (!selectedPlan?.id) return;
     setRefreshingActas(true);
@@ -2304,7 +2328,10 @@ export default function PlanAccionConsulta({
                         return (
                           <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
                             {prog !== null ? (
-                              <Tooltip title={`Valoración oficial de Planeación y Efectividad: ${prog}%`} arrow>
+                              <Tooltip title={<Box>
+                                  <Typography variant="caption" component="div" sx={{ fontWeight: 700 }}>Avance {p.code || `S${p.position}`}: {prog}%</Typography>
+                                  {r?.observations && <Typography variant="caption" component="div" sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>{r.observations}</Typography>}
+                                </Box>} arrow>
                                 <Chip
                                   size="small"
                                   label={`${prog}%`}
@@ -2720,7 +2747,10 @@ export default function PlanAccionConsulta({
                           return (
                             <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
                               {prog !== null ? (
-                                <Tooltip title={`Valoración oficial de Planeación y Efectividad: ${prog}%`} arrow>
+                                <Tooltip title={<Box>
+                                  <Typography variant="caption" component="div" sx={{ fontWeight: 700 }}>Avance {p.code || `S${p.position}`}: {prog}%</Typography>
+                                  {r?.observations && <Typography variant="caption" component="div" sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>{r.observations}</Typography>}
+                                </Box>} arrow>
                                   <Chip
                                     size="small"
                                     label={`${prog}%`}
@@ -3111,7 +3141,7 @@ export default function PlanAccionConsulta({
 
             {/* Zona de Carga Ejecutiva (Drag & Drop) */}
             <Box>
-              {!monitoringForm.file ? (
+              {!monitoringForm.files?.length ? (
                 <Paper
                   component="label"
                   variant="outlined"
@@ -3120,8 +3150,8 @@ export default function PlanAccionConsulta({
                   onDrop={(e) => {
                     e.preventDefault();
                     setIsDragging(false);
-                    const dropped = e.dataTransfer.files?.[0];
-                    if (dropped) setMonitoringForm((prev) => ({ ...prev, file: dropped }));
+                    const dropped = Array.from(e.dataTransfer.files || []);
+                    if (dropped.length) setMonitoringForm((prev) => ({ ...prev, files: [...(prev.files || []), ...dropped] }));
                   }}
                   sx={{
                     p: 2.5,
@@ -3141,11 +3171,12 @@ export default function PlanAccionConsulta({
                   <input
                     hidden
                     type="file"
-                    onChange={(e) => setMonitoringForm({ ...monitoringForm, file: e.target.files?.[0] || null })}
+                    multiple
+                    onChange={(e) => { const files = Array.from(e.target.files || []); setMonitoringForm((previous) => ({ ...previous, files: [...(previous.files || []), ...files] })); e.target.value = ''; }}
                   />
                   <CloudUploadIcon sx={{ fontSize: 34, color: '#0284c7', mb: 0.5 }} />
                   <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: '#0369a1' }}>
-                    Seleccione o arrastre el archivo aquí
+                    Seleccione o arrastre los archivos aquí
                   </Typography>
                   <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.3, fontSize: 11 }}>
                     Formatos admitidos: PDF, Excel, Word, Imágenes (máx. 50 MB)
@@ -3167,14 +3198,14 @@ export default function PlanAccionConsulta({
                 >
                   <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
                     <Box sx={{ width: 38, height: 38, borderRadius: 1.5, bgcolor: '#dcfce7', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                      {getFileIcon(monitoringForm.file.name)}
+                      {getFileIcon(monitoringForm.files[0]?.name)}
                     </Box>
                     <Box sx={{ minWidth: 0 }}>
                       <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#166534' }} noWrap>
-                        {monitoringForm.file.name}
+                        {monitoringForm.files.map((file) => file.name).join(', ')}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#15803d', fontWeight: 600 }}>
-                        {formatBytes(monitoringForm.file.size)} · Listo para cargar
+                        {formatBytes(monitoringForm.files.reduce((total, file) => total + file.size, 0))} · Listo para cargar
                       </Typography>
                     </Box>
                   </Stack>
@@ -3182,7 +3213,7 @@ export default function PlanAccionConsulta({
                     size="small"
                     color="error"
                     variant="text"
-                    onClick={() => setMonitoringForm({ ...monitoringForm, file: null })}
+                    onClick={() => setMonitoringForm({ ...monitoringForm, files: [] })}
                     sx={{ textTransform: 'none', fontWeight: 800, fontSize: 11.5, flexShrink: 0 }}
                   >
                     Quitar
@@ -3190,6 +3221,15 @@ export default function PlanAccionConsulta({
                 </Paper>
               )}
             </Box>
+
+            {monitoringForm.files?.length > 0 && <Button component="label" disabled={savingMonitoring} startIcon={<CloudUploadIcon />} sx={{ textTransform: 'none' }}>
+              Agregar archivos ({monitoringForm.files.length} seleccionados)
+              <input hidden type="file" multiple onChange={(event) => {
+                const files = Array.from(event.target.files || []);
+                setMonitoringForm((previous) => ({ ...previous, files: [...previous.files, ...files] }));
+                event.target.value = '';
+              }} />
+            </Button>}
 
             {/* Observación Ejecutiva (Opcional) */}
             <TextField
@@ -3220,7 +3260,7 @@ export default function PlanAccionConsulta({
             color="primary"
             startIcon={savingMonitoring ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
             onClick={handleSaveMonitoring}
-            disabled={savingMonitoring || !monitoringForm.file}
+            disabled={savingMonitoring || !monitoringForm.files?.length}
             sx={{
               borderRadius: 2.2,
               textTransform: 'none',

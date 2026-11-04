@@ -4,6 +4,12 @@ const unwrap = (response) => response.data?.data;
 
 const planMejoramientoService = {
   catalogs: () => api.get('/autoevaluacion/planes-mejoramiento/catalogs').then(unwrap),
+  savePolicy: (name, actionLines = []) => api.post('/autoevaluacion/planes-mejoramiento/politicas', { name, actionLines }).then(unwrap),
+  importPolicies: (file) => {
+    const data = new FormData();
+    data.append('file', file);
+    return api.post('/autoevaluacion/planes-mejoramiento/politicas/importar', data).then(unwrap);
+  },
   downloadTariffTemplate: () => api.get('/autoevaluacion/planes-mejoramiento/tarifas/plantilla', { responseType: 'blob' }),
   importTariffs: (file, vigencia) => {
     const formData = new FormData();
@@ -34,6 +40,8 @@ const planMejoramientoService = {
     formData.append('file', file);
     return api.post(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/evidencias`, formData).then(unwrap);
   },
+  listActivityEvidence: (id, uid) => api.get(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/evidencias`).then(unwrap),
+  readActivityEvidence: (id, uid, fileId) => api.get(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/evidencias/${encodeURIComponent(fileId)}`, { responseType: 'blob' }),
   uploadEvidence: (id, file) => {
     const formData = new FormData();
     formData.append('file', file);

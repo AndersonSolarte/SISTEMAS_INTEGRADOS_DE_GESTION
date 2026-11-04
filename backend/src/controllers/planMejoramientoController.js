@@ -1,3 +1,4 @@
+const { clampProgress, periodCuts, latestResult, fulfillment, periodContribution, trackCurrentFollowup } = require('../services/improvementMonitoringRules');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -7,6 +8,10 @@ const { Autoevaluacion, AutoevaluacionPrograma, Documento, PlanMejoramiento, Pla
 const planMejoramientoDriveService = require('../services/planMejoramientoDriveService');
 const { ensureActivityFoldersInDrive } = require('../services/strategicPlanningDriveService');
 const { syncSinglePlanOfficialWorkbook } = require('../services/actionPlanRepositoryDriveService');
+const policyCatalog = require('../services/institutionalPolicyCatalogService');
+const { readActionPlanStrategicCatalog } = require('../services/improvementStrategicCatalogService');
+const { writeActivityIndicators, readActivityIndicators } = require('../services/activityIndicatorWorkbookService');
+const { resolveActivityIndicators, formatActivityIndicators } = require('../services/activityIndicators');
 const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
 
 const PLAN_MANAGER_ROLES = new Set([
@@ -44,7 +49,7 @@ const budgetItemTotal = (item = {}) => {
 };
 
 const emptyActivity = (indicator = '') => ({
-  nombre: '', descripcion: '', indicador: text(indicator), meta: '', fechaInicio: '', fechaFin: '', recursos: '',
+  nombre: '', descripcion: '', indicador: text(indicator), tipoIndicador: 'Resultado', meta: '', fechaInicio: '', fechaFin: '', recursos: '',
   procesoResponsable: '', cargoResponsable: '', alcance: 'PROGRAMA', ejeEstrategico: '', objetivoEstrategico: '',
   proyectoPdi: '', politicasInstitucionales: [], lineasAccionPolitica: [],
   metaAlcanzada: '', fechaSeguimiento: '', evidencia: '', observaciones: ''
@@ -257,7 +262,7 @@ const ensureActivityUids = async (plan) => {
   if (changed) await plan.update({ contenido: { ...content, objetivos: objectives } });
   return plan;
 };
-const reconcileLinkedActivities = async (plan) => {
+const reconcileLinkedActivities = async (plan, { persist = true } = {}) => {
   try {
     const content = plan.contenido || {};
     let modified = false;
@@ -283,6 +288,39 @@ const reconcileLinkedActivities = async (plan) => {
           }
         }
 
+        const results = actionItem.monitoringResults || [];
+        const liveTime = Date.parse(act.seguimientoActual?.registradoAt || '') || 0;
+        const remoteTime = Math.max(0, ...results.map((r) => Date.parse(r.updated_at || r.updatedAt || r.created_at || r.createdAt || '') || 0));
+        if (results.length && (!liveTime || remoteTime >= liveTime)) {
+          const ids = results.map((r) => r.monitoring_period_id);
+          const periods = await StrategicMonitoringPeriod.findAll({ where: { id: { [Op.in]: ids } } });
+          const latest = latestResult(results, periods);
+          for (const result of results) {
+            const period = periods.find((p) => String(p.id) === String(result.monitoring_period_id));
+            if (!period) continue;
+            const date = actionItem.custom_values?.pm_monitoring_dates?.[period.position]
+              || String(period.ends_on || result.updated_at || result.updatedAt || '').slice(0, 10);
+            const record = { id: `mon-pa-${result.id}`, origen: 'plan_accion', fecha: date,
+              porcentaje: fulfillment(results.filter((r) => Number(periods.find((p) => String(p.id) === String(r.monitoring_period_id))?.position) <= Number(period.position))),
+              valorAlcanzado: fulfillment(results.filter((r) => Number(periods.find((p) => String(p.id) === String(r.monitoring_period_id))?.position) <= Number(period.position))),
+              avancePeriodo: clampProgress(result.physical_progress),
+              observaciones: result.observations || '', registradoAt: result.updated_at || result.updatedAt || '',
+              monitoreo: Number(period.position) };
+            const history = array(act.seguimientos);
+            const previous = history.find((r) => r.id === record.id);
+            if (JSON.stringify(previous) !== JSON.stringify(record)) {
+              act.seguimientos = [...history.filter((r) => r.id !== record.id), record];
+              modified = true;
+            }
+            if (latest && String(latest.id) === String(result.id)) {
+              act.metaAlcanzada = fulfillment(results);
+              act.fechaSeguimiento = date;
+              act.observaciones = record.observaciones;
+              modified = true;
+            }
+          }
+        }
+
         // 2. Reconciliar evidencias cargadas en Plan de Acción
         const evidences = actionItem.evidence || [];
         if (evidences.length > 0) {
@@ -296,9 +334,9 @@ const reconcileLinkedActivities = async (plan) => {
               act.seguimientos.push({
                 id: `seg-pa-${ev.id}`,
                 fecha: ev.created_at ? new Date(ev.created_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
-                valorAlcanzado: act.meta || 1,
+                valorAlcanzado: clampProgress(act.metaAlcanzada),
                 metaPlaneada: act.meta || 1,
-                porcentaje: 100,
+                porcentaje: clampProgress(act.metaAlcanzada),
                 verificacion: 'pendiente',
                 observaciones: `Evidencia radicada desde Plan de Acción (${actionItem.code}): ${ev.original_name}`,
                 evidenciaUrl: fileUrl,
@@ -319,16 +357,17 @@ const reconcileLinkedActivities = async (plan) => {
       }
     }
     if (modified) {
-      await plan.update({ contenido: content });
+      if (persist) await plan.update({ contenido: content });
+      else plan.setDataValue('contenido', content);
     }
   } catch (reconcileErr) {
     console.warn('[reconcileLinkedActivities warning]:', reconcileErr.message);
   }
 };
 
-const serializeForRequest = async (plan, req) => {
+const serializeForRequest = async (plan, req, reconcile = true) => {
   await ensureActivityUids(plan);
-  await reconcileLinkedActivities(plan);
+  if (reconcile) await reconcileLinkedActivities(plan, { persist: false });
   const result = await serializeWithAssignment(plan);
   if (!req.planCollaboratorOnly) return result;
   const activityAssignments = array(result.asignacion?.actividades).filter((item) => item.user_id === req.user?.id && item.activo && ACTIONABLE_ACTIVITY_STATES.includes(item.estado_flujo));
@@ -614,7 +653,10 @@ const normalizePayload = (body = {}) => {
     periodo_inicio: periodoInicio,
     periodo_fin: periodoFin,
     estado,
-    contenido: { ...contenido, programa, periodoInicio, periodoFin }
+    contenido: { ...contenido, programa, periodoInicio, periodoFin,
+      objetivos: array(contenido.objetivos).map((objective) => ({ ...objective,
+        actividades: array(objective.actividades).map((activity) => ({ ...activity, ...resolveActivityIndicators(activity) }))
+      })) }
   };
 };
 
@@ -879,6 +921,30 @@ const canManageActivityEvidence = async (req, planId, activityUid) => {
   }));
 };
 
+const readActivityEvidence = async (req, res) => {
+  try {
+    const plan = await PlanMejoramiento.findByPk(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: 'Plan no encontrado' });
+    if (!(await canAccessPlan(req, plan.id)) || !(await canManageActivityEvidence(req, plan.id, req.params.uid))) {
+      return res.status(403).json({ success: false, message: 'No tiene acceso a estas evidencias' });
+    }
+    const activity = (plan.contenido?.objetivos || []).flatMap((objective) => objective.actividades || [])
+      .find((item) => String(item.uid) === String(req.params.uid));
+    if (!activity) return res.status(404).json({ success: false, message: 'Actividad no encontrada' });
+    const result = await planMejoramientoDriveService.readActivityEvidence(activity, req.params.fileId);
+    if (!req.params.fileId) return res.json({ success: true, data: result });
+    res.setHeader('Content-Type', result.mimeType);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    result.stream.on('error', () => res.destroy());
+    req.on('aborted', () => result.stream.destroy());
+    return result.stream.pipe(res);
+  } catch (error) {
+    return res.status(error.statusCode || 502).json({ success: false, message: 'No fue posible consultar las evidencias desde el repositorio institucional.' });
+  }
+};
+
+
 const syncDriveRepository = async (req, res) => {
   try {
     const plan = await PlanMejoramiento.findByPk(req.params.id);
@@ -909,6 +975,10 @@ const uploadActivityEvidence = async (req, res) => {
     if (!req.file?.buffer) return res.status(400).json({ success: false, message: 'Seleccione un archivo de evidencia' });
 
     const uploaded = await planMejoramientoDriveService.uploadActivityEvidence(plan, activityUid, req.file);
+    for (const objective of array(uploaded.content?.objetivos)) {
+      const activity = array(objective.actividades).find((a) => String(a.uid) === String(activityUid));
+      if (activity) activity.ultimaEvidencia = uploaded.evidence;
+    }
     await plan.update({ contenido: uploaded.content, actualizado_por: req.user?.id });
     // Sincronizar evidencia con Plan de Acción si la actividad está vinculada
     try {
@@ -925,7 +995,8 @@ const uploadActivityEvidence = async (req, res) => {
           include: [{ model: StrategicActionPlan, as: 'actionPlan' }]
         });
         if (actionItem?.actionPlan?.term_id) {
-          const cutMonth = new Date().getMonth() + 1;
+          const activity = array(uploaded.content?.objetivos).flatMap((o) => array(o.actividades)).find((a) => String(a.uid) === String(activityUid));
+          const cutMonth = Number(String(activity?.fechaSeguimiento || new Date().toISOString().slice(0, 10)).slice(5, 7));
           const targetPos = cutMonth <= 7 ? 1 : 2;
           const period = (await StrategicMonitoringPeriod.findOne({
             where: { term_id: actionItem.actionPlan.term_id, position: targetPos }
@@ -941,7 +1012,8 @@ const uploadActivityEvidence = async (req, res) => {
               mime_type: req.file.mimetype || 'application/octet-stream',
               size_bytes: req.file.size || 0,
               sha256: crypto.createHash('sha256').update(req.file.buffer).digest('hex'),
-              drive_file_id: uploaded.evidence?.driveFileId || null,
+              drive_file_id: uploaded.evidence?.linkedEvidence?.driveFileId || uploaded.evidence?.driveFileId || null,
+              drive_folder_id: uploaded.evidence?.linkedEvidence?.folderId || uploaded.evidence?.carpetaId || null,
               sync_status: 'synced',
               uploaded_by: req.user.id
             });
@@ -949,7 +1021,7 @@ const uploadActivityEvidence = async (req, res) => {
         }
       }
     } catch (syncEvErr) {
-      console.warn('[Sync StrategicEvidence error]:', syncEvErr.message);
+      throw syncEvErr;
     }
     return res.status(201).json({
       success: true,
@@ -995,9 +1067,10 @@ const update = async (req, res) => {
         ? mergeLeaderExecutionContent(plan.contenido || {}, payload.contenido || {})
         : mergeExecutionContent(plan.contenido || {}, payload.contenido || {}, new Set(delegated.filter((item) => ['asignada', 'en_ejecucion', 'devuelta'].includes(item.estado_flujo)).map((item) => String(item.actividad_uid))));
     }
+    payload.contenido = trackCurrentFollowup(plan.contenido, payload.contenido);
     await plan.update({ ...payload, actualizado_por: req.user?.id });
-    syncLinkedActionPlansTracking(plan, req).catch((err) => console.warn('[syncLinkedActionPlansTracking error]:', err.message));
-    return res.json({ success: true, data: await serializeForRequest(plan, req) });
+    await syncLinkedActionPlansTracking(plan, req);
+    return res.json({ success: true, data: await serializeForRequest(plan, req, false) });
   } catch (error) {
     return res.status(error.status || 500).json({ success: false, message: error.message || 'No fue posible actualizar el plan' });
   }
@@ -1009,115 +1082,59 @@ const update = async (req, res) => {
 // ============================================================================
 
 const syncLinkedActionPlansTracking = async (plan, req) => {
-  try {
-    const objetivos = array(plan.contenido?.objetivos);
-    for (const obj of objetivos) {
-      for (const act of array(obj.actividades)) {
-        if (!act.linkedActionItemId) continue;
-
-        const actionItem = await StrategicActionItem.findByPk(act.linkedActionItemId, {
-          include: [{
-            model: StrategicActionPlan,
-            as: 'actionPlan',
-            include: [{ model: StrategicTerm, as: 'term' }]
-          }]
-        });
-        if (!actionItem || !actionItem.actionPlan?.term_id) continue;
-
-        // 1. Interpretar porcentaje de avance de 0 a 100 de forma precisa
-        const rawStr = String(act.metaAlcanzada ?? '').replace(',', '.').replace('%', '').trim();
-        let numVal = parseFloat(rawStr);
-        if (isNaN(numVal)) numVal = 0;
-        let progressClamped = 0;
-        if (numVal <= 1 && numVal > 0) {
-          progressClamped = Math.round(numVal * 100);
-        } else {
-          progressClamped = Math.min(100, Math.max(0, Math.round(numVal)));
-        }
-
-        // Si existen seguimientos en el historial, tomar el último
-        if (Array.isArray(act.seguimientos) && act.seguimientos.length > 0) {
-          const lastSeg = act.seguimientos[act.seguimientos.length - 1];
-          if (lastSeg && Number.isFinite(Number(lastSeg.porcentaje))) {
-            progressClamped = Math.min(100, Math.max(0, Math.round(Number(lastSeg.porcentaje))));
-          }
-        }
-
-        // 2. Determinar el período aplicable (S1 o S2) según la fecha del corte o fechas de la actividad
-        let cutDate = act.fechaSeguimiento;
-        if (!cutDate && Array.isArray(act.seguimientos) && act.seguimientos.length > 0) {
-          cutDate = act.seguimientos[act.seguimientos.length - 1]?.fecha;
-        }
-        if (!cutDate) cutDate = act.fechaFin || act.fechaInicio || actionItem.ends_on || actionItem.starts_on;
-
-        let cutMonth = 1;
-        if (cutDate) {
-          const matchMonth = String(cutDate).match(/^\d{4}-(\d{1,2})/);
-          if (matchMonth) cutMonth = parseInt(matchMonth[1], 10);
-          else {
-            const parts = String(cutDate).split('-');
-            if (parts.length >= 2) cutMonth = parseInt(parts[1], 10) || 1;
-          }
-        } else {
-          cutMonth = new Date().getMonth() + 1;
-        }
-
-        const isS1 = cutMonth <= 7;
-        const targetPosition = isS1 ? 1 : 2;
-
-        const periods = await StrategicMonitoringPeriod.findAll({
-          where: { term_id: actionItem.actionPlan.term_id },
-          order: [['position', 'ASC'], ['starts_on', 'ASC']]
-        });
-        const targetPeriod = periods.find((p) => p.position === targetPosition) || periods[isS1 ? 0 : Math.min(1, periods.length - 1)];
-
-        if (targetPeriod) {
-          const [result] = await StrategicMonitoringResult.findOrCreate({
-            where: { action_item_id: actionItem.id, monitoring_period_id: targetPeriod.id },
-            defaults: {
-              action_item_id: actionItem.id,
-              monitoring_period_id: targetPeriod.id,
-              created_by: req?.user?.id || 1
-            }
-          });
-
-          await result.update({
-            physical_progress: progressClamped,
-            observations: act.observaciones || 'Seguimiento registrado desde Plan de Mejoramiento',
-            status: 'submitted',
-            updated_by: req?.user?.id || 1
-          });
-
-          const custom = { ...(actionItem.custom_values || {}) };
-          if (isS1) {
-            custom.progress_s1 = progressClamped;
-            custom.observations_s1 = act.observaciones || '';
-          } else {
-            custom.progress_s2 = progressClamped;
-            custom.observations_s2 = act.observaciones || '';
-          }
-
-          const allResults = await StrategicMonitoringResult.findAll({
-            where: { action_item_id: actionItem.id, deleted_at: null }
-          });
-          const avg = allResults.length
-            ? allResults.reduce((s, r) => s + Number(r.physical_progress || 0), 0) / allResults.length
-            : progressClamped;
-
-          await actionItem.update({
-            custom_values: custom,
-            current_progress: avg,
-            updated_by: req?.user?.id || 1
-          });
-
-          syncSinglePlanOfficialWorkbook(actionItem.action_plan_id).catch((err) =>
-            console.warn('[Auto-sync official workbook error]:', err.message)
-          );
-        }
+  for (const obj of array(plan.contenido?.objetivos)) {
+    for (const act of array(obj.actividades)) {
+      if (!act.linkedActionItemId) continue;
+      const actionItem = await StrategicActionItem.findByPk(act.linkedActionItemId, {
+        include: [{ model: StrategicActionPlan, as: 'actionPlan', include: [{ model: StrategicTerm, as: 'term' }] }]
+      });
+      if (!actionItem?.actionPlan?.term_id) continue;
+      const periods = await StrategicMonitoringPeriod.findAll({ where: { term_id: actionItem.actionPlan.term_id }, order: [['position', 'ASC']] });
+      const custom = { ...(actionItem.custom_values || {}) };
+      const signatures = { ...(custom.pm_tracking_signatures || {}) };
+      let changed = false;
+      const typeChanged = Boolean(act.tipoIndicador && act.tipoIndicador !== actionItem.indicator_type);
+      const indicators = resolveActivityIndicators(act);
+      const indicatorsChanged = Object.entries(indicators).some(([key, value]) => value !== (custom[key] || ''));
+      Object.assign(custom, indicators);
+      if (indicatorsChanged) {
+        custom.indicator = formatActivityIndicators(act);
+        custom.indicador = custom.indicator;
       }
+      if (typeChanged) {
+        custom.indicator_type = act.tipoIndicador;
+        custom.tipo_indicador = act.tipoIndicador;
+      }
+      const currentResults = await StrategicMonitoringResult.findAll({ where: { action_item_id: actionItem.id, deleted_at: null } });
+      const cuts = [...periodCuts(act, actionItem.actionPlan.term?.year)].sort(([a], [b]) => a - b);
+      for (const [position, cut] of cuts) {
+        const period = periods.find((p) => Number(p.position) === position);
+        if (!period) throw new Error(`No existe el monitoreo ${position} del plan vinculado`);
+        const signature = JSON.stringify([cut.fecha, cut.porcentaje, cut.observaciones || '', cut.id || '']);
+        if (signatures[position] === signature) continue;
+        const [result] = await StrategicMonitoringResult.findOrCreate({
+          where: { action_item_id: actionItem.id, monitoring_period_id: period.id },
+          defaults: { action_item_id: actionItem.id, monitoring_period_id: period.id, created_by: req.user.id }
+        });
+        const contribution = periodContribution(cut.porcentaje, currentResults.filter((r) => Number(periods.find((p) => String(p.id) === String(r.monitoring_period_id))?.position) < position));
+        await result.update({ physical_progress: contribution, observations: cut.observaciones || '', status: 'submitted', updated_by: req.user.id });
+        const existingIndex = currentResults.findIndex((r) => String(r.monitoring_period_id) === String(period.id));
+        if (existingIndex >= 0) currentResults[existingIndex] = { monitoring_period_id: period.id, physical_progress: contribution };
+        else currentResults.push({ monitoring_period_id: period.id, physical_progress: contribution });
+        custom[`progress_s${position}`] = contribution;
+        custom[`observations_s${position}`] = cut.observaciones || '';
+        const dates = { ...(custom.pm_monitoring_dates || {}) };
+        dates[position] = cut.fecha;
+        custom.pm_monitoring_dates = dates;
+        signatures[position] = signature;
+        changed = true;
+      }
+      if (!changed && !typeChanged && !indicatorsChanged) continue;
+      custom.pm_tracking_signatures = signatures;
+      const results = await StrategicMonitoringResult.findAll({ where: { action_item_id: actionItem.id, deleted_at: null } });
+      await actionItem.update({ custom_values: custom, ...(indicatorsChanged ? { indicator: custom.indicator } : {}), ...(typeChanged ? { indicator_type: act.tipoIndicador } : {}), ...(changed ? { current_progress: fulfillment(results) } : {}), updated_by: req.user.id });
+      syncSinglePlanOfficialWorkbook(actionItem.action_plan_id).catch((err) => console.warn('[Workbook sync]', err.message));
     }
-  } catch (err) {
-    console.error('[syncLinkedActionPlansTracking error]:', err.message);
   }
 };
 
@@ -1446,6 +1463,10 @@ const linkActivityToActionPlan = async (req, res) => {
       where: { action_plan_id: actionPlan.id, deleted_at: null },
       attributes: ['id', 'code', 'activity', 'custom_values']
     });
+    const existingLink = existingItems.find((item) =>
+      String(item.custom_values?.pm_plan_id) === String(plan.id)
+      && String(item.custom_values?.pm_actividad_uid) === String(targetActivity.uid));
+    if (existingLink) targetActivity.linkedActionItemId = existingLink.id;
     const existingCodes = new Set(existingItems.map((it) => it.code));
     let maxNum = 0;
     for (const code of existingCodes) {
@@ -1493,8 +1514,8 @@ const linkActivityToActionPlan = async (req, res) => {
         message: `No es posible registrar actividades duplicadas. Ya existe la actividad "${duplicate.activity || activityName}" (${duplicate.code}) en el Plan de Acción "${actionPlan.title || actionPlan.code}".`
       });
     }
-    const indicatorName = text(formValues.indicador || targetActivity.indicador);
-    const indicatorType = text(formValues.tipoIndicador || formValues.tipo_indicador || 'Resultado');
+    const indicatorName = formatActivityIndicators(targetActivity) || text(formValues.indicador || targetActivity.indicador);
+    const indicatorType = text(formValues.tipoIndicador || formValues.tipo_indicador || targetActivity.tipoIndicador || 'Resultado');
     const targetVal = String(formValues.meta || targetActivity.meta || '1');
     const startDate = formValues.fechaInicio || formValues.fecha_inicio || targetActivity.fechaInicio || `${actionPlan.term?.year || 2026}-01-01`;
     const endDate = formValues.fechaFin || formValues.fecha_fin || targetActivity.fechaFin || `${actionPlan.term?.year || 2026}-12-31`;
@@ -1523,6 +1544,7 @@ const linkActivityToActionPlan = async (req, res) => {
 
     const customValuesPayload = {
       ...(actionItem?.custom_values || {}),
+      ...resolveActivityIndicators(targetActivity),
       activity: activityName,
       indicator: indicatorName,
       indicador: indicatorName,
@@ -1599,6 +1621,7 @@ const linkActivityToActionPlan = async (req, res) => {
     targetActivity.linkedActionPlanTitle = actionPlan.title;
     targetActivity.linkedActionItemId = actionItem.id;
     targetActivity.linkedActionItemCode = actionItem.code;
+    targetActivity.tipoIndicador = indicatorType;
     targetActivity.linkedAt = new Date().toISOString();
     if (driveFolderUrl) {
       targetActivity.evidenceFolderUrl = driveFolderUrl;
@@ -1884,6 +1907,8 @@ const catalogValues = (value) => {
 };
 
 const readInstitutionalPolicies = async () => {
+  const catalog = await policyCatalog.listPolicies();
+  if (catalog.length) return catalog;
   try {
     const documents = await Documento.findAll({
       attributes: ['titulo', 'estado', 'datos_originales'],
@@ -1923,6 +1948,28 @@ const readInstitutionalPolicies = async () => {
     }));
   } catch (_) {
     return [];
+  }
+};
+const importInstitutionalPolicies = async (req, res) => {
+  try {
+    if (!req.file?.buffer) return res.status(422).json({ success: false, message: 'Seleccione un archivo Excel de políticas.' });
+    const policies = policyCatalog.parsePolicyWorkbook(req.file.buffer);
+    const summary = await policyCatalog.importPolicies(policies, { source: req.file.originalname, userId: req.user?.id });
+    return res.json({ success: true, data: { ...summary, policies: await policyCatalog.listPolicies() } });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'No fue posible actualizar el catálogo de políticas.' });
+  }
+};
+const saveInstitutionalPolicy = async (req, res) => {
+  if (req.planCollaboratorOnly) return res.status(403).json({ success: false, message: 'No tiene permiso para modificar el catálogo de políticas.' });
+  try {
+    const policy = policyCatalog.preparePolicy(req.body);
+    await policyCatalog.importPolicies([policy], { source: 'Registro desde Plan de Mejoramiento', userId: req.user?.id });
+    const policies = await policyCatalog.listPolicies();
+    const saved = policies.find((item) => policyCatalog.preparePolicy(item).normalized_key === policy.normalized_key);
+    return res.json({ success: true, data: { policy: saved, policies } });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'No fue posible guardar la política y sus líneas.' });
   }
 };
 const tariffCategories = new Set(['personal', 'activos', 'publicidad', 'papeleria', 'espacios', 'diversos']);
@@ -2029,8 +2076,8 @@ const readCatalogs = async () => {
 const getCatalogs = async (req, res) => {
   try {
     if (!catalogsPromise) catalogsPromise = readCatalogs().catch((error) => { catalogsPromise = null; throw error; });
-    const [catalogs, institutionalPolicies] = await Promise.all([catalogsPromise, readInstitutionalPolicies()]);
-    return res.json({ success: true, data: { ...catalogs, institutionalPolicies } });
+    const [catalogs, institutionalPolicies, strategicCatalog] = await Promise.all([catalogsPromise, readInstitutionalPolicies(), readActionPlanStrategicCatalog()]);
+    return res.json({ success: true, data: { ...catalogs, ...strategicCatalog, institutionalPolicies } });
   } catch (error) {
     return res.status(500).json({ success: false, message: `No fue posible leer los catálogos de la plantilla: ${error.message}` });
   }
@@ -2405,6 +2452,7 @@ const buildPlanMejoramientoWorkbook = async (plan, templatePath = TEMPLATE_PATH)
   addFollowUpSheet(workbook, rows);
   addBudgetSummarySheet(workbook, contenido);
   addPolicyAlignmentSheet(workbook, rows);
+  writeActivityIndicators(workbook, contenido.objetivos);
   workbook.calcProperties.fullCalcOnLoad = true;
   workbook.calcProperties.forceFullCalc = true;
   workbook.calcProperties.calcMode = 'auto';
@@ -2548,6 +2596,7 @@ const importPlanExcel = async (req, res) => {
     }
 
     const compiledObjectives = Array.from(objectivesMap.values());
+    readActivityIndicators(workbook, compiledObjectives);
     if (!compiledObjectives.length) {
       return res.status(422).json({ success: false, message: 'No se encontraron objetivos ni actividades registrados en la hoja PM' });
     }
@@ -2713,4 +2762,4 @@ const importPlanExcel = async (req, res) => {
 };
 
 module.exports = {
-  getActionPlanCandidates, linkActivityToActionPlan, unlinkActivityFromActionPlan, syncLinkedActionPlansTracking, ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, syncDriveRepository, uploadActivityEvidence, exportExcel, downloadPlanTemplate, importPlanExcel, buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, planStateForAssignment };
+  saveInstitutionalPolicy, importInstitutionalPolicies, reconcileLinkedActivities, readActivityEvidence, getActionPlanCandidates, linkActivityToActionPlan, unlinkActivityFromActionPlan, syncLinkedActionPlansTracking, ensureAccess, ensureManager, getCatalogs, downloadTariffTemplate, importTariffs, searchResponsables, syncAutoevaluacion, linkedAutoevaluacion, unlinkAutoevaluacion, executionBadge, assignPlan, workflowAction, assignActivity, activityWorkflowAction, activityCorrectionAction, list, get, create, update, remove, uploadEvidence, syncDriveRepository, uploadActivityEvidence, exportExcel, downloadPlanTemplate, importPlanExcel, buildPlanMejoramientoWorkbook, readInstitutionalPolicies, mergeLeaderExecutionContent, planStateForAssignment };

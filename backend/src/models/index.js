@@ -50,6 +50,7 @@ const AutoevaluacionParticipante = require('./AutoevaluacionParticipante');
 const AutoevaluacionPrograma = require('./AutoevaluacionPrograma');
 const PlanMejoramiento = require('./PlanMejoramiento');
 const PlanMejoramientoTarifaVersion = require('./PlanMejoramientoTarifaVersion');
+const InstitutionalPolicy = require('./InstitutionalPolicy');
 const PlanMejoramientoAsignacion = require('./PlanMejoramientoAsignacion');
 const PlanMejoramientoFlujoHistorial = require('./PlanMejoramientoFlujoHistorial');
 const PlanMejoramientoActividadAsignacion = require('./PlanMejoramientoActividadAsignacion');
@@ -420,6 +421,7 @@ module.exports = {
   AutoevaluacionPrograma,
   PlanMejoramiento,
   PlanMejoramientoTarifaVersion,
+  InstitutionalPolicy,
   PlanMejoramientoAsignacion,
   PlanMejoramientoFlujoHistorial,
   PlanMejoramientoActividadAsignacion,
