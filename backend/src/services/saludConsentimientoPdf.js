@@ -12,12 +12,8 @@ const buildSaludConsentimientoPdfSection = (solicitud) => {
   if (!record?.accepted || !record.policy) return [];
   const { policy, actor } = record;
   return [
-    { text: policy.title, bold: true, color: '#173b60', fontSize: 11, pageBreak: 'before', margin: [0, 0, 0, 14] },
+    { text: policy.title, bold: true, color: '#173b60', fontSize: 11, alignment: 'center', pageBreak: 'before', margin: [0, 0, 0, 14] },
     ...policy.paragraphs.map((text) => ({ text, fontSize: 9.3, lineHeight: 1.12, alignment: 'justify', margin: [0, 0, 0, 8] })),
-    ...(record.withoutAttachment && record.noAttachmentDeclaration ? [
-      { text: 'Declaración de soportes pendientes aceptada', bold: true, fontSize: 10, margin: [0, 4, 0, 8] },
-      { text: record.noAttachmentDeclaration, fontSize: 10, alignment: 'justify', margin: [0, 0, 0, 10] }
-    ] : []),
     {
       unbreakable: true,
       stack: [
@@ -59,7 +55,7 @@ const appendSaludConsentimientoPdf = (pdf, solicitud, fonts) => {
   try {
     addPage();
     const title = section[0];
-    pdf.font(fonts.bold).fontSize(11).fillColor('#173b60').text(title.text, left, pdf.y, { width, lineGap: 2 });
+    pdf.font(fonts.bold).fontSize(11).fillColor('#173b60').text(title.text, left, pdf.y, { width, align: title.alignment, lineGap: 2 });
     pdf.moveDown(0.6);
     pdf.save().strokeColor('#d6dfe8').lineWidth(0.6).moveTo(left, pdf.y).lineTo(left + width, pdf.y).stroke().restore();
     pdf.moveDown(0.8);

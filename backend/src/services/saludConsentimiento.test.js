@@ -52,7 +52,7 @@ test('la aceptación sin adjuntos incluye el compromiso de entrega y se renueva 
   assert.equal(record.withoutAttachment, true);
   assert.match(record.noAttachmentDeclaration, /me comprometo a conservarlos/);
   const text = JSON.stringify(buildSaludConsentimientoPdfSection({ datos_formulario: { consentimiento_salud: record } }));
-  assert.ok(text.includes(record.noAttachmentDeclaration));
+  assert.equal(text.includes(record.noAttachmentDeclaration), false, 'La declaración de soportes se presenta solo en el reporte principal');
   assert.equal(buildEvidence().noAttachmentDeclaration, null);
 });
 
@@ -63,6 +63,7 @@ test('anexo PDF conserva todo el oficio y completa la aceptación en hora de Col
   for (const paragraph of policy.paragraphs) assert.ok(text.includes(paragraph));
   for (const value of [policy.declaration, 'PERSONA DE PRUEBA', '123456', '10:23:45', record.evidenceHash, record.transactionId, 'reporte-123']) assert.ok(text.includes(value), value);
   assert.equal(section[0].pageBreak, 'before');
+  assert.equal(section[0].alignment, 'center');
   assert.deepEqual(buildSaludConsentimientoPdfSection({ datos_formulario: {} }), []);
 });
 
@@ -88,8 +89,8 @@ test('los PDF reales corto y oficio incluyen el texto y la evidencia de aceptaci
   t.mock.method(models.User, 'findOne', async () => null);
   const { ensureReporteSalidaPdf } = require('./reporteSalidaPdfService');
   const pdfParse = require('pdf-parse');
-  for (const duracionTipo of ['menos_media_jornada', '3_mas_dias']) {
-    const record = buildEvidence(duracionTipo === '3_mas_dias');
+  for (const [duracionTipo, withoutAttachment] of [['menos_media_jornada', false], ['menos_media_jornada', true], ['3_mas_dias', true]]) {
+    const record = buildEvidence(withoutAttachment);
     const solicitud = {
       id: 123, consecutivo: `TEST-SALUD-${crypto.randomUUID()}`, created_at: record.acceptedAt,
       solicitante_snapshot: { nombre: record.actor.nombre, username: record.actor.documento },
@@ -98,7 +99,7 @@ test('los PDF reales corto y oficio incluyen el texto y la evidencia de aceptaci
         tx_id: crypto.randomUUID(), consentimiento_salud: record,
         personal: { nombre: record.actor.nombre, documento: record.actor.documento },
         laboral: { cargo: 'Docente', dependencia: 'Programa de prueba', vicerrectoria: 'Vicerrectoria Academica' },
-        salida: { tipo: 'cita_eps', categoria: 'salud', duracionTipo, duracionDias: duracionTipo === '3_mas_dias' ? 3 : 0, fecha: '2026-11-05', fechaRegreso: duracionTipo === '3_mas_dias' ? '2026-11-07' : '2026-11-05', horaInicio: '08:00', horaFin: '10:00', motivo: 'Cita médica' }
+        salida: { tipo: 'cita_eps', categoria: 'salud', noCuentaAdjunto: withoutAttachment, declaracionSinAdjunto: record.noAttachmentDeclaration, duracionTipo, duracionDias: duracionTipo === '3_mas_dias' ? 3 : 0, fecha: '2026-11-05', fechaRegreso: duracionTipo === '3_mas_dias' ? '2026-11-07' : '2026-11-05', horaInicio: '08:00', horaFin: '10:00', motivo: 'Cita médica' }
       }
     };
     const attachment = await ensureReporteSalidaPdf(solicitud);
@@ -108,7 +109,7 @@ test('los PDF reales corto y oficio incluyen el texto y la evidencia de aceptaci
       const beforeAnnex = text.slice(0, text.indexOf(policy.paragraphs[0]));
       assert.equal(beforeAnnex.includes(record.evidenceHash), false, 'La trazabilidad anterior debe mostrar el texto de aceptación sin el hash');
       for (const paragraph of policy.paragraphs) assert.ok(text.includes(paragraph), `Falta texto del oficio en ${duracionTipo}`);
-      if (record.withoutAttachment) assert.ok(text.includes(record.noAttachmentDeclaration));
+      if (record.withoutAttachment) assert.equal(text.split(record.noAttachmentDeclaration).length - 1, 1, 'La declaración sin soportes debe aparecer una sola vez en el PDF');
       for (const value of [policy.declaration, record.evidenceHash, record.transactionId, '10:23:45', record.actor.documento]) assert.ok(text.includes(value), value);
       assert.ok(pdf.numpages >= 2);
     } finally {
