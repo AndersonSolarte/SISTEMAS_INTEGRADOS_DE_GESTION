@@ -974,16 +974,22 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   }, [evaluatingItem, periods]);
 
   const tab4FilteredItems = useMemo(() => {
-    const items = detail?.items || [];
+    let items = detail?.items || [];
+    if (activityOriginFilter === 'plan_mejoramiento') {
+      items = items.filter((it) => it.custom_values?.source_module === 'plan_mejoramiento');
+    } else if (activityOriginFilter === 'plan_accion') {
+      items = items.filter((it) => it.custom_values?.source_module !== 'plan_mejoramiento');
+    }
     if (!activitySearch.trim()) return items;
     const q = activitySearch.toLowerCase().trim();
     return items.filter((it) =>
       (it.code || '').toLowerCase().includes(q) ||
       (it.activity || '').toLowerCase().includes(q) ||
       (it.indicator || '').toLowerCase().includes(q) ||
-      (it.macroactivity || '').toLowerCase().includes(q)
+      (it.macroactivity || '').toLowerCase().includes(q) ||
+      (it.custom_values?.pm_programa || '').toLowerCase().includes(q)
     );
-  }, [detail?.items, activitySearch]);
+  }, [detail?.items, activityOriginFilter, activitySearch]);
 
   const kpiStats = useMemo(() => {
     const items = detail?.items || [];
@@ -6163,6 +6169,41 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           label={`${tab4FilteredItems.length} actividades`}
                           sx={{ bgcolor: '#e2e8f0', color: '#334155', fontWeight: 800, fontSize: 11, height: 22 }}
                         />
+                        {pmItemsCount > 0 && (
+                          <Stack direction="row" spacing={0.8} alignItems="center" flexWrap="wrap">
+                            <Chip
+                              size="small"
+                              label={`Todas (${detail.items?.length || 0})`}
+                              color={activityOriginFilter === 'all' ? 'primary' : 'default'}
+                              variant={activityOriginFilter === 'all' ? 'filled' : 'outlined'}
+                              onClick={() => { setActivityOriginFilter('all'); setTab4Page(0); }}
+                              sx={{ fontWeight: 800, cursor: 'pointer', height: 24, fontSize: 11 }}
+                            />
+                            <Chip
+                              size="small"
+                              label={`Institucionales (${(detail.items?.length || 0) - pmItemsCount})`}
+                              color={activityOriginFilter === 'plan_accion' ? 'primary' : 'default'}
+                              variant={activityOriginFilter === 'plan_accion' ? 'filled' : 'outlined'}
+                              onClick={() => { setActivityOriginFilter('plan_accion'); setTab4Page(0); }}
+                              sx={{ fontWeight: 800, cursor: 'pointer', height: 24, fontSize: 11 }}
+                            />
+                            <Chip
+                              size="small"
+                              icon={<TrendingUp sx={{ fontSize: '13px !important', color: activityOriginFilter === 'plan_mejoramiento' ? '#ffffff !important' : '#c2410c !important' }} />}
+                              label={`Plan de Mejoramiento (${pmItemsCount})`}
+                              onClick={() => { setActivityOriginFilter('plan_mejoramiento'); setTab4Page(0); }}
+                              sx={{
+                                fontWeight: 900,
+                                cursor: 'pointer',
+                                height: 24,
+                                fontSize: 11,
+                                ...(activityOriginFilter === 'plan_mejoramiento'
+                                  ? { bgcolor: '#ea580c', color: '#ffffff' }
+                                  : { bgcolor: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' })
+                              }}
+                            />
+                          </Stack>
+                        )}
                       </Stack>
                       <Typography variant="body2" color="#64748b" sx={{ fontSize: 12.5, mt: 0.3 }}>
                         Seguimiento dinámico por periodos, consulta de evidencias cargadas y valoración oficial de Planeación.
@@ -6185,6 +6226,14 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     />
                   </Stack>
 
+                  {activityOriginFilter === 'plan_mejoramiento' && (
+                    <Box sx={{ px: 2.5, py: 1.2, mb: 1.5, bgcolor: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <TrendingUp sx={{ color: '#ea580c', fontSize: 18 }} />
+                      <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#9a3412' }}>
+                        Actividades articuladas desde Plan de Mejoramiento ({tab4FilteredItems.length}) — Evidencias y avances sincronizados bidireccionalmente
+                      </Typography>
+                    </Box>
+                  )}
                   <TableContainer sx={{ maxHeight: 500, border: '1px solid #e2e8f0', borderRadius: 2, overflowX: 'auto' }}>
                     <Table stickyHeader size="small" sx={{ minWidth: 1020 }}>
                       <TableHead>
@@ -6267,32 +6316,60 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               <TableRow key={it.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, borderBottom: '1px solid #f1f5f9' }}>
                                 {/* Código centrado */}
                                 <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
-                                  <Chip
-                                    size="small"
-                                    label={it.code || '—'}
-                                    sx={{ fontWeight: 800, bgcolor: '#e2e8f0', color: '#1e293b', fontSize: 11, height: 24, borderRadius: 1 }}
-                                  />
+                                  <Stack direction="row" spacing={0.7} alignItems="center" justifyContent="center">
+                                    <Chip
+                                      size="small"
+                                      label={it.code || '—'}
+                                      sx={{ fontWeight: 800, bgcolor: '#e2e8f0', color: '#1e293b', fontSize: 11, height: 24, borderRadius: 1 }}
+                                    />
+                                    {it.custom_values?.source_module === 'plan_mejoramiento' && (
+                                      <Tooltip title={`Originada en Plan de Mejoramiento (${it.custom_values?.pm_programa || ''})`}>
+                                        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#ea580c', flexShrink: 0, boxShadow: '0 0 0 2px #ffedd5' }} />
+                                      </Tooltip>
+                                    )}
+                                  </Stack>
                                 </TableCell>
                                 {/* Actividad centrada verticalmente con límite de ancho y 2 líneas */}
                                 <TableCell sx={{ verticalAlign: 'middle', py: 1.2, px: 1.5, minWidth: 200, maxWidth: { xs: 230, sm: 280, md: 320 } }}>
-                                  <Tooltip title={it.activity} arrow placement="top-start">
-                                    <Typography
-                                      sx={{
-                                        fontSize: 12.5,
-                                        fontWeight: 700,
-                                        color: '#0f172a',
-                                        lineHeight: 1.35,
-                                        display: '-webkit-box',
-                                        WebkitLineClamp: 2,
-                                        WebkitBoxOrient: 'vertical',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        cursor: 'pointer'
-                                      }}
-                                    >
-                                      {it.activity}
-                                    </Typography>
-                                  </Tooltip>
+                                  <Stack spacing={0.5} alignItems="flex-start">
+                                    {it.custom_values?.source_module === 'plan_mejoramiento' && (
+                                      <Tooltip title={`Actividad Interoperable desde Plan de Mejoramiento${(it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')) ? ` (${it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')})` : ''}`}>
+                                        <Chip
+                                          size="small"
+                                          icon={<TrendingUp sx={{ fontSize: '13px !important', color: '#c2410c !important' }} />}
+                                          label={`Plan de Mejoramiento${(it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')) ? ` · ${it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')}` : ''}`}
+                                          sx={{
+                                            height: 22,
+                                            fontSize: 10.5,
+                                            fontWeight: 900,
+                                            bgcolor: '#fff7ed',
+                                            color: '#c2410c',
+                                            border: '1px solid #fed7aa',
+                                            borderRadius: 1.5,
+                                            '& .MuiChip-icon': { ml: 0.5 }
+                                          }}
+                                        />
+                                      </Tooltip>
+                                    )}
+                                    <Tooltip title={it.activity} arrow placement="top-start">
+                                      <Typography
+                                        sx={{
+                                          fontSize: 12.5,
+                                          fontWeight: 700,
+                                          color: '#0f172a',
+                                          lineHeight: 1.35,
+                                          display: '-webkit-box',
+                                          WebkitLineClamp: 2,
+                                          WebkitBoxOrient: 'vertical',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        {it.activity}
+                                      </Typography>
+                                    </Tooltip>
+                                  </Stack>
                                   {it.macroactivity && (
                                     <Typography
                                       sx={{

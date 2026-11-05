@@ -1,3 +1,4 @@
+const { aspectKey, uniqueAspects, validateAspectAssignments } = require('../services/improvementAspectIdentity');
 const { enrichImprovementPolicyDimensions } = require('../services/activityPolicyStatisticsService');
 const { clampProgress, periodCuts, latestResult, fulfillment, periodContribution, trackCurrentFollowup } = require('../services/improvementMonitoringRules');
 const fs = require('fs');
@@ -101,7 +102,8 @@ const mergeAutoevaluacionRows = (plan, rows, transferMode) => {
     if (item?.id) opportunityMap.set(String(item.id), item);
   });
   const existingIds = new Set(opportunityMap.keys());
-  const pending = rows.filter((row) => !existingIds.has(String(row.id)));
+  const existingKeys = new Set([...opportunityMap.values()].map(aspectKey));
+  const pending = uniqueAspects(rows).filter((row) => !existingIds.has(String(row.id)) && !existingKeys.has(aspectKey(row)));
   pending.forEach((row) => opportunityMap.set(String(row.id), opportunityFromAutoevaluacion(row, transferMode)));
   return {
     added: pending.length,
@@ -112,7 +114,7 @@ const mergeAutoevaluacionRows = (plan, rows, transferMode) => {
       ...content,
       programa: plan.programa,
       objetivos: retainedObjectives,
-      oportunidadesAutoevaluacion: Array.from(opportunityMap.values()),
+      oportunidadesAutoevaluacion: uniqueAspects(Array.from(opportunityMap.values())),
       presupuesto: array(content.presupuesto)
     }
   };
@@ -263,12 +265,29 @@ const ensureActivityUids = async (plan) => {
   if (changed) await plan.update({ contenido: { ...content, objetivos: objectives } });
   return plan;
 };
-const reconcileLinkedActivities = async (plan, { persist = true } = {}) => {
+const reconcileLinkedActivities = async (plan, { persist = true, force = false } = {}) => {
   try {
     const content = plan.contenido || {};
     let modified = false;
     for (const obj of array(content.objetivos)) {
       for (const act of array(obj.actividades)) {
+        if (!act.linkedActionItemId && act.uid) {
+          const foundItem = await StrategicActionItem.findOne({
+            where: {
+              deleted_at: null,
+              [Op.or]: [
+                sequelize.where(sequelize.literal("custom_values->>'pm_actividad_uid'"), String(act.uid)),
+                sequelize.where(sequelize.literal("custom_values->>'pm_activity_uid'"), String(act.uid))
+              ]
+            }
+          });
+          if (foundItem) {
+            act.linkedActionItemId = foundItem.id;
+            act.linkedActionItemCode = foundItem.code;
+            act.linkedActionPlanId = foundItem.action_plan_id;
+            modified = true;
+          }
+        }
         if (!act.linkedActionItemId) continue;
         const actionItem = await StrategicActionItem.findByPk(act.linkedActionItemId, {
           include: [
@@ -292,7 +311,7 @@ const reconcileLinkedActivities = async (plan, { persist = true } = {}) => {
         const results = actionItem.monitoringResults || [];
         const liveTime = Date.parse(act.seguimientoActual?.registradoAt || '') || 0;
         const remoteTime = Math.max(0, ...results.map((r) => Date.parse(r.updated_at || r.updatedAt || r.created_at || r.createdAt || '') || 0));
-        if (results.length && (!liveTime || remoteTime >= liveTime)) {
+        if (results.length && (force || !liveTime || remoteTime >= liveTime)) {
           const ids = results.map((r) => r.monitoring_period_id);
           const periods = await StrategicMonitoringPeriod.findAll({ where: { id: { [Op.in]: ids } } });
           const latest = latestResult(results, periods);
@@ -633,6 +652,7 @@ const executionBadge = async (req, res) => {
 const normalizePayload = (body = {}) => {
   const currentYear = new Date().getFullYear();
   const contenido = body.contenido && typeof body.contenido === 'object' ? body.contenido : {};
+  validateAspectAssignments(array(contenido.objetivos));
   const programa = text(body.programa || contenido.programa);
   const periodoInicio = Number(body.periodo_inicio || contenido.periodoInicio || currentYear);
   const periodoFin = Number(body.periodo_fin || contenido.periodoFin || periodoInicio + 2);
@@ -655,7 +675,9 @@ const normalizePayload = (body = {}) => {
     periodo_fin: periodoFin,
     estado,
     contenido: { ...contenido, programa, periodoInicio, periodoFin,
+      oportunidadesAutoevaluacion: uniqueAspects(array(contenido.oportunidadesAutoevaluacion)),
       objetivos: array(contenido.objetivos).map((objective) => ({ ...objective,
+        aspectosAutoevaluacion: uniqueAspects(array(objective.aspectosAutoevaluacion)),
         actividades: array(objective.actividades).map((activity) => ({ ...activity, ...resolveActivityIndicators(activity) }))
       })) }
   };
@@ -1087,6 +1109,22 @@ const update = async (req, res) => {
 const syncLinkedActionPlansTracking = async (plan, req) => {
   for (const obj of array(plan.contenido?.objetivos)) {
     for (const act of array(obj.actividades)) {
+      if (!act.linkedActionItemId && act.uid) {
+        const foundItem = await StrategicActionItem.findOne({
+          where: {
+            deleted_at: null,
+            [Op.or]: [
+              sequelize.where(sequelize.literal("custom_values->>'pm_actividad_uid'"), String(act.uid)),
+              sequelize.where(sequelize.literal("custom_values->>'pm_activity_uid'"), String(act.uid))
+            ]
+          }
+        });
+        if (foundItem) {
+          act.linkedActionItemId = foundItem.id;
+          act.linkedActionItemCode = foundItem.code;
+          act.linkedActionPlanId = foundItem.action_plan_id;
+        }
+      }
       if (!act.linkedActionItemId) continue;
       const actionItem = await StrategicActionItem.findByPk(act.linkedActionItemId, {
         include: [{ model: StrategicActionPlan, as: 'actionPlan', include: [{ model: StrategicTerm, as: 'term' }] }]
@@ -1119,7 +1157,10 @@ const syncLinkedActionPlansTracking = async (plan, req) => {
       const cuts = [...periodCuts(act, actionItem.actionPlan.term?.year)].sort(([a], [b]) => a - b);
       for (const [position, cut] of cuts) {
         const period = periods.find((p) => Number(p.position) === position);
-        if (!period) throw new Error(`No existe el monitoreo ${position} del plan vinculado`);
+        if (!period) {
+          console.warn(`[syncLinkedActionPlansTracking] Periodo ${position} no encontrado para item ${actionItem.id}`);
+          continue;
+        }
         const signature = JSON.stringify([cut.fecha, cut.porcentaje, cut.observaciones || '', cut.id || '']);
         if (signatures[position] === signature) continue;
         const [result] = await StrategicMonitoringResult.findOrCreate({

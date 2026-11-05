@@ -48,3 +48,21 @@ Mejoramiento usa el PED del Plan de Acción vinculado; las actividades sin vínc
 utilizan el PED activo. Las selecciones y los metadatos estadísticos se guardan
 en los JSON existentes: no requieren nuevas columnas ni tablas.
 Véase `docs/estadisticas-politicas.md` para las reglas del reporte futuro.
+
+## Indicadores opcionales, metas y fechas de entrega
+
+Cada actividad conserva para Resultado, Logro e Impacto los campos
+`indicadorResultado`, `metaResultado`, `fechaEntregaResultado` e
+`indicadorResultadoActivo` (y los equivalentes Logro/Impacto). Las metas son texto,
+las fechas usan `AAAA-MM-DD` y el estado activo es booleano. Se almacenan bajo
+`planes_mejoramiento.contenido.objetivos[].actividades[]` en PostgreSQL JSONB.
+La sincronización vinculada conserva los mismos campos en los valores personalizados
+de la actividad del Plan de Acción. No se requiere alterar el esquema SQL.
+
+La plantilla vacía y la exportación generan automáticamente la hoja `INDICADORES`
+con 15 columnas: objetivo, posición de actividad, nombre, tres indicadores, tres
+metas, tres fechas y tres estados activos. La importación recupera esos campos;
+también admite los Excel anteriores sin estas columnas adicionales. Una fecha
+ingresada como fecha de Excel o `DD/MM/AAAA` se convierte al formato ISO.
+Quitar un indicador guarda su estado inactivo y conserva su información para
+restaurarlo. Los indicadores inactivos no aparecen en el texto consolidado.

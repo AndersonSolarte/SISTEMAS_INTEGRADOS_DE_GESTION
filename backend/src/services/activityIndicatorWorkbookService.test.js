@@ -3,6 +3,58 @@ const assert = require('node:assert/strict');
 const ExcelJS = require('exceljs');
 const { writeActivityIndicators, readActivityIndicators } = require('./activityIndicatorWorkbookService');
 
+test('blank template includes all indicator storage columns without sample activity data', () => {
+  const book = new ExcelJS.Workbook();
+  writeActivityIndicators(book, []);
+  const sheet = book.getWorksheet('INDICADORES');
+  assert.equal(sheet.columnCount, 15);
+  assert.equal(sheet.rowCount, 1);
+  assert.equal(sheet.getCell('J1').value, 'ENTREGA RESULTADO');
+  assert.equal(sheet.getCell('O1').value, 'IMPACTO ACTIVO');
+});
+
+test('manually scheduled Excel dates import as ISO dates and empty flags stay optional', () => {
+  const book = new ExcelJS.Workbook();
+  writeActivityIndicators(book, []);
+  const sheet = book.getWorksheet('INDICADORES');
+  sheet.addRow(['OPM_01', 1, 'Actividad', 'Reportes', '', '', '12 reportes', '', '', new Date('2026-11-20T00:00:00Z'), '25/11/2026']);
+  const objectives = [{ codigo: 'OPM_01', actividades: [{}] }];
+  readActivityIndicators(book, objectives);
+  assert.equal(objectives[0].actividades[0].fechaEntregaResultado, '2026-11-20');
+  assert.equal(objectives[0].actividades[0].fechaEntregaLogro, '2026-11-25');
+  const resolved = require('./activityIndicators').resolveActivityIndicators(objectives[0].actividades[0]);
+  assert.equal(resolved.indicadorImpactoActivo, false);
+});
+
+test('delivery dates and removed indicator flags survive Excel round trip', async () => {
+  const activity = { indicadorResultado: 'Reportes', indicadorResultadoActivo: false, fechaEntregaResultado: '2026-12-10', fechaEntregaLogro: '2026-12-11' };
+  const book = new ExcelJS.Workbook();
+  writeActivityIndicators(book, [{ codigo: 'OPM_01', actividades: [activity] }]);
+  const reopened = new ExcelJS.Workbook();
+  await reopened.xlsx.load(await book.xlsx.writeBuffer());
+  const objectives = [{ codigo: 'OPM_01', actividades: [{}] }];
+  readActivityIndicators(reopened, objectives);
+  const imported = objectives[0].actividades[0];
+  assert.equal(imported.indicadorResultadoActivo, false);
+  assert.equal(imported.indicadorLogroActivo, true);
+  assert.equal(imported.fechaEntregaResultado, '2026-12-10');
+  assert.equal(imported.fechaEntregaLogro, '2026-12-11');
+  assert.equal(imported.indicadorResultado, 'Reportes');
+  const { formatActivityIndicators } = require('./activityIndicators');
+  assert.equal(formatActivityIndicators(imported), '');
+});
+
+test('three alphanumeric targets round-trip independently through Excel', async () => {
+  const activity = { nombre: 'Actividad', metaResultado: '12 reportes', metaLogro: '90% de cobertura', metaImpacto: 'Nivel A2' };
+  const book = new ExcelJS.Workbook();
+  writeActivityIndicators(book, [{ codigo: 'OPM_01', actividades: [activity] }]);
+  const reopened = new ExcelJS.Workbook();
+  await reopened.xlsx.load(await book.xlsx.writeBuffer());
+  const objectives = [{ codigo: 'OPM_01', actividades: [{ nombre: 'Actividad' }] }];
+  readActivityIndicators(reopened, objectives);
+  for (const field of ['metaResultado', 'metaLogro', 'metaImpacto']) assert.equal(objectives[0].actividades[0][field], activity[field]);
+});
+
 test('Resultado, Logro and Impacto survive Excel export and reimport per activity', async () => {
   const objectives = [
     { codigo: 'OPM_01', actividades: [

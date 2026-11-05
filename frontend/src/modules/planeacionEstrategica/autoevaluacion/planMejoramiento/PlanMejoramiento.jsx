@@ -1,3 +1,4 @@
+import { aspectKey, uniqueAspects } from './aspectIdentity';
 import ActivityIndicatorFields, { resolveActivityIndicators } from './ActivityIndicatorFields';
 import StrategicObjectiveFields from './StrategicObjectiveFields';
 import PolicyActionFields from './PolicyActionFields';
@@ -1655,7 +1656,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     [...(editor?.oportunidadesAutoevaluacion || []), ...opportunities].forEach((item) => {
       if (item?.id && !map.has(String(item.id))) map.set(String(item.id), item);
     });
-    return Array.from(map.values());
+    return uniqueAspects(Array.from(map.values()));
   }, [editor?.oportunidadesAutoevaluacion, opportunities]);
 
   const assignedOpportunityIds = () => new Set((editor?.objetivos || [])
@@ -1666,7 +1667,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
   const pendingOpportunities = () => {
     const assignedIds = assignedOpportunityIds();
-    return planOpportunities.filter((item) => !assignedIds.has(String(item.id)));
+    const assignedKeys = new Set((editor?.objetivos || []).flatMap((objective) => objective.aspectosAutoevaluacion?.length ? objective.aspectosAutoevaluacion : objective.origenAutoevaluacion?.id ? [{ ...objective, id: objective.origenAutoevaluacion.id }] : []).map(aspectKey));
+    return planOpportunities.filter((item) => !assignedIds.has(String(item.id)) && !assignedKeys.has(aspectKey(item)));
   };
 
   const aspectOptionsForObjective = (objective) => pendingOpportunities()
@@ -1693,7 +1695,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       const current = objective.aspectosAutoevaluacion || [];
       const currentIds = new Set(current.map((item) => String(item.id)));
       const additions = planOpportunities.filter((item) => selectedIds.includes(String(item.id)) && !currentIds.has(String(item.id)));
-      const selected = [...current, ...additions];
+      const assignedElsewhere = new Set(previous.objetivos.filter((_, i) => i !== objectiveIndex).flatMap((item) => item.aspectosAutoevaluacion || []).map(aspectKey));
+      const selected = uniqueAspects([...current, ...additions.filter((item) => !assignedElsewhere.has(aspectKey(item)))]);
       if (!selected.length) return objective;
       const source = objectiveFromOpportunity(selected[0], objectiveIndex + 1);
       const scores = selected.map((item) => Number(item.calificacion)).filter(Number.isFinite);
@@ -1760,7 +1763,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       const nextNumber = Math.max(0, ...objectives.map((item) => Number(String(item.codigo || '').match(/([0-9]+)$/)?.[1] || 0))) + 1;
       const currentObjective = objectives[selectedIndex] || { ...emptyObjective(nextNumber), objetivo: associationNewObjectiveText.trim() };
       const currentAspects = currentObjective.aspectosAutoevaluacion || [];
-      if (currentAspects.some((item) => String(item.id) === String(associationOpportunity.id))) return previous;
+      if (objectives.some((objective) => (objective.aspectosAutoevaluacion || []).some((item) => aspectKey(item) === aspectKey(associationOpportunity)))) return previous;
       const selected = [...currentAspects, associationOpportunity];
       const source = objectiveFromOpportunity(selected[0], selectedIndex + 1);
       const scores = selected.map((item) => Number(item.calificacion)).filter(Number.isFinite);
@@ -2378,17 +2381,17 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                       <Paper key={activityIndex} elevation={0} sx={{ p: 2, borderRadius: 2.5, border: '1px dashed #94a3b8', bgcolor: 'white' }}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}><Typography sx={{ fontWeight: 900, color: '#1d4ed8' }}>Actividad {activityIndex + 1}</Typography>{objective.actividades.length > 1 && <IconButton size="small" color="error" onClick={() => removeActivity(objectiveIndex, activityIndex)}><DeleteIcon /></IconButton>}</Stack>
                         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5 }}>
-                          <TextField label="Nombre de la actividad" value={activity.nombre} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'nombre', e.target.value)} sx={{ gridColumn: { md: 'span 10' } }} />
-                          <TextField label="Meta" type="number" value={activity.meta} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'meta', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
+                          <TextField label="Nombre de la actividad" value={activity.nombre} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'nombre', e.target.value)} fullWidth multiline minRows={2} sx={{ gridColumn: '1 / -1' }} />
+                          <TextField label="Descripción de la actividad" value={activity.descripcion} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'descripcion', e.target.value)} fullWidth multiline minRows={3} sx={{ gridColumn: '1 / -1' }} />
                           <ActivityIndicatorFields activity={activity} onChange={(field, value) => updateActivity(objectiveIndex, activityIndex, field, value)} />
-                          <TextField label="Descripción" value={activity.descripcion} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'descripcion', e.target.value)} multiline minRows={2} sx={{ gridColumn: { md: 'span 8' } }} />
-                          <TextField label="Recursos" value={activity.recursos} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'recursos', e.target.value)} sx={{ gridColumn: { md: 'span 4' } }} />
+                          <TextField label="Recursos" value={activity.recursos} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'recursos', e.target.value)} sx={{ gridColumn: { md: 'span 6' } }} />
                           <TextField label="Fecha inicio" type="date" InputLabelProps={{ shrink: true }} value={activity.fechaInicio} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'fechaInicio', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }} />
                           <TextField label="Fecha fin" type="date" InputLabelProps={{ shrink: true }} value={activity.fechaFin} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'fechaFin', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }} />
-                          <TextField select label="Proceso responsable" value={activity.procesoResponsable} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'procesoResponsable', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}>{withCurrent(catalogs.processes?.length ? catalogs.processes : PROCESSES, activity.procesoResponsable).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
-                          <Box sx={{ gridColumn: { md: 'span 3' } }}>
+                          <TextField select label="Proceso responsable" value={activity.procesoResponsable} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'procesoResponsable', e.target.value)} sx={{ gridColumn: { md: 'span 4' } }}>{withCurrent(catalogs.processes?.length ? catalogs.processes : PROCESSES, activity.procesoResponsable).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
+                          <Box sx={{ gridColumn: { md: 'span 5' }, minWidth: 0 }}>
                             <ResponsibleAutocomplete activity={activity} onChange={(user) => updateActivityResponsible(objectiveIndex, activityIndex, user)} />
                           </Box>
+                          <TextField select label="Alcance" value={activity.alcance} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'alcance', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}><MenuItem value="PROGRAMA">Programa</MenuItem><MenuItem value="INSTITUCIONAL">Institucional</MenuItem></TextField>
                           {activity.responsableId && (
                             <Paper elevation={0} sx={{ gridColumn: { md: 'span 12' }, px: 1.5, py: 1.15, borderRadius: 2.5, bgcolor: '#f8fafc', border: '1px solid #dbeafe' }}>
                               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' }, gap: 1.5 }}>
@@ -2404,7 +2407,6 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                               </Box>
                             </Paper>
                           )}
-                          <TextField select label="Alcance" value={activity.alcance} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'alcance', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }}><MenuItem value="PROGRAMA">Programa</MenuItem><MenuItem value="INSTITUCIONAL">Institucional</MenuItem></TextField>
                           <StrategicObjectiveFields
                             relations={(activity.linkedActionPlanId ? catalogs.strategicByActionPlan?.[activity.linkedActionPlanId]?.strategicRelations : catalogs.strategicRelations) || []}
                             onRefresh={loadCatalogs}
@@ -2556,8 +2558,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap"><Chip size="small" label={`Actividad ${activityIndex + 1}`} sx={{ fontWeight: 900, bgcolor: '#e0f2fe', color: '#0369a1' }} /><Typography sx={{ fontWeight: 950 }}>{activity.nombre || 'Actividad pendiente de nombrar'}</Typography></Stack>
                       <Box component="details" onClick={(event) => event.stopPropagation()} sx={{ mt: 0.5, color: '#64748b', fontSize: 13 }}>
                         <Box component="summary" sx={{ cursor: 'pointer', width: 'fit-content' }}>Ver detalle</Box>
-                        <Typography variant="body2" sx={{ mt: 1 }}>{activity.indicador || 'Indicador pendiente'}</Typography>
-                        <Typography variant="body2">Meta: {activity.meta || 0}</Typography>
+                        {['Resultado', 'Logro', 'Impacto'].map((kind) => {
+                          const values = resolveActivityIndicators(activity);
+                          if (!values[`indicador${kind}Activo`]) return null;
+                          return <Box key={kind} sx={{ mt: 1 }}>
+                            {values[`indicador${kind}`] && <Typography variant="body2">{kind}: {values[`indicador${kind}`]}</Typography>}
+                            {values[`meta${kind}`] && <Typography variant="body2">Meta: {values[`meta${kind}`]}</Typography>}
+                            {values[`fechaEntrega${kind}`] && <Typography variant="body2">Entrega: {values[`fechaEntrega${kind}`]}</Typography>}
+                          </Box>;
+                        })}
                         <Typography variant="body2">Periodo: {activity.fechaInicio || '?'} a {activity.fechaFin || '?'}</Typography>
                         <Typography variant="body2">Responsable: {activity.responsableNombre || activity.cargoResponsable || 'Pendiente'}</Typography>
                       </Box>

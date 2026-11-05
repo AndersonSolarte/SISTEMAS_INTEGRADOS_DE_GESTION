@@ -80,3 +80,11 @@ test('a new S2 cumulative edit preserves S1 contribution and each activity stays
   assert.equal(periodContribution(cuts.get(2).porcentaje, [{ physical_progress: 40 }]), 60);
   assert.equal(saved.objetivos[0].actividades[1].seguimientoActual, undefined);
 });
+
+test('DD/MM/YYYY date format matches correct period in periodCuts', () => {
+  const cuts = periodCuts({ seguimientos: [
+    { fecha: '04/11/2026', porcentaje: 50 }
+  ] }, 2026);
+  assert.equal(cuts.size, 1);
+  assert.equal(cuts.get(2).porcentaje, 50);
+});

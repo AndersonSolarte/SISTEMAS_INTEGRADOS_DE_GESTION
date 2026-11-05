@@ -1,5 +1,23 @@
 const clampProgress = (value) => Math.min(100, Math.max(0, Number(String(value ?? 0).replace(',', '.').replace('%', '')) || 0));
 
+const parseDateParts = (rawDate, defaultYear) => {
+  if (!rawDate) {
+    const now = new Date();
+    return { year: defaultYear || now.getFullYear(), month: now.getMonth() + 1 };
+  }
+  const s = String(rawDate).trim();
+  const isoMatch = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) return { year: Number(isoMatch[1]), month: Number(isoMatch[2]) };
+  const dmyMatch = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmyMatch) return { year: Number(dmyMatch[3]), month: Number(dmyMatch[2]) };
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    return { year: parsed.getFullYear(), month: parsed.getMonth() + 1 };
+  }
+  const now = new Date();
+  return { year: defaultYear || now.getFullYear(), month: now.getMonth() + 1 };
+};
+
 const periodCuts = (activity, year) => {
   const cuts = new Map();
   const records = (activity.seguimientos || []).filter((r) => !String(r.id).startsWith('seg-pa-') && r.origen !== 'plan_accion');
@@ -7,9 +25,8 @@ const periodCuts = (activity, year) => {
     ? [{ fecha: activity.fechaSeguimiento, porcentaje: activity.metaAlcanzada, observaciones: activity.observaciones }] : [];
   const live = activity.seguimientoActual;
   for (const record of [...source, ...(live ? [live] : [])]) {
-    const match = String(record.fecha || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!match || (year && Number(match[1]) !== Number(year))) continue;
-    const month = Number(match[2]);
+    const { year: recYear, month } = parseDateParts(record.fecha, year);
+    if (year && Number(recYear) !== Number(year)) continue;
     if (month < 1 || month > 12) continue;
     const position = month <= 7 ? 1 : 2;
     const previous = cuts.get(position);
@@ -41,14 +58,18 @@ const trackCurrentFollowup = (stored = {}, incoming = {}, timestamp = new Date()
     actividades: (objective.actividades || []).map((activity) => {
       const old = previous.get(String(activity.uid));
       const changed = old && ['metaAlcanzada', 'fechaSeguimiento', 'observaciones'].some((key) => String(old[key] ?? '') !== String(activity[key] ?? ''));
-      const valid = activity.metaAlcanzada !== '' && activity.metaAlcanzada != null
-        && Number.isFinite(Number(activity.metaAlcanzada)) && /^\d{4}-\d{2}-\d{2}$/.test(activity.fechaSeguimiento || '');
+      const hasProgress = activity.metaAlcanzada !== '' && activity.metaAlcanzada != null && !isNaN(Number(String(activity.metaAlcanzada).replace(',', '.').replace('%', '')));
+      const valid = hasProgress;
+      const parsedDate = parseDateParts(activity.fechaSeguimiento);
+      const normalizedDate = activity.fechaSeguimiento && /^\d{4}-\d{2}-\d{2}$/.test(activity.fechaSeguimiento)
+        ? activity.fechaSeguimiento
+        : `${parsedDate.year}-${String(parsedDate.month).padStart(2, '0')}-01`;
       return { ...activity, seguimientoActual: changed && valid ? {
-        id: `actual-${activity.uid}`, fecha: activity.fechaSeguimiento,
+        id: `actual-${activity.uid}`, fecha: normalizedDate,
         porcentaje: clampProgress(activity.metaAlcanzada), observaciones: activity.observaciones || '', registradoAt: timestamp
       } : old?.seguimientoActual };
     })
   })) };
 };
 
-module.exports = { clampProgress, periodCuts, latestResult, fulfillment, periodContribution, trackCurrentFollowup };
+module.exports = { clampProgress, parseDateParts, periodCuts, latestResult, fulfillment, periodContribution, trackCurrentFollowup };

@@ -2545,8 +2545,14 @@ const saveMonitoring = wrap(async (req, res) => {
     ? [await PlanMejoramiento.findByPk(item.custom_values.pm_plan_id)]
     : await PlanMejoramiento.findAll();
   for (const plan of linkedPlans.filter(Boolean)) {
-    if ((plan.contenido?.objetivos || []).some((o) => (o.actividades || []).some((a) => String(a.linkedActionItemId) === String(item.id)))) {
-      await require('./planMejoramientoController').reconcileLinkedActivities(plan);
+    const hasActivity = (plan.contenido?.objetivos || []).some((o) =>
+      (o.actividades || []).some((a) =>
+        String(a.linkedActionItemId) === String(item.id) ||
+        (item.custom_values?.pm_actividad_uid && String(a.uid) === String(item.custom_values.pm_actividad_uid))
+      )
+    );
+    if (hasActivity) {
+      await require('./planMejoramientoController').reconcileLinkedActivities(plan, { persist: true, force: true });
     }
   }
   await refreshActionRepository(period.term_id, req, 'monitoring_updated');

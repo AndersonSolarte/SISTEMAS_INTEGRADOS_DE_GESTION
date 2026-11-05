@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Autocomplete, Checkbox, TextField } from '@mui/material';
+import { Autocomplete, Box, Checkbox, ClickAwayListener, TextField } from '@mui/material';
 
 export default function PolicyActionFields({ policies = [], selectedPolicies = [], selectedLines = [], onPolicyChange, onLinesChange, onRefresh }) {
   const [linesOpen, setLinesOpen] = useState(false);
@@ -15,7 +15,8 @@ export default function PolicyActionFields({ policies = [], selectedPolicies = [
     setLoading(true);
     try { await onRefresh(); } finally { setLoading(false); }
   };
-  return <>
+  return <ClickAwayListener onClickAway={() => setLinesOpen(false)}>
+    <Box onKeyDown={(event) => { if (event.key === 'Escape') setLinesOpen(false); }} sx={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, minmax(0, 1fr))' }, gap: 1.5, minWidth: 0 }}>
     <Autocomplete
       forcePopupIcon
       options={options}
@@ -46,5 +47,6 @@ export default function PolicyActionFields({ policies = [], selectedPolicies = [
       renderInput={(params) => <TextField {...params} label="Líneas de acción" placeholder={selected ? 'Seleccione sus líneas' : 'Todas las líneas disponibles'} />}
       sx={{ gridColumn: { md: 'span 6' } }}
     />
-  </>;
+    </Box>
+  </ClickAwayListener>;
 }

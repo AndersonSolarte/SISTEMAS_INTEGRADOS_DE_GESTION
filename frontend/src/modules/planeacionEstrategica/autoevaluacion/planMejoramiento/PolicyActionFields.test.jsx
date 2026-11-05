@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import PolicyActionFields from './PolicyActionFields';
 
@@ -42,6 +42,27 @@ test('a previously saved policy shows its own lines when reopened', async () => 
   fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Líneas de acción' }));
   expect(await screen.findByRole('option', { name: 'Atención integral' })).toBeInTheDocument();
   expect(screen.queryByRole('option', { name: 'Mejora continua' })).not.toBeInTheDocument();
+});
+
+test('automatically opened lines close on outside click without losing selected lines', async () => {
+  render(<><Form /><button>Fuera</button></>);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Política institucional' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Política de Calidad' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Mejora continua' }));
+  expect(screen.getByRole('listbox')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Fuera' }));
+  await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
+  expect(screen.getByTestId('selection')).toHaveTextContent('Mejora continua');
+});
+
+test('Escape closes automatically opened lines while policy input still has focus', async () => {
+  render(<Form />);
+  const input = screen.getByRole('combobox', { name: 'Política institucional' });
+  fireEvent.mouseDown(input);
+  fireEvent.click(await screen.findByRole('option', { name: 'Política de Calidad' }));
+  expect(await screen.findByRole('listbox')).toBeInTheDocument();
+  fireEvent.keyDown(input, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
 });
 test('shows every catalog line when no policy is selected and picks up new data', async () => {
   const props = { selectedPolicies: [], selectedLines: [], onPolicyChange: jest.fn(), onLinesChange: jest.fn() };
