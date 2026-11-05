@@ -14,6 +14,7 @@ const { buildLiquidationPdfAttachment, buildPdfAttachment } = require('../servic
 const { ensureReporteSalidaPdf } = require('../services/reporteSalidaPdfService');
 const { addColombiaBusinessDays } = require('../utils/colombiaBusinessDays');
 const { canActOnSolicitud } = require('../services/desplazamientoViaticos/accessScope');
+const { isRectorUser, requiresRectorSst } = require('../services/reporteSalidaWorkflow/rectorPolicy');
 
 const publicBackendUrl = process.env.BACKEND_PUBLIC_URL || process.env.API_PUBLIC_URL || process.env.FRONTEND_URL || 'http://localhost:5000';
 const BASE_DETAIL_NAMES = [
@@ -196,16 +197,17 @@ const normalizeViaticosSalidaDuration = (salida = {}, viaticos = {}) => {
   };
 };
 
-const buildNormalReportData = ({ consecutivo, userId, documentoId, jefeUserId, personal, jefe, laboral, salida, viaticos, steps }) => ({
+const buildNormalReportData = ({ consecutivo, userId, documentoId, jefeUserId, personal, jefe, laboral, salida, viaticos, steps, rectorSinJefe = false }) => ({
   consecutivo,
   user_id: userId,
   documento_id: documentoId,
-  jefe_inmediato_user_id: jefeUserId || null,
+  jefe_inmediato_user_id: rectorSinJefe ? null : (jefeUserId || null),
   estado: NORMAL_PENDING_STATE_BY_STAGE[(steps || []).find((step) => NORMAL_PENDING_STATE_BY_STAGE[step.key])?.key] || 'pendiente_aprobacion_jefe',
-  solicitante_snapshot: { ...personal, username: personal.documento },
-  jefe_snapshot: jefe,
+  solicitante_snapshot: { ...personal, username: personal.documento, ...(rectorSinJefe ? { cargo: 'Rector' } : {}) },
+  jefe_snapshot: rectorSinJefe ? {} : jefe,
   datos_formulario: {
     tx_id: crypto.randomUUID(),
+    sin_jefe_por_maxima_autoridad: rectorSinJefe,
     personal: { nombre: personal.nombre, documento: personal.documento, correo: personal.email },
     laboral,
     salida: {
@@ -420,7 +422,7 @@ const isRectorImmediateBoss = (jefe = {}, rectoriaEmail = '') => {
   );
 };
 
-const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
+const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {}, user = {}, salida = {} }) => {
   const recipients = getDesplazamientoViaticosRecipients();
   const dependenciaEmail = normalizeEmail(getDependencyEmail(laboral.dependencia));
   const viceDependenciaEmail = normalizeEmail(getDependencyEmail(laboral.vicerrectoria));
@@ -450,6 +452,18 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
     parallelEquivalentAccess: true
   };
 
+  if (isRectorUser(user)) {
+    return {
+      steps: [
+        { key: 'gestion_humana', label: 'Oficina de Gestión del Talento Humano', email: recipients.gestionHumana, action: 'approval' },
+        ...(requiresRectorSst({ solicitante_snapshot: user, datos_formulario: { salida } }) ? [{ key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' }] : []),
+        financialReview,
+        { key: 'tecnico_contable', label: 'Técnico contable', email: recipients.tecnicoContable, action: 'liquidacion' },
+        { key: 'tesoreria', label: 'Tesorería / Pagaduría', email: recipients.tesoreria, action: 'pago', infoEmails: [recipients.financiera] }
+      ],
+      dependenciaEmail: '', rectoriaAssignment: true, academicAssignment: false, researchAssignment: false, evangelizationAssignment: false, rectorIsBoss: false
+    };
+  }
   if (rectorIsBoss) {
     steps.push({
       key: 'rectoria',
@@ -1311,7 +1325,7 @@ const advance = async (solicitud, actor, detail = {}) => {
   return next;
 };
 
-const validatePayload = (body = {}) => {
+const validatePayload = (body = {}, user = {}) => {
   const issues = [];
   const salida = body.salida || {};
   const viaticos = body.viaticos || {};
@@ -1326,7 +1340,7 @@ const validatePayload = (body = {}) => {
   if (!viaticos.autorizacionAceptada) issues.push('Debe aceptar la autorización de descuento.');
   if (!Number(body.documentoId)) issues.push('No fue posible identificar el formato de reporte de salida.');
   if (!salida.fecha || !salida.fechaRegreso || !salida.horaInicio || !salida.horaFin) issues.push('Debe completar las fechas y horas del desplazamiento.');
-  if (!body.jefeInmediato?.email) issues.push('El jefe inmediato debe tener correo registrado.');
+  if (!isRectorUser(user) && !body.jefeInmediato?.email) issues.push('El jefe inmediato debe tener correo registrado.');
   if (!clean(body.laboral?.dependencia) || !clean(body.laboral?.cargo) || !clean(body.laboral?.vicerrectoria)) issues.push('La información laboral está incompleta.');
   if (!['Hotel', 'Casa de familia', 'No requiere'].includes(viaticos.alojamiento)) issues.push('Seleccione una opción válida de alojamiento.');
   const validTransportOptions = ['Terrestre', 'Terrestre Intermunicipal', 'Vehículo Propio', 'Aéreo', 'Mixto'];
@@ -1359,7 +1373,7 @@ const validatePayload = (body = {}) => {
 
 const radicarSolicitud = async (req, res) => {
   try {
-    const issues = validatePayload(req.body);
+    const issues = validatePayload(req.body, req.user);
     if (issues.length) return res.status(400).json({ success: false, message: issues[0], issues });
     const body = req.body;
     const normalizedSalida = normalizeViaticosSalidaDuration(body.salida, body.viaticos);
@@ -1373,13 +1387,14 @@ const radicarSolicitud = async (req, res) => {
       vicerrectoria: clean(body.laboral?.vicerrectoria, 250),
       cargo: clean(body.laboral?.cargo, 250)
     };
-    const jefe = {
+    const rectorSinJefe = isRectorUser(req.user);
+    const jefe = rectorSinJefe ? {} : {
       nombre: clean(body.jefeInmediato?.nombre || body.jefeInmediato?.jefe_inmediato, 180),
       email: normalizeEmail(body.jefeInmediato?.email),
       cargo: clean(body.jefeInmediato?.cargo, 180),
       dependencia: clean(body.jefeInmediato?.dependencia, 220)
     };
-    const { steps, dependenciaEmail } = buildApprovalPlan({ jefe, laboral, personal });
+    const { steps, dependenciaEmail } = buildApprovalPlan({ jefe, laboral, personal, user: req.user, salida: normalizedSalida });
     if (!steps.length) return res.status(400).json({ success: false, message: 'No fue posible construir el flujo de aprobación.' });
     const consecutivo = await nextConsecutivo();
     const transaction = await sequelize.transaction();
@@ -1389,7 +1404,8 @@ const radicarSolicitud = async (req, res) => {
         consecutivo,
         userId: req.user.id,
         documentoId: Number(body.documentoId),
-        jefeUserId: body.jefeInmediatoUserId,
+        jefeUserId: rectorSinJefe ? null : body.jefeInmediatoUserId,
+        rectorSinJefe,
         personal,
         jefe,
         laboral,
@@ -1401,7 +1417,7 @@ const radicarSolicitud = async (req, res) => {
         consecutivo,
         user_id: req.user.id,
         documento_id: body.documentoId,
-        jefe_inmediato_user_id: body.jefeInmediatoUserId || null,
+        jefe_inmediato_user_id: rectorSinJefe ? null : (body.jefeInmediatoUserId || null),
         solicitante_snapshot: personal,
         jefe_snapshot: jefe,
         datos_laborales: laboral,

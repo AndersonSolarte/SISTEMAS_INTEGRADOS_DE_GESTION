@@ -19,6 +19,7 @@ const { ensureReporteSalidaDocx, ensureReporteSalidaPdf, formatMinutes } = requi
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 const { getDependencyEmail } = require('../config/dependencyEmails');
 const workflowEngine = require('../services/reporteSalidaWorkflow');
+const { isRectorUser, isRectorSolicitud, requiresRectorSst, buildRectorInitialTrace } = require('../services/reporteSalidaWorkflow/rectorPolicy');
 const {
   syncAdminViaticosApproval,
   syncAdminViaticosRejection
@@ -356,6 +357,7 @@ const getAcademicProgramApprovalEmail = (solicitud = {}) => {
 };
 
 const getInitialApprovalRecipientEmails = (solicitud = {}) => {
+  if (isRectorSolicitud(solicitud)) return [];
   const jefe = solicitud.jefe_snapshot || {};
   const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label || '');
   const jefeEmail = normalizeEmail(jefe.email);
@@ -421,6 +423,7 @@ const getInitialApprovalRecipientEmail = (solicitud = {}) => {
 };
 
 const getGroupInitialApprovalRecipients = (solicitudes = []) => {
+  solicitudes = solicitudes.filter((solicitud) => !isRectorSolicitud(solicitud));
   const recipients = [];
   const pushEmail = (e) => {
     const clean = normalizeEmail(e);
@@ -523,6 +526,7 @@ const isSingleHomogeneousGroup = (solicitudes = []) => {
 };
 
 const getJefeCopyRecipientEmails = (solicitud = {}) => {
+  if (isRectorSolicitud(solicitud)) return [];
   const emails = [];
   const pushEmail = (e) => {
     const clean = normalizeEmail(e);
@@ -1315,6 +1319,7 @@ const getWorkflowHelpers = () => ({
 });
 
 const getAuthorityAfterBoss = (solicitud = {}) => {
+  if (isRectorSolicitud(solicitud)) return null;
   return workflowEngine.getAuthorityAfterBoss(solicitud, getWorkflowHelpers());
 };
 
@@ -1328,6 +1333,7 @@ const hasSstApproved = (solicitud = {}) => {
 };
 
 const requiresSstApproval = (solicitud = {}) => {
+  if (isRectorSolicitud(solicitud)) return requiresRectorSst(solicitud);
   const salida = getSolicitudSalida(solicitud);
   const categoria = salida.categoria || salida.category;
   return categoria === 'propias_cargo' && salida.tipo !== 'salida_campus' && ['Nacional', 'Internacional'].includes(salida.alcance);
@@ -2597,7 +2603,7 @@ const validateRadicacionPayload = (payload, user) => {
   }
 
   if (!payload?.documentoId) return 'Documento del formato requerido.';
-  if (!payload?.jefeInmediatoUserId && !payload?.jefeInmediato?.email && !payload?.jefeInmediato?.nombre && !payload?.jefeInmediato?.label && !user?.jefe_inmediato) {
+  if (!isRectorUser(user) && !payload?.jefeInmediatoUserId && !payload?.jefeInmediato?.email && !payload?.jefeInmediato?.nombre && !payload?.jefeInmediato?.label && !user?.jefe_inmediato) {
     return 'Debe seleccionar un jefe inmediato con correo registrado en Recurso Humano.';
   }
   if (!salida.tipo) return 'Debe seleccionar el tipo de salida.';
@@ -2696,7 +2702,7 @@ const validateRadicacionPayload = (payload, user) => {
 const serializeSolicitud = (solicitud) => {
   const row = typeof solicitud.toJSON === 'function' ? solicitud.toJSON() : solicitud;
   const approvalRecipientEmails = getInitialApprovalRecipientEmails(row);
-  const jefeSnapshot = row.jefe_snapshot || {};
+  const jefeSnapshot = isRectorSolicitud(row) ? { nombre: 'No aplica (Rector)', email: '' } : (row.jefe_snapshot || {});
   return {
     ...row,
     tiempoSolicitadoLabel: formatMinutes(row.tiempo_solicitado_minutos),
@@ -2964,9 +2970,10 @@ const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
   const solicitante = solicitud.solicitante_snapshot || {};
   const isOficio = isOficioSolicitud(solicitud);
   const subject = getUserThreadSubject(solicitud);
+  const reviewRecipient = isRectorSolicitud(solicitud) ? 'Gestión del Talento Humano' : 'su jefe inmediato';
   const html = renderInstitutionalTemplate({
     title: `Comprobante de radicacion de ${isOficio ? 'oficio de salida' : 'reporte de salida'}: ${escapeHtml(solicitud.consecutivo)}`,
-    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a).</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(solicitante.nombre)}</p><p>Reciba un cordial saludo. En atención a su solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'}, nos permitimos informarle que esta ha sido radicada correctamente y se encuentra actualmente en proceso de revisión y aprobación por parte de su jefe inmediato.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a).</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(solicitante.nombre)}</p><p>Reciba un cordial saludo. En atención a su solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'}, nos permitimos informarle que esta ha sido radicada correctamente y se encuentra actualmente en proceso de revisión y aprobación por parte de ${escapeHtml(reviewRecipient)}.</p>`,
     bodyHtml: `
       ${buildTerapiasHtml(solicitud)}
       <p>Se adjunta el PDF generado de su solicitud para su respectivo control y archivo.</p>
@@ -2986,6 +2993,7 @@ const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
 };
 
 const getDependencyNotificationTargets = (solicitud = {}) => {
+  if (isRectorSolicitud(solicitud)) return [];
   return workflowEngine.getDependencyNotificationTargets(solicitud, getWorkflowHelpers());
 };
 
@@ -3048,6 +3056,7 @@ const getInitialApprovalTrace = (solicitud = {}) => {
 };
 
 const getInitialApprovalSummary = (solicitud = {}) => {
+  if (isRectorSolicitud(solicitud)) return { actor: solicitud.solicitante_snapshot || {}, viaDependencia: false, viaAdminDashboard: false, label: solicitud.solicitante_snapshot?.nombre || 'Rector', roleLabel: 'Rector, sin jefe inmediato', actionLabel: 'Radicado' };
   const trace = getInitialApprovalTrace(solicitud);
   const actor = trace?.actor || {};
   const detail = trace?.detail || {};
@@ -3313,7 +3322,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   
   const userThreadSubject = getUserThreadSubject(solicitud);
   const workflowThreadSubject = getWorkflowThreadSubject(solicitud);
-  const flowSST = solicitud.datos_formulario?.salida?.alcance === 'Internacional' || solicitud.datos_formulario?.salida?.alcance === 'Nacional';
+  const flowSST = isRectorSolicitud(solicitud) ? requiresRectorSst(solicitud) : solicitud.datos_formulario?.salida?.alcance === 'Internacional' || solicitud.datos_formulario?.salida?.alcance === 'Nacional';
   const initialApproval = getInitialApprovalSummary(solicitud);
   
   // Firma para el Colaborador, Líder de Dependencia y SST (Firma Talento Humano)
@@ -3544,7 +3553,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
 
   // 4. Correo para SST (PDF firmado + Soporte Médico/Adjunto)
   let sstResult = { success: false };
-  if (recipients.sst) {
+  if (recipients.sst && (!isRectorSolicitud(solicitud) || requiresRectorSst(solicitud))) {
     const sstHtml = renderInstitutionalTemplate({
       title: `${isOficio ? 'Oficio' : 'Reporte'} de salida aprobado - Control SST`,
       introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0;"><strong>Equipo de Seguridad y Salud en el Trabajo (SST)</strong></p><p>Reciba un cordial saludo. Se remite el ${isOficio ? 'oficio de salida' : 'reporte de salida'} debidamente finalizado y aprobado del/de la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong> para su respectivo control y seguimiento de SST.</p>`,
@@ -4283,6 +4292,9 @@ const radicarSolicitud = async (req, res) => {
 
       const userRows = await getUserProfileLaboralRows();
       const { rows: rhRows } = await getLatestAdministrativos();
+      if (participantes.some((participant) => isRectorUser(participant) && !userRows.some((user) => isRectorUser(user) && (String(user.username).trim() === String(participant.documento).trim() || normalizeEmail(user.email) === normalizeEmail(participant.correo))))) {
+        return res.status(400).json({ success: false, message: 'El Rector debe corresponder a una cuenta institucional existente.' });
+      }
 
       const cantidadDiasDigitada = Number(salida.cantidadDiasSolicitados || 0);
       const duracionDiasSolicitada = Number.isInteger(cantidadDiasDigitada) && cantidadDiasDigitada > 0
@@ -4409,6 +4421,7 @@ const radicarSolicitud = async (req, res) => {
       }
 
       const creadas = [];
+      const rectorTokens = new Map();
 
       for (let i = 0; i < participantes.length; i++) {
         const p = participantes[i];
@@ -4446,7 +4459,10 @@ const radicarSolicitud = async (req, res) => {
         }
         currentSeq++;
 
-        const jefeSnapshot = await resolveJefeForParticipant(p, userRows, rhRows);
+        const participantRectorSinJefe = isRectorUser(participantUser);
+        const rectorToken = participantRectorSinJefe ? createApprovalToken('gestion_humana', consecutivo) : null;
+        if (rectorToken) rectorTokens.set(consecutivo, rectorToken);
+        const jefeSnapshot = participantRectorSinJefe ? {} : await resolveJefeForParticipant(p, userRows, rhRows);
         const jefe_inmediato_user_id = jefeSnapshot?.id && String(jefeSnapshot.id).startsWith('user:') 
           ? Number(jefeSnapshot.id.substring(5)) 
           : null;
@@ -4458,8 +4474,9 @@ const radicarSolicitud = async (req, res) => {
           jefe_inmediato_user_id,
           solicitante_snapshot: buildSnapshot(participantUser),
           jefe_snapshot: jefeSnapshot,
-          estado: 'pendiente_aprobacion_jefe',
+          estado: participantRectorSinJefe ? 'pendiente_aprobacion_gestion_humana' : 'pendiente_aprobacion_jefe',
           datos_formulario: {
+            sin_jefe_por_maxima_autoridad: participantRectorSinJefe,
             grupo_id,
             is_salida_multiple: true,
             is_leader: i === 0,
@@ -4535,14 +4552,29 @@ const radicarSolicitud = async (req, res) => {
           reposicion_aplica: false,
           reposicion_minutos: null,
           reposicion_estado: 'no_aplica',
-          aprobacion_jefe_token_hash: tokenHash,
-          trazabilidad: [{ event: 'radicada_grupal', actor: buildSnapshot(req.user), at: now.toISOString() }]
+          aprobacion_jefe_token_hash: participantRectorSinJefe ? null : tokenHash,
+          aprobacion_gh_token_hash: rectorToken ? hashToken(rectorToken) : null,
+          trazabilidad: [
+            ...(participantRectorSinJefe ? [buildRectorInitialTrace(buildSnapshot(participantUser), now.toISOString())] : []),
+            { event: 'radicada_grupal', actor: buildSnapshot(req.user), at: now.toISOString() }
+          ]
         });
 
         await associateStoredSupportWithSolicitud(solicitud);
         creadas.push(solicitud);
       }
 
+      for (const solicitud of creadas.filter(isRectorSolicitud)) {
+        const attachments = [await buildReporteSalidaPdfAttachment(solicitud), await buildReporteSalidaSupportAttachment(solicitud)].filter(Boolean);
+        await sendColaboradorRadicacionEmail(solicitud, attachments);
+        const result = await sendGestionHumanaApprovalEmail(solicitud, rectorTokens.get(solicitud.consecutivo), attachments);
+        await solicitud.update({
+          correo_gh_enviado_at: result?.success ? new Date() : null,
+          trazabilidad: appendTrace(solicitud, result?.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', req.user, { error: result?.error || '' })
+        });
+      }
+      const jefeSolicitudes = creadas.filter((solicitud) => !isRectorSolicitud(solicitud));
+      if (!jefeSolicitudes.length) return res.status(201).json({ success: true, message: 'Solicitudes del Rector remitidas a Gestión del Talento Humano.', data: creadas.map(serializeSolicitud) });
       const isProyeccionSocialGroup = (salida.tipo === 'proyeccion_social');
       const checkIsPSLeader = (typeof isProyeccionSocialLeaderSolicitud === 'function')
         ? isProyeccionSocialLeaderSolicitud
@@ -4557,7 +4589,7 @@ const radicarSolicitud = async (req, res) => {
         const psToken = encryptPayload({ purpose: 'reporte_salida_approve_proyeccion_social_grupo', grupo_id }, null);
         const psTokenHash = hashToken(psToken);
 
-        for (const sol of creadas) {
+        for (const sol of jefeSolicitudes) {
           await sol.update({
             estado: 'pendiente_aprobacion_proyeccion_social',
             aprobacion_proyeccion_social_token_hash: psTokenHash,
@@ -4565,10 +4597,10 @@ const radicarSolicitud = async (req, res) => {
           });
         }
 
-        const emailResult = await sendProyeccionSocialGroupApprovalEmail(creadas, psToken);
+        const emailResult = await sendProyeccionSocialGroupApprovalEmail(jefeSolicitudes, psToken);
         const thread_message_id = emailResult.messageId || null;
 
-        for (const solicitud of creadas) {
+        for (const solicitud of jefeSolicitudes) {
           await solicitud.update({
             correo_proyeccion_social_enviado_at: emailResult.success ? new Date() : null,
             datos_formulario: {
@@ -4590,7 +4622,7 @@ const radicarSolicitud = async (req, res) => {
       const jefeToken = encryptPayload({ purpose: 'reporte_salida_approve_jefe_grupo', grupo_id }, null);
       const jefeTokenHash = hashToken(jefeToken);
 
-      for (const sol of creadas) {
+      for (const sol of jefeSolicitudes) {
         await sol.update({
           estado: 'pendiente_aprobacion_jefe',
           aprobacion_jefe_token_hash: jefeTokenHash,
@@ -4598,11 +4630,11 @@ const radicarSolicitud = async (req, res) => {
         });
       }
 
-      const initialRecipients = getGroupInitialApprovalRecipients(creadas);
-      const emailResult = await sendJefeGroupApprovalEmail(creadas, jefeToken, initialRecipients);
+      const initialRecipients = getGroupInitialApprovalRecipients(jefeSolicitudes);
+      const emailResult = await sendJefeGroupApprovalEmail(jefeSolicitudes, jefeToken, initialRecipients);
       const thread_message_id = emailResult.messageId || null;
 
-      for (const solicitud of creadas) {
+      for (const solicitud of jefeSolicitudes) {
         await solicitud.update({
           correo_jefe_enviado_at: emailResult.success ? new Date() : null,
           datos_formulario: {
@@ -4624,13 +4656,14 @@ const radicarSolicitud = async (req, res) => {
     const errorMessage = validateRadicacionPayload(req.body, req.user);
     if (errorMessage) return res.status(400).json({ success: false, message: errorMessage });
 
+    const rectorSinJefe = isRectorUser(req.user);
     const jefePayload = req.body.jefeInmediato || {};
-    const { user: jefe, snapshot: jefeSnapshot } = await resolveJefeInmediatoSnapshot({
+    const { user: jefe, snapshot: jefeSnapshot } = rectorSinJefe ? { user: null, snapshot: {} } : await resolveJefeInmediatoSnapshot({
       jefePayload,
       jefeInmediatoUserId: req.body.jefeInmediatoUserId,
       user: req.user
     });
-    if (!jefeSnapshot.email) {
+    if (!rectorSinJefe && !jefeSnapshot.email) {
       return res.status(400).json({ success: false, message: 'El jefe inmediato seleccionado desde Recurso Humano no tiene correo registrado.' });
     }
     if (jefeSnapshot.id && Number(jefeSnapshot.id) === Number(req.user.id)) {
@@ -4725,7 +4758,11 @@ const radicarSolicitud = async (req, res) => {
       let oficioAuthorityName;
       let oficioAuthorityEmail;
 
-      if (isDocenteAcademicoRequest) {
+      if (rectorSinJefe) {
+        oficioDirigidoARectoria = false;
+        oficioAuthorityName = 'Gestión del Talento Humano';
+        oficioAuthorityEmail = getReporteSalidaRecipients().gestionHumana;
+      } else if (isDocenteAcademicoRequest) {
         const durTipo = salida.duracionTipo;
         if (durTipo === '1_2_dias') {
           // 2 días → Vicerrectoría Académica
@@ -4932,16 +4969,18 @@ const radicarSolicitud = async (req, res) => {
 
     const now = new Date();
     const consecutivo = await getNextConsecutivo(now);
-    const token = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'jefe', consecutivo }, null);
+    const token = encryptPayload({ purpose: 'reporte_salida_approve', stage: rectorSinJefe ? 'gestion_humana' : 'jefe', consecutivo }, null);
     const solicitud = await ReporteSalidaSolicitud.create({
       consecutivo,
       user_id: req.user.id,
       documento_id: documento.id,
       jefe_inmediato_user_id: jefe?.id || null,
+      estado: rectorSinJefe ? 'pendiente_aprobacion_gestion_humana' : 'pendiente_aprobacion_jefe',
       solicitante_snapshot: buildSnapshot(req.user),
       jefe_snapshot: jefeSnapshot,
       datos_formulario: {
         tx_id: crypto.randomUUID(),
+        sin_jefe_por_maxima_autoridad: rectorSinJefe,
         consentimiento_salud: consentimientoSalud,
         adjunto_path: !isSaludNoAdjuntoDeclarado && req.body.datos_formulario?.adjunto_path ? sanitizeText(req.body.datos_formulario.adjunto_path, 255) : null,
         adjunto_metadata: !isSaludNoAdjuntoDeclarado
@@ -5031,9 +5070,11 @@ const radicarSolicitud = async (req, res) => {
       reposicion_nivel_contratacion: isDiligenciaPersonal ? reposicionLaboralProfile.nivelContratacion : null,
       reposicion_perfil_laboral: isDiligenciaPersonal ? reposicionLaboralProfile : {},
       reposicion_estado: reposicionEstado,
-      aprobacion_jefe_token_hash: hashToken(token),
+      aprobacion_jefe_token_hash: rectorSinJefe ? null : hashToken(token),
+      aprobacion_gh_token_hash: rectorSinJefe ? hashToken(token) : null,
       trazabilidad: [
         ...(consentimientoSalud ? [buildSaludConsentimientoTrace(consentimientoSalud)] : []),
+        ...(rectorSinJefe ? [buildRectorInitialTrace(buildSnapshot(req.user), now.toISOString())] : []),
         { event: 'radicada', actor: buildSnapshot(req.user), at: now.toISOString() }
       ]
     });
@@ -5042,7 +5083,7 @@ const radicarSolicitud = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Solicitud radicada. Se procesara el envio de correo al jefe inmediato.',
+      message: rectorSinJefe ? 'Solicitud del Rector radicada. Se remitirá directamente a Gestión del Talento Humano.' : 'Solicitud radicada. Se procesara el envio de correo al jefe inmediato.',
       data: serializeSolicitud(solicitud)
     });
 
@@ -5068,6 +5109,16 @@ const radicarSolicitud = async (req, res) => {
         
         // Guardamos el messageId por destinatario para mantener el hilo en cada bandeja.
         const thread_message_id = radDelivered ? (radResult?.messageId || null) : null;
+        if (rectorSinJefe) {
+          const result = await sendGestionHumanaApprovalEmail(solicitud, token, radAttachments.filter(Boolean));
+          const radicationTrace = appendTrace(solicitud, radDelivered ? 'correo_colaborador_radicacion_enviado' : 'correo_colaborador_radicacion_error', req.user, { error: radResult?.error || '' });
+          await solicitud.update({
+            correo_gh_enviado_at: result?.success && !result?.suppressed ? new Date() : null,
+            datos_formulario: mergeThreadMessageIds(solicitud, { thread_message_id, thread_message_id_colaborador: thread_message_id, thread_message_id_gestion_humana: result?.messageId }),
+            trazabilidad: appendTrace({ trazabilidad: radicationTrace }, result?.success && !result?.suppressed ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', req.user, { error: result?.error || '', observacion: 'Radicación directa del Rector, sin jefe inmediato.' })
+          });
+          return;
+        }
         const dependenciaInfoResult = await sendDependenciaRadicacionInfoEmail(solicitud, token, [pdfAttachment, supportAttachment].filter(Boolean));
         console.log('[reporte-salida] Radicacion dependencia:', {
           consecutivo: solicitud.consecutivo,
@@ -6312,7 +6363,7 @@ const aprobarDesdeCorreo = async (req, res) => {
           nextStep: 'Por seguridad, la aprobacion no fue registrada.'
         });
       }
-      if (!hasInitialApprovalRecord(solicitud)) {
+      if (!isRectorSolicitud(solicitud) && !hasInitialApprovalRecord(solicitud)) {
         return renderApprovalPage({
           res,
           status: 409,
@@ -6347,8 +6398,8 @@ const aprobarDesdeCorreo = async (req, res) => {
       }
       const isMisionalNacionalOInternacional = shouldAdvanceToSst(solicitud);
 
-      const isRectoriaDelegated = isRectoriaAuthority(getSolicitudVicerrectoria(solicitud)) ||
-        ['1_2_dias', '3_mas_dias'].includes(solicitud.datos_formulario?.salida?.duracionTipo);
+      const isRectoriaDelegated = !isRectorSolicitud(solicitud) && (isRectoriaAuthority(getSolicitudVicerrectoria(solicitud)) ||
+        ['1_2_dias', '3_mas_dias'].includes(solicitud.datos_formulario?.salida?.duracionTipo));
       const now = new Date();
       const rectoriaDelegatedUpdate = (isRectoriaDelegated && !solicitud.rectoria_aprobado_at) ? { rectoria_aprobado_at: now } : {};
       const baseGhTrace = appendTrace(solicitud, 'aprobada_gestion_humana', null, approvalObservation ? { observacion: approvalObservation } : {});
@@ -10936,6 +10987,9 @@ module.exports = {
   formatFirmaDuracionDetalle,
   buildAdminTraceDetail,
   getInitialApprovalSummary,
+  validateRadicacionPayload,
+  requiresSstApproval,
+  shouldAdvanceToSst,
   getGroupInitialApprovalRecipients,
   isSingleHomogeneousGroup,
   isGlobalReposicionViewer,

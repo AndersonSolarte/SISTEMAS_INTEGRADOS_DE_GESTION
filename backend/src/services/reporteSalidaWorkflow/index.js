@@ -4,6 +4,7 @@
  */
 
 const BaseWorkflowStrategy = require('./strategies/baseStrategy');
+const { isRectorSolicitud } = require('./rectorPolicy');
 const AcademicaWorkflowStrategy = require('./strategies/academicaStrategy');
 const FinancieraWorkflowStrategy = require('./strategies/financieraStrategy');
 const EvangelizacionWorkflowStrategy = require('./strategies/evangelizacionStrategy');
@@ -25,6 +26,7 @@ const strategies = {
   * Selecciona la estrategia adecuada basada en la vicerrectoría o autoridad.
   */
 const getWorkflowStrategy = (solicitud = {}, helpers = {}) => {
+  if (isRectorSolicitud(solicitud)) return strategies.rectoria;
   const {
     getSolicitudSalida,
     getSolicitudVicerrectoria,

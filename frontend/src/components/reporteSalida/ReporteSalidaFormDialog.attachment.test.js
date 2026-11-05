@@ -67,6 +67,32 @@ describe('adjunto del formulario de reporte de salida', () => {
     fireEvent.change(screen.getByLabelText(/Fecha regreso/), { target: { value: '2099-11-05' } });
   };
 
+  test('el Rector radica sin jefe inmediato y sin transmitir el jefe antiguo del perfil', async () => {
+    const rector = { ...user, role: 'consulta', cargo: 'RECTOR', dependencia: 'RECTORIA', vicerrectoria: 'RECTORIA', jefe_inmediato: 'Jefa antigua' };
+    reporteSalidaService.radicarSolicitud.mockResolvedValue({ success: true, data: { consecutivo: 'RS-RECTOR-TEST' } });
+    render(<ReporteSalidaFormDialog open documento={documento} user={rector} onClose={jest.fn()} />);
+    expect(screen.queryByLabelText('Jefe inmediato')).not.toBeInTheDocument();
+    expect(screen.getByText(/El Rector no requiere jefe inmediato/)).toBeVisible();
+    selectUrgencias();
+    completeDates();
+    fireEvent.click(screen.getByRole('radio', { name: 'No cuento con archivos adjuntos en este momento' }));
+    const checkbox = await screen.findByRole('checkbox', { name: /Autorizo.*y acepto la declaración/ });
+    await waitFor(() => expect(checkbox).toBeEnabled());
+    fireEvent.click(checkbox);
+    fireEvent.change(screen.getByLabelText(/Motivo \/ observación/), { target: { value: 'Atención médica' } });
+    const submit = screen.getByRole('button', { name: 'Registrar solicitud' });
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+    await waitFor(() => expect(reporteSalidaService.radicarSolicitud).toHaveBeenCalledWith(expect.objectContaining({ jefeInmediatoUserId: null, jefeInmediato: null })));
+    expect(await screen.findByText(/se enviará directamente a Gestión del Talento Humano para su revisión/)).toBeVisible();
+  });
+
+  test('la excepción no se extiende a los demás cargos adscritos a Rectoría', () => {
+    render(<ReporteSalidaFormDialog open documento={documento} user={{ ...user, cargo: 'Secretaria', dependencia: 'RECTORIA', vicerrectoria: 'RECTORIA' }} onClose={jest.fn()} />);
+    expect(screen.getByLabelText('Jefe inmediato')).toBeVisible();
+    expect(screen.queryByText(/El Rector no requiere jefe inmediato/)).not.toBeInTheDocument();
+  });
+
   test('conserva el archivo seleccionado cuando se actualizan las propiedades externas', async () => {
     const props = {
       open: true,

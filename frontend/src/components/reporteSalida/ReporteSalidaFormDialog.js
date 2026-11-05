@@ -55,7 +55,8 @@ import cronogramaMovilidadService from '../../services/cronogramaMovilidadServic
 import CronogramaMovilidadModule from '../cronogramaMovilidad/CronogramaMovilidadModule';
 import {
   DESPLAZAMIENTO_VIATICOS_ENABLED,
-  DESPLAZAMIENTO_VIATICOS_QUESTION_VISIBLE
+  DESPLAZAMIENTO_VIATICOS_QUESTION_VISIBLE,
+  isRectorUser
 } from '../../config/reporteSalida';
 import CategoriaTabs from './CategoriaTabs';
 import ConsentimientoSalud from './ConsentimientoSalud';
@@ -670,6 +671,7 @@ const filterFutureTimeOptionsForDate = (options, dateStr) => {
 function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }) {
   const { user: authUser } = useAuth();
   const currentUser = user || authUser;
+  const rectorSinJefe = isRectorUser(currentUser);
   const isAdmin = currentUser?.role === 'administrador';
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('md'));
@@ -1419,8 +1421,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       if (!form.laboral.dependencia) issues.push('Seleccione la dependencia del/de la colaborador(a).');
       if ((isOficioSolicitud || requiresViaticosFlow) && !form.laboral.vicerrectoria) issues.push('Seleccione la Vicerrectoría / Rectoría del/de la colaborador(a).');
       if (!form.laboral.cargo) issues.push('Seleccione el cargo del/de la colaborador(a).');
-      if (!jefe) issues.push('Seleccione el jefe inmediato que aprobara la solicitud.');
-      else if (!jefe.email) issues.push('El jefe inmediato seleccionado no tiene correo registrado.');
+      if (!rectorSinJefe && !jefe) issues.push('Seleccione el jefe inmediato que aprobara la solicitud.');
+      else if (!rectorSinJefe && !jefe.email) issues.push('El jefe inmediato seleccionado no tiene correo registrado.');
     }
 
     if (!subtype) {
@@ -1596,6 +1598,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     category,
     canShowSaludConsentimiento,
     consentimientoSalud,
+    rectorSinJefe,
     isSalidaMultiple,
     participantes,
     form.laboral.cargo,
@@ -1870,8 +1873,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         documentoId: documento?.id,
         isSalidaMultiple,
         participantes: isSalidaMultiple ? participantes : [],
-        jefeInmediatoUserId: isSalidaMultiple ? null : (jefe?.userId || null),
-        jefeInmediato: isSalidaMultiple ? null : (jefe ? {
+        jefeInmediatoUserId: isSalidaMultiple || rectorSinJefe ? null : (jefe?.userId || null),
+        jefeInmediato: isSalidaMultiple || rectorSinJefe ? null : (jefe ? {
           id: jefe.id,
           userId: jefe.userId || null,
           nombre: jefe.nombre || '',
@@ -2194,7 +2197,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Cargo" placeholder="Buscar cargo" helperText={!isAdmin ? "Dato precargado institucional" : ""} />}
                 />
               </Box>
-              {!isSalidaMultiple && (
+              {rectorSinJefe && !isSalidaMultiple && <Typography sx={{ mt: 1.5, fontSize: 13, color: '#475569' }}>El Rector no requiere jefe inmediato. La solicitud se remite directamente a Gestión del Talento Humano.</Typography>}
+              {!isSalidaMultiple && !rectorSinJefe && (
                 <Box sx={{ mt: 1.5 }}>
                   <TextField
                     sx={inputSx}
@@ -3488,7 +3492,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           <Typography sx={{ color: '#334155', lineHeight: 1.6, fontSize: 14.5, mt: 1 }}>
             Tenga en cuenta que los permisos otorgados bajo el motivo de <strong>Diligencia personal</strong> requieren plan de reposición de tiempo obligatorio.
             <br /><br />
-            Usted deberá registrar un plan inicial de reposición en la parte inferior de este formulario, el cual será evaluado por su jefe inmediato para su respectiva aprobación y seguimiento.
+            {rectorSinJefe ? 'El plan inicial de reposición será evaluado por Gestión del Talento Humano para su aprobación y seguimiento.' : 'Usted deberá registrar un plan inicial de reposición en la parte inferior de este formulario, el cual será evaluado por su jefe inmediato para su respectiva aprobación y seguimiento.'}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2, pt: 0, justifyContent: 'center' }}>
@@ -3508,7 +3512,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
             Tenga en cuenta que esta categoría es exclusivamente para salidas relacionadas con funciones 
             inherentes a su rol, así como para el cumplimiento de labores <strong>académico-administrativas</strong>.
             <br /><br />
-            Esta solicitud debe contar con la validación y autorización previa de su jefe inmediato.
+            {rectorSinJefe ? 'Esta solicitud se remite directamente a Gestión del Talento Humano y, cuando corresponda por el destino fuera de Pasto, a SST.' : 'Esta solicitud debe contar con la validación y autorización previa de su jefe inmediato.'}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2, pt: 0, justifyContent: 'center' }}>
@@ -3525,7 +3529,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
             ¡Solicitud Radicada con Éxito!
           </Typography>
           <Typography sx={{ color: '#475569', fontSize: 16, mb: 3 }}>
-            El reporte ha sido guardado correctamente y se enviará una notificación a su jefe inmediato para aprobación.
+            {rectorSinJefe ? 'El reporte ha sido guardado correctamente y se enviará directamente a Gestión del Talento Humano para su revisión.' : 'El reporte ha sido guardado correctamente y se enviará una notificación a su jefe inmediato para aprobación.'}
           </Typography>
           <Button onClick={handleSuccessClose} variant="contained" color="success" fullWidth sx={{ borderRadius: 2, fontWeight: 700, py: 1.5, fontSize: 16 }}>
             Cerrar y continuar

@@ -12,6 +12,7 @@ export const DESPLAZAMIENTO_VIATICOS_ENABLED = String(
 export const DESPLAZAMIENTO_VIATICOS_QUESTION_VISIBLE = true;
 
 export const REPORTE_SALIDA_DOCUMENT_CODE = 'THM-DP-FR-002';
+export const isRectorUser = (user = {}) => String(user?.cargo || '').trim().toLowerCase() === 'rector';
 
 const normalize = (value) =>
   String(value || '')

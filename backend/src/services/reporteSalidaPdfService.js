@@ -1,5 +1,6 @@
 const fs = require('fs');
 const { appendSaludConsentimientoPdf } = require('./saludConsentimientoPdf');
+const { isRectorSolicitud, requiresRectorSst } = require('./reporteSalidaWorkflow/rectorPolicy');
 const { SALUD_CONSENTIMIENTO_TRACE_TEXT } = require('./saludConsentimiento');
 const path = require('path');
 const { execFile } = require('child_process');
@@ -94,6 +95,7 @@ const getSolicitudCreatedAt = (solicitud = {}) =>
   || new Date();
 
 const getInitialApprovalPdfInfo = (solicitud = {}) => {
+  if (isRectorSolicitud(solicitud)) return { notApplicable: true, name: '', cargo: '', email: '', viaDependencia: false, header: 'Jefe inmediato (No aplica)', signed: false, dateValue: null };
   const trace = getInitialApprovalTrace(solicitud);
   const actor = trace?.actor || {};
   const viaDependencia = ['aprobada_dependencia', 'visto_bueno_dependencia'].includes(trace?.event);
@@ -1007,7 +1009,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const duracionInfo = getOficioDuracionInfo(salida, solicitud);
   const isCargo = (salida.categoria === 'propias_cargo' || isPropiasCargoSubtype(salida.tipo)) && salida.tipo !== 'salida_campus';
   const alcance = isCargo ? (salida.alcance || 'Local') : 'Local';
-  const requiresSst = (isCargo || isPropiasCargoSubtype(salida.tipo)) && ['Nacional', 'Internacional'].includes(alcance);
+  const requiresSst = isRectorSolicitud(solicitud) ? requiresRectorSst(solicitud) : (isCargo || isPropiasCargoSubtype(salida.tipo)) && ['Nacional', 'Internacional'].includes(alcance);
   const hasVicerrectoriaApproval = Boolean(vicerrectoriaDateValue);
   const hasRectoriaApproval = Boolean(rectoriaDateValue);
   const vicerrectoriaName = laboral.vicerrectoria || solicitante.vicerrectoria || 'Vicerrectoria';
@@ -1015,8 +1017,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const isRectoriaAuthority = normalizedVicerrectoria.includes('rectoria') && !normalizedVicerrectoria.includes('vicerrectoria') && !normalizedVicerrectoria.includes('vicerectoria');
   const isOneOrTwoDaysOficio = duracionInfo.codigo === '1_2_dias';
   const isThreeOrMoreDaysOficio = duracionInfo.codigo === '3_mas_dias';
-  const requiresVicerrectoriaSignature = (isOneOrTwoDaysOficio || isThreeOrMoreDaysOficio) && !isRectoriaAuthority;
-  const requiresRectoriaSignature = hasRectoriaApproval || (isRectoriaAuthority && !isThreeOrMoreDaysOficio);
+  const requiresVicerrectoriaSignature = !isRectorSolicitud(solicitud) && (isOneOrTwoDaysOficio || isThreeOrMoreDaysOficio) && !isRectoriaAuthority;
+  const requiresRectoriaSignature = !isRectorSolicitud(solicitud) && (hasRectoriaApproval || (isRectoriaAuthority && !isThreeOrMoreDaysOficio));
 
   const sstEvent = getTraceByEvents(solicitud, ['aprobada_sst']);
   const sstApprovedAt = sstEvent ? new Date(sstEvent.at) : null;
@@ -1055,7 +1057,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       {
         text: [
           { text: hasInitialApproval ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
-          { text: `${hasInitialApproval ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 9 },
+          { text: `${initialApprovalPdf.notApplicable ? 'No aplica. El Rector no tiene jefe inmediato.' : (hasInitialApproval ? initialApprovalPdf.name : 'Pendiente')}\n`, fontSize: 9 },
           { text: `Cargo: ${initialApprovalPdf.cargo || ''}\n`, fontSize: 7.5 },
           ...(initialApprovalPdf.viaDependencia && initialApprovalPdf.email ? [{ text: `Correo: ${initialApprovalPdf.email}\n`, fontSize: 7.5 }] : []),
           { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 7.5 },
@@ -1187,7 +1189,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   signatureTableBody.push(
     [
       { text: 'Firma del trabajador solicitante', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8 },
-      { text: 'VISTO BUENO del jefe inmediato', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8 }
+      { text: initialApprovalPdf.notApplicable ? 'Jefe inmediato (No aplica)' : 'VISTO BUENO del jefe inmediato', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8 }
     ],
     [
       {
@@ -1200,7 +1202,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
         ],
         margin: [3, 2, 3, 2]
       },
-      buildOficioSignatureCell({
+      initialApprovalPdf.notApplicable ? { text: 'No aplica. El Rector no tiene jefe inmediato.', fontSize: 8, margin: [3, 6, 3, 6] } : buildOficioSignatureCell({
           signed: hasInitialApproval,
           name: initialApprovalPdf.name || jefe.nombre || 'Jefe inmediato',
           cargo: initialApprovalPdf.cargo || jefe.cargo || 'Jefe inmediato',
@@ -1942,7 +1944,7 @@ const buildPdfBuffer = async (solicitud) => {
       const ghDate = ghDateValue ? formatDateTime(ghDateValue) : 'Pendiente';
 
       const isPropiasCargoSubtype = ['practica_integral_movilidad', 'ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'proyeccion_social', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
-      const requiresSst = isPropiasCargoSubtype && ['Nacional', 'Internacional'].includes(alcance);
+      const requiresSst = isRectorSolicitud(solicitud) ? requiresRectorSst(solicitud) : isPropiasCargoSubtype && ['Nacional', 'Internacional'].includes(alcance);
 
       const sstEvent = getTraceByEvents(solicitud, ['aprobada_sst']);
       const sstApprovedAt = sstEvent ? new Date(sstEvent.at) : null;
@@ -2141,7 +2143,7 @@ const buildPdfBuffer = async (solicitud) => {
               margin: [5, 5, 5, 5]
             },
             {
-              text: [
+              text: initialApprovalPdf.notApplicable ? 'No aplica. El Rector no tiene jefe inmediato.' : [
                 { text: hasInitialApproval ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
                 { text: `${hasInitialApproval ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 10 },
                 { text: `Cargo: ${initialApprovalPdf.cargo || ''}\n`, fontSize: 8 },
@@ -2221,6 +2223,7 @@ const buildPdfBuffer = async (solicitud) => {
 
       if (trazabilidad.length > 0) {
         const traceEventLabels = {
+          'jefe_no_aplica_rector': 'Jefe inmediato no aplica (Rector)',
           'consentimiento_salud_aceptado': 'Autorización de Salud y Bienestar aceptada',
           'radicada': 'Radicación inicial',
           'radicada_grupal': 'Radicación de salida grupal',
