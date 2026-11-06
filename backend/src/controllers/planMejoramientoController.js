@@ -1,3 +1,6 @@
+const { stripActivityDates, stripContentActivityDates } = require('../services/improvementActivityStructure');
+const { missingLinkFields, linkFieldValue } = require('../services/improvementLinkFields');
+const { canSynchronize, assertCanSynchronize } = require('../services/improvementActionPlanSyncGate');
 const { aspectKey, uniqueAspects, validateAspectAssignments } = require('../services/improvementAspectIdentity');
 const { enrichImprovementPolicyDimensions } = require('../services/activityPolicyStatisticsService');
 const { clampProgress, periodCuts, latestResult, fulfillment, periodContribution, trackCurrentFollowup } = require('../services/improvementMonitoringRules');
@@ -6,6 +9,7 @@ const path = require('path');
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const { Op } = require('sequelize');
+const { sequelize } = require('../config/database');
 const { Autoevaluacion, AutoevaluacionPrograma, PlanMejoramiento, PlanMejoramientoTarifaVersion, PlanMejoramientoAsignacion, PlanMejoramientoFlujoHistorial, PlanMejoramientoActividadAsignacion, User, UserModulePermission, StrategicPlan, StrategicTerm, StrategicCatalogItem, StrategicResponsibility, StrategicActionPlan, StrategicActionItem, StrategicMonitoringPeriod, StrategicMonitoringResult, StrategicEvidence, StrategicNotification } = require('../models');
 const planMejoramientoDriveService = require('../services/planMejoramientoDriveService');
 const { ensureActivityFoldersInDrive } = require('../services/strategicPlanningDriveService');
@@ -51,7 +55,7 @@ const budgetItemTotal = (item = {}) => {
 };
 
 const emptyActivity = (indicator = '') => ({
-  nombre: '', descripcion: '', indicador: text(indicator), tipoIndicador: 'Resultado', meta: '', fechaInicio: '', fechaFin: '', recursos: '',
+  nombre: '', descripcion: '', indicador: text(indicator), tipoIndicador: 'Resultado', meta: '', recursos: '',
   procesoResponsable: '', cargoResponsable: '', alcance: 'PROGRAMA', ejeEstrategico: '', objetivoEstrategico: '',
   proyectoPdi: '', politicasInstitucionales: [], lineasAccionPolitica: [],
   metaAlcanzada: '', fechaSeguimiento: '', evidencia: '', observaciones: ''
@@ -84,7 +88,7 @@ const opportunitiesFromObjective = (objective = {}) => {
 
 const isUnformulatedImportedObjective = (objective = {}) => {
   if (!objective?.origenAutoevaluacion?.id || !objective?.origenAutoevaluacion?.modoTraslado || text(objective.objetivo)) return false;
-  const meaningfulActivityFields = ['nombre', 'descripcion', 'meta', 'fechaInicio', 'fechaFin', 'recursos', 'procesoResponsable', 'cargoResponsable', 'ejeEstrategico', 'objetivoEstrategico', 'proyectoPdi', 'politicasInstitucionales', 'lineasAccionPolitica', 'metaAlcanzada', 'fechaSeguimiento', 'evidencia', 'observaciones'];
+  const meaningfulActivityFields = ['nombre', 'descripcion', 'meta', 'recursos', 'procesoResponsable', 'cargoResponsable', 'ejeEstrategico', 'objetivoEstrategico', 'proyectoPdi', 'politicasInstitucionales', 'lineasAccionPolitica', 'metaAlcanzada', 'fechaSeguimiento', 'evidencia', 'observaciones'];
   return !array(objective.actividades).some((activity) => meaningfulActivityFields.some((field) => text(activity?.[field])));
 };
 
@@ -651,7 +655,7 @@ const executionBadge = async (req, res) => {
 
 const normalizePayload = (body = {}) => {
   const currentYear = new Date().getFullYear();
-  const contenido = body.contenido && typeof body.contenido === 'object' ? body.contenido : {};
+  const contenido = stripContentActivityDates(body.contenido && typeof body.contenido === 'object' ? body.contenido : {});
   validateAspectAssignments(array(contenido.objetivos));
   const programa = text(body.programa || contenido.programa);
   const periodoInicio = Number(body.periodo_inicio || contenido.periodoInicio || currentYear);
@@ -678,7 +682,7 @@ const normalizePayload = (body = {}) => {
       oportunidadesAutoevaluacion: uniqueAspects(array(contenido.oportunidadesAutoevaluacion)),
       objetivos: array(contenido.objetivos).map((objective) => ({ ...objective,
         aspectosAutoevaluacion: uniqueAspects(array(objective.aspectosAutoevaluacion)),
-        actividades: array(objective.actividades).map((activity) => ({ ...activity, ...resolveActivityIndicators(activity) }))
+        actividades: array(objective.actividades).map((activity) => ({ ...stripActivityDates(activity), ...resolveActivityIndicators(activity) }))
       })) }
   };
 };
@@ -1017,7 +1021,7 @@ const uploadActivityEvidence = async (req, res) => {
         const actionItem = await StrategicActionItem.findByPk(linkedItemId, {
           include: [{ model: StrategicActionPlan, as: 'actionPlan' }]
         });
-        if (actionItem?.actionPlan?.term_id) {
+        if (actionItem?.actionPlan?.term_id && (await canSynchronize(actionItem.actionPlan)).allowed) {
           const activity = array(uploaded.content?.objetivos).flatMap((o) => array(o.actividades)).find((a) => String(a.uid) === String(activityUid));
           const cutMonth = Number(String(activity?.fechaSeguimiento || new Date().toISOString().slice(0, 10)).slice(5, 7));
           const targetPos = cutMonth <= 7 ? 1 : 2;
@@ -1091,7 +1095,7 @@ const update = async (req, res) => {
         ? mergeLeaderExecutionContent(plan.contenido || {}, payload.contenido || {})
         : mergeExecutionContent(plan.contenido || {}, payload.contenido || {}, new Set(delegated.filter((item) => ['asignada', 'en_ejecucion', 'devuelta'].includes(item.estado_flujo)).map((item) => String(item.actividad_uid))));
     }
-    payload.contenido = trackCurrentFollowup(plan.contenido, payload.contenido);
+    payload.contenido = stripContentActivityDates(trackCurrentFollowup(plan.contenido, payload.contenido));
     payload.contenido = await enrichImprovementPolicyDimensions(payload.contenido, plan.contenido);
     await plan.update({ ...payload, actualizado_por: req.user?.id });
     await syncLinkedActionPlansTracking(plan, req);
@@ -1130,6 +1134,7 @@ const syncLinkedActionPlansTracking = async (plan, req) => {
         include: [{ model: StrategicActionPlan, as: 'actionPlan', include: [{ model: StrategicTerm, as: 'term' }] }]
       });
       if (!actionItem?.actionPlan?.term_id) continue;
+      if (!(await canSynchronize(actionItem.actionPlan)).allowed) continue;
       const periods = await StrategicMonitoringPeriod.findAll({ where: { term_id: actionItem.actionPlan.term_id }, order: [['position', 'ASC']] });
       const custom = { ...(actionItem.custom_values || {}) };
       const signatures = { ...(custom.pm_tracking_signatures || {}) };
@@ -1224,15 +1229,8 @@ const getActionPlanCandidates = async (req, res) => {
 
     const currentYear = new Date().getFullYear();
     let baseYear = Number(plan.periodo_inicio) || currentYear;
-    if (targetActivity.fechaInicio) {
-      const match = String(targetActivity.fechaInicio).match(/(\d{4})/);
-      if (match) baseYear = parseInt(match[1], 10);
-    }
-    let endYear = baseYear;
-    if (targetActivity.fechaFin) {
-      const matchEnd = String(targetActivity.fechaFin).match(/(\d{4})/);
-      if (matchEnd) endYear = parseInt(matchEnd[1], 10);
-    }
+    const deliveryYears = ['Resultado', 'Logro', 'Impacto'].filter((kind) => targetActivity[`indicador${kind}Activo`] !== false).map((kind) => Number(String(targetActivity[`fechaEntrega${kind}`] || '').slice(0, 4))).filter((year) => year > 0);
+    if (deliveryYears.length) baseYear = Math.min(...deliveryYears);
 
     // Regla de vigencias: Vigencia actual (ej: 2026) y siguiente vigencia inmediata (ej: 2027),
     // SIEMPRE Y CUANDO el responsable tenga ya cargado su Plan de Acción para dicha vigencia.
@@ -1265,7 +1263,7 @@ const getActionPlanCandidates = async (req, res) => {
         ]
       },
       include: [
-        { model: StrategicTerm, as: 'term', attributes: ['id', 'year', 'strategic_plan_id', 'status'], required: false },
+        { model: StrategicTerm, as: 'term', attributes: ['id', 'year', 'strategic_plan_id', 'status', 'metadata', 'starts_on', 'ends_on'], required: false },
         { model: StrategicCatalogItem, as: 'organizationalUnit', required: false },
         { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false },
         {
@@ -1282,7 +1280,7 @@ const getActionPlanCandidates = async (req, res) => {
     const strictlyFilteredPlans = actionPlans.filter((p) => {
       const planYear = p.term?.year || (String(p.code || p.title).match(/(20\d\d)/) ? parseInt(String(p.code || p.title).match(/(20\d\d)/)[1], 10) : null);
       if (!planYear) return false;
-      return allowedYears.includes(planYear);
+      return allowedYears.includes(planYear) && require('../services/improvementActionPlanSyncGate').syncAvailability(p).allowed;
     });
 
     const normalize = (str) =>
@@ -1389,8 +1387,6 @@ const getActionPlanCandidates = async (req, res) => {
           nombre: targetActivity.nombre,
           indicador: targetActivity.indicador,
           meta: targetActivity.meta,
-          fechaInicio: targetActivity.fechaInicio,
-          fechaFin: targetActivity.fechaFin,
           linkedActionPlanId: targetActivity.linkedActionPlanId || null,
           linkedActionItemId: targetActivity.linkedActionItemId || null
         },
@@ -1439,14 +1435,13 @@ const linkActivityToActionPlan = async (req, res) => {
       ]
     });
     if (!actionPlan) return res.status(404).json({ success: false, message: 'Plan de Acción no encontrado' });
+    await assertCanSynchronize(actionPlan);
 
     // Validar que el plan de acción destino pertenezca a la vigencia actual o siguiente inmediata
     const currentYear = new Date().getFullYear();
     let baseYear = Number(plan.periodo_inicio) || currentYear;
-    if (targetActivity.fechaInicio) {
-      const match = String(targetActivity.fechaInicio).match(/(\d{4})/);
-      if (match) baseYear = parseInt(match[1], 10);
-    }
+    const deliveryYears = ['Resultado', 'Logro', 'Impacto'].filter((kind) => targetActivity[`indicador${kind}Activo`] !== false).map((kind) => Number(String(targetActivity[`fechaEntrega${kind}`] || '').slice(0, 4))).filter((year) => year > 0);
+    if (deliveryYears.length) baseYear = Math.min(...deliveryYears);
     const allowedYears = [baseYear, baseYear + 1];
     const planYear = actionPlan.term?.year || (String(actionPlan.code || actionPlan.title).match(/(20\d\d)/) ? parseInt(String(actionPlan.code || actionPlan.title).match(/(20\d\d)/)[1], 10) : null);
     if (planYear && !allowedYears.includes(planYear)) {
@@ -1541,7 +1536,16 @@ const linkActivityToActionPlan = async (req, res) => {
       'Director del Programa';
 
     const formValues = req.body.form_values || req.body.activity_data || {};
-    const activityName = text(formValues.actividad || formValues.nombre || targetActivity.nombre);
+    let destinationSchema = actionPlan.metadata?.form_schema;
+    if (!destinationSchema?.fields?.length && actionPlan.term?.strategic_plan_id) {
+      destinationSchema = await require('../services/strategicActionPlanSchemaService').captureActionPlanSchema(actionPlan.term.strategic_plan_id);
+    }
+    if (!destinationSchema?.fields?.length) return res.status(409).json({ success: false, message: 'No se pudo obtener el formulario del Plan de Acci\u00f3n. Actualice los planes disponibles antes de vincular.' });
+    const submittedValues = { ...formValues, responsible: leaderName, responsable: leaderName, responsable_de_ejecucion: leaderName };
+    const missing = missingLinkFields(destinationSchema.fields, submittedValues);
+    if (missing.length) return res.status(422).json({ success: false, message: `Complete los campos obligatorios del Plan de Acci\u00f3n: ${missing.map((field) => field.label || field.key).join(', ')}.`, missingFields: missing.map((field) => field.key) });
+
+    const activityName = text(linkFieldValue('activity', formValues) || targetActivity.nombre);
 
     // Validar si ya existe una actividad con el mismo nombre en este Plan de Acción
     const normActivityText = (s) => String(s || '')
@@ -1565,28 +1569,20 @@ const linkActivityToActionPlan = async (req, res) => {
         message: `No es posible registrar actividades duplicadas. Ya existe la actividad "${duplicate.activity || activityName}" (${duplicate.code}) en el Plan de Acción "${actionPlan.title || actionPlan.code}".`
       });
     }
-    const indicatorName = formatActivityIndicators(targetActivity) || text(formValues.indicador || targetActivity.indicador);
-    const indicatorType = text(formValues.tipoIndicador || formValues.tipo_indicador || targetActivity.tipoIndicador || 'Resultado');
-    const targetVal = String(formValues.meta || targetActivity.meta || '1');
-    const startDate = formValues.fechaInicio || formValues.fecha_inicio || targetActivity.fechaInicio || `${actionPlan.term?.year || 2026}-01-01`;
-    const endDate = formValues.fechaFin || formValues.fecha_fin || targetActivity.fechaFin || `${actionPlan.term?.year || 2026}-12-31`;
-    const strategicObjective = text(formValues.objetivoEstrategico || targetActivity.objetivoEstrategico);
-    const strategicGuideline = text(formValues.lineamientoEstrategico || targetActivity.proyectoPdi);
-    const macroactivity = text(formValues.macroactividad);
-    const deliverable = text(formValues.entregable || targetActivity.descripcion);
-    const coResponsible = text(formValues.corresponsable);
+    const indicatorName = text(linkFieldValue('indicator', formValues)) || formatActivityIndicators(targetActivity);
+    const indicatorType = text(linkFieldValue('indicator_type', formValues) || targetActivity.tipoIndicador || 'Resultado');
+    const targetVal = String(linkFieldValue('target', formValues) ?? targetActivity.meta ?? '');
+    const startDate = linkFieldValue('starts_on', formValues) || null;
+    const endDate = linkFieldValue('ends_on', formValues) || null;
+    const strategicObjective = text(linkFieldValue('strategic_objective', formValues) || targetActivity.objetivoEstrategico);
+    const strategicGuideline = text(linkFieldValue('strategic_guideline', formValues) || targetActivity.proyectoPdi);
+    const macroactivity = text(linkFieldValue('macroactivity', formValues));
+    const deliverable = text(linkFieldValue('deliverable', formValues) || targetActivity.descripcion);
+    const coResponsibleValue = linkFieldValue('co_responsibles', formValues);
+    const coResponsibles = Array.isArray(coResponsibleValue) ? coResponsibleValue : coResponsibleValue ? [coResponsibleValue] : [];
+    const coResponsible = coResponsibles.join(', ');
 
-    // Normalizar objetivo estratégico contra las opciones oficiales del PED
-    let finalStrategicObjective = strategicObjective;
-    if (finalStrategicObjective) {
-      if (/^OE1/i.test(finalStrategicObjective)) {
-        finalStrategicObjective = 'OE1 Diseñar e implementar estrategias integrales e innovadoras, para arraigar la identidad Universidad CESMAG.';
-      } else if (/^OE2/i.test(finalStrategicObjective)) {
-        finalStrategicObjective = 'OE2 Articular las labores institucionales (formativas, académicas, docentes, científicas, culturales, extensión, financieras y administrativas) desde una óptica transformadora de la persona para impactar la sociedad desde el reconocimiento de las culturas y las comunidades.';
-      } else if (/^OE3/i.test(finalStrategicObjective)) {
-        finalStrategicObjective = 'OE3 Desarrollar una arquitectura institucional bajo los principios de ética y buen gobierno';
-      }
-    }
+    const finalStrategicObjective = strategicObjective;
 
     let actionItem;
     if (targetActivity.linkedActionItemId) {
@@ -1595,6 +1591,7 @@ const linkActivityToActionPlan = async (req, res) => {
 
     const customValuesPayload = {
       ...(actionItem?.custom_values || {}),
+      ...Object.fromEntries(destinationSchema.fields.filter((field) => field.active !== false).map((field) => [field.key, linkFieldValue(field.key, submittedValues) ?? ''])),
       ...resolveActivityIndicators(targetActivity),
       activity: activityName,
       indicator: indicatorName,
@@ -1617,7 +1614,7 @@ const linkActivityToActionPlan = async (req, res) => {
       entregable: deliverable,
       co_responsible: coResponsible,
       corresponsable: coResponsible,
-      co_responsibles: coResponsible ? [coResponsible] : [],
+      co_responsibles: coResponsibles,
       responsible: leaderName,
       responsable: leaderName,
       responsable_de_ejecucion: leaderName,
@@ -1817,7 +1814,7 @@ const linkActivityToActionPlan = async (req, res) => {
     });
   } catch (error) {
     console.error('[linkActivityToActionPlan Error]:', error);
-    return res.status(500).json({ success: false, message: error.message || 'Error al vincular actividad con Plan de Acción' });
+    return res.status(error.statusCode || error.status || 500).json({ success: false, message: error.message || 'Error al vincular actividad con Plan de Acción' });
   }
 };
 
@@ -1835,6 +1832,8 @@ const repairLinkedActionItems = async () => {
     for (const item of items) {
       const cv = item.custom_values || {};
       if (cv.source_module === 'plan_mejoramiento' && (!cv.strategic_objective || cv.strategic_objective === '-' || !cv.macroactividad || item.deleted_at)) {
+        const destination = await StrategicActionPlan.findByPk(item.action_plan_id, { include: [{ model: StrategicTerm, as: 'term' }] });
+        if (!(await canSynchronize(destination)).allowed) continue;
         const pmPlan = await PlanMejoramiento.findByPk(cv.pm_plan_id);
         if (!pmPlan) continue;
         let targetAct = null;
@@ -2056,20 +2055,23 @@ const readCatalogs = async () => {
 const getCatalogs = async (req, res) => {
   try {
     if (!catalogsPromise) catalogsPromise = readCatalogs().catch((error) => { catalogsPromise = null; throw error; });
-    const [catalogs, institutionalPolicies, strategicCatalog] = await Promise.all([catalogsPromise, readInstitutionalPolicies(), readActionPlanStrategicCatalog()]);
+    const catalogData = await require('../services/improvementCatalogSources').readCatalogSources({ base: catalogsPromise, policies: readInstitutionalPolicies(), strategic: readActionPlanStrategicCatalog() });
     const actionPlanIds = [...new Set(String(req.query?.actionPlanIds || '').split(',').filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))].slice(0, 100);
     const actionPlans = actionPlanIds.length ? await StrategicActionPlan.findAll({
       where: { id: { [Op.in]: actionPlanIds }, deleted_at: null }, attributes: ['id'],
       include: [{ model: StrategicTerm, as: 'term', attributes: ['strategic_plan_id'], required: true }]
-    }) : [];
+    }).catch(() => { catalogData.catalogWarnings.push('No se pudo consultar el PED de los planes vinculados.'); return []; }) : [];
     const byPed = new Map();
     const strategicByActionPlan = {};
     for (const actionPlan of actionPlans) {
       const pedId = actionPlan.term.strategic_plan_id;
-      if (!byPed.has(pedId)) byPed.set(pedId, await readActionPlanStrategicCatalog(pedId));
-      strategicByActionPlan[actionPlan.id] = byPed.get(pedId);
+      if (!byPed.has(pedId)) {
+        try { byPed.set(pedId, await readActionPlanStrategicCatalog(pedId)); }
+        catch (_) { catalogData.catalogWarnings.push('No se pudo cargar el PED de un plan vinculado.'); byPed.set(pedId, null); }
+      }
+      if (byPed.get(pedId)) strategicByActionPlan[actionPlan.id] = byPed.get(pedId);
     }
-    return res.json({ success: true, data: { ...catalogs, ...strategicCatalog, institutionalPolicies, strategicByActionPlan } });
+    return res.json({ success: true, data: { ...catalogData, strategicByActionPlan } });
   } catch (error) {
     return res.status(500).json({ success: false, message: `No fue posible leer los catálogos de la plantilla: ${error.message}` });
   }
@@ -2211,8 +2213,8 @@ const fillPlanSheet = (sheet, plan, contenido, rows) => {
       J: text(item.descripcion),
       K: text(item.indicador),
       L: number(item.meta) || '',
-      M: item.fechaInicio ? new Date(item.fechaInicio) : '',
-      N: item.fechaFin ? new Date(item.fechaFin) : '',
+      M: '',
+      N: '',
       O: text(item.recursos),
       Q: text(item.procesoResponsable),
       R: text(item.cargoResponsable),
@@ -2438,6 +2440,9 @@ const buildPlanMejoramientoWorkbook = async (plan, templatePath = TEMPLATE_PATH)
   }
 
   fillPlanSheet(workbook.getWorksheet('PM'), plan, contenido, rows);
+  // Keep reserved template coordinates stable while retiring date collection.
+  workbook.getWorksheet('PM').getColumn('M').hidden = true;
+  workbook.getWorksheet('PM').getColumn('N').hidden = true;
   fillBudgetSheets(workbook, contenido);
   const perObjectiveSheet = workbook.getWorksheet('Presupuesto x Objetivo');
   if (perObjectiveSheet) setCell(perObjectiveSheet, 'H8', rows[0]?.code || '');
@@ -2559,10 +2564,6 @@ const importPlanExcel = async (req, res) => {
       }
 
       if (activityName) {
-        const rawStart = row.getCell('M').value;
-        const rawEnd = row.getCell('N').value;
-        const startDate = rawStart instanceof Date ? rawStart.toISOString().slice(0, 10) : text(rawStart);
-        const endDate = rawEnd instanceof Date ? rawEnd.toISOString().slice(0, 10) : text(rawEnd);
 
         currentObjective.actividades.push({
           uid: crypto.randomUUID(),
@@ -2571,8 +2572,6 @@ const importPlanExcel = async (req, res) => {
           descripcion: text(row.getCell('J').value),
           indicador: text(row.getCell('K').value),
           meta: text(row.getCell('L').value),
-          fechaInicio: startDate,
-          fechaFin: endDate,
           recursos: text(row.getCell('O').value),
           procesoResponsable: text(row.getCell('Q').value),
           cargoResponsable: text(row.getCell('R').value),

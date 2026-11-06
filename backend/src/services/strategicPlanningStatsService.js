@@ -61,7 +61,8 @@ const REDUNDANT_DYNAMIC_KEYS = new Set([
   'avance_iip',
   'total_progress',
   'avance_total',
-  'legacy_plan_accion_id'
+  'legacy_plan_accion_id',
+  'indicadores_metas'
 ]);
 
 /**
@@ -297,8 +298,40 @@ const getPlanStatistics = async ({ planId = null, termId = null, year = null, ca
     else if (estado === 'En ejecución') enEjecucion++;
     else if (estado === 'Completado') completadas++;
 
-    const indicatorText = (item.indicator || custom.indicator || '').trim();
-    if (indicatorText) totalIndicadores++;
+    // Determinar indicadores estructurados o directos
+    let activeIndicatorsCount = 0;
+    const indParts = [];
+    const metaParts = [];
+    const typeParts = [];
+
+    if (custom.indicadorResultadoActivo || custom.indicadorResultado || custom.metaResultado) {
+      if (custom.indicadorResultado) indParts.push(`Resultado: ${custom.indicadorResultado}`);
+      if (custom.metaResultado) metaParts.push(`Resultado: ${custom.metaResultado}`);
+      typeParts.push('Resultado');
+      if (custom.indicadorResultado || custom.metaResultado) activeIndicatorsCount++;
+    }
+    if (custom.indicadorLogroActivo || custom.indicadorLogro || custom.metaLogro) {
+      if (custom.indicadorLogro) indParts.push(`Logro: ${custom.indicadorLogro}`);
+      if (custom.metaLogro) metaParts.push(`Logro: ${custom.metaLogro}`);
+      typeParts.push('Logro');
+      if (custom.indicadorLogro || custom.metaLogro) activeIndicatorsCount++;
+    }
+    if (custom.indicadorImpactoActivo || custom.indicadorImpacto || custom.metaImpacto) {
+      if (custom.indicadorImpacto) indParts.push(`Impacto: ${custom.indicadorImpacto}`);
+      if (custom.metaImpacto) metaParts.push(`Impacto: ${custom.metaImpacto}`);
+      typeParts.push('Impacto');
+      if (custom.indicadorImpacto || custom.metaImpacto) activeIndicatorsCount++;
+    }
+
+    const legacyIndText = (item.indicator || custom.indicator || '').trim();
+    if (activeIndicatorsCount === 0 && legacyIndText) {
+      activeIndicatorsCount = 1;
+    }
+    totalIndicadores += activeIndicatorsCount;
+
+    const rowIndicator = indParts.length ? indParts.join(' | ') : (legacyIndText || '—');
+    const rowMeta = metaParts.length ? metaParts.join(' | ') : (item.target || custom.target || '—');
+    const rowTipoIndicador = typeParts.length ? typeParts.join(', ') : (item.indicator_type || custom.indicator_type || '—');
 
     // Agrupar en Objetivos -> Lineamientos
     if (!objectivesMap.has(objName)) {
@@ -365,9 +398,9 @@ const getPlanStatistics = async ({ planId = null, termId = null, year = null, ca
       lineamiento_estrategico: guidName,
       macroactividad: macroVal,
       actividad: item.activity || custom.activity || 'Sin descripción',
-      tipo_indicador: item.indicator_type || custom.indicator_type || '—',
-      indicador: indicatorText || '—',
-      meta: item.target || custom.target || '—',
+      tipo_indicador: rowTipoIndicador,
+      indicador: rowIndicator,
+      meta: rowMeta,
       starts_on: item.starts_on || custom.starts_on || null,
       ends_on: item.ends_on || custom.ends_on || null,
       anio: yearVal,

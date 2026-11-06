@@ -207,6 +207,7 @@ const uploadActivityEvidence = async (plan, activityUid, file) => {
     const strategic = require('./strategicPlanningDriveService');
     const { StrategicActionItem, StrategicActionPlan, StrategicMonitoringPeriod } = require('../models');
     const item = await StrategicActionItem.findByPk(sourceActivity.linkedActionItemId, { include: [{ model: StrategicActionPlan, as: 'actionPlan' }] });
+    if ((await require('./improvementActionPlanSyncGate').canSynchronize(item?.actionPlan)).allowed) {
     const month = Number(String(sourceActivity.fechaSeguimiento || new Date().toISOString().slice(0, 10)).slice(5, 7));
     const period = await StrategicMonitoringPeriod.findOne({ where: { term_id: item?.actionPlan?.term_id, position: month <= 7 ? 1 : 2 } });
     if (!period) throw new Error('No existe periodo de seguimiento para sincronizar la evidencia vinculada.');
@@ -218,6 +219,7 @@ const uploadActivityEvidence = async (plan, activityUid, file) => {
       fields: 'id,webViewLink', supportsAllDrives: true
     });
     linkedEvidence = { driveFileId: result.data.id, folderId: target.folderId, periodId: period.id, url: result.data.webViewLink };
+    }
   }
   return {
     content: synchronized.content,

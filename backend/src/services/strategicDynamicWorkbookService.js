@@ -76,6 +76,18 @@ const columnsFor = ({ fields }) => {
     if (seenKeys.has(field.key)) continue;
     seenKeys.add(field.key);
 
+    if (field.key === 'indicadores_metas' || field.data_type === 'indicators_group' || field.validation_rules?.preset === 'indicators') {
+      cols.push(
+        { key: 'indicadorResultado', label: 'Indicador de Resultado', type: 'long_text', required: false },
+        { key: 'metaResultado', label: 'Meta de Resultado', type: 'text', required: false },
+        { key: 'indicadorLogro', label: 'Indicador de Logro', type: 'long_text', required: false },
+        { key: 'metaLogro', label: 'Meta de Logro', type: 'text', required: false },
+        { key: 'indicadorImpacto', label: 'Indicador de Impacto', type: 'long_text', required: false },
+        { key: 'metaImpacto', label: 'Meta de Impacto', type: 'text', required: false }
+      );
+      continue;
+    }
+
     const catalogType = field.validation_rules?.catalog_type ||
       (['responsible', 'responsable_de_ejecucion'].includes(field.key) ? 'organizational_unit' : null);
 
@@ -106,6 +118,9 @@ const columnsFor = ({ fields }) => {
 const itemValue = (item, column, elements = [], catalogs = []) => {
   if (column.key === 'code') return item.code || '';
   if (column.key === 'activity') return item.activity || '';
+  if (['indicadorResultado', 'metaResultado', 'indicadorLogro', 'metaLogro', 'indicadorImpacto', 'metaImpacto'].includes(column.key)) {
+    return item.custom_values?.[column.key] ?? '';
+  }
   let value = CORE_FIELDS.has(column.key) ? item[column.key] : item.custom_values?.[column.key];
   if (value === undefined || value === null) {
     value = item.custom_values?.[column.key] ?? item[column.key] ?? '';
@@ -309,6 +324,29 @@ const previewDynamicActionItems = async ({ actionPlanId, file, userId }) => {
       } else {
         payload.custom_values[column.key] = value;
       }
+    }
+
+    // Sincronizar columnas estructuradas de indicadores y metas si vinieron en la plantilla
+    if (payload.custom_values.indicadorResultado || payload.custom_values.metaResultado) {
+      payload.custom_values.indicadorResultadoActivo = true;
+      payload.indicator = payload.indicator || payload.custom_values.indicadorResultado;
+      payload.target = payload.target || payload.custom_values.metaResultado;
+      payload.indicator_type = payload.indicator_type || 'Resultado';
+      payload.custom_values.indicadores_metas = 'configurado';
+    }
+    if (payload.custom_values.indicadorLogro || payload.custom_values.metaLogro) {
+      payload.custom_values.indicadorLogroActivo = true;
+      payload.indicator = payload.indicator || payload.custom_values.indicadorLogro;
+      payload.target = payload.target || payload.custom_values.metaLogro;
+      payload.indicator_type = payload.indicator_type || 'Logro';
+      payload.custom_values.indicadores_metas = 'configurado';
+    }
+    if (payload.custom_values.indicadorImpacto || payload.custom_values.metaImpacto) {
+      payload.custom_values.indicadorImpactoActivo = true;
+      payload.indicator = payload.indicator || payload.custom_values.indicadorImpacto;
+      payload.target = payload.target || payload.custom_values.metaImpacto;
+      payload.indicator_type = payload.indicator_type || 'Impacto';
+      payload.custom_values.indicadores_metas = 'configurado';
     }
 
     rows.push({ source_row: rowNumber, payload });

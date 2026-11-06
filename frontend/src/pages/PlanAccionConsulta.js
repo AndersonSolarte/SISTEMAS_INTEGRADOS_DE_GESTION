@@ -41,6 +41,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import strategicPlanningService from '../services/strategicPlanningService';
+import { getActiveIndicators, getIndicatorProgress, getIndicatorObservations, calculateIndicatorFulfillment, calculateOverallFulfillment, filterEvidencesByIndicator } from '../utils/actionPlanIndicators';
 import planAccionWorkflowService, { ESTADOS_WORKFLOW } from '../services/planAccionWorkflowService';
 import { isPlanWithinActiveSchedule } from '../utils/strategicPlanSchedule';
 
@@ -352,22 +353,23 @@ export default function PlanAccionConsulta({
   };
 
   // Abrir modal de seguimiento / radicación para un ítem
-  const handleOpenMonitoringModal = (item) => {
+  const handleOpenMonitoringModal = (item, targetKind = null) => {
     setTargetItem(item);
     const periodsList = [...(selectedPlan?.term?.monitoringPeriods || [])].sort((a, b) => (a.position || 0) - (b.position || 0));
 
-    // Determinar período aplicable de forma automática según las fechas configuradas de la actividad:
-    // Primer Semestre: 1 de enero al 31 de julio
-    // Segundo Semestre: 1 de agosto al 31 de diciembre
     const applicablePeriods = periodsList.filter((p) => isPeriodApplicableToItem(item, p, periodsList));
     const effectivePeriods = applicablePeriods.length > 0 ? applicablePeriods : periodsList;
     const autoPeriod = effectivePeriods[0] || periodsList[0] || null;
 
     const defaultPeriodId = autoPeriod?.id || '';
+    const activeInds = getActiveIndicators(item);
+    const initialKind = targetKind || (activeInds.length > 0 ? activeInds[0].kind : 'resultado');
+
     setMonitoringForm({
       period_id: defaultPeriodId,
       description: '',
-      files: []
+      files: [],
+      indicator_kind: initialKind
     });
     setIsDragging(false);
     setMonitoringModalOpen(true);
@@ -401,6 +403,7 @@ export default function PlanAccionConsulta({
         formData.append('file', file);
         formData.append('monitoring_period_id', monitoringForm.period_id);
         if (monitoringForm.description?.trim()) formData.append('description', monitoringForm.description.trim());
+        if (monitoringForm.indicator_kind) formData.append('indicator_kind', monitoringForm.indicator_kind);
         return strategicPlanningService.uploadEvidence(targetItem.id, formData);
       }, onUploaded: (_result, _file, index) => {
         setMonitoringForm((previous) => ({ ...previous, files: files.slice(index + 1) }));
@@ -418,7 +421,7 @@ export default function PlanAccionConsulta({
       enqueueSnackbar('Documento de evidencia radicado exitosamente. Queda disponible para revisión y valoración de Planeación y Efectividad.', { variant: 'success' });
       setMonitoringModalOpen(false);
       setTargetItem(null);
-      setMonitoringForm({ period_id: '', description: '', files: [] });
+      setMonitoringForm({ period_id: '', description: '', files: [], indicator_kind: 'resultado' });
       setIsDragging(false);
       await cargarPlanes();
     } catch (err) {
@@ -429,7 +432,6 @@ export default function PlanAccionConsulta({
     }
   };
 
-  // Solicitar ajustes a Planeación y Efectividad (el plan sale de la bandeja del líder)
   const handleConfirmAdjustments = async () => {
     if (!selectedPlan?.id) return;
     if (!adjustmentComment.trim()) {
@@ -2141,398 +2143,429 @@ export default function PlanAccionConsulta({
               ) : (
                 filteredItems.slice(respPage * respRowsPerPage, respPage * respRowsPerPage + respRowsPerPage).map((it, idx) => {
                   const evidences = it.evidence || [];
+                  const indicators = getActiveIndicators(it);
+                  const indCount = indicators.length;
+                  const overallProg = calculateOverallFulfillment(it, periods);
 
-                  // Cumplimiento consolidado: SUMATORIA institucional de los períodos de seguimiento
-                  const validResults = (it.monitoringResults || []).filter(
-                    (r) => r.physical_progress !== null && r.physical_progress !== undefined && !isNaN(Number(r.physical_progress))
-                  );
-                  let compProg = null;
-                  if (validResults.length > 0) {
-                    compProg = validResults.reduce((acc, r) => acc + Number(r.physical_progress || 0), 0);
-                  } else if (it.current_progress !== undefined && it.current_progress !== null && !isNaN(Number(it.current_progress))) {
-                    compProg = Number(it.current_progress);
-                  }
+                  return indicators.map((ind, indIdx) => {
+                    const isFirstSubrow = indIdx === 0;
+                    const indProg = calculateIndicatorFulfillment(it, periods, ind.kind);
+                    const indEvidences = filterEvidencesByIndicator(evidences, ind.kind);
 
-                  return (
-                    <TableRow
-                      key={it.id}
-                      hover
-                      sx={{
-                        '&:hover': { bgcolor: '#f8fafc' },
-                        borderBottom: '1px solid #f1f5f9'
-                      }}
-                    >
-                      {/* NO. */}
-                      <TableCell align="center" sx={{ position: 'sticky', left: 0, bgcolor: '#d9e2f3', fontWeight: 900, color: '#1f3864', fontSize: 12, zIndex: 1, borderRight: '1px solid #b4c6e7', verticalAlign: 'middle', width: 55 }}>
-                        {respPage * respRowsPerPage + idx + 1}
-                      </TableCell>
-
-                      {/* Código */}
-                      <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
-                        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
-                          <Chip
-                            size="small"
-                            label={it.code || '—'}
+                    return (
+                      <TableRow
+                        key={`${it.id}-${ind.kind}-${indIdx}`}
+                        hover
+                        sx={{
+                          '&:hover': { bgcolor: '#f8fafc' },
+                          borderBottom: indIdx === indCount - 1 ? '2px solid #cbd5e1' : '1px solid #f1f5f9',
+                          bgcolor: indIdx > 0 ? '#fcfdfd' : 'inherit'
+                        }}
+                      >
+                        {/* NO. */}
+                        {isFirstSubrow && (
+                          <TableCell
+                            rowSpan={indCount}
+                            align="center"
                             sx={{
-                              fontWeight: 800,
-                              bgcolor: it.custom_values?.source_module === 'plan_mejoramiento' ? '#ffedd5' : '#e2e8f0',
-                              color: it.custom_values?.source_module === 'plan_mejoramiento' ? '#c2410c' : '#1e293b',
-                              fontSize: 10.5,
-                              height: 22,
-                              borderRadius: 1,
-                              border: it.custom_values?.source_module === 'plan_mejoramiento' ? '1px solid #fed7aa' : 'none'
+                              position: 'sticky',
+                              left: 0,
+                              bgcolor: '#d9e2f3',
+                              fontWeight: 900,
+                              color: '#1f3864',
+                              fontSize: 12,
+                              zIndex: 1,
+                              borderRight: '1px solid #b4c6e7',
+                              verticalAlign: 'middle',
+                              width: 55
                             }}
-                          />
-                          {it.custom_values?.source_module === 'plan_mejoramiento' && (
-                            <Tooltip title={`Originada en Plan de Mejoramiento (${it.custom_values?.pm_programa || ''})`}>
-                              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#ea580c', flexShrink: 0, boxShadow: '0 0 0 2px #ffedd5' }} />
-                            </Tooltip>
-                          )}
-                        </Stack>
-                      </TableCell>
+                          >
+                            {respPage * respRowsPerPage + idx + 1}
+                          </TableCell>
+                        )}
 
-                      {/* Actividad */}
-                      <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1, minWidth: 190, maxWidth: { xs: 230, sm: 280, md: 320 } }}>
-                        {it.custom_values?.source_module === 'plan_mejoramiento' && (
-                          <Box sx={{ mb: 0.6 }}>
-                            <Tooltip title={`Actividad articulada desde Plan de Mejoramiento (${it.custom_values?.pm_programa || ''})`}>
+                        {/* Código */}
+                        {isFirstSubrow && (
+                          <TableCell
+                            rowSpan={indCount}
+                            align="center"
+                            sx={{
+                              verticalAlign: 'middle',
+                              py: 1,
+                              px: 1,
+                              bgcolor: '#ffffff',
+                              borderRight: indCount > 1 ? '1px solid #f1f5f9' : 'none'
+                            }}
+                          >
+                            <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
                               <Chip
                                 size="small"
-                                icon={<TrendingUpIcon sx={{ fontSize: '13px !important', color: '#c2410c !important' }} />}
-                                label={`Plan de Mejoramiento · ${it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '') || 'Autoevaluación'}`}
+                                label={it.code || '—'}
                                 sx={{
-                                  height: 22,
+                                  fontWeight: 800,
+                                  bgcolor: it.custom_values?.source_module === 'plan_mejoramiento' ? '#ffedd5' : '#e2e8f0',
+                                  color: it.custom_values?.source_module === 'plan_mejoramiento' ? '#c2410c' : '#1e293b',
                                   fontSize: 10.5,
-                                  fontWeight: 900,
-                                  bgcolor: '#fff7ed',
-                                  color: '#c2410c',
-                                  border: '1px solid #fed7aa',
-                                  borderRadius: 1.5,
-                                  '& .MuiChip-icon': { ml: 0.5 }
+                                  height: 22,
+                                  borderRadius: 1,
+                                  border: it.custom_values?.source_module === 'plan_mejoramiento' ? '1px solid #fed7aa' : 'none'
                                 }}
                               />
+                              {it.custom_values?.source_module === 'plan_mejoramiento' && (
+                                <Tooltip title={`Originada en Plan de Mejoramiento (${it.custom_values?.pm_programa || ''})`}>
+                                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#ea580c', flexShrink: 0, boxShadow: '0 0 0 2px #ffedd5' }} />
+                                </Tooltip>
+                              )}
+                            </Stack>
+                          </TableCell>
+                        )}
+
+                        {/* Actividad */}
+                        {isFirstSubrow && (
+                          <TableCell
+                            rowSpan={indCount}
+                            sx={{
+                              verticalAlign: 'middle',
+                              py: 1,
+                              px: 1,
+                              minWidth: 190,
+                              maxWidth: { xs: 230, sm: 280, md: 320 },
+                              bgcolor: '#ffffff',
+                              borderRight: indCount > 1 ? '1px solid #f1f5f9' : 'none'
+                            }}
+                          >
+                            {it.custom_values?.source_module === 'plan_mejoramiento' && (
+                              <Box sx={{ mb: 0.6 }}>
+                                <Tooltip title={`Actividad articulada desde Plan de Mejoramiento (${it.custom_values?.pm_programa || ''})`}>
+                                  <Chip
+                                    size="small"
+                                    icon={<TrendingUpIcon sx={{ fontSize: '13px !important', color: '#c2410c !important' }} />}
+                                    label={`Plan de Mejoramiento · ${it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '') || 'Autoevaluación'}`}
+                                    sx={{
+                                      height: 22,
+                                      fontSize: 10.5,
+                                      fontWeight: 900,
+                                      bgcolor: '#fff7ed',
+                                      color: '#c2410c',
+                                      border: '1px solid #fed7aa',
+                                      borderRadius: 1.5,
+                                      '& .MuiChip-icon': { ml: 0.5 }
+                                    }}
+                                  />
+                                </Tooltip>
+                              </Box>
+                            )}
+                            <Tooltip title={it.activity} arrow placement="top-start">
+                              <Typography
+                                sx={{
+                                  fontSize: 12,
+                                  fontWeight: it.custom_values?.source_module === 'plan_mejoramiento' ? 800 : 700,
+                                  color: '#0f172a',
+                                  lineHeight: 1.3,
+                                  display: '-webkit-box',
+                                  WebkitLineClamp: 2,
+                                  WebkitBoxOrient: 'vertical',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {it.activity}
+                              </Typography>
                             </Tooltip>
-                          </Box>
-                        )}
-                        <Tooltip title={it.activity} arrow placement="top-start">
-                          <Typography
-                            sx={{
-                              fontSize: 12,
-                              fontWeight: it.custom_values?.source_module === 'plan_mejoramiento' ? 800 : 700,
-                              color: '#0f172a',
-                              lineHeight: 1.3,
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            {it.activity}
-                          </Typography>
-                        </Tooltip>
-                        {it.macroactivity && (
-                          <Typography
-                            sx={{
-                              fontSize: 10.5,
-                              color: '#64748b',
-                              mt: 0.2,
-                              display: '-webkit-box',
-                              WebkitLineClamp: 1,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis'
-                            }}
-                          >
-                            PED: {it.macroactivity}
-                          </Typography>
-                        )}
-                        {it.custom_values?.execution_addition && (
-                          <Box sx={{ mt: 0.8, display: 'flex', alignItems: 'center', gap: 0.7, flexWrap: 'wrap' }}>
-                            <Chip
-                              size="small"
-                              label="Nueva en ejecución"
-                              sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 850, fontSize: 10, height: 20 }}
-                            />
-                            {it.custom_values?.leader_review_status === 'accepted' ? (
-                              <Chip
-                                size="small"
-                                label="✓ Aceptada"
-                                color="success"
-                                variant="outlined"
-                                sx={{ fontWeight: 800, fontSize: 10, height: 20 }}
-                              />
-                            ) : it.custom_values?.leader_review_status === 'feedback' ? (
-                              <Tooltip title={it.custom_values?.last_leader_review?.comment || 'Retroalimentada por líder'}>
+                            {indCount > 1 && overallProg !== null && (
+                              <Tooltip title={`Cumplimiento global de la actividad (promedio de los ${indCount} indicadores): ${overallProg}%`}>
                                 <Chip
                                   size="small"
-                                  label="💬 Observada"
-                                  color="warning"
-                                  variant="outlined"
-                                  sx={{ fontWeight: 800, fontSize: 10, height: 20 }}
+                                  label={`Promedio actividad: ${overallProg}%`}
+                                  sx={{
+                                    mt: 0.4,
+                                    height: 20,
+                                    fontSize: 10,
+                                    fontWeight: 800,
+                                    bgcolor: overallProg >= 100 ? '#dcfce7' : (overallProg > 0 ? '#fef3c7' : '#f1f5f9'),
+                                    color: overallProg >= 100 ? '#15803d' : (overallProg > 0 ? '#b45309' : '#64748b'),
+                                    border: '1px solid',
+                                    borderColor: overallProg >= 100 ? '#86efac' : (overallProg > 0 ? '#fde68a' : '#cbd5e1')
+                                  }}
                                 />
                               </Tooltip>
-                            ) : (
-                              !readOnly && (
-                                <Stack direction="row" spacing={0.6}>
-                                  <Button
-                                    size="small"
-                                    variant="contained"
-                                    color="success"
-                                    disabled={submittingItemReview}
-                                    onClick={() => handleReviewExecutionItem(it.id, 'accepted')}
-                                    sx={{ fontSize: 10.5, py: 0.2, px: 1, minWidth: 0, height: 22, textTransform: 'none', fontWeight: 850, borderRadius: 1.5 }}
-                                  >
-                                    ✓ Aceptar
-                                  </Button>
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    color="warning"
-                                    disabled={submittingItemReview}
-                                    onClick={() => handleOpenItemFeedbackModal(it)}
-                                    sx={{ fontSize: 10.5, py: 0.2, px: 1, minWidth: 0, height: 22, textTransform: 'none', fontWeight: 850, borderRadius: 1.5 }}
-                                  >
-                                    💬 Retroalimentar
-                                  </Button>
-                                </Stack>
-                              )
                             )}
-                          </Box>
+                            {it.macroactivity && (
+                              <Typography
+                                sx={{
+                                  fontSize: 10.5,
+                                  color: '#64748b',
+                                  mt: 0.2,
+                                  display: '-webkit-box',
+                                  WebkitLineClamp: 1,
+                                  WebkitBoxOrient: 'vertical',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis'
+                                }}
+                              >
+                                PED: {it.macroactivity}
+                              </Typography>
+                            )}
+                          </TableCell>
                         )}
-                      </TableCell>
 
-                      {/* Indicador y Meta */}
-                      <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
-                        <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: '#334155', lineHeight: 1.25 }}>
-                          {it.indicator || 'Sin indicador'}
-                        </Typography>
-                        <Typography sx={{ fontSize: 11, color: '#059669', fontWeight: 700, mt: 0.2 }}>
-                          Meta: {it.target || '100%'}
-                        </Typography>
-                      </TableCell>
+                        {/* Indicador y Meta */}
+                        <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
+                          {(indCount > 1 || ind.kind !== 'principal') && (
+                            <Box sx={{ mb: 0.3 }}>
+                              <Chip
+                                size="small"
+                                label={ind.shortLabel}
+                                sx={{
+                                  height: 19,
+                                  fontSize: 9.5,
+                                  fontWeight: 800,
+                                  bgcolor: ind.badgeBg || '#eff6ff',
+                                  color: ind.color || '#2563eb',
+                                  border: `1px solid ${ind.borderColor || '#bfdbfe'}`,
+                                  borderRadius: 1
+                                }}
+                              />
+                            </Box>
+                          )}
+                          <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: '#334155', lineHeight: 1.25 }}>
+                            {ind.indicator}
+                          </Typography>
+                          <Typography sx={{ fontSize: 11, color: '#059669', fontWeight: 700, mt: 0.2 }}>
+                            Meta: {ind.target}
+                          </Typography>
+                        </TableCell>
 
-                      {/* Plazo (Fechas) */}
-                      <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
-                        <Typography sx={{ fontSize: 10.5, color: '#475569', lineHeight: 1.3 }}>
-                          {formatFecha(it.starts_on)} al {formatFecha(it.ends_on)}
-                        </Typography>
-                      </TableCell>
+                        {/* Plazo (Fechas) */}
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
+                          <Typography sx={{ fontSize: 10.5, color: '#475569', lineHeight: 1.3 }}>
+                            {formatFecha(it.starts_on)} al {formatFecha(it.ends_on)}
+                          </Typography>
+                        </TableCell>
 
-                      {/* Columnas dinámicas de períodos de seguimiento */}
-                      {periods.map((p) => {
-                        const r = (it.monitoringResults || []).find((res) => res.monitoring_period_id === p.id);
-                        const prog = r && r.physical_progress !== null && r.physical_progress !== undefined ? Number(r.physical_progress) : null;
-                        const applies = isPeriodApplicableToItem(it, p, periods);
-                        return (
-                          <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
-                            {prog !== null ? (
-                              <Tooltip title={<Box>
-                                  <Typography variant="caption" component="div" sx={{ fontWeight: 700 }}>Avance {p.code || `S${p.position}`}: {prog}%</Typography>
-                                  {r?.observations && <Typography variant="caption" component="div" sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>{r.observations}</Typography>}
-                                </Box>} arrow>
+                        {/* Columnas dinámicas de períodos de seguimiento */}
+                        {periods.map((p) => {
+                          const prog = getIndicatorProgress(it, p.id, ind.kind);
+                          const obs = getIndicatorObservations(it, p.id, ind.kind);
+                          const applies = isPeriodApplicableToItem(it, p, periods);
+                          return (
+                            <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
+                              {prog !== null ? (
+                                <Tooltip
+                                  title={
+                                    <Box>
+                                      <Typography variant="caption" component="div" sx={{ fontWeight: 700 }}>
+                                        Avance {p.code || `S${p.position}`}: {prog}% (${ind.shortLabel})
+                                      </Typography>
+                                      {obs && <Typography variant="caption" component="div" sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>{obs}</Typography>}
+                                    </Box>
+                                  }
+                                  arrow
+                                >
+                                  <Chip
+                                    size="small"
+                                    label={`${prog}%`}
+                                    sx={{
+                                      fontWeight: 800,
+                                      fontSize: 11,
+                                      height: 22,
+                                      borderRadius: 1,
+                                      bgcolor: prog >= 100 ? '#dcfce7' : (prog > 0 ? '#fef3c7' : '#f1f5f9'),
+                                      color: prog >= 100 ? '#15803d' : (prog > 0 ? '#b45309' : '#64748b'),
+                                      cursor: 'help'
+                                    }}
+                                  />
+                                </Tooltip>
+                              ) : applies ? (
+                                <Tooltip title="Sin valoración registrada por Planeación y Efectividad para este período" arrow>
+                                  <Typography sx={{ fontSize: 11.5, color: '#94a3b8', cursor: 'help' }}>—</Typography>
+                                </Tooltip>
+                              ) : (
+                                <Tooltip title="Actividad no programada para este período según sus fechas de ejecución" arrow>
+                                  <Chip
+                                    size="small"
+                                    label="N/A"
+                                    sx={{
+                                      fontSize: 10,
+                                      fontWeight: 700,
+                                      height: 20,
+                                      borderRadius: 1,
+                                      bgcolor: '#f1f5f9',
+                                      color: '#94a3b8',
+                                      border: '1px dashed #cbd5e1',
+                                      cursor: 'help'
+                                    }}
+                                  />
+                                </Tooltip>
+                              )}
+                            </TableCell>
+                          );
+                        })}
+
+                        {/* Columna Cumplimiento */}
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
+                          {indProg !== null && indProg > 100 ? (
+                            <Tooltip title={`Sobrecumplimiento (${indProg}%). Superó el 100% de la meta programada.`} arrow>
+                              <Stack alignItems="center" spacing={0.2}>
                                 <Chip
                                   size="small"
-                                  label={`${prog}%`}
+                                  icon={<PriorityHighIcon sx={{ fontSize: '12px !important', color: '#f59e0b !important', fontWeight: 900 }} />}
+                                  label={`${indProg}%`}
+                                  sx={{
+                                    fontWeight: 900,
+                                    fontSize: 11,
+                                    height: 23,
+                                    borderRadius: 1.2,
+                                    bgcolor: '#064e3b',
+                                    color: '#ecfdf5',
+                                    border: '1.5px dashed #f59e0b',
+                                    cursor: 'help'
+                                  }}
+                                />
+                                <Typography sx={{ fontSize: 9, fontWeight: 800, color: '#b45309', lineHeight: 1 }}>
+                                  Revisar meta
+                                </Typography>
+                              </Stack>
+                            </Tooltip>
+                          ) : indProg !== null && indProg === 100 ? (
+                            <Tooltip title="¡Meta cumplida al 100%!" arrow>
+                              <Stack alignItems="center" spacing={0.2}>
+                                <Chip
+                                  size="small"
+                                  icon={<CheckCircleIcon sx={{ fontSize: '13px !important', color: '#16a34a !important' }} />}
+                                  label="100%"
+                                  sx={{
+                                    fontWeight: 850,
+                                    fontSize: 11,
+                                    height: 22,
+                                    borderRadius: 1,
+                                    bgcolor: '#dcfce7',
+                                    color: '#15803d',
+                                    border: '1px solid #86efac'
+                                  }}
+                                />
+                                <Typography sx={{ fontSize: 9, fontWeight: 750, color: '#15803d', lineHeight: 1 }}>
+                                  Cumplida
+                                </Typography>
+                              </Stack>
+                            </Tooltip>
+                          ) : indProg !== null && indProg > 0 ? (
+                            <Tooltip title={`Avance actual: ${indProg}%. Falta ${Number((100 - indProg).toFixed(1))}%`} arrow>
+                              <Stack alignItems="center" spacing={0.2}>
+                                <Chip
+                                  size="small"
+                                  label={`${indProg}%`}
                                   sx={{
                                     fontWeight: 800,
                                     fontSize: 11,
                                     height: 22,
                                     borderRadius: 1,
-                                    bgcolor: prog >= 100 ? '#dcfce7' : (prog > 0 ? '#fef3c7' : '#f1f5f9'),
-                                    color: prog >= 100 ? '#15803d' : (prog > 0 ? '#b45309' : '#64748b'),
-                                    cursor: 'help'
+                                    bgcolor: '#fffbeb',
+                                    color: '#b45309',
+                                    border: '1px solid #fde68a'
                                   }}
                                 />
-                              </Tooltip>
-                            ) : applies ? (
-                              <Tooltip title="Sin valoración registrada por Planeación y Efectividad para este período" arrow>
-                                <Typography sx={{ fontSize: 11.5, color: '#94a3b8', cursor: 'help' }}>—</Typography>
-                              </Tooltip>
-                            ) : (
-                              <Tooltip title="Actividad no programada para este período según sus fechas de ejecución" arrow>
+                                <Typography sx={{ fontSize: 9, fontWeight: 750, color: '#b45309', lineHeight: 1 }}>
+                                  Falta {Number((100 - indProg).toFixed(0))}%
+                                </Typography>
+                              </Stack>
+                            </Tooltip>
+                          ) : (
+                            <Tooltip title="Sin avances registrados aún." arrow>
+                              <Stack alignItems="center" spacing={0.2}>
                                 <Chip
                                   size="small"
-                                  label="N/A"
+                                  label="0%"
                                   sx={{
-                                    fontSize: 10,
-                                    fontWeight: 700,
-                                    height: 20,
+                                    fontWeight: 750,
+                                    fontSize: 10.5,
+                                    height: 21,
                                     borderRadius: 1,
                                     bgcolor: '#f1f5f9',
-                                    color: '#94a3b8',
-                                    border: '1px dashed #cbd5e1',
-                                    cursor: 'help'
+                                    color: '#64748b',
+                                    border: '1px solid #cbd5e1'
                                   }}
                                 />
-                              </Tooltip>
-                            )}
-                          </TableCell>
-                        );
-                      })}
+                                <Typography sx={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', lineHeight: 1 }}>
+                                  Falta 100%
+                                </Typography>
+                              </Stack>
+                            </Tooltip>
+                          )}
+                        </TableCell>
 
-                      {/* Columna Cumplimiento */}
-                      <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
-                        {compProg !== null && compProg > 100 ? (
-                          <Tooltip title={`Sobrecumplimiento (${compProg}%). Superó el 100% de la meta programada. Requiere revisión para evaluar aumento de meta o formalizar excedente.`} arrow>
-                            <Stack alignItems="center" spacing={0.2}>
+                        {/* Evidencias */}
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
+                          {indEvidences.length > 0 ? (
+                            <Tooltip title={`Clic para ver evidencias de ${ind.shortLabel}`} arrow>
                               <Chip
                                 size="small"
-                                icon={<PriorityHighIcon sx={{ fontSize: '12px !important', color: '#f59e0b !important', fontWeight: 900 }} />}
-                                label={`${compProg}%`}
+                                icon={<AttachFileIcon sx={{ fontSize: 13 }} />}
+                                label={`${indEvidences.length} arch.`}
+                                onClick={() => handleOpenEvidenceModal(it)}
                                 sx={{
-                                  fontWeight: 900,
-                                  fontSize: 11,
-                                  height: 23,
-                                  borderRadius: 1.2,
-                                  bgcolor: '#064e3b',
-                                  color: '#ecfdf5',
-                                  border: '1.5px dashed #f59e0b',
-                                  cursor: 'help'
-                                }}
-                              />
-                              <Typography sx={{ fontSize: 9, fontWeight: 800, color: '#b45309', lineHeight: 1 }}>
-                                Revisar meta
-                              </Typography>
-                            </Stack>
-                          </Tooltip>
-                        ) : compProg !== null && compProg === 100 ? (
-                          <Tooltip title="¡Meta cumplida al 100%!" arrow>
-                            <Stack alignItems="center" spacing={0.2}>
-                              <Chip
-                                size="small"
-                                icon={<CheckCircleIcon sx={{ fontSize: '13px !important', color: '#16a34a !important' }} />}
-                                label="100%"
-                                sx={{
-                                  fontWeight: 850,
-                                  fontSize: 11,
-                                  height: 22,
-                                  borderRadius: 1,
-                                  bgcolor: '#dcfce7',
-                                  color: '#15803d',
-                                  border: '1px solid #86efac'
-                                }}
-                              />
-                              <Typography sx={{ fontSize: 9, fontWeight: 750, color: '#15803d', lineHeight: 1 }}>
-                                Cumplida
-                              </Typography>
-                            </Stack>
-                          </Tooltip>
-                        ) : compProg !== null && compProg > 0 ? (
-                          <Tooltip title={`Avance actual: ${compProg}%. Falta ${Number((100 - compProg).toFixed(1))}% para culminar la meta del 100%.`} arrow>
-                            <Stack alignItems="center" spacing={0.2}>
-                              <Chip
-                                size="small"
-                                label={`${compProg}%`}
-                                sx={{
+                                  cursor: 'pointer',
                                   fontWeight: 800,
                                   fontSize: 11,
                                   height: 22,
                                   borderRadius: 1,
-                                  bgcolor: '#fffbeb',
-                                  color: '#b45309',
-                                  border: '1px solid #fde68a'
+                                  bgcolor: ind.badgeBg || '#e0e7ff',
+                                  color: ind.color || '#4338ca',
+                                  border: `1px solid ${ind.borderColor || '#c7d2fe'}`,
+                                  transition: 'all 0.15s ease',
+                                  '&:hover': { opacity: 0.85 }
                                 }}
                               />
-                              <Typography sx={{ fontSize: 9, fontWeight: 750, color: '#b45309', lineHeight: 1 }}>
-                                Falta {Number((100 - compProg).toFixed(0))}%
-                              </Typography>
-                            </Stack>
-                          </Tooltip>
-                        ) : (
-                          <Tooltip title="Sin avances registrados aún. Falta el 100% de la meta." arrow>
-                            <Stack alignItems="center" spacing={0.2}>
-                              <Chip
-                                size="small"
-                                label="0%"
-                                sx={{
-                                  fontWeight: 750,
-                                  fontSize: 10.5,
-                                  height: 21,
-                                  borderRadius: 1,
-                                  bgcolor: '#f1f5f9',
-                                  color: '#64748b',
-                                  border: '1px solid #cbd5e1'
-                                }}
-                              />
-                              <Typography sx={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', lineHeight: 1 }}>
-                                Falta 100%
-                              </Typography>
-                            </Stack>
-                          </Tooltip>
-                        )}
-                      </TableCell>
+                            </Tooltip>
+                          ) : (
+                            <Typography sx={{ fontSize: 10.5, color: '#94a3b8' }}>Sin soportes</Typography>
+                          )}
+                        </TableCell>
 
-                      {/* Evidencias (Clic para ver en ventana emergente) */}
-                      <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
-                        {evidences.length > 0 ? (
-                          <Tooltip title="Clic para ver evidencias en ventana emergente" arrow>
+                        {/* Acción */}
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
+                          {readOnly ? (
                             <Chip
                               size="small"
-                              icon={<AttachFileIcon sx={{ fontSize: 13 }} />}
-                              label={`${evidences.length} arch.`}
-                              onClick={() => handleOpenEvidenceModal(it)}
+                              icon={<LockIcon sx={{ fontSize: '13px !important', color: '#64748b !important' }} />}
+                              label="Solo Lectura"
                               sx={{
-                                cursor: 'pointer',
                                 fontWeight: 800,
-                                fontSize: 11,
-                                height: 22,
-                                borderRadius: 1,
-                                bgcolor: '#e0e7ff',
-                                color: '#4338ca',
-                                transition: 'all 0.15s ease',
-                                '&:hover': { bgcolor: '#c7d2fe' }
+                                bgcolor: '#f1f5f9',
+                                color: '#64748b',
+                                border: '1px solid #cbd5e1',
+                                fontSize: 11.5,
+                                height: 26,
+                                borderRadius: 2
                               }}
                             />
-                          </Tooltip>
-                        ) : (
-                          <Typography sx={{ fontSize: 10.5, color: '#94a3b8' }}>Sin soportes</Typography>
-                        )}
-                      </TableCell>
-
-                      {/* Acción */}
-                      <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
-                        {readOnly ? (
-                          <Chip
-                            size="small"
-                            icon={<LockIcon sx={{ fontSize: '13px !important', color: '#64748b !important' }} />}
-                            label="Solo Lectura"
-                            sx={{
-                              fontWeight: 800,
-                              bgcolor: '#f1f5f9',
-                              color: '#64748b',
-                              border: '1px solid #cbd5e1',
-                              fontSize: 11.5,
-                              height: 26,
-                              borderRadius: 2
-                            }}
-                          />
-                        ) : (
-                          <Button
-                            size="small"
-                            variant="contained"
-                            startIcon={<CloudUploadIcon sx={{ fontSize: 16 }} />}
-                            onClick={() => handleOpenMonitoringModal(it)}
-                            sx={{
-                              borderRadius: 2.2,
-                              textTransform: 'none',
-                              fontWeight: 850,
-                              fontSize: 12,
-                              py: 0.6,
-                              px: 1.8,
-                              bgcolor: '#0284c7',
-                              boxShadow: '0 2px 8px rgba(2, 132, 199, 0.22)',
-                              '&:hover': { bgcolor: '#0369a1', boxShadow: '0 4px 12px rgba(2, 132, 199, 0.32)' },
-                              whiteSpace: 'nowrap'
-                            }}
-                          >
-                            Cargar Evidencia
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
+                          ) : (
+                            <Button
+                              size="small"
+                              variant="contained"
+                              startIcon={<CloudUploadIcon sx={{ fontSize: 16 }} />}
+                              onClick={() => handleOpenMonitoringModal(it, ind.kind)}
+                              sx={{
+                                borderRadius: 2.2,
+                                textTransform: 'none',
+                                fontWeight: 850,
+                                fontSize: 12,
+                                py: 0.6,
+                                px: 1.8,
+                                bgcolor: '#0284c7',
+                                boxShadow: '0 2px 8px rgba(2, 132, 199, 0.22)',
+                                '&:hover': { bgcolor: '#0369a1', boxShadow: '0 4px 12px rgba(2, 132, 199, 0.32)' },
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              Cargar Evidencia
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  });
                 })
               )}
             </TableBody>

@@ -3,6 +3,32 @@ const assert = require('node:assert/strict');
 const { buildStrategicCatalog } = require('./improvementStrategicCatalogService');
 const levels = [{ id: 'objectives', position: 1 }, { id: 'guidelines', position: 2 }];
 
+test('resolves configured PED from an active term when the PED itself lacks active status', async () => {
+  const { StrategicPlan, StrategicTerm, StrategicLevel, StrategicElement } = require('../models');
+  const { readActionPlanStrategicCatalog } = require('./improvementStrategicCatalogService');
+  const originals = [StrategicPlan.findOne, StrategicTerm.findOne, StrategicLevel.findAll, StrategicElement.findAll];
+  StrategicPlan.findOne = async ({ where }) => where.status ? null : { id: 'term-ped', code: 'PED', configuration_version: 1 };
+  StrategicTerm.findOne = async () => ({ strategic_plan_id: 'term-ped' });
+  StrategicLevel.findAll = async () => levels;
+  StrategicElement.findAll = async () => [{ id: 'o', level_id: 'objectives', code: 'OE1', name: 'Stored objective' }, { id: 'g', parent_id: 'o', level_id: 'guidelines', code: 'LE1', name: 'Stored guideline' }];
+  try {
+    const result = await readActionPlanStrategicCatalog();
+    assert.equal(result.strategicSource.id, 'term-ped');
+    assert.equal(result.strategicRelations[0].guidelines.length, 1);
+  } finally { [StrategicPlan.findOne, StrategicTerm.findOne, StrategicLevel.findAll, StrategicElement.findAll] = originals; }
+});
+
+test('uses active legacy levels referenced by existing elements if configuration version changed', async () => {
+  const { StrategicPlan, StrategicLevel, StrategicElement } = require('../models');
+  const { readActionPlanStrategicCatalog } = require('./improvementStrategicCatalogService');
+  const originals = [StrategicPlan.findOne, StrategicLevel.findAll, StrategicElement.findAll];
+  StrategicPlan.findOne = async () => ({ id: 'p', code: 'PED', configuration_version: 2 });
+  StrategicLevel.findAll = async ({ where }) => where.configuration_version ? [] : levels;
+  StrategicElement.findAll = async () => [{ id: 'o', level_id: 'objectives', code: 'OE1', name: 'Existing objective' }];
+  try { assert.equal((await readActionPlanStrategicCatalog('p')).strategicRelations.length, 1); }
+  finally { [StrategicPlan.findOne, StrategicLevel.findAll, StrategicElement.findAll] = originals; }
+});
+
 test('uses exact Action Plan labels and each guideline belongs only to its parent', () => {
   const elements = [
     { id: 'o1', level_id: 'objectives', code: 'OE1', name: 'Objetivo uno' },

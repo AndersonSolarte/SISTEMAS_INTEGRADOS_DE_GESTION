@@ -208,10 +208,25 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
     transaction
   });
   const previous = created ? null : result.toJSON();
+  const custom = { ...(actionItem.custom_values || {}) };
   const isPlanningStaff = ['administrador', 'planeacion_estrategica', 'planeacion_efectividad'].includes(req.user?.role);
-  const progress = isPlanningStaff && payload.physical_progress !== undefined && payload.physical_progress !== ''
+  let progress = isPlanningStaff && payload.physical_progress !== undefined && payload.physical_progress !== ''
     ? Math.max(0, Math.min(999, Number(payload.physical_progress || 0)))
     : Number(result.physical_progress || 0);
+
+
+  if (payload.indicators_progress && typeof payload.indicators_progress === 'object') {
+    const scores = Object.values(payload.indicators_progress)
+      .map((v) => typeof v === 'object' ? Number(v?.progress) : Number(v))
+      .filter((n) => !isNaN(n));
+    if (scores.length > 0 && isPlanningStaff) {
+      progress = Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1));
+    }
+    custom.monitoring_indicators = {
+      ...(custom.monitoring_indicators || {}),
+      [periodId]: payload.indicators_progress
+    };
+  }
   await result.update({
     physical_progress: progress,
     achieved_value: payload.achieved_value || null,
@@ -225,7 +240,6 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
   const average = rows.length ? rows.reduce((sum, row) => sum + Number(row.physical_progress || 0), 0) / rows.length : 0;
   const linked = actionItem.custom_values?.pm_plan_id || actionItem.custom_values?.source_module === 'plan_mejoramiento';
   let currentProgress = average;
-  const custom = { ...(actionItem.custom_values || {}) };
   if (linked) {
     const periods = await StrategicMonitoringPeriod.findAll({ where: { id: { [Op.in]: rows.map((r) => r.monitoring_period_id) } }, transaction });
     currentProgress = fulfillment(rows);

@@ -3,10 +3,10 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Alert, Autocomplete, Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions,
   Checkbox, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, IconButton, LinearProgress, MenuItem, Paper, Stack, Switch,
-  InputAdornment, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography
+  InputAdornment, ListItemIcon, ListItemText, Menu, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
 import {
-  AccessTimeOutlined, Add, Analytics, ArrowBack, ArrowDownward, ArrowUpward, AssessmentOutlined, AssignmentOutlined, CalendarTodayOutlined, Close, MoreTime, CheckCircleOutline, CloudSync, CorporateFare,
+  AccessTimeOutlined, Add, Analytics, ArrowBack, AutoAwesome, ArrowDownward, ArrowUpward, AssessmentOutlined, AssignmentOutlined, CalendarTodayOutlined, Close, MoreTime, CheckCircleOutline, CloudSync, CorporateFare,
   DeleteOutline, Description, Download, DragIndicator, EditOutlined, FolderOutlined, GridView, LockOutlined, OpenInNew, Payments, PlaylistAddCheckOutlined, Search,
   SettingsOutlined, SwapHoriz, TableRows, Timeline, UploadFile, ViewWeekOutlined
 } from '@mui/icons-material';
@@ -49,7 +49,7 @@ const FIELD_TYPE_LABEL = {
   text: 'Texto corto', long_text: 'Texto largo', number: 'Número', percentage: 'Porcentaje',
   date: 'Fecha', currency: 'Moneda', list: 'Lista desplegable', catalog: 'Referencia institucional',
   catalog_multi: 'Selección múltiple', strategic_relation: 'Relación con la estructura del PED',
-  file: 'Archivo o evidencia', formula: 'Fórmula'
+  file: 'Archivo o evidencia', formula: 'Fórmula', indicators_group: 'Indicadores y metas'
 };
 
 const SectionHeader = ({ step, title, description, action }) => (
@@ -156,6 +156,44 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [fieldForm, setFieldForm] = useState({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '', catalog_type: '', list_source: 'manual', selected_level_id: '', selected_element_ids: [] });
   const [fieldOptions, setFieldOptions] = useState([]);
   const [fieldOptionDraft, setFieldOptionDraft] = useState('');
+  const [presetMenuAnchor, setPresetMenuAnchor] = useState(null);
+
+  const openPresetField = (presetType) => {
+    if (presetType === 'policies') {
+      setFieldForm({
+        id: null,
+        key: 'institutional_policy',
+        label: 'Políticas institucionales',
+        data_type: 'catalog',
+        required: false,
+        preset: 'policies',
+        options_text: '',
+        formula: '',
+        catalog_type: '',
+        list_source: 'manual',
+        selected_level_id: '',
+        selected_element_ids: []
+      });
+    } else if (presetType === 'indicators') {
+      setFieldForm({
+        id: null,
+        key: 'indicadores_metas',
+        label: 'Indicadores y metas',
+        data_type: 'indicators_group',
+        required: false,
+        preset: 'indicators',
+        options_text: '',
+        formula: '',
+        catalog_type: '',
+        list_source: 'manual',
+        selected_level_id: '',
+        selected_element_ids: []
+      });
+    }
+    setFieldOptions([]);
+    setFieldOptionDraft('');
+    setOpenField(true);
+  };
   const [fieldSchemaPreview, setFieldSchemaPreview] = useState(null);
   const [replaceSchemaFields, setReplaceSchemaFields] = useState(false);
   const [draggedFieldIndex, setDraggedFieldIndex] = useState(null);
@@ -626,11 +664,37 @@ export default function StrategicPlanningPlatform({ onBack }) {
   };
 
   const saveField = async () => {
-    if (fieldForm.preset) {
+    if (fieldForm.preset === 'policies' || fieldForm.preset === true) {
       setSaving(true);
       try { await strategicPlanningService.createPolicyFields(plan.id, { required: fieldForm.required }); setOpenField(false); await load(); enqueueSnackbar('Política y líneas de acción listas.', { variant: 'success' }); }
       catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudieron configurar los campos.', { variant: 'error' }); }
       finally { setSaving(false); }
+      return;
+    }
+    if (fieldForm.preset === 'indicators') {
+      setSaving(true);
+      try {
+        const payload = {
+          key: 'indicadores_metas',
+          label: 'Indicadores y metas',
+          data_type: 'indicators_group',
+          required: fieldForm.required,
+          options: [],
+          formula: null,
+          validation_rules: { preset: 'indicators' }
+        };
+        await strategicPlanningService.createField(plan.id, payload);
+        setOpenField(false);
+        setFieldForm({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '', catalog_type: '', list_source: 'manual', selected_level_id: '', selected_element_ids: [] });
+        setFieldOptions([]);
+        setFieldOptionDraft('');
+        await load();
+        enqueueSnackbar('Campo de indicadores y metas agregado al Plan de Acción.', { variant: 'success' });
+      } catch (error) {
+        enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar el campo.', { variant: 'error' });
+      } finally {
+        setSaving(false);
+      }
       return;
     }
     if (!fieldForm.key.trim() || !fieldForm.label.trim() || !fieldForm.data_type) return enqueueSnackbar('Complete nombre, código y tipo del campo.', { variant: 'warning' });
@@ -1129,6 +1193,29 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   }}
                 />
               </Button>
+              <Button
+                variant="outlined"
+                startIcon={<AutoAwesome />}
+                onClick={(e) => setPresetMenuAnchor(e.currentTarget)}
+                sx={{ borderRadius: 2.25, fontWeight: 800, textTransform: 'none', borderColor: '#bfdbfe', color: '#1e40af', bgcolor: '#eff6ff', '&:hover': { bgcolor: '#dbeafe' } }}
+              >
+                Campos sugeridos
+              </Button>
+              <Menu
+                anchorEl={presetMenuAnchor}
+                open={Boolean(presetMenuAnchor)}
+                onClose={() => setPresetMenuAnchor(null)}
+                PaperProps={{ sx: { borderRadius: 2.5, minWidth: 280, boxShadow: '0 8px 24px rgba(0,0,0,0.1)' } }}
+              >
+                <MenuItem onClick={() => { setPresetMenuAnchor(null); openPresetField('policies'); }}>
+                  <ListItemIcon><Description fontSize="small" sx={{ color: '#2563eb' }} /></ListItemIcon>
+                  <ListItemText primary="Políticas institucionales" secondary="Catálogo de políticas y líneas" />
+                </MenuItem>
+                <MenuItem onClick={() => { setPresetMenuAnchor(null); openPresetField('indicators'); }}>
+                  <ListItemIcon><AssessmentOutlined fontSize="small" sx={{ color: '#0284c7' }} /></ListItemIcon>
+                  <ListItemText primary="Indicadores y metas" secondary="Bloque dinámico: Resultado, Logro, Impacto" />
+                </MenuItem>
+              </Menu>
               <Button
                 variant="outlined"
                 startIcon={<Add />}
@@ -3197,9 +3284,39 @@ export default function StrategicPlanningPlatform({ onBack }) {
         <DialogContent sx={{ pt: '16px !important' }}>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
             <Box>
-              <Autocomplete freeSolo options={['Políticas institucionales']} value={fieldForm.label}
-                onInputChange={(_, label) => setFieldForm((current) => ({ ...current, label, preset: !current.id && label === 'Políticas institucionales', key: current.id ? current.key : label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') }))}
+              <Autocomplete freeSolo options={['Políticas institucionales', 'Indicadores y metas']} value={fieldForm.label}
+                onInputChange={(_, label) => {
+                  const isPolicyPreset = !fieldForm.id && label === 'Políticas institucionales';
+                  const isIndicatorPreset = !fieldForm.id && (label === 'Indicadores y metas' || label === 'Indicadores y meta');
+                  const preset = isPolicyPreset ? 'policies' : isIndicatorPreset ? 'indicators' : false;
+                  setFieldForm((current) => ({
+                    ...current,
+                    label,
+                    preset,
+                    key: current.id ? current.key : isPolicyPreset ? 'institutional_policy' : isIndicatorPreset ? 'indicadores_metas' : label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
+                    data_type: isIndicatorPreset ? 'indicators_group' : current.data_type
+                  }));
+                }}
                 renderInput={(params) => <TextField {...params} required label="Nombre del campo" placeholder="Seleccione o escriba un nombre" helperText="Use un campo predefinido o cree uno propio." />} />
+              <Stack direction="row" spacing={1} alignItems="center" mt={1} flexWrap="wrap" gap={0.5}>
+                <Typography variant="caption" sx={{ fontWeight: 800, color: '#64748b' }}>Sugerencias prediseñadas:</Typography>
+                <Chip
+                  size="small"
+                  label="Políticas institucionales"
+                  color={fieldForm.preset === 'policies' ? 'primary' : 'default'}
+                  variant={fieldForm.preset === 'policies' ? 'filled' : 'outlined'}
+                  onClick={() => openPresetField('policies')}
+                  sx={{ fontWeight: 750, cursor: 'pointer' }}
+                />
+                <Chip
+                  size="small"
+                  label="Indicadores y metas"
+                  color={fieldForm.preset === 'indicators' ? 'primary' : 'default'}
+                  variant={fieldForm.preset === 'indicators' ? 'filled' : 'outlined'}
+                  onClick={() => openPresetField('indicators')}
+                  sx={{ fontWeight: 750, cursor: 'pointer' }}
+                />
+              </Stack>
             </Box>
             <Box sx={{ display: fieldForm.preset ? 'none' : undefined }}>
               <TextField required fullWidth disabled={Boolean(fieldForm.id)} label="Código interno" value={fieldForm.key} onChange={(e) => setFieldForm({ ...fieldForm, key: e.target.value })} helperText="Identificador en base de datos" />
@@ -3273,10 +3390,14 @@ export default function StrategicPlanningPlatform({ onBack }) {
               </Box>
             )}
             <Box sx={{ gridColumn: '1 / -1' }}>
-              {fieldForm.preset ? <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: '#f5f8ff' }}>
+              {fieldForm.preset === 'policies' ? <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: '#f5f8ff' }}>
                 <Typography fontWeight={800} mb={1}>Dos campos conectados al catálogo institucional</Typography>
                 <Stack direction="row" spacing={1} mb={2}><Chip label="Política institucional" color="primary" variant="outlined" /><Chip label="Líneas de acción" color="primary" variant="outlined" /></Stack>
                 <Typography variant="body2" color="text.secondary">Seleccione una política para filtrar sus líneas. Ambos campos permiten escribir valores propios en la actividad.</Typography>
+              </Paper> : fieldForm.preset === 'indicators' ? <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: '#f5f8ff' }}>
+                <Typography fontWeight={800} mb={1}>Bloque estructurado de indicadores y metas</Typography>
+                <Stack direction="row" spacing={1} mb={2}><Chip label="Indicador de resultado" color="primary" variant="outlined" /><Chip label="Indicador de logro" color="primary" variant="outlined" /><Chip label="Indicador de impacto" color="primary" variant="outlined" /></Stack>
+                <Typography variant="body2" color="text.secondary">Permite agregar de forma dinámica indicadores de resultado, logro e impacto con sus respectivas metas (sin fechas). Ocupa el ancho completo del formulario en la posición donde se ubique.</Typography>
               </Paper> : <Typography variant="body2" color="text.secondary">Disponible en los Planes de Acción de este PED.</Typography>}
             </Box>
           </Box>
@@ -3284,7 +3405,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
         <DialogActions sx={{ px: 3, pb: 3, gap: 1 }}>
           <Button onClick={() => setOpenField(false)}>Cancelar</Button>
           <Button variant="contained" disabled={saving || !fieldForm.key.trim() || !fieldForm.label.trim() || (!fieldForm.preset && fieldForm.data_type === 'list' && !fieldOptions.some((option) => String(option).trim()))} onClick={saveField}>
-            {saving ? 'Guardando…' : fieldForm.id ? 'Actualizar campo' : fieldForm.preset ? 'Agregar los dos campos' : 'Crear campo'}
+            {saving ? 'Guardando…' : fieldForm.id ? 'Actualizar campo' : fieldForm.preset === 'policies' ? 'Agregar los dos campos' : fieldForm.preset === 'indicators' ? 'Agregar campo de indicadores' : 'Crear campo'}
           </Button>
         </DialogActions>
       </Dialog>

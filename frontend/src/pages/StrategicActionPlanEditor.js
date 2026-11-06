@@ -10,6 +10,8 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../context/AuthContext';
 import strategicPlanningService from '../services/strategicPlanningService';
 import InstitutionalPolicyActivityField from '../components/InstitutionalPolicyActivityField';
+import { getActiveIndicators, getIndicatorProgress, getIndicatorObservations, calculateIndicatorFulfillment, calculateOverallFulfillment, filterEvidencesByIndicator } from '../utils/actionPlanIndicators';
+import ActionPlanIndicatorFields, { resolveIndicatorValues } from '../components/ActionPlanIndicatorFields';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import RichTextEditor, { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
 import MeetingCalendarScheduler from '../components/meetingMinute/MeetingCalendarScheduler';
@@ -168,6 +170,13 @@ const LeaderFeedbackSnippet = ({ info, isCurrentStatus = false, chatCount = 0, l
   );
 };
 
+const isIndicatorBlockField = (field) => {
+  if (!field) return false;
+  return field.key === 'indicadores_metas' ||
+    field.data_type === 'indicators_group' ||
+    field.validation_rules?.preset === 'indicators';
+};
+
 const isCoResponsibleField = (field) => {
   if (!field) return false;
   const k = normalizeFieldText(field.key);
@@ -258,6 +267,38 @@ const isIndicatorField = (field) => {
     k === 'indicador' ||
     (l.includes('indicador') && !l.includes('tipo'))
   );
+};
+
+const STRATEGIC_OBJECTIVE_GUIDELINES = {
+  OE1: ['LE-001', 'LE-002', 'LE-003', 'LE-004'],
+  OE2: ['LE-005', 'LE-006', 'LE-007', 'LE-008', 'LE-009', 'LE-010'],
+  OE3: ['LE-011', 'LE-012', 'LE-013']
+};
+
+const isObjectiveField = (field) => {
+  if (!field) return false;
+  const k = normalizeFieldText(field.key);
+  const l = normalizeFieldText(field.label);
+  return k === 'strategic_objective' || k === 'objetivo_estrategico' || k.includes('objective') || l.includes('objetivo');
+};
+
+const isGuidelineField = (field) => {
+  if (!field) return false;
+  const k = normalizeFieldText(field.key);
+  const l = normalizeFieldText(field.label);
+  return k === 'strategic_guideline' || k === 'lineamiento_estrategico' || k.includes('guideline') || k.includes('lineamiento') || l.includes('lineamiento');
+};
+
+const belongsToObjective = (guidelineEl, objectiveEl) => {
+  if (!guidelineEl || !objectiveEl) return true;
+  if (guidelineEl.parent_id && objectiveEl.id) {
+    return String(guidelineEl.parent_id) === String(objectiveEl.id);
+  }
+  const objCode = (objectiveEl.code || '').toUpperCase().trim();
+  const gCode = (guidelineEl.code || '').toUpperCase().trim();
+  const allowed = STRATEGIC_OBJECTIVE_GUIDELINES[objCode];
+  if (allowed && allowed.includes(gCode)) return true;
+  return false;
 };
 
 const parseCoResponsibles = (val) => {
@@ -1278,6 +1319,24 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       return defaultResponsibleText || '—';
     }
     const directKeys = new Set(['indicator_type', 'starts_on', 'ends_on', 'indicator', 'target', 'co_responsibles']);
+    if (isIndicatorBlockField(field)) {
+      const parts = [];
+      const cv = row.custom_values || {};
+      if (cv.indicadorResultado || (cv.indicadorResultadoActivo && row.indicator)) {
+        parts.push(`Resultado: ${cv.indicadorResultado || row.indicator}${cv.metaResultado || row.target ? ` (${cv.metaResultado || row.target})` : ''}`);
+      }
+      if (cv.indicadorLogro || (cv.indicadorLogroActivo && cv.metaLogro)) {
+        parts.push(`Logro: ${cv.indicadorLogro}${cv.metaLogro ? ` (${cv.metaLogro})` : ''}`);
+      }
+      if (cv.indicadorImpacto || (cv.indicadorImpactoActivo && cv.metaImpacto)) {
+        parts.push(`Impacto: ${cv.indicadorImpacto}${cv.metaImpacto ? ` (${cv.metaImpacto})` : ''}`);
+      }
+      if (!parts.length && (row.indicator || row.indicador)) {
+        parts.push(`${row.indicator || row.indicador}${row.target || row.meta ? ` (${row.target || row.meta})` : ''}`);
+      }
+      return parts.length ? parts.join(' · ') : '—';
+    }
+
     let value = field.key === 'activity' ? row.activity : directKeys.has(field.key) ? row[field.key] : row.custom_values?.[field.key];
     if (value === undefined || value === null || value === '' || value === '—') {
       if (field.key === 'macroactividad' || field.key === 'macroactivity') {
@@ -1366,6 +1425,30 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const fieldValue = (field) => {
     if (!field) return '';
+    if (isIndicatorBlockField(field)) {
+      const vals = resolveIndicatorValues({ ...(item.custom_values || {}), indicador: item.indicator, meta: item.target });
+      const hasAny = (vals.indicadorResultadoActivo && (vals.indicadorResultado || vals.metaResultado)) ||
+                     (vals.indicadorLogroActivo && (vals.indicadorLogro || vals.metaLogro)) ||
+                     (vals.indicadorImpactoActivo && (vals.indicadorImpacto || vals.metaImpacto));
+      return hasAny ? 'configurado' : '';
+    }
+    if (field.key === 'indicator') {
+      const custom = item.custom_values || {};
+      return item.indicator || custom.indicator || custom.indicadorResultado || custom.indicadorLogro || custom.indicadorImpacto || '';
+    }
+    if (field.key === 'target') {
+      const custom = item.custom_values || {};
+      return item.target || custom.target || custom.metaResultado || custom.metaLogro || custom.metaImpacto || '';
+    }
+    if (field.key === 'indicator_type') {
+      const custom = item.custom_values || {};
+      if (item.indicator_type) return item.indicator_type;
+      if (custom.indicator_type) return custom.indicator_type;
+      if (custom.indicadorResultadoActivo) return 'Resultado';
+      if (custom.indicadorLogroActivo) return 'Logro';
+      if (custom.indicadorImpactoActivo) return 'Impacto';
+      return '';
+    }
     if (isActivityField(field)) {
       return item[field.key] || item.custom_values?.[field.key] || item.activity || '';
     }
@@ -1404,6 +1487,92 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     return '';
   };
   const setFieldValue = (field, value) => {
+    if (isObjectiveField(field)) {
+      const newObjStr = String(value || '').trim().toLowerCase();
+      const newObjEl = (formElements || []).find((el) => {
+        const text = (el.code ? `${el.code} ${el.name}` : el.name).trim().toLowerCase();
+        const code = (el.code || '').trim().toLowerCase();
+        return String(el.id) === String(value) || text === newObjStr || (code && newObjStr.startsWith(code));
+      });
+
+      const gField = activityFields.find(isGuidelineField);
+      let resetGuideline = false;
+      if (gField && newObjEl) {
+        const curGVal = fieldValue(gField);
+        if (curGVal) {
+          const curGStr = String(curGVal).trim().toLowerCase();
+          const curGEl = (formElements || []).find((el) => {
+            const text = (el.code ? `${el.code} ${el.name}` : el.name).trim().toLowerCase();
+            const code = (el.code || '').trim().toLowerCase();
+            return String(el.id) === String(curGVal) || text === curGStr || (code && curGStr.startsWith(code));
+          });
+          if (curGEl && !belongsToObjective(curGEl, newObjEl)) {
+            resetGuideline = true;
+          }
+        }
+      }
+
+      setItem((current) => {
+        const nextCustom = { ...(current.custom_values || {}), [field.key]: value };
+        if (field.key === 'strategic_objective') nextCustom.objetivo_estrategico = value;
+        if (resetGuideline && gField) {
+          nextCustom[gField.key] = '';
+          if (gField.key === 'strategic_guideline') nextCustom.lineamiento_estrategico = '';
+        }
+        return {
+          ...current,
+          ...(field.key in current ? { [field.key]: value } : {}),
+          ...(resetGuideline && gField && gField.key in current ? { [gField.key]: '' } : {}),
+          custom_values: nextCustom
+        };
+      });
+      return;
+    }
+
+    if (isGuidelineField(field)) {
+      const newGStr = String(value || '').trim().toLowerCase();
+      const newGEl = (formElements || []).find((el) => {
+        const text = (el.code ? `${el.code} ${el.name}` : el.name).trim().toLowerCase();
+        const code = (el.code || '').trim().toLowerCase();
+        return String(el.id) === String(value) || text === newGStr || (code && newGStr.startsWith(code));
+      });
+
+      let autoObjVal = null;
+      const objField = activityFields.find(isObjectiveField);
+      if (newGEl && objField) {
+        let parentObjEl = null;
+        if (newGEl.parent_id) {
+          parentObjEl = (formElements || []).find((el) => String(el.id) === String(newGEl.parent_id));
+        }
+        if (!parentObjEl) {
+          for (const [oCode, gCodes] of Object.entries(STRATEGIC_OBJECTIVE_GUIDELINES)) {
+            if (gCodes.includes((newGEl.code || '').toUpperCase().trim())) {
+              parentObjEl = (formElements || []).find((el) => (el.code || '').toUpperCase().trim() === oCode);
+              break;
+            }
+          }
+        }
+        if (parentObjEl) {
+          autoObjVal = parentObjEl.code ? `${parentObjEl.code} ${parentObjEl.name}` : parentObjEl.name;
+        }
+      }
+
+      setItem((current) => {
+        const nextCustom = { ...(current.custom_values || {}), [field.key]: value };
+        if (field.key === 'strategic_guideline') nextCustom.lineamiento_estrategico = value;
+        if (autoObjVal && objField) {
+          nextCustom[objField.key] = autoObjVal;
+          if (objField.key === 'strategic_objective') nextCustom.objetivo_estrategico = autoObjVal;
+        }
+        return {
+          ...current,
+          ...(field.key in current ? { [field.key]: value } : {}),
+          ...(autoObjVal && objField && objField.key in current ? { [objField.key]: autoObjVal } : {}),
+          custom_values: nextCustom
+        };
+      });
+      return;
+    }
     if (isActivityField(field)) {
       setItem((current) => ({
         ...current,
@@ -1446,6 +1615,32 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       }));
       return;
     }
+    if (field.key === 'indicator') {
+      setItem((current) => ({
+        ...current,
+        indicator: value,
+        custom_values: {
+          ...(current.custom_values || {}),
+          indicator: value,
+          indicadorResultado: value,
+          indicadorResultadoActivo: Boolean(value.trim() || current.custom_values?.metaResultado)
+        }
+      }));
+      return;
+    }
+    if (field.key === 'target') {
+      setItem((current) => ({
+        ...current,
+        target: value,
+        custom_values: {
+          ...(current.custom_values || {}),
+          target: value,
+          metaResultado: value,
+          indicadorResultadoActivo: Boolean(value.trim() || current.custom_values?.indicadorResultado)
+        }
+      }));
+      return;
+    }
     if (['activity','indicator_type','starts_on','ends_on','indicator','target','co_responsibles'].includes(field.key)) {
       setItem((current) => ({
         ...current,
@@ -1463,6 +1658,44 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     if (field.validation_rules?.shared_catalog === 'institutional_policies') {
       return <InstitutionalPolicyActivityField key={field.id} field={field} values={item.custom_values || {}}
         onChange={(changes) => setItem((current) => ({ ...current, custom_values: { ...current.custom_values, ...changes } }))} />;
+    }
+    if (isIndicatorBlockField(field)) {
+      return (
+        <ActionPlanIndicatorFields
+          key={field.id || field.key}
+          field={field}
+          values={{
+            ...(item.custom_values || {}),
+            indicador: item.indicator,
+            meta: item.target
+          }}
+          disabled={!isPlanningAdmin && isStage1Expired}
+          onChange={(changes) => {
+            setItem((current) => {
+              const nextCustomValues = { ...(current.custom_values || {}), ...changes };
+              const resolved = resolveIndicatorValues(nextCustomValues);
+              let primaryInd = current.indicator;
+              let primaryTgt = current.target;
+              if (resolved.indicadorResultadoActivo && resolved.indicadorResultado) {
+                primaryInd = resolved.indicadorResultado;
+                primaryTgt = resolved.metaResultado || primaryTgt;
+              } else if (resolved.indicadorLogroActivo && resolved.indicadorLogro) {
+                primaryInd = resolved.indicadorLogro;
+                primaryTgt = resolved.metaLogro || primaryTgt;
+              } else if (resolved.indicadorImpactoActivo && resolved.indicadorImpacto) {
+                primaryInd = resolved.indicadorImpacto;
+                primaryTgt = resolved.metaImpacto || primaryTgt;
+              }
+              return {
+                ...current,
+                indicator: primaryInd,
+                target: primaryTgt,
+                custom_values: nextCustomValues
+              };
+            });
+          }}
+        />
+      );
     }
     // 1. Campo de Responsable: precargado automáticamente con el líder del Plan de Acción
     if (isResponsibleField(field)) {
@@ -1822,12 +2055,57 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         return normLvlName === normLabel;
       });
       if (matchedLevel) {
-        const matchingElements = formElements.filter((el) => String(el.level_id) === String(matchedLevel.id) && el.active !== false);
+        let matchingElements = formElements.filter((el) => String(el.level_id) === String(matchedLevel.id) && el.active !== false);
+
+        // Filtro cruzado inteligente: Si es campo de Lineamiento Estratégico y hay un Objetivo seleccionado
+        if (isGuidelineField(field)) {
+          const selectedObjField = activityFields.find(isObjectiveField);
+          const rawObjVal = selectedObjField ? fieldValue(selectedObjField) : (item.custom_values?.strategic_objective || item.custom_values?.objetivo_estrategico);
+          if (rawObjVal) {
+            const normObjVal = String(rawObjVal).trim().toLowerCase();
+            const selectedObjEl = formElements.find((el) => {
+              const text = (el.code ? `${el.code} ${el.name}` : el.name).trim().toLowerCase();
+              const code = (el.code || '').trim().toLowerCase();
+              return String(el.id) === String(rawObjVal) || text === normObjVal || (code && normObjVal.startsWith(code));
+            });
+            if (selectedObjEl) {
+              matchingElements = matchingElements.filter((el) => belongsToObjective(el, selectedObjEl));
+            }
+          }
+        }
+
         if (matchingElements.length > 0) {
           options = matchingElements.map((el) => {
             const text = el.code ? `${el.code} ${el.name}` : el.name;
             return { value: text, label: text };
           });
+        } else if (isGuidelineField(field)) {
+          options = [];
+        }
+      }
+    }
+
+    if (isGuidelineField(field)) {
+      const selectedObjField = activityFields.find(isObjectiveField);
+      const rawObjVal = selectedObjField ? fieldValue(selectedObjField) : (item.custom_values?.strategic_objective || item.custom_values?.objetivo_estrategico);
+      if (rawObjVal) {
+        const normObjVal = String(rawObjVal).trim().toLowerCase();
+        const selectedObjEl = formElements.find((el) => {
+          const text = (el.code ? `${el.code} ${el.name}` : el.name).trim().toLowerCase();
+          const code = (el.code || '').trim().toLowerCase();
+          return String(el.id) === String(rawObjVal) || text === normObjVal || (code && normObjVal.startsWith(code));
+        });
+        if (selectedObjEl) {
+          const allowedCodes = STRATEGIC_OBJECTIVE_GUIDELINES[(selectedObjEl.code || '').toUpperCase()] || [];
+          if (allowedCodes.length > 0 && options.length > 0) {
+            const filtered = options.filter((opt) => {
+              const str = (opt.label || opt.value || '').toUpperCase();
+              return allowedCodes.some((ac) => str.includes(ac));
+            });
+            if (filtered.length > 0) {
+              options = filtered;
+            }
+          }
         }
       }
     }
@@ -1916,7 +2194,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
           onChange={(e) => setFieldValue(field, e.target.value)}
           helperText={
             select && !options.length
-              ? 'Esta lista no tiene opciones disponibles.'
+              ? (isGuidelineField(field) ? 'No hay lineamientos disponibles para el objetivo seleccionado.' : 'Esta lista no tiene opciones disponibles.')
               : undefined
           }
           sx={{
@@ -2151,11 +2429,36 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         }
       });
 
+      // Sincronizar indicadores estructurados y nativos para persistencia en BD y estadisticas
+      const resolvedInd = resolveIndicatorValues(payloadCustomValues);
+      let primaryInd = item.indicator || payloadCustomValues.indicator || '';
+      let primaryTgt = item.target || payloadCustomValues.target || '';
+      let primaryType = item.indicator_type || payloadCustomValues.indicator_type || '';
+
+      if (resolvedInd.indicadorResultadoActivo && (resolvedInd.indicadorResultado || resolvedInd.metaResultado)) {
+        primaryInd = resolvedInd.indicadorResultado || primaryInd;
+        primaryTgt = resolvedInd.metaResultado || primaryTgt;
+        primaryType = primaryType || 'Resultado';
+      } else if (resolvedInd.indicadorLogroActivo && (resolvedInd.indicadorLogro || resolvedInd.metaLogro)) {
+        primaryInd = resolvedInd.indicadorLogro || primaryInd;
+        primaryTgt = resolvedInd.metaLogro || primaryTgt;
+        primaryType = primaryType || 'Logro';
+      } else if (resolvedInd.indicadorImpactoActivo && (resolvedInd.indicadorImpacto || resolvedInd.metaImpacto)) {
+        primaryInd = resolvedInd.indicadorImpacto || primaryInd;
+        primaryTgt = resolvedInd.metaImpacto || primaryTgt;
+        primaryType = primaryType || 'Impacto';
+      }
+      if (primaryInd) payloadCustomValues.indicator = primaryInd;
+      if (primaryTgt) payloadCustomValues.target = primaryTgt;
+      if (primaryType) payloadCustomValues.indicator_type = primaryType;
+
       const payload = {
         code: editingItemId ? detail.items.find((row) => String(row.id) === String(editingItemId))?.code : `ACT-${String((detail.items?.length || 0) + 1).padStart(3, '0')}`,
         strategic_element_id: [...levels].reverse().map((level) => item.custom_values?.[structureKey(level.id)]).find(Boolean) || null,
-        activity: primaryActivity, indicator_type: item.indicator_type, indicator: item.indicator,
-        target: item.target,
+        activity: primaryActivity,
+        indicator_type: primaryType || null,
+        indicator: primaryInd || null,
+        target: primaryTgt || null,
         starts_on: item.starts_on || payloadCustomValues.starts_on || payloadCustomValues.fecha_inicio || defaultStartDate || null,
         ends_on: item.ends_on || payloadCustomValues.ends_on || payloadCustomValues.fecha_fin || defaultEndDate || null,
         co_responsibles: coRespPayload,
@@ -2208,18 +2511,28 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     const initialStartsOn = row.starts_on || (startField && row.custom_values?.[startField.key]) || '';
     const initialEndsOn = row.ends_on || (endField && row.custom_values?.[endField.key]) || '';
 
+    const editCustomValues = {
+      ...(row.custom_values || {}),
+      ...(actField ? { [actField.key]: initialActivity } : {}),
+      ...(respField ? { [respField.key]: initialResp } : {}),
+      ...(coRespField ? { [coRespField.key]: parseCoResponsibles(initialCoResp) } : {}),
+      ...(startField ? { [startField.key]: initialStartsOn } : {}),
+      ...(endField ? { [endField.key]: initialEndsOn } : {})
+    };
+    if (row.indicator && !editCustomValues.indicadorResultado) {
+      editCustomValues.indicadorResultado = row.indicator;
+      editCustomValues.indicadorResultadoActivo = true;
+    }
+    if (row.target && !editCustomValues.metaResultado) {
+      editCustomValues.metaResultado = row.target;
+      editCustomValues.indicadorResultadoActivo = true;
+    }
+
     setItem({
       macroactivity: '', activity: initialActivity, indicator_type: row.indicator_type || '',
       starts_on: initialStartsOn, ends_on: initialEndsOn, indicator: row.indicator || '',
       target: row.target || '', co_responsibles: parseCoResponsibles(initialCoResp), budget: '',
-      custom_values: {
-        ...(row.custom_values || {}),
-        ...(actField ? { [actField.key]: initialActivity } : {}),
-        ...(respField ? { [respField.key]: initialResp } : {}),
-        ...(coRespField ? { [coRespField.key]: parseCoResponsibles(initialCoResp) } : {}),
-        ...(startField ? { [startField.key]: initialStartsOn } : {}),
-        ...(endField ? { [endField.key]: initialEndsOn } : {})
-      }
+      custom_values: editCustomValues
     });
     setTimeout(() => document.getElementById('activity-capture-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   };
@@ -3214,27 +3527,65 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     setEvidenceModalOpen(true);
   };
 
-  const handleOpenEvalModal = (it) => {
+  const handleOpenEvalModal = (it, targetKind = null) => {
     setEvaluatingItem(it);
     const applicablePeriods = periods.filter((p) => isPeriodApplicableToItem(it, p));
     const targetPeriod = (applicablePeriods.length > 0 ? applicablePeriods[0] : null) || periods[0];
     const targetPeriodId = targetPeriod ? targetPeriod.id : (defaultPeriodId || '');
     const existingResult = (it.monitoringResults || []).find((r) => r.monitoring_period_id === targetPeriodId);
+
+    const indicators = getActiveIndicators(it);
+    const storedInds = it.custom_values?.monitoring_indicators?.[targetPeriodId] || {};
+    const initialIndProgress = {};
+    for (const ind of indicators) {
+      const stored = storedInds[ind.kind];
+      const prog = stored !== undefined
+        ? (typeof stored === 'object' ? stored.progress : stored)
+        : (indicators.length === 1 && existingResult?.physical_progress !== undefined ? existingResult.physical_progress : '');
+      const obs = stored !== undefined && typeof stored === 'object'
+        ? (stored.observations || '')
+        : (indicators.length === 1 ? (existingResult?.observations || '') : '');
+      initialIndProgress[ind.kind] = {
+        progress: prog !== null && prog !== undefined ? String(prog) : '',
+        observations: obs || ''
+      };
+    }
+
     setEvalForm({
       period_id: targetPeriodId,
       physical_progress: existingResult ? (existingResult.physical_progress ?? '') : '',
-      observations: existingResult ? (existingResult.observations ?? '') : ''
+      observations: existingResult ? (existingResult.observations ?? '') : '',
+      targetKind: targetKind || (indicators[0]?.kind || null),
+      indicators_progress: initialIndProgress
     });
     setEvalModalOpen(true);
   };
 
   const handleChangeEvalPeriod = (newPeriodId) => {
     const existingResult = (evaluatingItem?.monitoringResults || []).find((r) => r.monitoring_period_id === newPeriodId);
+    const indicators = getActiveIndicators(evaluatingItem);
+    const storedInds = evaluatingItem?.custom_values?.monitoring_indicators?.[newPeriodId] || {};
+    const updatedIndProgress = {};
+    for (const ind of indicators) {
+      const stored = storedInds[ind.kind];
+      const prog = stored !== undefined
+        ? (typeof stored === 'object' ? stored.progress : stored)
+        : (indicators.length === 1 && existingResult?.physical_progress !== undefined ? existingResult.physical_progress : '');
+      const obs = stored !== undefined && typeof stored === 'object'
+        ? (stored.observations || '')
+        : (indicators.length === 1 ? (existingResult?.observations || '') : '');
+      updatedIndProgress[ind.kind] = {
+        progress: prog !== null && prog !== undefined ? String(prog) : '',
+        observations: obs || ''
+      };
+    }
+
     setEvalForm((prev) => ({
       ...prev,
       period_id: newPeriodId,
       physical_progress: existingResult ? (existingResult.physical_progress ?? '') : '',
-      observations: existingResult ? (existingResult.observations ?? '') : ''
+      observations: existingResult ? (existingResult.observations ?? '') : '',
+      indicators_progress: updatedIndProgress
     }));
   };
 
@@ -3242,25 +3593,65 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     if (!evaluatingItem || !evalForm.period_id) {
       return enqueueSnackbar('Seleccione el periodo de seguimiento.', { variant: 'warning' });
     }
-    if (evalForm.physical_progress === '' || evalForm.physical_progress === null || isNaN(Number(evalForm.physical_progress)) || Number(evalForm.physical_progress) < 0) {
-      return enqueueSnackbar('Ingrese un porcentaje de avance válido (mínimo 0%).', { variant: 'warning' });
+
+    const indicators = getActiveIndicators(evaluatingItem);
+    let finalProg = null;
+    let finalPayload = {};
+
+    if (indicators.length > 1) {
+      const indProgressMap = evalForm.indicators_progress || {};
+      const numericScores = [];
+      const payloadIndicators = {};
+
+      for (const ind of indicators) {
+        const itemProg = indProgressMap[ind.kind]?.progress;
+        const itemObs = indProgressMap[ind.kind]?.observations || '';
+        if (itemProg !== '' && itemProg !== null && itemProg !== undefined && !isNaN(Number(itemProg))) {
+          const num = Math.max(0, Number(itemProg));
+          numericScores.push(num);
+          payloadIndicators[ind.kind] = { progress: num, observations: itemObs };
+        } else {
+          payloadIndicators[ind.kind] = { progress: null, observations: itemObs };
+        }
+      }
+
+      if (numericScores.length === 0) {
+        return enqueueSnackbar('Ingrese al menos un porcentaje de avance válido en los indicadores.', { variant: 'warning' });
+      }
+
+      finalProg = Number((numericScores.reduce((a, b) => a + b, 0) / numericScores.length).toFixed(1));
+      finalPayload = {
+        physical_progress: finalProg,
+        observations: evalForm.observations || '',
+        indicators_progress: payloadIndicators,
+        status: 'submitted'
+      };
+    } else {
+      if (evalForm.physical_progress === '' || evalForm.physical_progress === null || isNaN(Number(evalForm.physical_progress)) || Number(evalForm.physical_progress) < 0) {
+        return enqueueSnackbar('Ingrese un porcentaje de avance válido (mínimo 0%).', { variant: 'warning' });
+      }
+      finalProg = Math.max(0, Number(evalForm.physical_progress));
+      const firstKind = indicators[0]?.kind || 'resultado';
+      finalPayload = {
+        physical_progress: finalProg,
+        observations: evalForm.observations || '',
+        indicators_progress: {
+          [firstKind]: { progress: finalProg, observations: evalForm.observations || '' }
+        },
+        status: 'submitted'
+      };
     }
-    const prog = Math.max(0, Number(evalForm.physical_progress));
+
     setSaving(true);
     try {
-      await strategicPlanningService.saveMonitoring(evaluatingItem.id, evalForm.period_id, {
-        physical_progress: prog,
-        observations: evalForm.observations || '',
-        status: 'submitted'
-      });
-      // Cierra la ventana emergente de valoración y actualiza silenciosamente sin cerrar el plan
+      await strategicPlanningService.saveMonitoring(evaluatingItem.id, evalForm.period_id, finalPayload);
       setEvalModalOpen(false);
       await load(false);
       setTab('workflow');
-      if (prog > 100) {
-        enqueueSnackbar(`Valoración guardada: Sobrecumplimiento del ${prog}%. Queda marcado para revisión de meta.`, { variant: 'info' });
+      if (finalProg > 100) {
+        enqueueSnackbar(`Valoración guardada: Sobrecumplimiento del ${finalProg}%. Queda marcado para revisión de meta.`, { variant: 'info' });
       } else {
-        enqueueSnackbar('Valoración de seguimiento guardada con éxito.', { variant: 'success' });
+        enqueueSnackbar(`Valoración de seguimiento guardada con éxito (${finalProg}%).`, { variant: 'success' });
       }
     } catch (error) {
       console.error('Error guardando valoración:', error);
@@ -6303,299 +6694,374 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                         ) : (
                           tab4FilteredItems.slice(tab4Page * tab4RowsPerPage, tab4Page * tab4RowsPerPage + tab4RowsPerPage).map((it) => {
                             const evidences = it.evidence || [];
-                            // Cálculo de cumplimiento de la actividad
-                            const validResults = (it.monitoringResults || []).filter((r) => r.physical_progress !== null && r.physical_progress !== undefined && !isNaN(Number(r.physical_progress)));
-                            let compProg = null;
-                            if (validResults.length > 0) {
-                              compProg = validResults.reduce((acc, r) => acc + Number(r.physical_progress || 0), 0);
-                            } else if (it.current_progress !== undefined && it.current_progress !== null && !isNaN(Number(it.current_progress))) {
-                              compProg = Number(it.current_progress);
-                            }
+                            const indicators = getActiveIndicators(it);
+                            const indCount = indicators.length;
+                            const overallProg = calculateOverallFulfillment(it, periods);
 
-                            return (
-                              <TableRow key={it.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, borderBottom: '1px solid #f1f5f9' }}>
-                                {/* Código centrado */}
-                                <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
-                                  <Stack direction="row" spacing={0.7} alignItems="center" justifyContent="center">
-                                    <Chip
-                                      size="small"
-                                      label={it.code || '—'}
-                                      sx={{ fontWeight: 800, bgcolor: '#e2e8f0', color: '#1e293b', fontSize: 11, height: 24, borderRadius: 1 }}
-                                    />
-                                    {it.custom_values?.source_module === 'plan_mejoramiento' && (
-                                      <Tooltip title={`Originada en Plan de Mejoramiento (${it.custom_values?.pm_programa || ''})`}>
-                                        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#ea580c', flexShrink: 0, boxShadow: '0 0 0 2px #ffedd5' }} />
-                                      </Tooltip>
-                                    )}
-                                  </Stack>
-                                </TableCell>
-                                {/* Actividad centrada verticalmente con límite de ancho y 2 líneas */}
-                                <TableCell sx={{ verticalAlign: 'middle', py: 1.2, px: 1.5, minWidth: 200, maxWidth: { xs: 230, sm: 280, md: 320 } }}>
-                                  <Stack spacing={0.5} alignItems="flex-start">
-                                    {it.custom_values?.source_module === 'plan_mejoramiento' && (
-                                      <Tooltip title={`Actividad Interoperable desde Plan de Mejoramiento${(it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')) ? ` (${it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')})` : ''}`}>
-                                        <Chip
-                                          size="small"
-                                          icon={<TrendingUp sx={{ fontSize: '13px !important', color: '#c2410c !important' }} />}
-                                          label={`Plan de Mejoramiento${(it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')) ? ` · ${it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')}` : ''}`}
-                                          sx={{
-                                            height: 22,
-                                            fontSize: 10.5,
-                                            fontWeight: 900,
-                                            bgcolor: '#fff7ed',
-                                            color: '#c2410c',
-                                            border: '1px solid #fed7aa',
-                                            borderRadius: 1.5,
-                                            '& .MuiChip-icon': { ml: 0.5 }
-                                          }}
-                                        />
-                                      </Tooltip>
-                                    )}
-                                    <Tooltip title={it.activity} arrow placement="top-start">
-                                      <Typography
-                                        sx={{
-                                          fontSize: 12.5,
-                                          fontWeight: 700,
-                                          color: '#0f172a',
-                                          lineHeight: 1.35,
-                                          display: '-webkit-box',
-                                          WebkitLineClamp: 2,
-                                          WebkitBoxOrient: 'vertical',
-                                          overflow: 'hidden',
-                                          textOverflow: 'ellipsis',
-                                          cursor: 'pointer'
-                                        }}
-                                      >
-                                        {it.activity}
-                                      </Typography>
-                                    </Tooltip>
-                                  </Stack>
-                                  {it.macroactivity && (
-                                    <Typography
+                            return indicators.map((ind, indIdx) => {
+                              const isFirstSubrow = indIdx === 0;
+                              const indProg = calculateIndicatorFulfillment(it, periods, ind.kind);
+                              const indEvidences = filterEvidencesByIndicator(evidences, ind.kind);
+
+                              return (
+                                <TableRow
+                                  key={`${it.id}-${ind.kind}-${indIdx}`}
+                                  hover
+                                  sx={{
+                                    '&:hover': { bgcolor: '#f8fafc' },
+                                    borderBottom: indIdx === indCount - 1 ? '2px solid #cbd5e1' : '1px solid #f1f5f9',
+                                    bgcolor: indIdx > 0 ? '#fcfdfd' : 'inherit'
+                                  }}
+                                >
+                                  {/* Código (agrupado con rowSpan) */}
+                                  {isFirstSubrow && (
+                                    <TableCell
+                                      rowSpan={indCount}
+                                      align="center"
                                       sx={{
-                                        fontSize: 11,
-                                        color: '#64748b',
-                                        mt: 0.3,
-                                        display: '-webkit-box',
-                                        WebkitLineClamp: 1,
-                                        WebkitBoxOrient: 'vertical',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis'
+                                        verticalAlign: 'middle',
+                                        py: 1.2,
+                                        px: 1,
+                                        bgcolor: '#ffffff',
+                                        borderRight: indCount > 1 ? '1px solid #f1f5f9' : 'none'
                                       }}
                                     >
-                                      PED: {it.macroactivity}
-                                    </Typography>
+                                      <Stack direction="row" spacing={0.7} alignItems="center" justifyContent="center">
+                                        <Chip
+                                          size="small"
+                                          label={it.code || '—'}
+                                          sx={{ fontWeight: 800, bgcolor: '#e2e8f0', color: '#1e293b', fontSize: 11, height: 24, borderRadius: 1 }}
+                                        />
+                                        {it.custom_values?.source_module === 'plan_mejoramiento' && (
+                                          <Tooltip title={`Originada en Plan de Mejoramiento (${it.custom_values?.pm_programa || ''})`}>
+                                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#ea580c', flexShrink: 0, boxShadow: '0 0 0 2px #ffedd5' }} />
+                                          </Tooltip>
+                                        )}
+                                      </Stack>
+                                    </TableCell>
                                   )}
-                                </TableCell>
-                                {/* Indicador y Meta centrado verticalmente */}
-                                <TableCell sx={{ verticalAlign: 'middle', py: 1.2, px: 1.5 }}>
-                                  <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#334155', lineHeight: 1.3 }}>
-                                    {it.indicator || 'Sin indicador'}
-                                  </Typography>
-                                  <Typography sx={{ fontSize: 11.5, color: '#059669', fontWeight: 700, mt: 0.3 }}>
-                                    Meta: {it.target || '100%'}
-                                  </Typography>
-                                </TableCell>
-                                {/* Plazo centrado */}
-                                <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
-                                  <Typography sx={{ fontSize: 11, color: '#475569', lineHeight: 1.35 }}>
-                                    {formatFecha(it.starts_on)}
-                                    <br />
-                                    al {formatFecha(it.ends_on)}
-                                  </Typography>
-                                </TableCell>
-                                {/* Columnas dinámicas de periodos centradas */}
-                                {periods.map((p) => {
-                                  const res = (it.monitoringResults || []).find((r) => r.monitoring_period_id === p.id);
-                                  const prog = res ? Number(res.physical_progress || 0) : null;
-                                  const applies = isPeriodApplicableToItem(it, p);
-                                  return (
-                                    <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5 }}>
-                                      {res && prog !== null ? (
-                                        <Tooltip title={res.observations ? `Obs: ${res.observations}` : `Avance ${p.code}: ${prog}%`} arrow>
+
+                                  {/* Actividad (agrupada con rowSpan) */}
+                                  {isFirstSubrow && (
+                                    <TableCell
+                                      rowSpan={indCount}
+                                      sx={{
+                                        verticalAlign: 'middle',
+                                        py: 1.2,
+                                        px: 1.5,
+                                        minWidth: 200,
+                                        maxWidth: { xs: 230, sm: 280, md: 320 },
+                                        bgcolor: '#ffffff',
+                                        borderRight: indCount > 1 ? '1px solid #f1f5f9' : 'none'
+                                      }}
+                                    >
+                                      <Stack spacing={0.5} alignItems="flex-start">
+                                        {it.custom_values?.source_module === 'plan_mejoramiento' && (
+                                          <Tooltip title={`Actividad Interoperable desde Plan de Mejoramiento${(it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')) ? ` (${it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')})` : ''}`}>
+                                            <Chip
+                                              size="small"
+                                              icon={<TrendingUp sx={{ fontSize: '13px !important', color: '#c2410c !important' }} />}
+                                              label={`Plan de Mejoramiento${(it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')) ? ` · ${it.custom_values?.pm_programa || it.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '')}` : ''}`}
+                                              sx={{
+                                                height: 22,
+                                                fontSize: 10.5,
+                                                fontWeight: 900,
+                                                bgcolor: '#fff7ed',
+                                                color: '#c2410c',
+                                                border: '1px solid #fed7aa',
+                                                borderRadius: 1.5,
+                                                '& .MuiChip-icon': { ml: 0.5 }
+                                              }}
+                                            />
+                                          </Tooltip>
+                                        )}
+                                        <Tooltip title={it.activity} arrow placement="top-start">
+                                          <Typography
+                                            sx={{
+                                              fontSize: 12.5,
+                                              fontWeight: 700,
+                                              color: '#0f172a',
+                                              lineHeight: 1.35,
+                                              display: '-webkit-box',
+                                              WebkitLineClamp: 2,
+                                              WebkitBoxOrient: 'vertical',
+                                              overflow: 'hidden',
+                                              textOverflow: 'ellipsis',
+                                              cursor: 'pointer'
+                                            }}
+                                          >
+                                            {it.activity}
+                                          </Typography>
+                                        </Tooltip>
+                                        {indCount > 1 && overallProg !== null && (
+                                          <Tooltip title={`Cumplimiento global de la actividad (promedio de los ${indCount} indicadores): ${overallProg}%`}>
+                                            <Chip
+                                              size="small"
+                                              label={`Promedio actividad: ${overallProg}%`}
+                                              sx={{
+                                                mt: 0.4,
+                                                height: 20,
+                                                fontSize: 10,
+                                                fontWeight: 800,
+                                                bgcolor: overallProg >= 100 ? '#dcfce7' : (overallProg > 0 ? '#fef3c7' : '#f1f5f9'),
+                                                color: overallProg >= 100 ? '#15803d' : (overallProg > 0 ? '#b45309' : '#64748b'),
+                                                border: '1px solid',
+                                                borderColor: overallProg >= 100 ? '#86efac' : (overallProg > 0 ? '#fde68a' : '#cbd5e1')
+                                              }}
+                                            />
+                                          </Tooltip>
+                                        )}
+                                      </Stack>
+                                      {it.macroactivity && (
+                                        <Typography
+                                          sx={{
+                                            fontSize: 11,
+                                            color: '#64748b',
+                                            mt: 0.3,
+                                            display: '-webkit-box',
+                                            WebkitLineClamp: 1,
+                                            WebkitBoxOrient: 'vertical',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis'
+                                          }}
+                                        >
+                                          PED: {it.macroactivity}
+                                        </Typography>
+                                      )}
+                                    </TableCell>
+                                  )}
+
+                                  {/* Indicador y Meta (sub-fila específica de cada indicador) */}
+                                  <TableCell sx={{ verticalAlign: 'middle', py: 1.2, px: 1.5 }}>
+                                    {(indCount > 1 || ind.kind !== 'principal') && (
+                                      <Box sx={{ mb: 0.4 }}>
+                                        <Chip
+                                          size="small"
+                                          label={ind.shortLabel}
+                                          sx={{
+                                            height: 19,
+                                            fontSize: 9.5,
+                                            fontWeight: 800,
+                                            bgcolor: ind.badgeBg || '#eff6ff',
+                                            color: ind.color || '#2563eb',
+                                            border: `1px solid ${ind.borderColor || '#bfdbfe'}`,
+                                            borderRadius: 1
+                                          }}
+                                        />
+                                      </Box>
+                                    )}
+                                    <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#334155', lineHeight: 1.3 }}>
+                                      {ind.indicator}
+                                    </Typography>
+                                    <Typography sx={{ fontSize: 11.5, color: '#059669', fontWeight: 700, mt: 0.3 }}>
+                                      Meta: {ind.target}
+                                    </Typography>
+                                  </TableCell>
+
+                                  {/* Plazo */}
+                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
+                                    <Typography sx={{ fontSize: 11, color: '#475569', lineHeight: 1.35 }}>
+                                      {formatFecha(it.starts_on)}
+                                      <br />
+                                      al {formatFecha(it.ends_on)}
+                                    </Typography>
+                                  </TableCell>
+
+                                  {/* Columnas dinámicas de periodos */}
+                                  {periods.map((p) => {
+                                    const prog = getIndicatorProgress(it, p.id, ind.kind);
+                                    const obs = getIndicatorObservations(it, p.id, ind.kind);
+                                    const applies = isPeriodApplicableToItem(it, p);
+                                    return (
+                                      <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5 }}>
+                                        {prog !== null ? (
+                                          <Tooltip title={obs ? `Obs: ${obs}` : `Avance ${p.code}: ${prog}%`} arrow>
+                                            <Chip
+                                              size="small"
+                                              label={`${prog}%`}
+                                              sx={{
+                                                fontWeight: 800,
+                                                fontSize: 11.5,
+                                                height: 24,
+                                                borderRadius: 1,
+                                                bgcolor: prog >= 100 ? '#dcfce7' : (prog > 0 ? '#fef3c7' : '#f1f5f9'),
+                                                color: prog >= 100 ? '#15803d' : (prog > 0 ? '#b45309' : '#64748b')
+                                              }}
+                                            />
+                                          </Tooltip>
+                                        ) : applies ? (
+                                          <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>—</Typography>
+                                        ) : (
+                                          <Tooltip title="Actividad no programada para este período según sus fechas de ejecución" arrow>
+                                            <Chip
+                                              size="small"
+                                              label="N/A"
+                                              sx={{
+                                                fontSize: 10,
+                                                fontWeight: 700,
+                                                height: 20,
+                                                borderRadius: 1,
+                                                bgcolor: '#f1f5f9',
+                                                color: '#94a3b8',
+                                                border: '1px dashed #cbd5e1',
+                                                cursor: 'help'
+                                              }}
+                                            />
+                                          </Tooltip>
+                                        )}
+                                      </TableCell>
+                                    );
+                                  })}
+
+                                  {/* COLUMNA DE CUMPLIMIENTO */}
+                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
+                                    {indProg !== null && indProg > 100 ? (
+                                      <Tooltip title={`Sobrecumplimiento (${indProg}%). Superó el 100% de la meta.`} arrow>
+                                        <Stack alignItems="center" spacing={0.3}>
                                           <Chip
                                             size="small"
-                                            label={`${prog}%`}
+                                            icon={<PriorityHigh sx={{ fontSize: '13px !important', color: '#f59e0b !important', fontWeight: 900 }} />}
+                                            label={`${indProg}%`}
+                                            sx={{
+                                              fontWeight: 900,
+                                              fontSize: 11.5,
+                                              height: 25,
+                                              borderRadius: 1.5,
+                                              bgcolor: '#064e3b',
+                                              color: '#ecfdf5',
+                                              border: '1.5px dashed #f59e0b',
+                                              boxShadow: '0 1px 4px rgba(6,78,59,0.25)',
+                                              cursor: 'help'
+                                            }}
+                                          />
+                                          <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#b45309', lineHeight: 1.1 }}>
+                                            Revisar meta
+                                          </Typography>
+                                        </Stack>
+                                      </Tooltip>
+                                    ) : indProg !== null && indProg === 100 ? (
+                                      <Tooltip title="¡Meta cumplida al 100%!" arrow>
+                                        <Stack alignItems="center" spacing={0.3}>
+                                          <Chip
+                                            size="small"
+                                            icon={<CheckCircle sx={{ fontSize: '14px !important', color: '#16a34a !important' }} />}
+                                            label="100%"
+                                            sx={{
+                                              fontWeight: 850,
+                                              fontSize: 11.5,
+                                              height: 24,
+                                              borderRadius: 1.2,
+                                              bgcolor: '#dcfce7',
+                                              color: '#15803d',
+                                              border: '1px solid #86efac'
+                                            }}
+                                          />
+                                          <Typography sx={{ fontSize: 9.5, fontWeight: 750, color: '#15803d', lineHeight: 1.1 }}>
+                                            Completada
+                                          </Typography>
+                                        </Stack>
+                                      </Tooltip>
+                                    ) : indProg !== null && indProg > 0 ? (
+                                      <Tooltip title={`Avance actual: ${indProg}%. Falta ${Number((100 - indProg).toFixed(1))}%`} arrow>
+                                        <Stack alignItems="center" spacing={0.3}>
+                                          <Chip
+                                            size="small"
+                                            label={`${indProg}%`}
                                             sx={{
                                               fontWeight: 800,
                                               fontSize: 11.5,
                                               height: 24,
-                                              borderRadius: 1,
-                                              bgcolor: prog >= 100 ? '#dcfce7' : (prog > 0 ? '#fef3c7' : '#f1f5f9'),
-                                              color: prog >= 100 ? '#15803d' : (prog > 0 ? '#b45309' : '#64748b')
+                                              borderRadius: 1.2,
+                                              bgcolor: '#fffbeb',
+                                              color: '#b45309',
+                                              border: '1px solid #fde68a'
                                             }}
                                           />
-                                        </Tooltip>
-                                      ) : applies ? (
-                                        <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>—</Typography>
-                                      ) : (
-                                        <Tooltip title="Actividad no programada para este período según sus fechas de ejecución" arrow>
+                                          <Typography sx={{ fontSize: 9.5, fontWeight: 750, color: '#b45309', lineHeight: 1.1 }}>
+                                            Falta {Number((100 - indProg).toFixed(0))}%
+                                          </Typography>
+                                        </Stack>
+                                      </Tooltip>
+                                    ) : (
+                                      <Tooltip title="Sin avances registrados aún." arrow>
+                                        <Stack alignItems="center" spacing={0.3}>
                                           <Chip
                                             size="small"
-                                            label="N/A"
+                                            label="0%"
                                             sx={{
-                                              fontSize: 10,
-                                              fontWeight: 700,
-                                              height: 20,
-                                              borderRadius: 1,
+                                              fontWeight: 750,
+                                              fontSize: 11,
+                                              height: 22,
+                                              borderRadius: 1.2,
                                               bgcolor: '#f1f5f9',
-                                              color: '#94a3b8',
-                                              border: '1px dashed #cbd5e1',
-                                              cursor: 'help'
+                                              color: '#64748b',
+                                              border: '1px solid #cbd5e1'
                                             }}
                                           />
-                                        </Tooltip>
-                                      )}
-                                    </TableCell>
-                                  );
-                                })}
+                                          <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#94a3b8', lineHeight: 1.1 }}>
+                                            Falta 100%
+                                          </Typography>
+                                        </Stack>
+                                      </Tooltip>
+                                    )}
+                                  </TableCell>
 
-                                {/* COLUMNA DE CUMPLIMIENTO (100% verde, <100% cuánto falta, >100% verde fuerte con borde de revisión) */}
-                                <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
-                                  {compProg !== null && compProg > 100 ? (
-                                    <Tooltip title={`Sobrecumplimiento (${compProg}%). Superó el 100% de la meta. Requiere revisión para evaluar aumento de meta o formalizar cierre con excedente.`} arrow>
-                                      <Stack alignItems="center" spacing={0.3}>
+                                  {/* Evidencias cargadas */}
+                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5 }}>
+                                    {indEvidences.length > 0 ? (
+                                      <Tooltip title={`Clic para ver las evidencias cargadas (${ind.shortLabel})`} arrow>
                                         <Chip
                                           size="small"
-                                          icon={<PriorityHigh sx={{ fontSize: '13px !important', color: '#f59e0b !important', fontWeight: 900 }} />}
-                                          label={`${compProg}%`}
+                                          icon={<AttachFile sx={{ fontSize: 14 }} />}
+                                          label={`${indEvidences.length} arch.`}
+                                          onClick={() => handleOpenEvidenceModal(it)}
                                           sx={{
-                                            fontWeight: 900,
-                                            fontSize: 11.5,
-                                            height: 25,
-                                            borderRadius: 1.5,
-                                            bgcolor: '#064e3b', // Verde más fuerte
-                                            color: '#ecfdf5',
-                                            border: '1.5px dashed #f59e0b', // Borde de revisión
-                                            boxShadow: '0 1px 4px rgba(6,78,59,0.25)',
-                                            cursor: 'help'
-                                          }}
-                                        />
-                                        <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#b45309', lineHeight: 1.1 }}>
-                                          Revisar meta
-                                        </Typography>
-                                      </Stack>
-                                    </Tooltip>
-                                  ) : compProg !== null && compProg === 100 ? (
-                                    <Tooltip title="¡Meta cumplida al 100%!" arrow>
-                                      <Stack alignItems="center" spacing={0.3}>
-                                        <Chip
-                                          size="small"
-                                          icon={<CheckCircle sx={{ fontSize: '14px !important', color: '#16a34a !important' }} />}
-                                          label="100%"
-                                          sx={{
-                                            fontWeight: 850,
-                                            fontSize: 11.5,
-                                            height: 24,
-                                            borderRadius: 1.2,
-                                            bgcolor: '#dcfce7', // Verde institucional
-                                            color: '#15803d',
-                                            border: '1px solid #86efac'
-                                          }}
-                                        />
-                                        <Typography sx={{ fontSize: 9.5, fontWeight: 750, color: '#15803d', lineHeight: 1.1 }}>
-                                          Completada
-                                        </Typography>
-                                      </Stack>
-                                    </Tooltip>
-                                  ) : compProg !== null && compProg > 0 ? (
-                                    <Tooltip title={`Avance actual: ${compProg}%. Falta ${Number((100 - compProg).toFixed(1))}% para culminar la meta del 100%.`} arrow>
-                                      <Stack alignItems="center" spacing={0.3}>
-                                        <Chip
-                                          size="small"
-                                          label={`${compProg}%`}
-                                          sx={{
+                                            cursor: 'pointer',
                                             fontWeight: 800,
                                             fontSize: 11.5,
                                             height: 24,
-                                            borderRadius: 1.2,
-                                            bgcolor: '#fffbeb',
-                                            color: '#b45309',
-                                            border: '1px solid #fde68a'
+                                            borderRadius: 1,
+                                            bgcolor: ind.badgeBg || '#e0e7ff',
+                                            color: ind.color || '#4338ca',
+                                            border: `1px solid ${ind.borderColor || '#c7d2fe'}`,
+                                            transition: 'all 0.15s ease',
+                                            '&:hover': { opacity: 0.85 }
                                           }}
                                         />
-                                        <Typography sx={{ fontSize: 9.5, fontWeight: 750, color: '#b45309', lineHeight: 1.1 }}>
-                                          Falta {Number((100 - compProg).toFixed(0))}%
-                                        </Typography>
-                                      </Stack>
-                                    </Tooltip>
-                                  ) : (
-                                    <Tooltip title="Sin avances registrados aún. Falta el 100% de la meta." arrow>
-                                      <Stack alignItems="center" spacing={0.3}>
-                                        <Chip
-                                          size="small"
-                                          label="0%"
-                                          sx={{
-                                            fontWeight: 750,
-                                            fontSize: 11,
-                                            height: 22,
-                                            borderRadius: 1.2,
-                                            bgcolor: '#f1f5f9',
-                                            color: '#64748b',
-                                            border: '1px solid #cbd5e1'
-                                          }}
-                                        />
-                                        <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#94a3b8', lineHeight: 1.1 }}>
-                                          Falta 100%
-                                        </Typography>
-                                      </Stack>
-                                    </Tooltip>
-                                  )}
-                                </TableCell>
+                                      </Tooltip>
+                                    ) : (
+                                      <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>Sin soportes</Typography>
+                                    )}
+                                  </TableCell>
 
-                                {/* Evidencias cargadas centradas */}
-                                <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5 }}>
-                                  {evidences.length > 0 ? (
-                                    <Tooltip title="Clic para ver y descargar las evidencias cargadas" arrow>
-                                      <Chip
-                                        size="small"
-                                        icon={<AttachFile sx={{ fontSize: 14 }} />}
-                                        label={`${evidences.length} arch.`}
-                                        onClick={() => handleOpenEvidenceModal(it)}
-                                        sx={{
-                                          cursor: 'pointer',
-                                          fontWeight: 800,
-                                          fontSize: 11.5,
-                                          height: 24,
-                                          borderRadius: 1,
-                                          bgcolor: '#e0e7ff',
-                                          color: '#4338ca',
-                                          transition: 'all 0.15s ease',
-                                          '&:hover': { bgcolor: '#c7d2fe' }
-                                        }}
-                                      />
-                                    </Tooltip>
-                                  ) : (
-                                    <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>Sin soportes</Typography>
-                                  )}
-                                </TableCell>
-                                {/* Acción Valorar centrada */}
-                                <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
-                                  <Button
-                                    size="small"
-                                    variant="contained"
-                                    startIcon={<EditNote sx={{ fontSize: 16 }} />}
-                                    onClick={() => handleOpenEvalModal(it)}
-                                    sx={{
-                                      borderRadius: 2,
-                                      textTransform: 'none',
-                                      fontWeight: 850,
-                                      fontSize: 12,
-                                      py: 0.5,
-                                      px: 1.5,
-                                      bgcolor: '#2563eb',
-                                      boxShadow: '0 2px 6px rgba(37,99,235,0.22)',
-                                      '&:hover': { bgcolor: '#1d4ed8', boxShadow: '0 4px 10px rgba(37,99,235,0.3)' }
-                                    }}
-                                  >
-                                    Valorar
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            );
+                                  {/* Acción Valorar */}
+                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
+                                    <Button
+                                      size="small"
+                                      variant="contained"
+                                      startIcon={<EditNote sx={{ fontSize: 16 }} />}
+                                      onClick={() => handleOpenEvalModal(it, ind.kind)}
+                                      sx={{
+                                        borderRadius: 2,
+                                        textTransform: 'none',
+                                        fontWeight: 850,
+                                        fontSize: 12,
+                                        py: 0.5,
+                                        px: 1.5,
+                                        bgcolor: '#2563eb',
+                                        boxShadow: '0 2px 6px rgba(37,99,235,0.22)',
+                                        '&:hover': { bgcolor: '#1d4ed8', boxShadow: '0 4px 10px rgba(37,99,235,0.3)' }
+                                      }}
+                                    >
+                                      Valorar
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            });
                           })
                         )}
-                      </TableBody>
+                    </TableBody>
                     </Table>
                   </TableContainer>
                   <TablePagination
@@ -6862,7 +7328,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         maxWidth="md"
         fullWidth
         PaperProps={{
-          sx: { borderRadius: 3, maxWidth: 660, width: '100%', overflow: 'hidden', boxShadow: '0 20px 45px rgba(15, 23, 42, 0.16)' }
+          sx: { borderRadius: 3, maxWidth: 700, width: '100%', overflow: 'hidden', boxShadow: '0 20px 45px rgba(15, 23, 42, 0.16)' }
         }}
       >
         <DialogTitle
@@ -6886,29 +7352,15 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
           <Stack spacing={2.5}>
             {/* Resumen puntual de la Actividad */}
             <Box sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-              <Stack direction="row" spacing={1.2} alignItems="flex-start" mb={evaluatingItem?.target || evaluatingItem?.indicator ? 1.2 : 0}>
+              <Stack direction="row" spacing={1.2} alignItems="flex-start">
                 <Chip size="small" label={evaluatingItem?.code || 'Actividad'} sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 900, fontSize: 11.5, mt: 0.2, flexShrink: 0 }} />
                 <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a', lineHeight: 1.45 }}>
                   {evaluatingItem?.activity}
                 </Typography>
               </Stack>
-              {(evaluatingItem?.target || evaluatingItem?.indicator) && (
-                <Stack direction="row" spacing={2} flexWrap="wrap" sx={{ pt: 1, borderTop: '1px dashed #e2e8f0' }}>
-                  {evaluatingItem?.target && (
-                    <Typography sx={{ fontSize: 12, color: '#475569' }}>
-                      <strong style={{ color: '#0f172a' }}>Meta:</strong> {evaluatingItem.target}
-                    </Typography>
-                  )}
-                  {evaluatingItem?.indicator && (
-                    <Typography sx={{ fontSize: 12, color: '#475569' }}>
-                      <strong style={{ color: '#0f172a' }}>Indicador:</strong> {evaluatingItem.indicator}
-                    </Typography>
-                  )}
-                </Stack>
-              )}
             </Box>
 
-            {/* Evidencias cargadas por la dependencia con previsualización */}
+            {/* Evidencias cargadas por la dependencia */}
             {evaluatingItem?.evidence && evaluatingItem.evidence.length > 0 && (
               <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: '#f0fdf4', border: '1px solid #bbf7d0' }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.75}>
@@ -6924,105 +7376,267 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Button>
                 </Stack>
                 <Stack spacing={0.75}>
-                  {evaluatingItem.evidence.map((ev) => (
-                    <Stack key={ev.id} direction="row" justifyContent="space-between" alignItems="center" sx={{ bgcolor: '#ffffff', p: 0.75, borderRadius: 1.5, border: '1px solid #dcfce7' }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
-                        <Box sx={{ flexShrink: 0 }}>{getFileIcon(ev.original_name)}</Box>
-                        <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#14532d' }} noWrap>
-                          {ev.original_name}
-                        </Typography>
+                  {evaluatingItem.evidence.map((ev) => {
+                    const desc = String(ev.description || '').toLowerCase();
+                    const kindBadge = desc.includes('[resultado]') ? 'Resultado' : (desc.includes('[logro]') ? 'Logro' : (desc.includes('[impacto]') ? 'Impacto' : null));
+                    return (
+                      <Stack key={ev.id} direction="row" justifyContent="space-between" alignItems="center" sx={{ bgcolor: '#ffffff', p: 0.75, borderRadius: 1.5, border: '1px solid #dcfce7' }}>
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+                          <Box sx={{ flexShrink: 0 }}>{getFileIcon(ev.original_name)}</Box>
+                          <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#14532d' }} noWrap>
+                            {ev.original_name}
+                          </Typography>
+                          {kindBadge && (
+                            <Chip size="small" label={kindBadge} sx={{ height: 18, fontSize: 9.5, fontWeight: 800, bgcolor: '#e0f2fe', color: '#0369a1' }} />
+                          )}
+                        </Stack>
+                        <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0, ml: 1 }}>
+                          <Button
+                            size="small"
+                            startIcon={<Visibility sx={{ fontSize: 14 }} />}
+                            onClick={() => handlePreviewEvidence(ev)}
+                            sx={{ textTransform: 'none', fontSize: 11.5, fontWeight: 800, color: '#0284c7', bgcolor: '#f0f9ff', px: 1, py: 0.2, borderRadius: 1.5, minWidth: 0 }}
+                          >
+                            Previsualizar
+                          </Button>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleDownloadDirectEvidence(ev)}
+                            sx={{ color: '#166534', p: 0.4 }}
+                            title="Descargar archivo"
+                          >
+                            <Download sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Stack>
                       </Stack>
-                      <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0, ml: 1 }}>
-                        <Button
-                          size="small"
-                          startIcon={<Visibility sx={{ fontSize: 14 }} />}
-                          onClick={() => handlePreviewEvidence(ev)}
-                          sx={{ textTransform: 'none', fontSize: 11.5, fontWeight: 800, color: '#0284c7', bgcolor: '#f0f9ff', px: 1, py: 0.2, borderRadius: 1.5, minWidth: 0 }}
-                        >
-                          Previsualizar
-                        </Button>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleDownloadDirectEvidence(ev)}
-                          sx={{ color: '#166534', p: 0.4 }}
-                          title="Descargar archivo"
-                        >
-                          <Download sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Stack>
-                    </Stack>
-                  ))}
+                    );
+                  })}
                 </Stack>
               </Box>
             )}
 
-            {/* Selección de Periodo y Porcentaje */}
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={7}>
-                <TextField
-                  select
-                  fullWidth
-                  size="small"
-                  label="Periodo de Seguimiento"
-                  InputLabelProps={{ shrink: true }}
-                  value={evalForm.period_id}
-                  onChange={(e) => handleChangeEvalPeriod(e.target.value)}
-                  disabled={evalAvailablePeriods.length <= 1}
-                  helperText={evalAvailablePeriods.length <= 1 ? "Periodo determinado automáticamente por las fechas de ejecución" : ""}
-                  SelectProps={{
-                    sx: { fontSize: 13.5, fontWeight: 700, color: '#0f172a' }
-                  }}
-                  sx={{
-                    '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff' },
-                    '& .MuiInputLabel-root': { fontWeight: 700, color: '#475569' }
-                  }}
-                >
-                  {evalAvailablePeriods.map((p) => {
-                    const isS1 = (p.code || '').toUpperCase() === 'S1' || /1|prim/i.test(p.name || '') || (p.position === 1);
-                    const labelPeriod = isS1
-                      ? 'Primer Semestre · 1 de enero al 31 de julio'
-                      : 'Segundo Semestre · 1 de agosto al 31 de diciembre';
-                    return (
-                      <MenuItem key={p.id} value={p.id} sx={{ fontSize: 13, fontWeight: 600 }}>
-                        {p.code} · {p.name || labelPeriod}
-                      </MenuItem>
-                    );
-                  })}
-                </TextField>
-              </Grid>
-              <Grid item xs={12} sm={5}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  inputProps={{ min: 0, max: 999, step: 'any' }}
-                  label="Avance Físico"
-                  placeholder="0"
-                  InputLabelProps={{ shrink: true }}
-                  value={evalForm.physical_progress}
-                  onChange={(e) => setEvalForm({ ...evalForm, physical_progress: e.target.value })}
-                  helperText={Number(evalForm.physical_progress) > 100 ? 'Sobrecumplimiento (>100%)' : ''}
-                  FormHelperTextProps={{ sx: { color: '#b45309', fontWeight: 750, fontSize: 11, mt: 0.5 } }}
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <Typography sx={{ fontWeight: 800, color: '#2563eb', fontSize: 14 }}>%</Typography>
-                      </InputAdornment>
-                    ),
-                    sx: { borderRadius: 2, bgcolor: '#ffffff', fontWeight: 700, fontSize: 14 }
-                  }}
-                  sx={{
-                    '& .MuiInputLabel-root': { fontWeight: 700, color: '#475569' }
-                  }}
-                />
-              </Grid>
-            </Grid>
+            {/* Selección de Periodo */}
+            <TextField
+              select
+              fullWidth
+              size="small"
+              label="Periodo de Seguimiento"
+              InputLabelProps={{ shrink: true }}
+              value={evalForm.period_id}
+              onChange={(e) => handleChangeEvalPeriod(e.target.value)}
+              disabled={evalAvailablePeriods.length <= 1}
+              helperText={evalAvailablePeriods.length <= 1 ? "Periodo determinado automáticamente por las fechas de ejecución" : ""}
+              SelectProps={{
+                sx: { fontSize: 13.5, fontWeight: 700, color: '#0f172a' }
+              }}
+              sx={{
+                '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff' },
+                '& .MuiInputLabel-root': { fontWeight: 700, color: '#475569' }
+              }}
+            >
+              {evalAvailablePeriods.map((p) => {
+                const isS1 = (p.code || '').toUpperCase() === 'S1' || /1|prim/i.test(p.name || '') || (p.position === 1);
+                const labelPeriod = isS1
+                  ? 'Primer Semestre · 1 de enero al 31 de julio'
+                  : 'Segundo Semestre · 1 de agosto al 31 de diciembre';
+                return (
+                  <MenuItem key={p.id} value={p.id} sx={{ fontSize: 13, fontWeight: 600 }}>
+                    {p.code} · {p.name || labelPeriod}
+                  </MenuItem>
+                );
+              })}
+            </TextField>
 
-            {/* Observaciones y Concepto de Planeación */}
+            {/* SI TIENE MÚLTIPLES INDICADORES (Resultado, Logro, Impacto) */}
+            {(() => {
+              const activeIndicators = evaluatingItem ? getActiveIndicators(evaluatingItem) : [];
+              if (activeIndicators.length > 1) {
+                // Cálculo dinámico del promedio
+                const scores = activeIndicators
+                  .map((ind) => Number(evalForm.indicators_progress?.[ind.kind]?.progress))
+                  .filter((n) => !isNaN(n) && n !== null && n !== undefined);
+                const currentAvg = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : null;
+
+                return (
+                  <Stack spacing={2}>
+                    <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                      <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: '#1e40af' }}>
+                        Valoración por Indicadores ({activeIndicators.length})
+                      </Typography>
+                      <Typography sx={{ fontSize: 11.5, color: '#3b82f6', mt: 0.2 }}>
+                        La calificación general de la actividad será el promedio aritmético de los indicadores evaluados.
+                      </Typography>
+                    </Box>
+
+                    {activeIndicators.map((ind) => {
+                      const indData = evalForm.indicators_progress?.[ind.kind] || { progress: '', observations: '' };
+                      return (
+                        <Paper
+                          key={ind.kind}
+                          variant="outlined"
+                          sx={{
+                            p: 2,
+                            borderRadius: 2.5,
+                            borderColor: ind.borderColor || '#e2e8f0',
+                            bgcolor: '#ffffff',
+                            boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+                          }}
+                        >
+                          <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+                            <Chip
+                              size="small"
+                              label={ind.shortLabel}
+                              sx={{
+                                fontWeight: 800,
+                                fontSize: 11,
+                                height: 22,
+                                bgcolor: ind.badgeBg || '#eff6ff',
+                                color: ind.color || '#2563eb',
+                                border: `1px solid ${ind.borderColor || '#bfdbfe'}`
+                              }}
+                            />
+                            <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a' }}>
+                              {ind.indicator}
+                            </Typography>
+                          </Stack>
+                          <Typography sx={{ fontSize: 11.5, color: '#059669', fontWeight: 700, mb: 1.5 }}>
+                            Meta: {ind.target}
+                          </Typography>
+
+                          <Grid container spacing={1.5} alignItems="center">
+                            <Grid item xs={12} sm={4}>
+                              <TextField
+                                fullWidth
+                                size="small"
+                                type="number"
+                                inputProps={{ min: 0, max: 999, step: 'any' }}
+                                label={`Avance ${ind.shortLabel}`}
+                                placeholder="0"
+                                InputLabelProps={{ shrink: true }}
+                                value={indData.progress}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEvalForm((prev) => ({
+                                    ...prev,
+                                    indicators_progress: {
+                                      ...(prev.indicators_progress || {}),
+                                      [ind.kind]: {
+                                        ...(prev.indicators_progress?.[ind.kind] || {}),
+                                        progress: val
+                                      }
+                                    }
+                                  }));
+                                }}
+                                InputProps={{
+                                  endAdornment: (
+                                    <InputAdornment position="end">
+                                      <Typography sx={{ fontWeight: 800, color: ind.color || '#2563eb', fontSize: 13 }}>%</Typography>
+                                    </InputAdornment>
+                                  ),
+                                  sx: { borderRadius: 2, bgcolor: '#ffffff', fontWeight: 700, fontSize: 13.5 }
+                                }}
+                              />
+                            </Grid>
+                            <Grid item xs={12} sm={8}>
+                              <TextField
+                                fullWidth
+                                size="small"
+                                label={`Observación / soporte (${ind.shortLabel})`}
+                                placeholder="Concepto específico para este indicador..."
+                                InputLabelProps={{ shrink: true }}
+                                value={indData.observations || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEvalForm((prev) => ({
+                                    ...prev,
+                                    indicators_progress: {
+                                      ...(prev.indicators_progress || {}),
+                                      [ind.kind]: {
+                                        ...(prev.indicators_progress?.[ind.kind] || {}),
+                                        observations: val
+                                      }
+                                    }
+                                  }));
+                                }}
+                                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff' } }}
+                              />
+                            </Grid>
+                          </Grid>
+                        </Paper>
+                      );
+                    })}
+
+                    {currentAvg !== null && (
+                      <Paper
+                        variant="outlined"
+                        sx={{
+                          p: 1.5,
+                          borderRadius: 2,
+                          bgcolor: Number(currentAvg) >= 100 ? '#f0fdf4' : '#fffbeb',
+                          borderColor: Number(currentAvg) >= 100 ? '#86efac' : '#fde68a',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                      >
+                        <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: Number(currentAvg) >= 100 ? '#166534' : '#b45309' }}>
+                          Promedio ponderado de la actividad en este periodo:
+                        </Typography>
+                        <Chip
+                          size="small"
+                          label={`${currentAvg}%`}
+                          sx={{
+                            fontWeight: 900,
+                            fontSize: 13,
+                            height: 26,
+                            bgcolor: Number(currentAvg) >= 100 ? '#15803d' : '#d97706',
+                            color: '#ffffff'
+                          }}
+                        />
+                      </Paper>
+                    )}
+                  </Stack>
+                );
+              }
+
+              // INDICADOR ÚNICO / TRADICIONAL
+              return (
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      type="number"
+                      inputProps={{ min: 0, max: 999, step: 'any' }}
+                      label="Avance Físico de la Actividad"
+                      placeholder="0"
+                      InputLabelProps={{ shrink: true }}
+                      value={evalForm.physical_progress}
+                      onChange={(e) => setEvalForm({ ...evalForm, physical_progress: e.target.value })}
+                      helperText={Number(evalForm.physical_progress) > 100 ? 'Sobrecumplimiento (>100%)' : ''}
+                      FormHelperTextProps={{ sx: { color: '#b45309', fontWeight: 750, fontSize: 11, mt: 0.5 } }}
+                      InputProps={{
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <Typography sx={{ fontWeight: 800, color: '#2563eb', fontSize: 14 }}>%</Typography>
+                          </InputAdornment>
+                        ),
+                        sx: { borderRadius: 2, bgcolor: '#ffffff', fontWeight: 700, fontSize: 14 }
+                      }}
+                      sx={{
+                        '& .MuiInputLabel-root': { fontWeight: 700, color: '#475569' }
+                      }}
+                    />
+                  </Grid>
+                </Grid>
+              );
+            })()}
+
+            {/* Observaciones y Concepto General de Planeación */}
             <TextField
               fullWidth
               multiline
-              minRows={3}
+              minRows={2.5}
               label="Observaciones y Concepto de Planeación y Efectividad"
               InputLabelProps={{ shrink: true }}
               placeholder="Ingrese el concepto oficial, retroalimentación o justificación del avance..."

@@ -1,3 +1,6 @@
+import { missingLinkFields } from './linkFields';
+import InstitutionalPolicyActivityField from '../../../../components/InstitutionalPolicyActivityField';
+import ActionPlanIndicatorFields from '../../../../components/ActionPlanIndicatorFields';
 import { aspectKey, uniqueAspects } from './aspectIdentity';
 import ActivityIndicatorFields, { resolveActivityIndicators } from './ActivityIndicatorFields';
 import StrategicObjectiveFields from './StrategicObjectiveFields';
@@ -55,7 +58,7 @@ const currentYear = new Date().getFullYear();
 const makeLocalId = () => window.crypto?.randomUUID?.() || `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const emptyActivity = () => ({
   uid: makeLocalId(),
-  nombre: '', descripcion: '', indicador: '', tipoIndicador: 'Resultado', meta: '', fechaInicio: '', fechaFin: '', recursos: '',
+  nombre: '', descripcion: '', indicador: '', tipoIndicador: 'Resultado', meta: '', recursos: '',
   procesoResponsable: '', responsableId: null, responsableNombre: '', responsableDocumento: '', responsableEmail: '',
   responsableDependencia: '', responsableVicerrectoria: '', cargoResponsable: '', alcance: 'PROGRAMA', ejeEstrategico: '', objetivoEstrategico: '',
   proyectoPdi: '', politicasInstitucionales: [], lineasAccionPolitica: [],
@@ -445,16 +448,6 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         .filter((f) => f && f.active !== false && f.data_type !== 'formula' && !EXCLUDED_ACTION_PLAN_KEYS.has(f.key))
         .sort((a, b) => (a.position || 0) - (b.position || 0));
 
-      if (!filtered.some((f) => f.key === 'deliverable' || f.key === 'entregable')) {
-        filtered.push({
-          id: 'dyn-deliverable',
-          key: 'entregable',
-          label: 'Entregable',
-          data_type: 'long_text',
-          required: true,
-          position: 99
-        });
-      }
       return filtered;
     }
     return [
@@ -476,9 +469,24 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const renderDynamicFormField = (field) => {
     const key = field.key;
     const label = field.label || key;
-    const isRequired = field.required !== false;
+    const isRequired = field.required === true;
     const dataType = field.data_type || 'text';
 
+    if (field.validation_rules?.shared_catalog === 'institutional_policies') {
+      return <Box key={key} sx={{ gridColumn: { xs: '1 / -1', md: 'span 6' }, minWidth: 0 }}>
+        <InstitutionalPolicyActivityField field={field} values={linkFormData} onChange={(changes) => setLinkFormData((previous) => ({ ...previous, ...changes }))} />
+      </Box>;
+    }
+    if (field.data_type === 'indicators_group' || key === 'indicadores_metas' || field.validation_rules?.preset === 'indicators') {
+      return <Box key={key} sx={{ gridColumn: '1 / -1', minWidth: 0 }}>
+        <ActionPlanIndicatorFields field={field} values={linkFormData} onChange={(changes) => setLinkFormData((previous) => ({
+          ...previous,
+          ...changes,
+          indicador: changes.indicadorResultado || changes.indicadorLogro || changes.indicadorImpacto || previous.indicador,
+          meta: changes.metaResultado || changes.metaLogro || changes.metaImpacto || previous.meta
+        }))} />
+      </Box>;
+    }
     // 1. Responsable de ejecución: precargado automáticamente con el líder del Plan de Acción
     if (key === 'responsible' || key === 'responsable' || key === 'responsable_de_ejecucion' || (field.validation_rules?.catalog_type === 'organizational_unit' && dataType === 'catalog')) {
       return (
@@ -626,7 +634,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           key={key}
           label={`${label} ${isRequired ? '*' : ''}`}
           multiline
-          minRows={2}
+          minRows={1}
           value={currentVal}
           onChange={(e) => {
             const val = e.target.value;
@@ -712,7 +720,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           label={`${label} ${isRequired ? '*' : ''}`}
           placeholder="Describa el documento, producto o soporte entregable esperado"
           multiline
-          minRows={2}
+          minRows={1}
           value={currentVal}
           onChange={(e) => {
             const val = e.target.value;
@@ -732,7 +740,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         key={key}
         select={isSelect}
         multiline={isMulti}
-        minRows={isMulti ? 2 : undefined}
+        minRows={isMulti ? 1 : undefined}
         label={`${label} ${isRequired ? '*' : ''}`}
         value={linkFormData[key] ?? ''}
         onChange={(e) => setLinkFormData((prev) => ({ ...prev, [key]: e.target.value }))}
@@ -835,13 +843,17 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, [editor, loadPlans]);
   const catalogRequestVersion = useRef(0);
+  const lastCatalogWarning = useRef('');
   const catalogActionPlanIds = [...new Set((editor?.objetivos || []).flatMap((objective) => objective.actividades || []).map((activity) => activity.linkedActionPlanId).filter(Boolean))].sort().join(',');
   const loadCatalogs = useCallback(async () => {
     const version = ++catalogRequestVersion.current;
     try {
       const data = await planMejoramientoService.catalogs({ actionPlanIds: catalogActionPlanIds });
       if (version !== catalogRequestVersion.current) return null;
-      setCatalogs(data || {});
+      setCatalogs((previous) => ({ ...previous, ...(data || {}), strategicByActionPlan: { ...previous.strategicByActionPlan, ...data?.strategicByActionPlan } }));
+      const warning = (data?.catalogWarnings || []).join(' ');
+      if (warning && warning !== lastCatalogWarning.current) enqueueSnackbar(warning, { variant: 'warning' });
+      lastCatalogWarning.current = warning;
       if (data?.tariffVersion?.vigencia) setTariffYear(Number(data.tariffVersion.vigencia));
       return data;
     } catch (error) {
@@ -1076,22 +1088,17 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       .filter((policy) => selected.has(policy.name))
       .flatMap((policy) => policy.actionLines || [])));
   };
-  const updateActivityPolicies = (objectiveIndex, activityIndex, selectedPolicies) => setEditor((previous) => ({
-    ...previous,
-    objetivos: previous.objetivos.map((objective, oi) => oi !== objectiveIndex ? objective : {
-      ...objective,
-      actividades: objective.actividades.map((activity, ai) => {
-        if (ai !== activityIndex) return activity;
-        const policies = asStringArray(selectedPolicies);
-        const availableLines = new Set(policyActionLines(policies));
-        return {
-          ...activity,
-          politicasInstitucionales: policies,
-          lineasAccionPolitica: asStringArray(activity.lineasAccionPolitica).filter((line) => availableLines.has(line))
-        };
-      })
-    })
-  }));
+  const updateActivityPolicies = (objectiveIndex, activityIndex, selectedPolicies) => {
+    const activity = editorRef.current?.objetivos?.[objectiveIndex]?.actividades?.[activityIndex];
+    if (!activity) return;
+    const policies = asStringArray(selectedPolicies);
+    const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+    const availableLines = new Set(policyActionLines(policies).map(normalize));
+    updateActivity(objectiveIndex, activityIndex, {
+      politicasInstitucionales: policies,
+      lineasAccionPolitica: policies.length ? asStringArray(activity.lineasAccionPolitica).filter((line) => availableLines.has(normalize(line))) : asStringArray(activity.lineasAccionPolitica)
+    });
+  };
   const updateActivityResponsible = (objectiveIndex, activityIndex, user) => setEditor((previous) => ({
     ...previous,
     objetivos: previous.objetivos.map((objective, oi) => oi !== objectiveIndex ? objective : {
@@ -1400,10 +1407,10 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       tipoIndicador: activity.tipoIndicador || 'Resultado',
       indicator_type: activity.tipoIndicador || 'Resultado',
       tipo_indicador: activity.tipoIndicador || 'Resultado',
-      fechaInicio: activity.fechaInicio || '',
-      starts_on: activity.fechaInicio || '',
-      fechaFin: activity.fechaFin || '',
-      ends_on: activity.fechaFin || '',
+      fechaInicio: '',
+      starts_on: '',
+      fechaFin: '',
+      ends_on: '',
       indicador: activity.indicador || '',
       indicator: activity.indicador || '',
       meta: String(activity.meta || '1'),
@@ -1413,7 +1420,16 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       entregable: activity.descripcion || '',
       deliverable: activity.descripcion || '',
       politicas: asStringArray(activity.politicasInstitucionales),
-      lineasAccion: asStringArray(activity.lineasAccionPolitica)
+      lineasAccion: asStringArray(activity.lineasAccionPolitica),
+      indicadorResultado: activity.indicadorResultado || activity.indicador || '',
+      metaResultado: String(activity.metaResultado || activity.meta || '1'),
+      indicadorResultadoActivo: activity.indicadorResultadoActivo ?? Boolean(activity.indicadorResultado || activity.indicador),
+      indicadorLogro: activity.indicadorLogro || '',
+      metaLogro: String(activity.metaLogro || ''),
+      indicadorLogroActivo: activity.indicadorLogroActivo ?? Boolean(activity.indicadorLogro),
+      indicadorImpacto: activity.indicadorImpacto || '',
+      metaImpacto: String(activity.metaImpacto || ''),
+      indicadorImpactoActivo: activity.indicadorImpactoActivo ?? Boolean(activity.indicadorImpacto)
     });
     setLinkModalOpen(true);
     setLoadingCandidates(true);
@@ -1456,6 +1472,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     if (currentModalDuplicate) {
       return enqueueSnackbar(`No es posible registrar actividades duplicadas. Ya existe la actividad "${currentModalDuplicate.activity}" (${currentModalDuplicate.code}) en este Plan de Acción.`, { variant: 'error', autoHideDuration: 6000 });
     }
+    const missing = missingLinkFields(dynamicFormFields, { ...linkFormData,
+      responsible: selectedActionPlan?.leader_name || '', responsable: selectedActionPlan?.leader_name || '', responsable_de_ejecucion: selectedActionPlan?.leader_name || '' });
+    if (missing.length) return enqueueSnackbar(`Complete los campos obligatorios: ${missing.map((field) => field.label || field.key).join(', ')}.`, { variant: 'warning' });
     setLinkingBusy(true);
     try {
       const res = await planMejoramientoService.linkToActionPlan(editor.id, linkingTarget.activity.uid, {
@@ -1479,8 +1498,6 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             indicador: linkFormData.indicador || linkFormData.indicator || act.indicador,
             tipoIndicador: linkFormData.tipoIndicador || linkFormData.indicator_type || act.tipoIndicador || 'Resultado',
             meta: linkFormData.meta || linkFormData.target || act.meta,
-            fechaInicio: linkFormData.fechaInicio || linkFormData.starts_on || act.fechaInicio,
-            fechaFin: linkFormData.fechaFin || linkFormData.ends_on || act.fechaFin,
             objetivoEstrategico: linkFormData.objetivoEstrategico || linkFormData.strategic_objective || act.objetivoEstrategico,
             proyectoPdi: linkFormData.lineamientoEstrategico || linkFormData.strategic_guideline || act.proyectoPdi,
             politicasInstitucionales: linkFormData.politicas?.length ? linkFormData.politicas : act.politicasInstitucionales,
@@ -1866,11 +1883,22 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   if (!editor) {
     return (
       <Box>
-        <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3.5 }, borderRadius: 4, color: 'white', background: 'linear-gradient(120deg, #0f1f3a 0%, #1d4ed8 55%, #d97706 130%)', mb: 3 }}>
-          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={2}>
-            <Box><Typography variant="h4" sx={{ fontWeight: 950 }}>{executionMode ? 'Ejecución de Autoevaluación' : 'Plan de mejoramiento'}</Typography><Typography sx={{ opacity: .92, mt: .5 }}>{executionMode ? 'Gestione las actividades, evidencias y seguimientos de los planes asignados.' : 'Formulación, presupuesto, seguimiento y exportación de la matriz institucional.'}</Typography></Box>
-            <Stack direction="row" spacing={1} flexWrap="wrap">
-              <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'white', fontWeight: 850, textTransform: 'none' }}>Volver</Button>
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5, color: '#64748b' }}>
+          <Button size="small" onClick={onBack} sx={{ textTransform: 'none', color: '#52637b', px: .5 }}>{executionMode ? 'Inicio' : 'Autoevaluación'}</Button>
+          <Typography aria-hidden="true" variant="body2">/</Typography>
+          <Typography variant="body2" sx={{ color: '#273b59', fontWeight: 700 }}>Planes de mejoramiento</Typography>
+        </Stack>
+        <Paper elevation={0} sx={{ borderRadius: 3, bgcolor: 'white', border: '1px solid #e0e7f0', overflow: 'hidden', mb: 3 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2} sx={{ px: { xs: 2, md: 3 }, py: 2.5 }}>
+            <Box sx={{ width: 48, height: 48, borderRadius: 2.5, bgcolor: '#edf3ff', color: '#2459c4', display: 'grid', placeItems: 'center', flexShrink: 0 }}><PlanIcon /></Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography component="h1" sx={{ fontSize: { xs: 23, md: 28 }, lineHeight: 1.25, letterSpacing: '-.5px', fontWeight: 850, color: '#142743' }}>{executionMode ? 'Mis planes de mejoramiento' : 'Planes de mejoramiento'}</Typography>
+              <Typography variant="body2" sx={{ color: '#64748b', mt: .75 }}>{executionMode ? 'Consulte sus planes y registre avances y evidencias.' : 'Gestione la formulación, los recursos y el seguimiento de cada programa.'}</Typography>
+            </Box>
+          </Stack>
+          {!executionMode && <Box sx={{ px: { xs: 2, md: 3 }, py: 1.75, borderTop: '1px solid #edf0f5', bgcolor: '#fafbfd' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} useFlexGap spacing={1.25} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ '& .MuiButton-root': { minHeight: 42, borderRadius: 2, textTransform: 'none', fontWeight: 750, whiteSpace: 'nowrap' } }}>
+              <Button variant="contained" disableElevation startIcon={<AddIcon />} onClick={startNewPlan} sx={{ mr: { sm: 'auto' }, bgcolor: '#2459d3' }}>Nuevo plan</Button>
               {!executionMode && (
                 <>
                   <input ref={importInputRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={(e) => handleImportExcel(e)} />
@@ -1879,7 +1907,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     disabled={downloadingTemplate}
                     startIcon={downloadingTemplate ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
                     onClick={() => handleDownloadBlankTemplate()}
-                    sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.6)', fontWeight: 850, textTransform: 'none', '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
+                    sx={{ bgcolor: 'white', borderColor: '#d4deec', color: '#334b6c' }}
                   >
                     Descargar plantilla
                   </Button>
@@ -1888,15 +1916,14 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     disabled={importingPlan}
                     startIcon={importingPlan ? <CircularProgress size={16} color="inherit" /> : <UploadFileIcon />}
                     onClick={() => importInputRef.current?.click()}
-                    sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.6)', fontWeight: 850, textTransform: 'none', '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
+                    sx={{ bgcolor: 'white', borderColor: '#d4deec', color: '#334b6c' }}
                   >
                     {importingPlan ? 'Compilando…' : 'Cargar Excel'}
                   </Button>
-                  <Button variant="contained" startIcon={<AddIcon />} onClick={startNewPlan} sx={{ bgcolor: 'white', color: '#1d4ed8', fontWeight: 900, textTransform: 'none', '&:hover': { bgcolor: '#eff6ff' } }}>Nuevo plan</Button>
                 </>
               )}
             </Stack>
-          </Stack>
+          </Box>}
         </Paper>
         {plansLoadError && <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" onClick={() => { plansRetryRef.current = 0; loadPlans(false); }}>Reintentar</Button>}>{plansLoadError}. Los planes guardados se conservan.</Alert>}
         {loading ? <Box sx={{ py: 10, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box> : plansLoadError && plans.length === 0 ? null : plans.length === 0 ? (
@@ -2007,11 +2034,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     >
     <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', overflow: 'visible', p: { xs: 1.5, md: 2.5 } }}>
       <Paper elevation={0} sx={{ p: { xs: 1.7, md: 2.2 }, borderRadius: 3.5, border: '1px solid #dbeafe', mb: 1.5, flexShrink: 0, bgcolor: 'rgba(255,255,255,.97)', backdropFilter: 'blur(12px)', boxShadow: '0 8px 26px rgba(15,23,42,.06)' }}>
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ pb: 1.25, mb: 1.75, borderBottom: '1px solid #edf0f5' }}>
+          <Button size="small" onClick={() => setEditor(null)} sx={{ textTransform: 'none', px: .5, fontWeight: 700 }}>Planes de mejoramiento</Button>
+          <Typography aria-hidden="true" color="text.secondary">/</Typography>
+          <Typography variant="body2" color="text.secondary">{executionMode ? 'Ejecución' : editor.id ? 'Edición del plan' : 'Nuevo plan'}</Typography>
+        </Stack>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={2}>
           <Stack direction="row" alignItems="center" spacing={1.2}>
-            <IconButton onClick={() => setEditor(null)}><ArrowBackIcon /></IconButton>
             <Box>
-              <Typography variant="h5" sx={{ fontWeight: 950, color: '#0f172a' }}>{executionMode ? 'Ejecución del plan de mejoramiento' : editor.id ? 'Editar plan de mejoramiento' : 'Nuevo plan de mejoramiento'}</Typography>
+              <Typography component="h1" sx={{ fontSize: { xs: 22, md: 26 }, letterSpacing: '-.4px', fontWeight: 850, color: '#142743' }}>{editor.programa || 'Nuevo plan de mejoramiento'}</Typography>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
                 <Typography variant="body2" color="text.secondary">Los cambios se guardan automáticamente mientras trabaja.</Typography>
                 <Chip
@@ -2023,7 +2054,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               </Stack>
             </Box>
           </Stack>
-          <Stack direction="row" spacing={1} flexWrap="wrap">
+          <Stack direction="row" useFlexGap spacing={1} flexWrap="wrap" sx={{ '& .MuiButton-root': { borderRadius: 2, whiteSpace: 'nowrap' } }}>
             {!collaboratorMode && (
               <>
                 <input ref={editorImportInputRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={(e) => handleImportExcel(e, editor.id)} />
@@ -2278,7 +2309,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   </Stack>
                   <Collapse in={expandedObjective === objectiveIndex} timeout="auto" unmountOnExit>
                   <Box sx={{ pt: 2 }}>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5, alignItems: 'start' }}>
                     <TextField label="Código" value={objective.codigo} onChange={(e) => updateObjective(objectiveIndex, 'codigo', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
                     <TextField select label="Factor / condición" value={objective.factor} onChange={(e) => changeObjectiveFactor(objectiveIndex, e.target.value)} sx={{ gridColumn: { md: 'span 5' } }}>
                       {withCurrent(Array.from(new Set(pendingOpportunities().map((item) => item.factor).filter(Boolean))), objective.factor).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
@@ -2368,11 +2399,12 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   )}
                   <TextField
                     fullWidth
+                    size="small"
                     label="Objetivo"
                     value={objective.objetivo}
                     onChange={(e) => updateObjective(objectiveIndex, 'objetivo', e.target.value)}
                     multiline
-                    minRows={2}
+                    minRows={1}
                     sx={{ mt: 1.5 }}
                   />
                   <Divider sx={{ my: 2.5 }} />
@@ -2380,13 +2412,11 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     {objective.actividades.map((activity, activityIndex) => (
                       <Paper key={activityIndex} elevation={0} sx={{ p: 2, borderRadius: 2.5, border: '1px dashed #94a3b8', bgcolor: 'white' }}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}><Typography sx={{ fontWeight: 900, color: '#1d4ed8' }}>Actividad {activityIndex + 1}</Typography>{objective.actividades.length > 1 && <IconButton size="small" color="error" onClick={() => removeActivity(objectiveIndex, activityIndex)}><DeleteIcon /></IconButton>}</Stack>
-                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5 }}>
-                          <TextField label="Nombre de la actividad" value={activity.nombre} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'nombre', e.target.value)} fullWidth multiline minRows={2} sx={{ gridColumn: '1 / -1' }} />
-                          <TextField label="Descripción de la actividad" value={activity.descripcion} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'descripcion', e.target.value)} fullWidth multiline minRows={3} sx={{ gridColumn: '1 / -1' }} />
+                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5, alignItems: 'start' }}>
+                          <TextField label="Nombre de la actividad" value={activity.nombre} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'nombre', e.target.value)} fullWidth size="small" multiline minRows={1} sx={{ gridColumn: '1 / -1' }} />
+                          <TextField label="Descripción de la actividad" value={activity.descripcion} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'descripcion', e.target.value)} fullWidth size="small" multiline minRows={1} sx={{ gridColumn: '1 / -1' }} />
                           <ActivityIndicatorFields activity={activity} onChange={(field, value) => updateActivity(objectiveIndex, activityIndex, field, value)} />
-                          <TextField label="Recursos" value={activity.recursos} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'recursos', e.target.value)} sx={{ gridColumn: { md: 'span 6' } }} />
-                          <TextField label="Fecha inicio" type="date" InputLabelProps={{ shrink: true }} value={activity.fechaInicio} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'fechaInicio', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }} />
-                          <TextField label="Fecha fin" type="date" InputLabelProps={{ shrink: true }} value={activity.fechaFin} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'fechaFin', e.target.value)} sx={{ gridColumn: { md: 'span 3' } }} />
+                          <TextField label="Recursos" size="small" multiline minRows={1} value={activity.recursos} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'recursos', e.target.value)} sx={{ gridColumn: '1 / -1' }} />
                           <TextField select label="Proceso responsable" value={activity.procesoResponsable} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'procesoResponsable', e.target.value)} sx={{ gridColumn: { md: 'span 4' } }}>{withCurrent(catalogs.processes?.length ? catalogs.processes : PROCESSES, activity.procesoResponsable).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
                           <Box sx={{ gridColumn: { md: 'span 5' }, minWidth: 0 }}>
                             <ResponsibleAutocomplete activity={activity} onChange={(user) => updateActivityResponsible(objectiveIndex, activityIndex, user)} />
@@ -2648,7 +2678,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     );
                   })()}
                   <LinearProgress variant="determinate" value={percent(activity)} sx={{ mb: 2, height: 8, borderRadius: 8, bgcolor: '#e2e8f0', '& .MuiLinearProgress-bar': { borderRadius: 8, bgcolor: percent(activity) >= 100 ? '#16a34a' : '#2563eb' } }} />
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5, alignItems: 'start' }}>
                     {activity.linkedActionItemId && (
                       <Box sx={{ gridColumn: { md: 'span 12' } }}>
                         <Tooltip title={activity.linkedActionPlanCode || activity.linkedActionPlanName || 'Plan de Acción'}>
@@ -2707,7 +2737,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                       InputLabelProps={{ shrink: true }}
                       sx={{ gridColumn: { md: 'span 5' } }}
                     />
-                    <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Observaciones y retroalimentación" value={activity.observaciones} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'observaciones', e.target.value)} multiline minRows={2} sx={{ gridColumn: { md: 'span 12' } }} />
+                    <TextField disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} label="Observaciones y retroalimentación" value={activity.observaciones} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'observaciones', e.target.value)} multiline minRows={1} sx={{ gridColumn: { md: 'span 12' } }} />
                   </Box>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mt: 1.5 }}>
                     <Button disabled={uploadingEvidence || executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))} component="label" variant="outlined" startIcon={<AttachIcon />} sx={{ textTransform: 'none', fontWeight: 850 }}>
@@ -2758,7 +2788,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   fullWidth
                   autoFocus
                   multiline
-                  minRows={2}
+                  minRows={1}
                   label="Redactar nuevo objetivo"
                   value={associationNewObjectiveText}
                   onChange={(event) => setAssociationNewObjectiveText(event.target.value)}

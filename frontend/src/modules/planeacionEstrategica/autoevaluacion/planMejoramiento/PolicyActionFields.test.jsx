@@ -25,7 +25,7 @@ test('selecting one policy immediately opens only its action lines beside it', a
   const refresh = jest.fn(async () => {});
   render(<Form refresh={refresh} />);
   expect(screen.getByRole('combobox', { name: 'Líneas de acción' })).toBeEnabled();
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Política institucional' }));
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Políticas institucionales' }));
   fireEvent.click(await screen.findByRole('option', { name: 'Política de Calidad' }));
   expect(screen.getByRole('combobox', { name: 'Líneas de acción' })).toBeEnabled();
   const list = await screen.findByRole('listbox');
@@ -44,9 +44,83 @@ test('a previously saved policy shows its own lines when reopened', async () => 
   expect(screen.queryByRole('option', { name: 'Mejora continua' })).not.toBeInTheDocument();
 });
 
+test('multiple policies show their combined lines and preserve both selections', async () => {
+  render(<Form initialPolicy={['Política de Calidad', 'Política de Bienestar']} />);
+  expect(screen.getByText('Política de Calidad')).toBeInTheDocument();
+  expect(screen.getByText('Política de Bienestar')).toBeInTheDocument();
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Líneas de acción' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Mejora continua' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Atención integral' }));
+  expect(screen.getByTestId('selection')).toHaveTextContent('Mejora continua,Atención integral');
+});
+
+test('a second policy can be added without replacing the first', async () => {
+  render(<Form initialPolicy={['Política de Calidad']} />);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Políticas institucionales' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Política de Bienestar' }));
+  expect(screen.getByText('Política de Calidad')).toBeInTheDocument();
+  expect(screen.getByText('Política de Bienestar')).toBeInTheDocument();
+  expect(await screen.findByRole('option', { name: 'Mejora continua' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Atención integral' })).toBeInTheDocument();
+});
+
+test('lines from different policies automatically select every owner and retain earlier lines', async () => {
+  render(<Form />);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Líneas de acción' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Mejora continua' }));
+  expect(screen.getByText('Política de Calidad')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('option', { name: 'Atención integral' }));
+  expect(screen.getByText('Política de Calidad')).toBeInTheDocument();
+  expect(screen.getByText('Política de Bienestar')).toBeInTheDocument();
+  expect(screen.getByTestId('selection')).toHaveTextContent('Mejora continua,Atención integral');
+  fireEvent.click(screen.getByRole('option', { name: 'Mejora continua' }));
+  expect(screen.queryByText('Política de Calidad')).not.toBeInTheDocument();
+  expect(screen.getByText('Política de Bienestar')).toBeInTheDocument();
+});
+
+test('one shared line automatically selects all its policies', async () => {
+  function SharedForm() {
+    const [names, setNames] = useState([]);
+    const [lines, setLines] = useState([]);
+    return <PolicyActionFields policies={[...policies, { name: 'Política adicional', actionLines: ['Atención integral'] }]} selectedPolicies={names} selectedLines={lines} onPolicyChange={setNames} onLinesChange={setLines} />;
+  }
+  render(<SharedForm />);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Líneas de acción' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Atención integral' }));
+  expect(screen.getByText('Política de Bienestar')).toBeInTheDocument();
+  expect(screen.getByText('Política adicional')).toBeInTheDocument();
+});
+
+test('selecting a line first restricts policies to its owners', async () => {
+  render(<Form />);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Líneas de acción' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Atención integral' }));
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Líneas de acción' }), { key: 'Escape' });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Políticas institucionales' }));
+  expect(await screen.findByRole('option', { name: 'Política de Bienestar' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: 'Política de Calidad' })).not.toBeInTheDocument();
+});
+
+test('shared action lines offer every matching policy from the central catalog', async () => {
+  render(<PolicyActionFields policies={[...policies, { name: 'Política adicional', actionLines: ['Atención integral'] }]} selectedLines={['Atención integral']} onPolicyChange={jest.fn()} onLinesChange={jest.fn()} />);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Políticas institucionales' }));
+  expect(await screen.findByRole('option', { name: 'Política de Bienestar' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Política adicional' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: 'Política de Calidad' })).not.toBeInTheDocument();
+});
+
+test('clearing line selection restores the complete policy catalog', async () => {
+  const props = { onPolicyChange: jest.fn(), onLinesChange: jest.fn(), policies };
+  const { rerender } = render(<PolicyActionFields {...props} selectedLines={['Atención integral']} />);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Políticas institucionales' }));
+  expect(await screen.findByRole('option', { name: 'Política de Bienestar' })).toBeInTheDocument();
+  rerender(<PolicyActionFields {...props} selectedLines={[]} />);
+  expect(await screen.findByRole('option', { name: 'Política de Calidad' })).toBeInTheDocument();
+});
+
 test('automatically opened lines close on outside click without losing selected lines', async () => {
   render(<><Form /><button>Fuera</button></>);
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Política institucional' }));
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Políticas institucionales' }));
   fireEvent.click(await screen.findByRole('option', { name: 'Política de Calidad' }));
   fireEvent.click(await screen.findByRole('option', { name: 'Mejora continua' }));
   expect(screen.getByRole('listbox')).toBeInTheDocument();
@@ -57,7 +131,7 @@ test('automatically opened lines close on outside click without losing selected 
 
 test('Escape closes automatically opened lines while policy input still has focus', async () => {
   render(<Form />);
-  const input = screen.getByRole('combobox', { name: 'Política institucional' });
+  const input = screen.getByRole('combobox', { name: 'Políticas institucionales' });
   fireEvent.mouseDown(input);
   fireEvent.click(await screen.findByRole('option', { name: 'Política de Calidad' }));
   expect(await screen.findByRole('listbox')).toBeInTheDocument();
@@ -76,7 +150,7 @@ test('shows every catalog line when no policy is selected and picks up new data'
 
 test('policies missing from the central catalog cannot be created from Improvement', async () => {
   render(<Form />);
-  const input = screen.getByRole('combobox', { name: 'Política institucional' });
+  const input = screen.getByRole('combobox', { name: 'Políticas institucionales' });
   await act(async () => {
     fireEvent.change(input, { target: { value: 'Nueva política' } });
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', keyCode: 13 });

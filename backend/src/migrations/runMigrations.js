@@ -615,10 +615,46 @@ const runMigrations = async () => {
     const { syncStrategicPlanningModels, ensureStrategicPlanningDefaults } = require('../services/strategicPlanningBootstrap');
     await syncStrategicPlanningModels();
     await ensureStrategicPlanningDefaults();
+    await sequelize.query(`
+      UPDATE pei_strategic_elements AS le
+      SET parent_id = oe.id
+      FROM pei_strategic_elements AS oe
+      WHERE oe.code = 'OE1'
+        AND le.code IN ('LE-001', 'LE-002', 'LE-003', 'LE-004')
+        AND le.parent_id IS NULL
+        AND le.strategic_plan_id = oe.strategic_plan_id
+        AND le.active = TRUE AND oe.active = TRUE
+        AND le.deleted_at IS NULL AND oe.deleted_at IS NULL
+        AND EXISTS (SELECT 1 FROM pei_strategic_plans ped WHERE ped.id = le.strategic_plan_id AND ped.code = 'PED-2022-2029' AND ped.deleted_at IS NULL)
+        AND oe.id = (SELECT latest.id FROM pei_strategic_elements latest WHERE latest.strategic_plan_id = oe.strategic_plan_id AND latest.code = oe.code AND latest.active = TRUE AND latest.deleted_at IS NULL ORDER BY latest.version DESC, latest.id LIMIT 1);
+      UPDATE pei_strategic_elements AS le
+      SET parent_id = oe.id
+      FROM pei_strategic_elements AS oe
+      WHERE oe.code = 'OE2'
+        AND le.code IN ('LE-005', 'LE-006', 'LE-007', 'LE-008', 'LE-009', 'LE-010')
+        AND le.parent_id IS NULL
+        AND le.strategic_plan_id = oe.strategic_plan_id
+        AND le.active = TRUE AND oe.active = TRUE
+        AND le.deleted_at IS NULL AND oe.deleted_at IS NULL
+        AND EXISTS (SELECT 1 FROM pei_strategic_plans ped WHERE ped.id = le.strategic_plan_id AND ped.code = 'PED-2022-2029' AND ped.deleted_at IS NULL)
+        AND oe.id = (SELECT latest.id FROM pei_strategic_elements latest WHERE latest.strategic_plan_id = oe.strategic_plan_id AND latest.code = oe.code AND latest.active = TRUE AND latest.deleted_at IS NULL ORDER BY latest.version DESC, latest.id LIMIT 1);
+      UPDATE pei_strategic_elements AS le
+      SET parent_id = oe.id
+      FROM pei_strategic_elements AS oe
+      WHERE oe.code = 'OE3'
+        AND le.code IN ('LE-011', 'LE-012', 'LE-013')
+        AND le.parent_id IS NULL
+        AND le.strategic_plan_id = oe.strategic_plan_id
+        AND le.active = TRUE AND oe.active = TRUE
+        AND le.deleted_at IS NULL AND oe.deleted_at IS NULL
+        AND EXISTS (SELECT 1 FROM pei_strategic_plans ped WHERE ped.id = le.strategic_plan_id AND ped.code = 'PED-2022-2029' AND ped.deleted_at IS NULL)
+        AND oe.id = (SELECT latest.id FROM pei_strategic_elements latest WHERE latest.strategic_plan_id = oe.strategic_plan_id AND latest.code = oe.code AND latest.active = TRUE AND latest.deleted_at IS NULL ORDER BY latest.version DESC, latest.id LIMIT 1);
+    `).catch((err) => console.warn('[migrate] Note on strategic elements parent_id sync:', err.message));
     await models.Autoevaluacion.sync();
     await models.AutoevaluacionParticipante.sync();
     await models.AutoevaluacionPrograma.sync();
     await models.PlanMejoramiento.sync();
+    await require('../services/improvementActivityStructure').migrateLegacyActivityDates();
     await models.InstitutionalPolicy.sync();
     await require('../services/institutionalPolicyCatalogService').seedInstitutionalPolicies();
     await models.PlanMejoramientoTarifaVersion.sync();

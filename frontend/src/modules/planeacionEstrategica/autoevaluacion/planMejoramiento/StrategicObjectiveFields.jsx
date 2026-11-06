@@ -12,6 +12,7 @@ export default function StrategicObjectiveFields({ relations = [], objective, gu
   const selectedLine = lines.find((item) => matches(item, guideline)) || null;
   return <>
     <Autocomplete
+      size="small"
       options={relations}
       onOpen={onRefresh}
       value={selected}
@@ -19,10 +20,11 @@ export default function StrategicObjectiveFields({ relations = [], objective, gu
       isOptionEqualToValue={(option, value) => option.id === value.id}
       onChange={(_event, value) => onObjectiveChange(value?.label || '', value?.guidelines?.length === 1 ? value.guidelines[0].label : '')}
       noOptionsText="No hay objetivos configurados en Plan de Acción"
-      renderInput={(params) => <TextField {...params} label="Objetivo estratégico" />}
+      renderInput={(params) => <TextField {...params} title={selected?.label || ''} label="Objetivo estratégico" />}
       sx={{ gridColumn: { md: 'span 6' }, minWidth: 0 }}
     />
     <Autocomplete
+      size="small"
       options={lines}
       onOpen={onRefresh}
       value={selectedLine}
@@ -31,7 +33,7 @@ export default function StrategicObjectiveFields({ relations = [], objective, gu
       disabled={!selected}
       onChange={(_event, value) => onGuidelineChange(value?.label || '')}
       noOptionsText="Este objetivo no tiene lineamientos configurados"
-      renderInput={(params) => <TextField {...params} label="Lineamiento estratégico" />}
+      renderInput={(params) => <TextField {...params} title={selectedLine?.label || ''} label="Lineamiento estratégico" />}
       sx={{ gridColumn: { md: 'span 6' }, minWidth: 0 }}
     />
   </>;

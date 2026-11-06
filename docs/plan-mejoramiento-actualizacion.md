@@ -66,3 +66,28 @@ también admite los Excel anteriores sin estas columnas adicionales. Una fecha
 ingresada como fecha de Excel o `DD/MM/AAAA` se convierte al formato ISO.
 Quitar un indicador guarda su estado inactivo y conserva su información para
 restaurarlo. Los indicadores inactivos no aparecen en el texto consolidado.
+
+## Cierre de sincronización con Plan de Acción
+
+La vinculación desde Mejoramiento y los envíos automáticos de seguimiento y
+evidencias comprueban el cronograma efectivo del destino en el servidor.
+Se reutiliza la resolución de plazos del Plan de Acción: prevalece el mayor
+plazo entre la fecha general y la última prórroga individual formal.
+Una vigencia o plan cerrado, inactivo o archivado bloquea los envíos aunque
+su fecha de cierre todavía sea futura. Tampoco se admiten envíos antes del
+inicio ni después del vencimiento. Esta validación no tiene excepción por rol.
+Mejoramiento conserva su propio guardado; no modifica el destino bloqueado.
+
+## Retiro de fechas generales de actividad
+
+Mejoramiento ya no recopila ni persiste `fechaInicio` y `fechaFin` en las
+actividades. Las solicitudes antiguas también se limpian antes de guardar.
+`npm run migrate` retira ambas claves de los JSONB existentes, en una transacción
+idempotente, conservando los demás datos. No elimina las fechas de entrega de
+los indicadores ni los plazos propios del Plan de Acción.
+
+La exportación deja vacías y ocultas las columnas históricas M/N de la matriz PM
+para conservar sus coordenadas y fórmulas. La importación ignora esas columnas.
+Las fechas de entrega se recopilan en la hoja INDICADORES. Al vincular se solicitan
+las fechas que el formulario del Plan de Acción tenga configuradas como obligatorias;
+esas fechas pertenecen al destino y no se copian a la actividad de Mejoramiento.

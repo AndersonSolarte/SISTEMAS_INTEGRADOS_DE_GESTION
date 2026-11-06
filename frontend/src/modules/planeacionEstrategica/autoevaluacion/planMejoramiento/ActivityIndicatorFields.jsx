@@ -46,8 +46,8 @@ export default function ActivityIndicatorFields({ activity, onChange }) {
         <Stack sx={{ gridColumn: { xs: '1 / -1', lg: 'auto' }, pt: { lg: 1 } }}>
           <Typography sx={{ fontSize: 13, fontWeight: 800, color, textTransform: 'capitalize' }}>{label}</Typography>
         </Stack>
-        <TextField label={`Indicador de ${label}`} fullWidth size="small" multiline minRows={2} InputLabelProps={{ shrink: true }} value={values[field]} onChange={(event) => onChange(field, event.target.value)} sx={{ ...inputStyle, gridColumn: { xs: '1 / -1', lg: 'auto' } }} />
-          <TextField label={`Meta de ${label}`} fullWidth size="small" multiline minRows={2} InputLabelProps={{ shrink: true }} value={values[target]} onChange={(event) => onChange(target, event.target.value)} sx={{ ...inputStyle, gridColumn: { xs: '1', sm: 'auto' } }} />
+        <TextField label={`Indicador de ${label}`} fullWidth size="small" multiline minRows={1} InputLabelProps={{ shrink: true }} value={values[field]} onChange={(event) => onChange(field, event.target.value)} sx={{ ...inputStyle, gridColumn: { xs: '1 / -1', lg: 'auto' } }} />
+          <TextField label={`Meta de ${label}`} fullWidth size="small" multiline minRows={1} InputLabelProps={{ shrink: true }} value={values[target]} onChange={(event) => onChange(target, event.target.value)} sx={{ ...inputStyle, gridColumn: { xs: '1', sm: 'auto' } }} />
           <TextField label={`Fecha de entrega de ${label}`} type="date" fullWidth size="small" InputLabelProps={{ shrink: true }} value={values[`fechaEntrega${label[0].toUpperCase()}${label.slice(1)}`]} onChange={(event) => onChange(`fechaEntrega${label[0].toUpperCase()}${label.slice(1)}`, event.target.value)} sx={inputStyle} />
           <Tooltip title={`Quitar indicador de ${label}`}><IconButton size="small" aria-label={`Quitar indicador de ${label}`} onClick={() => onChange(`${field}Activo`, false)} sx={{ color: '#64748b', gridColumn: { xs: 2, sm: 3, lg: 'auto' }, gridRow: { xs: 3, sm: 3, lg: 'auto' } }}><DeleteOutline fontSize="small" /></IconButton></Tooltip>
       </Box>
