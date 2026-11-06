@@ -41,6 +41,27 @@ test('getActiveIndicators parses multiple structured indicators', () => {
   assert.equal(list[1].indicator, '80% de aprobación');
 });
 
+test('getActiveIndicators ignores ghost indicators with empty text even if flag is true', () => {
+  const item = {
+    indicator: 'I1. Existencia de ejercicios...',
+    target: '100%',
+    custom_values: {
+      indicadorResultado: 'I1. Existencia de ejercicios...',
+      metaResultado: '100%',
+      indicadorResultadoActivo: true,
+      indicadorLogro: '',
+      metaLogro: '100%',
+      indicadorLogroActivo: true,
+      indicadorImpacto: '   ',
+      indicadorImpactoActivo: true
+    }
+  };
+  const list = getActiveIndicators(item);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].kind, 'resultado');
+  assert.equal(list[0].indicator, 'I1. Existencia de ejercicios...');
+});
+
 test('calculateOverallFulfillment averages progress across active indicators', () => {
   const item = {
     custom_values: {

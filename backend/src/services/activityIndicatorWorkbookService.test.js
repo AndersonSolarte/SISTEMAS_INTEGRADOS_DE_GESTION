@@ -3,13 +3,25 @@ const assert = require('node:assert/strict');
 const ExcelJS = require('exceljs');
 const { writeActivityIndicators, readActivityIndicators } = require('./activityIndicatorWorkbookService');
 
+test('each indicator start and end date survive export and import', async () => {
+  const activity = { indicadorLogro: 'Entregas', metaLogro: '12 productos', indicadorLogroActivo: true, fechaInicioLogro: '2026-11-01', fechaFinLogro: '2026-12-10' };
+  const book = new ExcelJS.Workbook();
+  writeActivityIndicators(book, [{ codigo: 'OPM_01', actividades: [activity] }]);
+  const reopened = new ExcelJS.Workbook();
+  await reopened.xlsx.load(await book.xlsx.writeBuffer());
+  const objectives = [{ codigo: 'OPM_01', actividades: [{}] }];
+  readActivityIndicators(reopened, objectives);
+  assert.equal(objectives[0].actividades[0].fechaInicioLogro, activity.fechaInicioLogro);
+  assert.equal(objectives[0].actividades[0].fechaFinLogro, activity.fechaFinLogro);
+});
+
 test('blank template includes all indicator storage columns without sample activity data', () => {
   const book = new ExcelJS.Workbook();
   writeActivityIndicators(book, []);
   const sheet = book.getWorksheet('INDICADORES');
-  assert.equal(sheet.columnCount, 15);
+  assert.equal(sheet.columnCount, 18);
   assert.equal(sheet.rowCount, 1);
-  assert.equal(sheet.getCell('J1').value, 'ENTREGA RESULTADO');
+  assert.equal(sheet.getCell('J1').value, 'FIN RESULTADO');
   assert.equal(sheet.getCell('O1').value, 'IMPACTO ACTIVO');
 });
 

@@ -15,9 +15,9 @@ const planMejoramientoDriveService = require('../services/planMejoramientoDriveS
 const { ensureActivityFoldersInDrive } = require('../services/strategicPlanningDriveService');
 const { syncSinglePlanOfficialWorkbook } = require('../services/actionPlanRepositoryDriveService');
 const policyCatalog = require('../services/institutionalPolicyCatalogService');
-const { readActionPlanStrategicCatalog } = require('../services/improvementStrategicCatalogService');
+const { readActionPlanStrategicCatalog, buildSnapshotStrategicCatalog } = require('../services/improvementStrategicCatalogService');
 const { writeActivityIndicators, readActivityIndicators } = require('../services/activityIndicatorWorkbookService');
-const { resolveActivityIndicators, formatActivityIndicators } = require('../services/activityIndicators');
+const { resolveActivityIndicators, formatActivityIndicators, planIndicatorErrors } = require('../services/activityIndicators');
 const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
 
 const PLAN_MANAGER_ROLES = new Set([
@@ -657,6 +657,8 @@ const normalizePayload = (body = {}) => {
   const currentYear = new Date().getFullYear();
   const contenido = stripContentActivityDates(body.contenido && typeof body.contenido === 'object' ? body.contenido : {});
   validateAspectAssignments(array(contenido.objetivos));
+  const indicatorIssues = planIndicatorErrors(array(contenido.objetivos));
+  if (indicatorIssues.length) throw Object.assign(new Error(indicatorIssues[0].message), { status: 422, details: indicatorIssues });
   const programa = text(body.programa || contenido.programa);
   const periodoInicio = Number(body.periodo_inicio || contenido.periodoInicio || currentYear);
   const periodoFin = Number(body.periodo_fin || contenido.periodoFin || periodoInicio + 2);
@@ -1418,6 +1420,9 @@ const linkActivityToActionPlan = async (req, res) => {
     }
     if (!targetActivity) return res.status(404).json({ success: false, message: 'Actividad no encontrada en el plan' });
 
+    const indicatorIssues = planIndicatorErrors([{ actividades: [targetActivity] }]);
+    if (indicatorIssues.length) return res.status(422).json({ success: false, message: indicatorIssues[0].message, errors: indicatorIssues });
+
     const actionPlanId = req.body.action_plan_id;
     if (!actionPlanId) return res.status(400).json({ success: false, message: 'Seleccione el Plan de Acción destino' });
 
@@ -2058,7 +2063,7 @@ const getCatalogs = async (req, res) => {
     const catalogData = await require('../services/improvementCatalogSources').readCatalogSources({ base: catalogsPromise, policies: readInstitutionalPolicies(), strategic: readActionPlanStrategicCatalog() });
     const actionPlanIds = [...new Set(String(req.query?.actionPlanIds || '').split(',').filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))].slice(0, 100);
     const actionPlans = actionPlanIds.length ? await StrategicActionPlan.findAll({
-      where: { id: { [Op.in]: actionPlanIds }, deleted_at: null }, attributes: ['id'],
+      where: { id: { [Op.in]: actionPlanIds }, deleted_at: null }, attributes: ['id', 'metadata'],
       include: [{ model: StrategicTerm, as: 'term', attributes: ['strategic_plan_id'], required: true }]
     }).catch(() => { catalogData.catalogWarnings.push('No se pudo consultar el PED de los planes vinculados.'); return []; }) : [];
     const byPed = new Map();
@@ -2069,7 +2074,10 @@ const getCatalogs = async (req, res) => {
         try { byPed.set(pedId, await readActionPlanStrategicCatalog(pedId)); }
         catch (_) { catalogData.catalogWarnings.push('No se pudo cargar el PED de un plan vinculado.'); byPed.set(pedId, null); }
       }
-      if (byPed.get(pedId)) strategicByActionPlan[actionPlan.id] = byPed.get(pedId);
+      const live = byPed.get(pedId);
+      const source = live?.strategicSource || { id: pedId };
+      const snapshot = buildSnapshotStrategicCatalog(source, actionPlan.metadata?.form_schema);
+      if (snapshot || live) strategicByActionPlan[actionPlan.id] = snapshot || live;
     }
     return res.json({ success: true, data: { ...catalogData, strategicByActionPlan } });
   } catch (error) {
@@ -2588,6 +2596,8 @@ const importPlanExcel = async (req, res) => {
 
     const compiledObjectives = Array.from(objectivesMap.values());
     readActivityIndicators(workbook, compiledObjectives);
+    const indicatorIssues = planIndicatorErrors(compiledObjectives);
+    if (indicatorIssues.length) return res.status(422).json({ success: false, message: indicatorIssues[0].message, errors: indicatorIssues });
     if (!compiledObjectives.length) {
       return res.status(422).json({ success: false, message: 'No se encontraron objetivos ni actividades registrados en la hoja PM' });
     }

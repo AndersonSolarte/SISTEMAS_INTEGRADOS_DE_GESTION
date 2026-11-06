@@ -1320,21 +1320,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }
     const directKeys = new Set(['indicator_type', 'starts_on', 'ends_on', 'indicator', 'target', 'co_responsibles']);
     if (isIndicatorBlockField(field)) {
-      const parts = [];
-      const cv = row.custom_values || {};
-      if (cv.indicadorResultado || (cv.indicadorResultadoActivo && row.indicator)) {
-        parts.push(`Resultado: ${cv.indicadorResultado || row.indicator}${cv.metaResultado || row.target ? ` (${cv.metaResultado || row.target})` : ''}`);
-      }
-      if (cv.indicadorLogro || (cv.indicadorLogroActivo && cv.metaLogro)) {
-        parts.push(`Logro: ${cv.indicadorLogro}${cv.metaLogro ? ` (${cv.metaLogro})` : ''}`);
-      }
-      if (cv.indicadorImpacto || (cv.indicadorImpactoActivo && cv.metaImpacto)) {
-        parts.push(`Impacto: ${cv.indicadorImpacto}${cv.metaImpacto ? ` (${cv.metaImpacto})` : ''}`);
-      }
-      if (!parts.length && (row.indicator || row.indicador)) {
-        parts.push(`${row.indicator || row.indicador}${row.target || row.meta ? ` (${row.target || row.meta})` : ''}`);
-      }
-      return parts.length ? parts.join(' · ') : '—';
+      const activeInds = getActiveIndicators(row);
+      if (!activeInds.length) return '—';
+      return activeInds.map(i => `${i.shortLabel}: ${i.indicator}${i.target ? ` (${i.target})` : ''}`).join(' · ');
     }
 
     let value = field.key === 'activity' ? row.activity : directKeys.has(field.key) ? row[field.key] : row.custom_values?.[field.key];
@@ -2451,6 +2439,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       if (primaryInd) payloadCustomValues.indicator = primaryInd;
       if (primaryTgt) payloadCustomValues.target = primaryTgt;
       if (primaryType) payloadCustomValues.indicator_type = primaryType;
+
+      // Asegurar que las banderas de activo solo sean true si realmente tienen texto de indicador
+      ['Resultado', 'Logro', 'Impacto'].forEach((kind) => {
+        const indKey = `indicador${kind}`;
+        const activeKey = `indicador${kind}Activo`;
+        const indText = String(payloadCustomValues[indKey] || '').trim();
+        if (!indText || indText.toLowerCase() === 'sin indicador') {
+          payloadCustomValues[activeKey] = false;
+        } else if (payloadCustomValues[activeKey] !== false) {
+          payloadCustomValues[activeKey] = true;
+        }
+      });
 
       const payload = {
         code: editingItemId ? detail.items.find((row) => String(row.id) === String(editingItemId))?.code : `ACT-${String((detail.items?.length || 0) + 1).padStart(3, '0')}`,

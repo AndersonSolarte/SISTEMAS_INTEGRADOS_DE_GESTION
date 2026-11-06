@@ -2,51 +2,57 @@ const getActiveIndicators = (item = {}) => {
   const custom = item.custom_values || {};
   const active = [];
 
-  const kinds = [
-    { kind: 'resultado', shortLabel: 'Resultado', label: 'Indicador de resultado', indKey: 'indicadorResultado', metaKey: 'metaResultado', activeKey: 'indicadorResultadoActivo', color: '#2563eb', badgeBg: '#eff6ff', borderColor: '#bfdbfe' },
-    { kind: 'logro', shortLabel: 'Logro', label: 'Indicador de logro', indKey: 'indicadorLogro', metaKey: 'metaLogro', activeKey: 'indicadorLogroActivo', color: '#0d9488', badgeBg: '#f0fdfa', borderColor: '#99f6e4' },
-    { kind: 'impacto', shortLabel: 'Impacto', label: 'Indicador de impacto', indKey: 'indicadorImpacto', metaKey: 'metaImpacto', activeKey: 'indicadorImpactoActivo', color: '#7c3aed', badgeBg: '#f5f3ff', borderColor: '#ddd6fe' }
-  ];
+  const hasStructuredConfig =
+    custom.indicadorResultadoActivo !== undefined ||
+    custom.indicadorLogroActivo !== undefined ||
+    custom.indicadorImpactoActivo !== undefined ||
+    Boolean(custom.indicadorResultado) ||
+    Boolean(custom.indicadorLogro) ||
+    Boolean(custom.indicadorImpacto);
 
-  for (const k of kinds) {
-    const isExplicit = custom[k.activeKey];
-    const indVal = custom[k.indKey] || (k.kind === 'resultado' && !isExplicit ? (item.indicator || custom.indicator) : '');
-    const metaVal = custom[k.metaKey] || (k.kind === 'resultado' && !isExplicit ? (item.target || custom.target) : '');
-    const hasContent = Boolean(String(indVal || metaVal || '').trim());
+  if (hasStructuredConfig) {
+    const kinds = [
+      { kind: 'resultado', shortLabel: 'Resultado', label: 'Indicador de resultado', indKey: 'indicadorResultado', metaKey: 'metaResultado', activeKey: 'indicadorResultadoActivo', color: '#2563eb', badgeBg: '#eff6ff', borderColor: '#bfdbfe' },
+      { kind: 'logro', shortLabel: 'Logro', label: 'Indicador de logro', indKey: 'indicadorLogro', metaKey: 'metaLogro', activeKey: 'indicadorLogroActivo', color: '#0d9488', badgeBg: '#f0fdfa', borderColor: '#99f6e4' },
+      { kind: 'impacto', shortLabel: 'Impacto', label: 'Indicador de impacto', indKey: 'indicadorImpacto', metaKey: 'metaImpacto', activeKey: 'indicadorImpactoActivo', color: '#7c3aed', badgeBg: '#f5f3ff', borderColor: '#ddd6fe' }
+    ];
 
-    if (isExplicit === true || (isExplicit === undefined && hasContent && k.kind === 'resultado' && (custom.indicadorResultadoActivo || custom.indicadorLogroActivo || custom.indicadorImpactoActivo))) {
-      active.push({
-        kind: k.kind,
-        shortLabel: k.shortLabel,
-        label: k.label,
-        indicator: String(indVal || '').trim() || 'Sin indicador',
-        target: String(metaVal || '').trim() || '100%',
-        color: k.color,
-        badgeBg: k.badgeBg,
-        borderColor: k.borderColor
-      });
-    } else if (isExplicit) {
-      active.push({
-        kind: k.kind,
-        shortLabel: k.shortLabel,
-        label: k.label,
-        indicator: String(indVal || '').trim() || 'Sin indicador',
-        target: String(metaVal || '').trim() || '100%',
-        color: k.color,
-        badgeBg: k.badgeBg,
-        borderColor: k.borderColor
-      });
+    for (const k of kinds) {
+      const isExplicit = custom[k.activeKey];
+      const rawInd = custom[k.indKey] || (k.kind === 'resultado' ? (item.indicator || custom.indicator) : '');
+      const rawMeta = custom[k.metaKey] || (k.kind === 'resultado' ? (item.target || custom.target) : '');
+
+      const cleanInd = String(rawInd || '').trim();
+      const cleanMeta = String(rawMeta || '').trim();
+      const hasRealContent = cleanInd.length > 0 && cleanInd.toLowerCase() !== 'sin indicador';
+
+      // Regla: un carril de seguimiento solo existe si realmente tiene texto redactado en el indicador
+      // y no está explícitamente desactivado.
+      if (isExplicit !== false && hasRealContent) {
+        active.push({
+          kind: k.kind,
+          shortLabel: k.shortLabel,
+          label: k.label,
+          indicator: cleanInd,
+          target: cleanMeta || '100%',
+          color: k.color,
+          badgeBg: k.badgeBg,
+          borderColor: k.borderColor
+        });
+      }
     }
   }
 
-  // Si no tiene bloques dinámicos activos, usar el indicador principal estándar
+  // Si no tiene bloques estructurados con contenido, usar el indicador principal estándar de la actividad
   if (active.length === 0) {
+    const mainInd = String(item.indicator || custom.indicator || '').trim();
+    const mainTarget = String(item.target || custom.target || '').trim();
     active.push({
       kind: 'principal',
       shortLabel: item.indicator_type || custom.indicator_type || 'Indicador',
       label: item.indicator_type || custom.indicator_type || 'Indicador',
-      indicator: String(item.indicator || custom.indicator || '').trim() || 'Sin indicador',
-      target: String(item.target || custom.target || '').trim() || '100%',
+      indicator: mainInd || 'Sin indicador',
+      target: mainTarget || '100%',
       color: '#059669',
       badgeBg: '#ecfdf5',
       borderColor: '#a7f3d0'

@@ -3,6 +3,51 @@ const assert = require('node:assert/strict');
 const { buildStrategicCatalog } = require('./improvementStrategicCatalogService');
 const levels = [{ id: 'objectives', position: 1 }, { id: 'guidelines', position: 2 }];
 
+test('a guideline referencing an older objective version follows that same objective code', () => {
+  const result = buildStrategicCatalog({ code: 'PED' }, levels, [
+    { id: 'old', code: 'OE1', level_id: 'objectives', active: false },
+    { id: 'new', code: 'OE1', name: 'Updated', level_id: 'objectives', version: 2 },
+    { id: 'other', code: 'OE2', name: 'Other', level_id: 'objectives' },
+    { id: 'line', code: 'LE-001', name: 'Own guideline', level_id: 'guidelines', parent_id: 'old' }
+  ]);
+  assert.equal(result.strategicRelations[0].guidelines.length, 1);
+  assert.equal(result.strategicRelations[1].guidelines.length, 0);
+});
+
+test('linked action plans use their own captured hierarchy and never mix guideline ownership', () => {
+  const { buildSnapshotStrategicCatalog } = require('./improvementStrategicCatalogService');
+  const result = buildSnapshotStrategicCatalog({ id: 'ped', code: 'PED' }, { levels, elements: [
+    { id: 'o1', code: 'OE1', name: 'First', level_id: 'objectives' },
+    { id: 'o2', code: 'OE2', name: 'Second', level_id: 'objectives' },
+    { id: 'g1', code: 'LE-001', name: 'First guideline', level_id: 'guidelines', parent_id: 'o1' },
+    { id: 'g2', code: 'LE-002', name: 'Second guideline', level_id: 'guidelines', parent_id: 'o2' }
+  ] });
+  assert.deepEqual(result.strategicRelations.map((row) => row.guidelines.map((line) => line.code)), [['LE-001'], ['LE-002']]);
+  assert.equal(buildSnapshotStrategicCatalog({ id: 'ped' }, {}), null);
+});
+
+test('reads objectives and guidelines by level name when an axis level comes first', () => {
+  const result = buildStrategicCatalog({ code: 'PED' }, [
+    { id: 'axis', name: 'Eje estratégico', position: 1 },
+    { id: 'o', name: 'Objetivo estratégico', position: 2 },
+    { id: 'g', name: 'Lineamiento estratégico', position: 3 }
+  ], [{ id: 'objective', level_id: 'o', code: 'OE1', name: 'Objective' }, { id: 'guideline', level_id: 'g', code: 'LE-001', name: 'Guideline', parent_id: 'objective' }]);
+  assert.equal(result.strategicRelations[0].code, 'OE1');
+  assert.equal(result.strategicRelations[0].guidelines[0].code, 'LE-001');
+});
+
+test('field-configured Action Plan dropdowns are available even without imported elements', () => {
+  const { buildFieldStrategicCatalog } = require('./improvementStrategicCatalogService');
+  const result = buildFieldStrategicCatalog({ id: 'p', code: 'PED-2022-2029' }, [
+    { key: 'strategic_objective', options: ['OE1 Objetivo del campo', 'OE2 Segundo objetivo'] },
+    { key: 'strategic_guideline', options: ['LE-001 Lineamiento del campo', 'LE-005 Otro lineamiento'] }
+  ]);
+  assert.equal(result.strategicRelations.length, 2);
+  assert.equal(result.strategicRelations[0].label, 'OE1 Objetivo del campo');
+  assert.equal(result.strategicRelations[0].guidelines[0].label, 'LE-001 Lineamiento del campo');
+  assert.equal(result.strategicRelations[1].guidelines[0].code, 'LE-005');
+});
+
 test('resolves configured PED from an active term when the PED itself lacks active status', async () => {
   const { StrategicPlan, StrategicTerm, StrategicLevel, StrategicElement } = require('../models');
   const { readActionPlanStrategicCatalog } = require('./improvementStrategicCatalogService');

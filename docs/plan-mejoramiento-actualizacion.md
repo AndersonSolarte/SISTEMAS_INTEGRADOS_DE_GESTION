@@ -91,3 +91,36 @@ para conservar sus coordenadas y fórmulas. La importación ignora esas columnas
 Las fechas de entrega se recopilan en la hoja INDICADORES. Al vincular se solicitan
 las fechas que el formulario del Plan de Acción tenga configuradas como obligatorias;
 esas fechas pertenecen al destino y no se copian a la actividad de Mejoramiento.
+
+## Inicio y fin obligatorios por indicador
+
+Cada indicador activo requiere texto, meta alfanumérica, `fechaInicioResultado`
+y `fechaFinResultado` (o sus equivalentes Logro/Impacto). La fecha fin no puede
+ser anterior al inicio. El cliente bloquea guardados automáticos incompletos
+y muestra errores en los campos; el servidor responde 422 si se intenta guardar,
+importar o vincular un indicador activo incompleto. Los indicadores inactivos
+conservan su información y no están sujetos a estos requisitos.
+
+La anterior fecha de entrega se interpreta como fecha fin sin inventar una
+fecha de inicio. Los registros anteriores deberán completar el inicio para
+volver a guardarse. La hoja INDICADORES incorpora las tres fechas de inicio;
+las antiguas columnas de entrega pasan a ser FIN. Se conservan los índices
+de los estados activos y se admiten archivos anteriores con ENTREGA.
+Los campos siguen almacenándose en el JSONB de cada actividad, sin columnas SQL
+adicionales y sin recuperar las fechas generales retiradas de la actividad.
+
+## Fuente de objetivos y lineamientos en Mejoramiento
+
+Para actividades vinculadas se respeta la jerarquía capturada en
+`Plan de Acción.metadata.form_schema`, cuando contiene una estructura utilizable;
+en su defecto se consulta su PED. Para actividades sin vínculo se utiliza el PED
+institucional configurado. Se admiten los elementos importados y las opciones
+definidas directamente en los campos del Plan de Acción.
+
+La pertenencia de lineamientos se obtiene de `parent_id`. Cuando el objetivo fue
+versionado, una referencia a su versión anterior se resuelve por el mismo código
+dentro del mismo PED. Solo el PED histórico 2022–2029 admite la agrupación heredada
+de la plantilla cuando no tiene padre configurado: OE1 (LE-001 a LE-004), OE2
+(LE-005 a LE-010) y OE3 (LE-011 a LE-013). En otros PED no se inventan relaciones.
+La migración publicada completa exclusivamente esos padres históricos faltantes;
+no sobrescribe vínculos existentes ni cruza elementos entre PED.

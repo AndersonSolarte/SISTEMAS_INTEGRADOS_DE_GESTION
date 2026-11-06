@@ -1,3 +1,4 @@
+import { planIndicatorErrors } from './activityIndicatorRules';
 import { missingLinkFields } from './linkFields';
 import InstitutionalPolicyActivityField from '../../../../components/InstitutionalPolicyActivityField';
 import ActionPlanIndicatorFields from '../../../../components/ActionPlanIndicatorFields';
@@ -939,6 +940,12 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
   const persistPlan = useCallback(async (plan, { notify = false, refresh = false } = {}) => {
     if (!plan?.programa?.trim()) return null;
+    const indicatorIssues = planIndicatorErrors(plan.objetivos || []);
+    if (indicatorIssues.length) {
+      setSaveStatus('error');
+      if (notify) enqueueSnackbar(indicatorIssues[0].message, { variant: 'warning' });
+      return null;
+    }
     if (saveInFlightRef.current) {
       queuedSaveRef.current = true;
       setSaveStatus('pending');
@@ -2594,7 +2601,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                           return <Box key={kind} sx={{ mt: 1 }}>
                             {values[`indicador${kind}`] && <Typography variant="body2">{kind}: {values[`indicador${kind}`]}</Typography>}
                             {values[`meta${kind}`] && <Typography variant="body2">Meta: {values[`meta${kind}`]}</Typography>}
-                            {values[`fechaEntrega${kind}`] && <Typography variant="body2">Entrega: {values[`fechaEntrega${kind}`]}</Typography>}
+                            {values[`fechaInicio${kind}`] && <Typography variant="body2">Inicio: {values[`fechaInicio${kind}`]}</Typography>}
+                            {values[`fechaFin${kind}`] && <Typography variant="body2">Fin: {values[`fechaFin${kind}`]}</Typography>}
                           </Box>;
                         })}
                         <Typography variant="body2">Periodo: {activity.fechaInicio || '?'} a {activity.fechaFin || '?'}</Typography>

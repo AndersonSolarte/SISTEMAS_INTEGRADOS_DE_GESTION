@@ -63,15 +63,15 @@ test('each indicator can be removed and restored independently without losing it
   fireEvent.click(screen.getByRole('menuitem', { name: 'resultado' }));
   expect(screen.getByRole('textbox', { name: 'Indicador de resultado' })).toHaveValue('Reportes');
   expect(screen.getByRole('textbox', { name: 'Meta de resultado' })).toHaveValue('12 reportes');
-  expect(screen.getByLabelText('Fecha de entrega de resultado')).toHaveValue('2026-12-10');
+  expect(screen.getByLabelText('Fecha fin de resultado')).toHaveValue('2026-12-10');
 });
 
 test('delivery dates can be scheduled separately per indicator', () => {
   render(<Form />);
-  const field = screen.getByLabelText('Fecha de entrega de impacto');
+  const field = screen.getByLabelText('Fecha fin de impacto');
   fireEvent.change(field, { target: { value: '2026-11-30' } });
   expect(field).toHaveValue('2026-11-30');
-  expect(screen.getByLabelText('Fecha de entrega de logro')).toHaveValue('');
+  expect(screen.getByLabelText('Fecha fin de logro')).toHaveValue('');
 });
 
 test('new activities start empty and can add only the indicator they need', () => {

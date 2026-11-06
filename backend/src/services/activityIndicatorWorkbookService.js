@@ -25,12 +25,15 @@ const writeActivityIndicators = (workbook, objectives) => {
     { header: 'META DE RESULTADO', key: 'metaResultado', width: 35 },
     { header: 'META DE LOGRO', key: 'metaLogro', width: 35 },
     { header: 'META DE IMPACTO', key: 'metaImpacto', width: 35 },
-    { header: 'ENTREGA RESULTADO', key: 'fechaEntregaResultado', width: 22 },
-    { header: 'ENTREGA LOGRO', key: 'fechaEntregaLogro', width: 22 },
-    { header: 'ENTREGA IMPACTO', key: 'fechaEntregaImpacto', width: 22 },
+    { header: 'FIN RESULTADO', key: 'fechaFinResultado', width: 22 },
+    { header: 'FIN LOGRO', key: 'fechaFinLogro', width: 22 },
+    { header: 'FIN IMPACTO', key: 'fechaFinImpacto', width: 22 },
     { header: 'RESULTADO ACTIVO', key: 'indicadorResultadoActivo', width: 22 },
     { header: 'LOGRO ACTIVO', key: 'indicadorLogroActivo', width: 22 },
-    { header: 'IMPACTO ACTIVO', key: 'indicadorImpactoActivo', width: 22 }
+    { header: 'IMPACTO ACTIVO', key: 'indicadorImpactoActivo', width: 22 },
+    { header: 'INICIO RESULTADO', key: 'fechaInicioResultado', width: 22 },
+    { header: 'INICIO LOGRO', key: 'fechaInicioLogro', width: 22 },
+    { header: 'INICIO IMPACTO', key: 'fechaInicioImpacto', width: 22 }
   ];
   sheet.getRow(1).font = { bold: true };
   for (const objective of objectives || []) {
@@ -65,8 +68,12 @@ const readActivityIndicators = (workbook, objectives) => {
         }
       }
       ['Resultado', 'Logro', 'Impacto'].forEach((kind, index) => {
-        if (String(sheet.getRow(1).getCell(10 + index).value || '').startsWith('ENTREGA')) {
-          activity[`fechaEntrega${kind}`] = readDeliveryDate(row.getCell(10 + index).value);
+        if (/^(ENTREGA|FIN)/.test(String(sheet.getRow(1).getCell(10 + index).value || ''))) {
+          activity[`fechaFin${kind}`] = readDeliveryDate(row.getCell(10 + index).value);
+          activity[`fechaEntrega${kind}`] = activity[`fechaFin${kind}`];
+        }
+        if (String(sheet.getRow(1).getCell(16 + index).value || '').startsWith('INICIO')) {
+          activity[`fechaInicio${kind}`] = readDeliveryDate(row.getCell(16 + index).value);
         }
         if (String(sheet.getRow(1).getCell(13 + index).value || '').includes('ACTIVO')) {
           const value = row.getCell(13 + index).value;

@@ -4,20 +4,12 @@ import DeleteOutline from '@mui/icons-material/DeleteOutline';
 import Add from '@mui/icons-material/Add';
 import AssessmentOutlined from '@mui/icons-material/AssessmentOutlined';
 
-export const resolveActivityIndicators = (activity = {}) => {
-  const legacyField = activity.tipoIndicador === 'Logro' ? 'indicadorLogro' : activity.tipoIndicador === 'Impacto' ? 'indicadorImpacto' : 'indicadorResultado';
-  const indicators = Object.fromEntries(['indicadorResultado', 'indicadorLogro', 'indicadorImpacto'].map((field) => [field,
-    activity[field] ?? (field === legacyField ? activity.indicador || '' : '')]));
-  const legacyTarget = legacyField.replace('indicador', 'meta');
-  const scheduling = Object.fromEntries(['Resultado', 'Logro', 'Impacto'].flatMap((kind) => [
-    [`fechaEntrega${kind}`, String(activity[`fechaEntrega${kind}`] || '')],
-    [`indicador${kind}Activo`, activity[`indicador${kind}Activo`] ?? Boolean(String(indicators[`indicador${kind}`] || activity[`meta${kind}`] || activity[`fechaEntrega${kind}`] || '').trim())]
-  ]));
-  return { ...indicators, ...scheduling, ...Object.fromEntries(['metaResultado', 'metaLogro', 'metaImpacto'].map((field) => [field, String(activity[field] ?? (field === legacyTarget ? activity.meta ?? '' : ''))])) };
-};
+import { resolveActivityIndicators, indicatorErrors } from './activityIndicatorRules';
+export { resolveActivityIndicators } from './activityIndicatorRules';
 
 export default function ActivityIndicatorFields({ activity, onChange }) {
   const values = resolveActivityIndicators(activity);
+  const errors = indicatorErrors(activity);
   const [anchor, setAnchor] = useState(null);
   const kinds = ['resultado', 'logro', 'impacto'];
   const inputStyle = {
@@ -42,13 +34,16 @@ export default function ActivityIndicatorFields({ activity, onChange }) {
       ['logro', 'indicadorLogro', 'metaLogro', '#147a73', '#edf8f5'],
       ['impacto', 'indicadorImpacto', 'metaImpacto', '#7650a6', '#f5f0fb']
     ].map(([label, field, target, color]) => values[`${field}Activo`] ?
-      <Box key={field} sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr) 36px', sm: 'repeat(2, minmax(0, 1fr)) 36px', lg: '85px minmax(0, 1fr) minmax(150px, 20%) 175px 36px' }, gap: 1.25, alignItems: 'start', p: 1.5, bgcolor: '#fff', borderTop: '1px solid #e9eef5' }}>
+      <Box key={field} sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr) 36px', sm: 'repeat(2, minmax(0, 1fr)) 36px', lg: '85px minmax(0, 1fr) minmax(130px, 17%) 170px 170px 36px' }, gap: 1.25, alignItems: 'start', p: 1.5, bgcolor: '#fff', borderTop: '1px solid #e9eef5' }}>
         <Stack sx={{ gridColumn: { xs: '1 / -1', lg: 'auto' }, pt: { lg: 1 } }}>
           <Typography sx={{ fontSize: 13, fontWeight: 800, color, textTransform: 'capitalize' }}>{label}</Typography>
         </Stack>
-        <TextField label={`Indicador de ${label}`} fullWidth size="small" multiline minRows={1} InputLabelProps={{ shrink: true }} value={values[field]} onChange={(event) => onChange(field, event.target.value)} sx={{ ...inputStyle, gridColumn: { xs: '1 / -1', lg: 'auto' } }} />
-          <TextField label={`Meta de ${label}`} fullWidth size="small" multiline minRows={1} InputLabelProps={{ shrink: true }} value={values[target]} onChange={(event) => onChange(target, event.target.value)} sx={{ ...inputStyle, gridColumn: { xs: '1', sm: 'auto' } }} />
-          <TextField label={`Fecha de entrega de ${label}`} type="date" fullWidth size="small" InputLabelProps={{ shrink: true }} value={values[`fechaEntrega${label[0].toUpperCase()}${label.slice(1)}`]} onChange={(event) => onChange(`fechaEntrega${label[0].toUpperCase()}${label.slice(1)}`, event.target.value)} sx={inputStyle} />
+        <TextField label={`Indicador de ${label}`} inputProps={{ 'aria-label': `Indicador de ${label}` }} required error={Boolean(errors[field])} title={errors[field] || undefined} fullWidth size="small" multiline minRows={1} InputLabelProps={{ shrink: true }} value={values[field]} onChange={(event) => onChange(field, event.target.value)} sx={{ ...inputStyle, gridColumn: { xs: '1 / -1', lg: 'auto' } }} />
+          <TextField label={`Meta de ${label}`} inputProps={{ 'aria-label': `Meta de ${label}` }} required error={Boolean(errors[target])} title={errors[target] || undefined} fullWidth size="small" multiline minRows={1} InputLabelProps={{ shrink: true }} value={values[target]} onChange={(event) => onChange(target, event.target.value)} sx={{ ...inputStyle, gridColumn: { xs: '1', sm: 'auto' } }} />
+          {['Inicio', 'Fin'].map((phase) => {
+            const dateField = `fecha${phase}${label[0].toUpperCase()}${label.slice(1)}`;
+            return <TextField key={dateField} label={`Fecha ${phase.toLowerCase()} de ${label}`} inputProps={{ 'aria-label': `Fecha ${phase.toLowerCase()} de ${label}` }} required error={Boolean(errors[dateField])} title={errors[dateField] || undefined} type="date" fullWidth size="small" InputLabelProps={{ shrink: true }} value={values[dateField]} onChange={(event) => onChange(dateField, event.target.value)} sx={inputStyle} />;
+          })}
           <Tooltip title={`Quitar indicador de ${label}`}><IconButton size="small" aria-label={`Quitar indicador de ${label}`} onClick={() => onChange(`${field}Activo`, false)} sx={{ color: '#64748b', gridColumn: { xs: 2, sm: 3, lg: 'auto' }, gridRow: { xs: 3, sm: 3, lg: 'auto' } }}><DeleteOutline fontSize="small" /></IconButton></Tooltip>
       </Box>
       : null
