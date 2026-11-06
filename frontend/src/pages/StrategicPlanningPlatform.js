@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import {
   AccessTimeOutlined, Add, Analytics, ArrowBack, AutoAwesome, ArrowDownward, ArrowUpward, AssessmentOutlined, AssignmentOutlined, CalendarTodayOutlined, Close, MoreTime, CheckCircleOutline, CloudSync, CorporateFare,
-  DeleteOutline, Description, Download, DragIndicator, EditOutlined, FolderOutlined, GridView, LockOutlined, OpenInNew, Payments, PlaylistAddCheckOutlined, Search,
+  DeleteOutline, Description, VisibilityOff, WarningAmber, Download, DragIndicator, EditOutlined, FolderOutlined, GridView, LockOutlined, OpenInNew, Payments, PlaylistAddCheckOutlined, Search,
   SettingsOutlined, SwapHoriz, TableRows, Timeline, UploadFile, ViewWeekOutlined
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
@@ -153,6 +153,15 @@ export default function StrategicPlanningPlatform({ onBack }) {
   const [elementForm, setElementForm] = useState({ id: null, level_id: '', parent_id: '', code: '', name: '', description: '' });
   const [termForm, setTermForm] = useState({ id: null, year: '', starts_on: '', ends_on: '', status: 'planned', formulation_starts_on: '', formulation_ends_on: '', propagate_to_plans: false });
   const [generalTimelineModal, setGeneralTimelineModal] = useState({ open: false, term: null, starts_on: '', ends_on: '', saving: false });
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: '',
+    description: '',
+    confirmText: 'Aceptar',
+    confirmColor: 'error',
+    icon: null,
+    onConfirm: null
+  });
   const [fieldForm, setFieldForm] = useState({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '', catalog_type: '', list_source: 'manual', selected_level_id: '', selected_element_ids: [] });
   const [fieldOptions, setFieldOptions] = useState([]);
   const [fieldOptionDraft, setFieldOptionDraft] = useState('');
@@ -742,10 +751,24 @@ export default function StrategicPlanningPlatform({ onBack }) {
     });
   };
 
-  const deactivateField = async (field) => {
-    if (!window.confirm(`¿Desactivar el campo "${field.label}"? Dejará de mostrarse en los formularios de este PED, pero sus datos históricos se conservarán.`)) return;
-    try { await strategicPlanningService.deleteField(plan.id, field.id); await load(); enqueueSnackbar('Campo desactivado. La información histórica permanece conservada.', { variant: 'success' }); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible desactivar el campo.', { variant: 'error' }); }
+  const deactivateField = (field) => {
+    setConfirmDialog({
+      open: true,
+      title: `¿Desactivar el campo "${field.label}"?`,
+      description: 'Dejará de mostrarse en los formularios de registro y en las plantillas Excel de este PED. Todos los datos históricos y trazabilidad previa se conservarán íntegramente.',
+      confirmText: 'Desactivar campo',
+      confirmColor: 'warning',
+      icon: <VisibilityOff sx={{ fontSize: 26, color: '#d97706' }} />,
+      onConfirm: async () => {
+        try {
+          await strategicPlanningService.deleteField(plan.id, field.id);
+          await load();
+          enqueueSnackbar('Campo desactivado. La información histórica permanece conservada.', { variant: 'success' });
+        } catch (error) {
+          enqueueSnackbar(error.response?.data?.message || 'No fue posible desactivar el campo.', { variant: 'error' });
+        }
+      }
+    });
   };
 
   const reactivateField = async (field) => {
@@ -1110,10 +1133,24 @@ export default function StrategicPlanningPlatform({ onBack }) {
     try { await strategicPlanningService.updateCatalog(plan.id, item.id, { active: !item.active, justification: item.active ? 'Desactivación desde configuración PEI' : 'Reactivación desde configuración PEI' }); await load(); enqueueSnackbar(item.active ? 'Referencia desactivada sin borrar el histórico.' : 'Referencia reactivada.', { variant: 'success' }); }
     catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible actualizar la referencia.', { variant: 'error' }); }
   };
-  const deleteReference = async (item) => {
-    if (!window.confirm(`¿Eliminar la referencia "${item.name}"? Podrá reactivarla posteriormente.`)) return;
-    try { await strategicPlanningService.deleteCatalog(plan.id, item.id); await load(); enqueueSnackbar('Referencia eliminada de forma lógica.', { variant: 'success' }); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar la referencia.', { variant: 'error' }); }
+  const deleteReference = (item) => {
+    setConfirmDialog({
+      open: true,
+      title: `¿Eliminar la referencia "${item.name}"?`,
+      description: 'Esta referencia quedará inactiva y no se listará en nuevas selecciones, pero podrá ser reactivada posteriormente.',
+      confirmText: 'Eliminar referencia',
+      confirmColor: 'error',
+      icon: <DeleteOutline sx={{ fontSize: 26, color: '#dc2626' }} />,
+      onConfirm: async () => {
+        try {
+          await strategicPlanningService.deleteCatalog(plan.id, item.id);
+          await load();
+          enqueueSnackbar('Referencia eliminada de forma lógica.', { variant: 'success' });
+        } catch (error) {
+          enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar la referencia.', { variant: 'error' });
+        }
+      }
+    });
   };
 
   if (loading) return <Stack alignItems="center" py={10} gap={2}><CircularProgress /><Typography>Cargando plataforma institucional…</Typography></Stack>;
@@ -4056,6 +4093,84 @@ export default function StrategicPlanningPlatform({ onBack }) {
             }}
           >
             {generalTimelineModal.saving ? 'Guardando y aplicando…' : 'Guardar y Aplicar a Todos los Planes'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* MODAL PROFESIONAL DE CONFIRMACIÓN */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3.5,
+            p: 1,
+            boxShadow: '0 25px 60px rgba(15, 23, 42, 0.22)',
+            overflow: 'hidden'
+          }
+        }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pb: 1, pt: 2, px: 2.5 }}>
+          <Box
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: 2.5,
+              bgcolor: confirmDialog.confirmColor === 'warning' ? '#fffbeb' : '#fef2f2',
+              border: '1px solid',
+              borderColor: confirmDialog.confirmColor === 'warning' ? '#fde68a' : '#fecaca',
+              display: 'grid',
+              placeItems: 'center',
+              flexShrink: 0
+            }}
+          >
+            {confirmDialog.icon || <WarningAmber sx={{ color: confirmDialog.confirmColor === 'warning' ? '#d97706' : '#dc2626', fontSize: 24 }} />}
+          </Box>
+          <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#0f172a', lineHeight: 1.3 }}>
+            {confirmDialog.title}
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 2.5, py: 1.5 }}>
+          <Typography sx={{ fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
+            {confirmDialog.description}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 2.5, py: 2, borderTop: '1px solid #f1f5f9', gap: 1 }}>
+          <Button
+            variant="outlined"
+            onClick={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 750,
+              fontSize: 12.5,
+              borderRadius: 2,
+              color: '#64748b',
+              borderColor: '#cbd5e1',
+              '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8' }
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color={confirmDialog.confirmColor || 'primary'}
+            onClick={async () => {
+              const fn = confirmDialog.onConfirm;
+              setConfirmDialog((prev) => ({ ...prev, open: false }));
+              if (fn) await fn();
+            }}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 850,
+              fontSize: 12.5,
+              borderRadius: 2,
+              px: 2.5,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
+            }}
+          >
+            {confirmDialog.confirmText || 'Aceptar'}
           </Button>
         </DialogActions>
       </Dialog>
