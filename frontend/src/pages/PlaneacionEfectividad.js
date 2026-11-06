@@ -38,8 +38,7 @@ import {
   ListAlt as ListAltIcon,
   ShowChart as ShowChartIcon,
   Timeline as TimelineIcon,
-  TrendingUp as TrendingUpIcon,
-  FiberManualRecord as FiberManualRecordIcon
+  TrendingUp as TrendingUpIcon
 } from '@mui/icons-material';
 import {
   Bar,
@@ -58,7 +57,7 @@ import gestionInformacionService from '../services/gestionInformacionService';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import StrategicPlanningPlatform from './StrategicPlanningPlatform';
-import PedLiveStatisticsDashboard from '../components/planeacionEstrategica/PedLiveStatisticsDashboard';
+import PedLiveStatisticsDashboard, { prefetchPedLiveStatistics } from '../components/planeacionEstrategica/PedLiveStatisticsDashboard';
 
 const PED_YEAR_WEIGHT = 14.28;
 
@@ -1811,7 +1810,8 @@ function PlaneacionEfectividad() {
   }, [canEstadistica, canAccion, section]);
 
   const [tab, setTab] = useState('estadistica');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [hasLoadedLegacy, setHasLoadedLegacy] = useState(false);
   const [dashboard, setDashboard] = useState({ rows: [], filters: { anios: [], peds: [], responsables: [], tiposIndicador: [], estados: [] }, meta: {} });
   const [filtersByTab, setFiltersByTab] = useState({
     estadistica: { ...createDefaultFilters(), mode: 'estadistica' },
@@ -1820,29 +1820,17 @@ function PlaneacionEfectividad() {
   });
 
   useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const response = await gestionInformacionService.getPlanAccionDashboard();
-        if (!active) return;
-        setDashboard(response.data || { rows: [], filters: {}, meta: {} });
-      } catch (error) {
-        if (!active) return;
-        enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar Planeación y Efectividad', { variant: 'error' });
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    load();
-    return () => { active = false; };
-  }, [enqueueSnackbar]);
+    if (canEstadisticaPed) {
+      prefetchPedLiveStatistics();
+    }
+  }, [canEstadisticaPed]);
 
   const cargarDashboardPlanAccion = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
     try {
       const response = await gestionInformacionService.getPlanAccionDashboard();
       setDashboard(response.data || { rows: [], filters: {}, meta: {} });
+      setHasLoadedLegacy(true);
     } catch (error) {
       if (!silent) { enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar Planeación y Efectividad', { variant: 'error' }); }
     } finally {
@@ -1851,6 +1839,7 @@ function PlaneacionEfectividad() {
   }, [enqueueSnackbar]);
 
   useEffect(() => {
+    if (section !== 'estadistica') return undefined;
     const refreshOnVisible = () => {
       if (document.visibilityState === 'visible') {
         cargarDashboardPlanAccion({ silent: true });
@@ -1862,17 +1851,18 @@ function PlaneacionEfectividad() {
       document.removeEventListener('visibilitychange', refreshOnVisible);
       window.removeEventListener('focus', refreshOnVisible);
     };
-  }, [cargarDashboardPlanAccion]);
+  }, [section, cargarDashboardPlanAccion]);
 
   useEffect(() => {
     if (section === 'estadistica') {
-      cargarDashboardPlanAccion({ silent: true });
+      cargarDashboardPlanAccion({ silent: hasLoadedLegacy });
     }
-  }, [section, cargarDashboardPlanAccion]);
+  }, [section, hasLoadedLegacy, cargarDashboardPlanAccion]);
 
   const activeFilters = filtersByTab[tab] || filtersByTab.estadistica;
 
   const filteredRows = useMemo(() => {
+    if (section !== 'estadistica') return [];
     const rows = Array.isArray(dashboard.rows) ? dashboard.rows : [];
 
     return rows.filter((row) => {
@@ -1880,10 +1870,13 @@ function PlaneacionEfectividad() {
       if (activeFilters.responsable && row.responsable !== activeFilters.responsable) return false;
       return true;
     });
-  }, [dashboard.rows, activeFilters]);
+  }, [section, dashboard.rows, activeFilters]);
 
   const deferredRows = useDeferredValue(filteredRows);
-  const metrics = useMemo(() => buildMetrics(deferredRows), [deferredRows]);
+  const metrics = useMemo(
+    () => (section === 'estadistica' ? buildMetrics(deferredRows) : { totalObjetivos: 0, totalLineamientos: 0, totalActividades: 0, totalIndicadores: 0, pendientes: 0, enProceso: 0, cumplidos: 0, ejecucionGeneral: 0 }),
+    [section, deferredRows]
+  );
 
   const handleFilterChange = (key, value) => {
     setFiltersByTab((prev) => ({
@@ -1951,11 +1944,11 @@ function PlaneacionEfectividad() {
                         elevation={0}
                         onClick={() => setSection('estadistica')}
                         sx={{
-                          p: 4.5,
+                          p: 4,
                           borderRadius: 5,
-                          border: '1px solid #e2e8f0',
-                          background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-                          boxShadow: '0 10px 25px rgba(15,23,42,0.03)',
+                          border: '1.5px solid #dbeafe',
+                          background: 'linear-gradient(145deg, #ffffff 0%, #f8fbff 100%)',
+                          boxShadow: '0 10px 25px rgba(30,58,138,0.05)',
                           cursor: 'pointer',
                           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                           display: 'flex',
@@ -1966,16 +1959,10 @@ function PlaneacionEfectividad() {
                           overflow: 'hidden',
                           '&:hover': {
                             transform: 'translateY(-6px)',
-                            boxShadow: '0 25px 50px rgba(37,99,235,0.12)',
+                            boxShadow: '0 25px 50px rgba(37,99,235,0.14)',
                             borderColor: '#3b82f6',
                             '& .icon-container': {
-                              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                              color: '#ffffff',
-                              transform: 'scale(1.1) rotate(5deg)'
-                            },
-                            '& .action-btn': {
-                              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                              boxShadow: '0 8px 22px rgba(37,99,235,0.25)'
+                              transform: 'scale(1.08) rotate(3deg)'
                             }
                           }
                         }}
@@ -1983,26 +1970,36 @@ function PlaneacionEfectividad() {
                         <Box
                           className="icon-container"
                           sx={{
-                            width: 84,
-                            height: 84,
+                            width: 80,
+                            height: 80,
                             borderRadius: 4.5,
-                            background: '#eff6ff',
-                            color: '#2563eb',
+                            background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)',
+                            color: '#ffffff',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            mb: 3.5,
+                            mb: 2.5,
                             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                            boxShadow: '0 8px 16px rgba(37,99,235,0.05)'
+                            boxShadow: '0 12px 24px rgba(37,99,235,0.22)'
                           }}
                         >
-                          <DashboardIcon sx={{ fontSize: 44 }} />
+                          <DashboardIcon sx={{ fontSize: 40 }} />
                         </Box>
-                        <Typography variant="h6" sx={{ fontWeight: 900, color: '#1e3a8a', mb: 1.8, fontSize: 20 }}>
+                        <Chip
+                          label="CONSOLIDADO GENERAL"
+                          size="small"
+                          sx={{
+                            mb: 1.2,
+                            fontWeight: 900,
+                            fontSize: 10.5,
+                            letterSpacing: 0.4,
+                            bgcolor: '#dbeafe',
+                            color: '#1e40af',
+                            border: '1px solid #bfdbfe'
+                          }}
+                        />
+                        <Typography variant="h6" sx={{ fontWeight: 900, color: '#1e3a8a', mb: 3, fontSize: 20 }}>
                           Estadística Planes de Acción
-                        </Typography>
-                        <Typography sx={{ color: '#64748b', fontSize: 14.5, mb: 4, flexGrow: 1, lineHeight: 1.6, px: 2 }}>
-                          Resumen ejecutivo de la estructura, avance físico y financiero, y la ejecución general del Plan Estratégico de Desarrollo (PED).
                         </Typography>
                         <Button
                           variant="contained"
@@ -2013,9 +2010,11 @@ function PlaneacionEfectividad() {
                             px: 3.5,
                             py: 1.2,
                             fontWeight: 800,
-                            background: '#2563eb',
-                            boxShadow: '0 4px 12px rgba(37,99,235,0.15)',
-                            transition: 'all 0.2s ease'
+                            background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)',
+                            boxShadow: '0 6px 16px rgba(37,99,235,0.22)',
+                            '&:hover': {
+                              background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%)'
+                            }
                           }}
                         >
                           Ingresar a Estadísticas
@@ -2028,51 +2027,60 @@ function PlaneacionEfectividad() {
                         elevation={0}
                         onClick={() => setSection('accion')}
                         sx={{
-                          p: 4.5,
+                          p: 4,
                           borderRadius: 5,
-                          border: '1px solid #c4b5fd',
-                          background: 'linear-gradient(145deg, #ffffff 0%, #f5f3ff 100%)',
-                          boxShadow: '0 10px 25px rgba(91,33,182,0.06)',
+                          border: '1.5px solid #e0e7ff',
+                          background: 'linear-gradient(145deg, #ffffff 0%, #f5f7ff 100%)',
+                          boxShadow: '0 10px 25px rgba(67,56,202,0.05)',
                           cursor: 'pointer',
-                          transition: 'all .3s ease',
+                          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
                           textAlign: 'center',
                           '&:hover': {
                             transform: 'translateY(-6px)',
-                            borderColor: '#7c3aed',
-                            boxShadow: '0 25px 50px rgba(124,58,237,0.16)'
+                            borderColor: '#6366f1',
+                            boxShadow: '0 25px 50px rgba(79,70,229,0.15)',
+                            '& .accion-icon': {
+                              transform: 'scale(1.08) rotate(-3deg)'
+                            }
                           }
                         }}
                       >
                         <Box
+                          className="accion-icon"
                           sx={{
-                            width: 84,
-                            height: 84,
+                            width: 80,
+                            height: 80,
                             borderRadius: 4.5,
-                            background: 'linear-gradient(135deg,#7c3aed,#4f46e5)',
+                            background: 'linear-gradient(135deg, #4338ca 0%, #6366f1 100%)',
                             color: 'white',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            mb: 3.5,
-                            boxShadow: '0 12px 24px rgba(124,58,237,0.2)'
+                            mb: 2.5,
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            boxShadow: '0 12px 24px rgba(79,70,229,0.22)'
                           }}
                         >
-                          <AutoAwesomeIcon sx={{ fontSize: 44 }} />
+                          <AutoAwesomeIcon sx={{ fontSize: 40 }} />
                         </Box>
                         <Chip
                           label="PLATAFORMA PED"
-                          color="secondary"
                           size="small"
-                          sx={{ mb: 1.2, fontWeight: 900 }}
+                          sx={{
+                            mb: 1.2,
+                            fontWeight: 900,
+                            fontSize: 10.5,
+                            letterSpacing: 0.4,
+                            bgcolor: '#e0e7ff',
+                            color: '#3730a3',
+                            border: '1px solid #c7d2fe'
+                          }}
                         />
-                        <Typography variant="h6" sx={{ fontWeight: 900, color: '#4c1d95', mb: 1.8, fontSize: 20 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 900, color: '#312e81', mb: 3, fontSize: 20 }}>
                           Gestión de Planes de Acción
-                        </Typography>
-                        <Typography sx={{ color: '#64748b', fontSize: 14.5, mb: 4, flexGrow: 1, lineHeight: 1.6, px: 2 }}>
-                          Gestión integral del PED: concertación con dependencias, formulación, actas, firma electrónica, evidencias y seguimiento.
                         </Typography>
                         <Button
                           variant="contained"
@@ -2082,7 +2090,11 @@ function PlaneacionEfectividad() {
                             px: 3.5,
                             py: 1.2,
                             fontWeight: 800,
-                            background: 'linear-gradient(135deg,#7c3aed,#4f46e5)'
+                            background: 'linear-gradient(135deg, #4338ca 0%, #4f46e5 100%)',
+                            boxShadow: '0 6px 16px rgba(79,70,229,0.22)',
+                            '&:hover': {
+                              background: 'linear-gradient(135deg, #3730a3 0%, #4338ca 100%)'
+                            }
                           }}
                         >
                           Ingresar a Planes de Acción
@@ -2095,13 +2107,13 @@ function PlaneacionEfectividad() {
                         elevation={0}
                         onClick={() => setSection('estadistica_ped')}
                         sx={{
-                          p: 4.5,
+                          p: 4,
                           borderRadius: 5,
-                          border: '1.5px solid #0284c7',
-                          background: 'linear-gradient(145deg, #ffffff 0%, #f0fdf4 100%)',
-                          boxShadow: '0 10px 25px rgba(2,132,199,0.06)',
+                          border: '1.5px solid #bae6fd',
+                          background: 'linear-gradient(145deg, #ffffff 0%, #f0f9ff 100%)',
+                          boxShadow: '0 10px 25px rgba(15,23,42,0.05)',
                           cursor: 'pointer',
-                          transition: 'all .3s ease',
+                          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
@@ -2111,9 +2123,9 @@ function PlaneacionEfectividad() {
                           '&:hover': {
                             transform: 'translateY(-6px)',
                             borderColor: '#0284c7',
-                            boxShadow: '0 25px 50px rgba(2,132,199,0.18)',
+                            boxShadow: '0 25px 50px rgba(2,132,199,0.16)',
                             '& .live-icon': {
-                              transform: 'scale(1.1) rotate(-5deg)'
+                              transform: 'scale(1.08) rotate(-3deg)'
                             }
                           }
                         }}
@@ -2121,33 +2133,37 @@ function PlaneacionEfectividad() {
                         <Box
                           className="live-icon"
                           sx={{
-                            width: 84,
-                            height: 84,
+                            width: 80,
+                            height: 80,
                             borderRadius: 4.5,
-                            background: 'linear-gradient(135deg, #0284c7 0%, #059669 100%)',
+                            background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #0284c7 100%)',
                             color: 'white',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            mb: 3.5,
+                            mb: 2.5,
                             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                            boxShadow: '0 12px 24px rgba(2,132,199,0.22)'
+                            boxShadow: '0 12px 24px rgba(15,23,42,0.22)'
                           }}
                         >
-                          <TrendingUpIcon sx={{ fontSize: 44 }} />
+                          <TrendingUpIcon sx={{ fontSize: 40 }} />
                         </Box>
                         <Chip
-                          icon={<FiberManualRecordIcon sx={{ fontSize: '10px !important', color: '#86efac !important' }} />}
-                          label="EN TIEMPO REAL"
-                          color="success"
+                          icon={<InsightsIcon sx={{ fontSize: '14px !important', color: '#0369a1 !important' }} />}
+                          label="MONITOREO ESTADÍSTICO"
                           size="small"
-                          sx={{ mb: 1.2, fontWeight: 900, fontSize: 11 }}
+                          sx={{
+                            mb: 1.2,
+                            fontWeight: 900,
+                            fontSize: 10.5,
+                            letterSpacing: 0.4,
+                            bgcolor: '#e0f2fe',
+                            color: '#0369a1',
+                            border: '1px solid #bae6fd'
+                          }}
                         />
-                        <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f766e', mb: 1.8, fontSize: 20 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f172a', mb: 3, fontSize: 20 }}>
                           Tablero de Control Estratégico
-                        </Typography>
-                        <Typography sx={{ color: '#64748b', fontSize: 14.5, mb: 4, flexGrow: 1, lineHeight: 1.6, px: 2 }}>
-                          Monitoreo institucional en tiempo real: seguimiento sistemático a objetivos, lineamientos y cumplimiento de metas del Plan Estratégico de Desarrollo (PED).
                         </Typography>
                         <Button
                           variant="contained"
@@ -2157,8 +2173,11 @@ function PlaneacionEfectividad() {
                             px: 3.5,
                             py: 1.2,
                             fontWeight: 800,
-                            background: 'linear-gradient(135deg, #0284c7 0%, #059669 100%)',
-                            boxShadow: '0 4px 14px rgba(2,132,199,0.2)'
+                            background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #0284c7 100%)',
+                            boxShadow: '0 6px 16px rgba(15,23,42,0.2)',
+                            '&:hover': {
+                              background: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)'
+                            }
                           }}
                         >
                           Ingresar al Tablero de Control

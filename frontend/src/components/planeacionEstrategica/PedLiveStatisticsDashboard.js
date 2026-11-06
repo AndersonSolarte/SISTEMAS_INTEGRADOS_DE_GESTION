@@ -34,7 +34,6 @@ import {
   CorporateFare as CorporateFareIcon,
   Dashboard as DashboardIcon,
   Download as DownloadIcon,
-  FiberManualRecord as FiberManualRecordIcon,
   FilterAltOff as FilterAltOffIcon,
   Flag as FlagIcon,
   HourglassBottom as HourglassBottomIcon,
@@ -43,6 +42,7 @@ import {
   Refresh as RefreshIcon,
   Search as SearchIcon,
   ShowChart as ShowChartIcon,
+  Storage as StorageIcon,
   TrendingUp as TrendingUpIcon
 } from '@mui/icons-material';
 import {
@@ -59,6 +59,7 @@ import {
 import XLSXStyle from 'xlsx-js-style';
 import { useSnackbar } from 'notistack';
 import strategicPlanningService from '../../services/strategicPlanningService';
+import PedDataReferenceTables from './PedDataReferenceTables';
 
 const PED_YEAR_WEIGHT = 14.28;
 
@@ -121,6 +122,7 @@ const buildMetrics = (rows = []) => {
   const objetivos = new Set();
   const lineamientos = new Set();
   const actividadesPorAnio = new Map();
+  const linYearAgg = new Map();
   let pendientes = 0;
   let enProceso = 0;
   let cumplidos = 0;
@@ -129,31 +131,37 @@ const buildMetrics = (rows = []) => {
     if (row.objetivo_estrategico) objetivos.add(row.objetivo_estrategico);
     if (row.lineamiento_estrategico) lineamientos.add(row.lineamiento_estrategico);
     if (row.anio && row.actividad) {
-      const bucket = actividadesPorAnio.get(row.anio) || new Set();
+      let bucket = actividadesPorAnio.get(row.anio);
+      if (!bucket) {
+        bucket = new Set();
+        actividadesPorAnio.set(row.anio, bucket);
+      }
       bucket.add(row.actividad);
-      actividadesPorAnio.set(row.anio, bucket);
+    }
+
+    const p = percent(row.avance_total);
+    if (row.lineamiento_estrategico && row.anio) {
+      const key = `${row.lineamiento_estrategico}||${row.anio}`;
+      const agg = linYearAgg.get(key) || { sum: 0, count: 0 };
+      agg.sum += (p || 0) / 100;
+      agg.count += 1;
+      linYearAgg.set(key, agg);
     }
 
     const estado = resolveEstado(row.avance_total);
     if (estado === 'Sin iniciar') pendientes += 1;
-    if (estado === 'En ejecución') enProceso += 1;
-    if (estado === 'Completado') cumplidos += 1;
+    else if (estado === 'En ejecución') enProceso += 1;
+    else if (estado === 'Completado') cumplidos += 1;
   });
-
-  const years = Array.from(new Set(rows.map((row) => row.anio).filter(Boolean)));
-  const lineamientosList = Array.from(lineamientos);
 
   let totalGeneral = 0;
-  lineamientosList.forEach((lineamiento) => {
-    years.forEach((anio) => {
-      const subset = rows.filter((row) => row.lineamiento_estrategico === lineamiento && row.anio === anio);
-      if (!subset.length) return;
-      const avgFraction = subset.reduce((acc, row) => acc + ((percent(row.avance_total) || 0) / 100), 0) / subset.length;
-      totalGeneral += avgFraction * PED_YEAR_WEIGHT;
-    });
+  linYearAgg.forEach((agg) => {
+    if (agg.count > 0) {
+      totalGeneral += (agg.sum / agg.count) * PED_YEAR_WEIGHT;
+    }
   });
 
-  const ejecucionGeneral = lineamientosList.length ? Number((totalGeneral / lineamientosList.length).toFixed(2)) : 0;
+  const ejecucionGeneral = lineamientos.size ? Number((totalGeneral / lineamientos.size).toFixed(2)) : 0;
 
   return {
     totalObjetivos: objetivos.size,
@@ -169,23 +177,45 @@ const buildMetrics = (rows = []) => {
 
 const buildLineamientosStats = (rows = []) => {
   const weightPerYear = PED_YEAR_WEIGHT;
-  const years = Array.from(new Set(rows.map((row) => Number(row.anio)).filter((value) => Number.isFinite(value)))).sort((a, b) => a - b);
-  const lineamientos = Array.from(new Set(rows.map((row) => row.lineamiento_estrategico).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'es'));
+  const yearsSet = new Set();
+  const lineamientosSet = new Set();
+  const linYearAgg = new Map();
+  const actividadesPorAnio = new Map();
 
-  const avgByLineamientoYear = new Map();
-  lineamientos.forEach((lineamiento) => {
-    years.forEach((anio) => {
-      const subset = rows.filter((row) => row.lineamiento_estrategico === lineamiento && Number(row.anio) === anio);
-      if (!subset.length) return;
-      const avgPercent = subset.reduce((acc, row) => acc + (percent(row.avance_total) || 0), 0) / subset.length;
-      avgByLineamientoYear.set(`${lineamiento}||${anio}`, Number(avgPercent.toFixed(2)));
-    });
+  rows.forEach((row) => {
+    const anio = Number(row.anio);
+    if (!Number.isFinite(anio)) return;
+    yearsSet.add(anio);
+    if (row.actividad) {
+      let actSet = actividadesPorAnio.get(anio);
+      if (!actSet) {
+        actSet = new Set();
+        actividadesPorAnio.set(anio, actSet);
+      }
+      actSet.add(row.actividad);
+    }
+    const lineamiento = row.lineamiento_estrategico;
+    if (lineamiento) {
+      lineamientosSet.add(lineamiento);
+      const key = `${lineamiento}||${anio}`;
+      const agg = linYearAgg.get(key) || { sum: 0, count: 0 };
+      agg.sum += percent(row.avance_total) || 0;
+      agg.count += 1;
+      linYearAgg.set(key, agg);
+    }
   });
 
-  const totalActividades = years.reduce((acc, anio) => {
-    const set = new Set(rows.filter((row) => Number(row.anio) === anio).map((row) => row.actividad).filter(Boolean));
-    return acc + set.size;
-  }, 0);
+  const years = Array.from(yearsSet).sort((a, b) => a - b);
+  const lineamientos = Array.from(lineamientosSet).sort((a, b) => String(a).localeCompare(String(b), 'es'));
+
+  const avgByLineamientoYear = new Map();
+  linYearAgg.forEach((agg, key) => {
+    if (agg.count > 0) {
+      avgByLineamientoYear.set(key, Number((agg.sum / agg.count).toFixed(2)));
+    }
+  });
+
+  const totalActividades = Array.from(actividadesPorAnio.values()).reduce((acc, set) => acc + set.size, 0);
 
   const comboValues = Array.from(avgByLineamientoYear.values());
   const promLineamientos = comboValues.length
@@ -193,12 +223,8 @@ const buildLineamientosStats = (rows = []) => {
     : 0;
 
   let totalGeneral = 0;
-  lineamientos.forEach((lineamiento) => {
-    years.forEach((anio) => {
-      const value = avgByLineamientoYear.get(`${lineamiento}||${anio}`);
-      if (value === undefined) return;
-      totalGeneral += (value / 100) * weightPerYear;
-    });
+  avgByLineamientoYear.forEach((value) => {
+    totalGeneral += (value / 100) * weightPerYear;
   });
 
   const ejecucionGeneral = lineamientos.length ? Number((totalGeneral / lineamientos.length).toFixed(2)) : 0;
@@ -403,46 +429,85 @@ const buildActividadesStats = (rows = []) => {
 
 const buildObjetivosStats = (rows = []) => {
   const weightPerYear = PED_YEAR_WEIGHT;
-  const years = Array.from(new Set(rows.map((row) => Number(row.anio)).filter((value) => Number.isFinite(value)))).sort((a, b) => a - b);
-  const objetivos = Array.from(new Set(rows.map((row) => row.objetivo_estrategico).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'es'));
-  const lineamientos = Array.from(new Set(rows.map((row) => row.lineamiento_estrategico).filter(Boolean)));
+  const yearsSet = new Set();
+  const objetivosSet = new Set();
+  const lineamientosSet = new Set();
+  const objYearAgg = new Map();
+  const objTotalAgg = new Map();
+  const linYearAgg = new Map();
+  const actividadesPorAnio = new Map();
 
-  const avgByObjetivoYear = new Map();
-  objetivos.forEach((objetivo) => {
-    years.forEach((anio) => {
-      const subset = rows.filter((row) => row.objetivo_estrategico === objetivo && Number(row.anio) === anio);
-      if (!subset.length) return;
-      const avgPercent = subset.reduce((acc, row) => acc + (percent(row.avance_total) || 0), 0) / subset.length;
-      avgByObjetivoYear.set(`${objetivo}||${anio}`, Number(avgPercent.toFixed(2)));
-    });
+  rows.forEach((row) => {
+    const anio = Number(row.anio);
+    const p = percent(row.avance_total) || 0;
+    const obj = row.objetivo_estrategico;
+    const lin = row.lineamiento_estrategico;
+
+    if (obj) {
+      objetivosSet.add(obj);
+      const oTot = objTotalAgg.get(obj) || { sum: 0, count: 0 };
+      oTot.sum += p / 100;
+      oTot.count += 1;
+      objTotalAgg.set(obj, oTot);
+    }
+    if (lin) lineamientosSet.add(lin);
+
+    if (Number.isFinite(anio)) {
+      yearsSet.add(anio);
+      if (row.actividad) {
+        let actSet = actividadesPorAnio.get(anio);
+        if (!actSet) {
+          actSet = new Set();
+          actividadesPorAnio.set(anio, actSet);
+        }
+        actSet.add(row.actividad);
+      }
+      if (obj) {
+        const key = `${obj}||${anio}`;
+        const agg = objYearAgg.get(key) || { sum: 0, count: 0 };
+        agg.sum += p;
+        agg.count += 1;
+        objYearAgg.set(key, agg);
+      }
+      if (lin) {
+        const key = `${lin}||${anio}`;
+        const agg = linYearAgg.get(key) || { sum: 0, count: 0 };
+        agg.sum += p / 100;
+        agg.count += 1;
+        linYearAgg.set(key, agg);
+      }
+    }
   });
 
-  const totalActividades = years.reduce((acc, anio) => {
-    const set = new Set(rows.filter((row) => Number(row.anio) === anio).map((row) => row.actividad).filter(Boolean));
-    return acc + set.size;
-  }, 0);
+  const years = Array.from(yearsSet).sort((a, b) => a - b);
+  const objetivos = Array.from(objetivosSet).sort((a, b) => String(a).localeCompare(String(b), 'es'));
+
+  const avgByObjetivoYear = new Map();
+  objYearAgg.forEach((agg, key) => {
+    if (agg.count > 0) {
+      avgByObjetivoYear.set(key, Number((agg.sum / agg.count).toFixed(2)));
+    }
+  });
+
+  const totalActividades = Array.from(actividadesPorAnio.values()).reduce((acc, set) => acc + set.size, 0);
 
   const promObjetivos = objetivos.length
     ? Number((
       objetivos.reduce((acc, objetivo) => {
-        const subset = rows.filter((row) => row.objetivo_estrategico === objetivo);
-        if (!subset.length) return acc;
-        const avgFraction = subset.reduce((sum, row) => sum + ((percent(row.avance_total) || 0) / 100), 0) / subset.length;
-        return acc + (avgFraction * 100);
+        const agg = objTotalAgg.get(objetivo);
+        if (!agg || !agg.count) return acc;
+        return acc + ((agg.sum / agg.count) * 100);
       }, 0) / objetivos.length
     ).toFixed(2))
     : 0;
 
   let totalGeneral = 0;
-  lineamientos.forEach((lineamiento) => {
-    years.forEach((anio) => {
-      const subset = rows.filter((row) => row.lineamiento_estrategico === lineamiento && Number(row.anio) === anio);
-      if (!subset.length) return;
-      const avgFraction = subset.reduce((acc, row) => acc + ((percent(row.avance_total) || 0) / 100), 0) / subset.length;
-      totalGeneral += avgFraction * weightPerYear;
-    });
+  linYearAgg.forEach((agg) => {
+    if (agg.count > 0) {
+      totalGeneral += (agg.sum / agg.count) * weightPerYear;
+    }
   });
-  const ejecucionGeneral = lineamientos.length ? Number((totalGeneral / lineamientos.length).toFixed(2)) : 0;
+  const ejecucionGeneral = lineamientosSet.size ? Number((totalGeneral / lineamientosSet.size).toFixed(2)) : 0;
 
   const cumplimientoRows = objetivos.map((objetivo) => {
     const byYear = {};
@@ -501,20 +566,15 @@ const buildObjetivosStats = (rows = []) => {
   };
 };
 
-function SectionTitle({ title, subtitle }) {
+function SectionTitle({ title }) {
   return (
-    <Box sx={{ mb: 1.8 }}>
-      <Stack direction="row" spacing={1.1} alignItems="center" sx={{ mb: 0.7 }}>
+    <Box sx={{ mb: 1.5 }}>
+      <Stack direction="row" spacing={1.1} alignItems="center">
         <Box sx={{ width: 5, height: 22, borderRadius: 99, bgcolor: '#3b82f6' }} />
         <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#0f172a', letterSpacing: 0.4, textTransform: 'uppercase' }}>
           {title}
         </Typography>
       </Stack>
-      {subtitle && (
-        <Typography variant="body2" sx={{ color: '#64748b', ml: 2.1 }}>
-          {subtitle}
-        </Typography>
-      )}
     </Box>
   );
 }
@@ -693,10 +753,7 @@ function MatrixTable({
     <Paper elevation={0} sx={{ borderRadius: 3.5, border: '1px solid #dbeafe', overflow: 'hidden', boxShadow: '0 12px 28px rgba(15,23,42,.05)' }}>
       <Box sx={{ p: { xs: 1.8, md: 2.2 }, bgcolor: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)', borderBottom: '1px solid #dbeafe' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
-          <Box>
-            <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#1e3a8a', letterSpacing: 0.3 }}>{title}</Typography>
-            <Typography sx={{ fontSize: 12.5, color: '#64748b', mt: 0.3 }}>{subtitle}</Typography>
-          </Box>
+          <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#1e3a8a', letterSpacing: 0.3 }}>{title}</Typography>
           <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
             <Stack direction="row" spacing={1} alignItems="center">
               <Box sx={{ width: 16, height: 16, bgcolor: '#10b981', borderRadius: 1 }} />
@@ -1214,10 +1271,10 @@ function PlanesAccionTab({ rows }) {
         <Box sx={{ position: 'relative', p: { xs: 2, md: 2.2 }, background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)', color: 'white' }}>
           <Box sx={{ position: 'absolute', right: 18, top: 14, px: 1.4, py: 0.7, borderRadius: 2, bgcolor: 'rgba(255,255,255,.15)' }}>
             <Typography sx={{ fontSize: 9, color: 'rgba(255,255,255,.72)', textTransform: 'uppercase', letterSpacing: 1 }}>Conexión BD</Typography>
-            <Typography sx={{ fontSize: 11.5, fontWeight: 800 }}>En Tiempo Real</Typography>
+            <Typography sx={{ fontSize: 11.5, fontWeight: 800 }}>Monitoreo Estadístico</Typography>
           </Box>
           <Typography sx={{ display: 'inline-flex', px: 1.3, py: 0.45, borderRadius: 999, bgcolor: 'rgba(255,255,255,.14)', fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.3, mb: 0.9 }}>
-            Dashboard Interactivo Vivo
+            Dashboard Interactivo
           </Typography>
           <Typography sx={{ fontSize: { xs: 25, md: 29 }, fontWeight: 900, lineHeight: 1.05 }}>
             Plan de Acción {textoAnio}
@@ -1513,16 +1570,11 @@ function DependenciesTab({ dependencies = [], search = '', onSearchChange }) {
 
   return (
     <Stack spacing={2.2}>
-      <Paper elevation={0} sx={{ p: 2.2, borderRadius: 3, border: '1px solid #dbeafe', bgcolor: '#ffffff' }}>
+      <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #dbeafe', bgcolor: '#ffffff' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ md: 'center' }}>
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 900, color: '#1e3a8a' }}>
-              Planes de Acción por Dependencia ({dependencies.length} dependencias)
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#64748b' }}>
-              Monitoreo y avance en tiempo real de cada unidad académica o administrativa participante.
-            </Typography>
-          </Box>
+          <Typography variant="h6" sx={{ fontWeight: 900, color: '#1e3a8a', fontSize: 17 }}>
+            Planes de Acción por Dependencia ({dependencies.length})
+          </Typography>
           <TextField
             size="small"
             placeholder="Buscar por dependencia o responsable..."
@@ -1608,8 +1660,39 @@ function DependenciesTab({ dependencies = [], search = '', onSearchChange }) {
   );
 }
 
-function DynamicFieldsSummary({ rows = [], fields = [] }) {
+const clientStatsCache = new Map();
+let inflightDefaultPromise = null;
+
+export const prefetchPedLiveStatistics = async () => {
+  if (clientStatsCache.has('default')) return clientStatsCache.get('default');
+  if (inflightDefaultPromise) return inflightDefaultPromise;
+  inflightDefaultPromise = strategicPlanningService
+    .getLiveStatistics({})
+    .then((response) => {
+      const data = response?.data || response;
+      if (data?.plan?.id) {
+        clientStatsCache.set('default', data);
+        clientStatsCache.set(String(data.plan.id), data);
+      }
+      return data;
+    })
+    .catch(() => null)
+    .finally(() => {
+      inflightDefaultPromise = null;
+    });
+  return inflightDefaultPromise;
+};
+
+function DynamicFieldsSummary({ rows = [], fields = [], isFiltered = false }) {
   const summaries = useMemo(() => {
+    if (!isFiltered && fields.length && fields[0]?.filled_count !== undefined) {
+      return fields.map((field) => ({
+        ...field,
+        filled: field.filled_count || 0,
+        empty: field.empty_count || 0,
+        commonValues: (field.observed_values || []).slice(0, 3).map((v) => `${v.label} (${v.count})`)
+      }));
+    }
     const directValue = (row, key) => ({
       activity: row.actividad,
       indicator: row.indicador,
@@ -1639,14 +1722,13 @@ function DynamicFieldsSummary({ rows = [], fields = [] }) {
         .map(([label, count]) => `${label} (${count})`);
       return { ...field, filled: values.length, empty: Math.max(0, rows.length - values.length), commonValues };
     });
-  }, [rows, fields]);
+  }, [rows, fields, isFiltered]);
 
   if (!summaries.length) return null;
   return (
     <Paper elevation={0} sx={{ mt: 3, borderRadius: 3, border: '1px solid #dbeafe', overflow: 'hidden' }}>
-      <Box sx={{ px: 2.5, py: 2, bgcolor: '#f8fbff', borderBottom: '1px solid #dbeafe' }}>
-        <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>Cobertura de campos configurables del PED</Typography>
-        <Typography variant="body2" color="text.secondary">Se calcula con la estructura propia del PED seleccionado. Los campos desactivados conservan y muestran únicamente su información histórica.</Typography>
+      <Box sx={{ px: 2.5, py: 1.8, bgcolor: '#f8fbff', borderBottom: '1px solid #dbeafe' }}>
+        <Typography sx={{ fontWeight: 900, fontSize: 15.5, color: '#0f172a' }}>Cobertura de campos configurables del PED</Typography>
       </Box>
       <TableContainer sx={{ maxHeight: 430 }}>
         <Table stickyHeader size="small">
@@ -1671,16 +1753,18 @@ function DynamicFieldsSummary({ rows = [], fields = [] }) {
 
 export default function PedLiveStatisticsDashboard({ onBack }) {
   const { enqueueSnackbar } = useSnackbar();
+  const initialCached = clientStatsCache.get('default') || null;
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialCached);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
 
-  const [availablePlans, setAvailablePlans] = useState([]);
+  const [availablePlans, setAvailablePlans] = useState(initialCached?.availablePlans || []);
   const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [segment, setSegment] = useState('estadistico');
   const [tab, setTab] = useState('estadistica');
 
-  const [statsData, setStatsData] = useState(null);
+  const [statsData, setStatsData] = useState(initialCached);
   const [dependencySearch, setDependencySearch] = useState('');
 
   // Filtros aplicables a las pestañas
@@ -1690,6 +1774,15 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
   });
 
   const loadStatistics = useCallback(async (isRefresh = false) => {
+    const cacheKey = selectedPlanId ? String(selectedPlanId) : 'default';
+    if (!isRefresh && clientStatsCache.has(cacheKey)) {
+      const cached = clientStatsCache.get(cacheKey);
+      setStatsData(cached);
+      if (cached?.availablePlans?.length) setAvailablePlans(cached.availablePlans);
+      setLoading(false);
+      return;
+    }
+
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
 
@@ -1700,17 +1793,19 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
       const response = await strategicPlanningService.getLiveStatistics(params);
       const data = response?.data || response;
 
-      setStatsData(data);
-      if (data?.availablePlans?.length && !availablePlans.length) {
-        setAvailablePlans(data.availablePlans);
+      if (data) {
+        clientStatsCache.set(cacheKey, data);
+        if (data.plan?.id) clientStatsCache.set(String(data.plan.id), data);
       }
-      if (data?.plan?.id && !selectedPlanId) {
-        setSelectedPlanId(data.plan.id);
+
+      setStatsData(data);
+      if (data?.availablePlans?.length) {
+        setAvailablePlans(data.availablePlans);
       }
       setLastUpdated(new Date());
 
       if (isRefresh) {
-        enqueueSnackbar('Datos estadísticos actualizados en tiempo real.', { variant: 'success' });
+        enqueueSnackbar('Datos de monitoreo estadístico actualizados.', { variant: 'success' });
       }
     } catch (err) {
       console.error('Error loading PED live statistics:', err);
@@ -1719,7 +1814,7 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedPlanId, availablePlans.length, enqueueSnackbar]);
+  }, [selectedPlanId, enqueueSnackbar]);
 
   useEffect(() => {
     loadStatistics();
@@ -1738,7 +1833,19 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
   }, [statsData?.rows, filters]);
 
   const deferredRows = useDeferredValue(filteredRows);
-  const metrics = useMemo(() => buildMetrics(deferredRows), [deferredRows]);
+  const metrics = useMemo(() => {
+    const computed = buildMetrics(deferredRows);
+    if (!deferredRows.length && statsData?.kpis && !filters.anio && !filters.responsable) {
+      return {
+        ...computed,
+        totalObjetivos: statsData.kpis.totalObjetivos || 0,
+        totalLineamientos: statsData.kpis.totalLineamientos || 0,
+        totalActividades: statsData.kpis.totalActividades || 0,
+        totalIndicadores: statsData.kpis.totalIndicadores || 0
+      };
+    }
+    return computed;
+  }, [deferredRows, statsData?.kpis, filters.anio, filters.responsable]);
 
   // Opciones para los filtros
   const availableYears = useMemo(() => {
@@ -1930,30 +2037,28 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
               )}
 
               <Stack direction="row" spacing={1.2} alignItems="center" flexWrap="wrap">
-                <Typography sx={{ fontSize: { xs: 22, md: 30 }, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1.1 }}>
+                <Typography sx={{ fontSize: { xs: 22, md: 28 }, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1.1 }}>
                   {statsData?.plan?.name || 'PLAN ESTRATÉGICO DE DESARROLLO'}
                 </Typography>
                 <Chip
-                  icon={<FiberManualRecordIcon sx={{ fontSize: '10px !important', color: '#86efac !important' }} />}
-                  label="EN TIEMPO REAL"
+                  icon={<InsightsIcon sx={{ fontSize: '14px !important', color: '#7dd3fc !important' }} />}
+                  label="MONITOREO ESTADÍSTICO"
                   size="small"
                   sx={{
-                    bgcolor: 'rgba(34, 197, 94, 0.25)',
-                    color: '#bbf7d0',
-                    border: '1px solid rgba(134, 239, 172, 0.4)',
+                    bgcolor: 'rgba(186, 230, 253, 0.16)',
+                    color: '#e0f2fe',
+                    border: '1px solid rgba(186, 230, 253, 0.42)',
                     fontWeight: 900,
                     fontSize: 11,
-                    height: 24
+                    letterSpacing: 0.4,
+                    height: 25
                   }}
                 />
               </Stack>
-              <Typography sx={{ color: 'rgba(255,255,255,.9)', mt: 0.8, fontSize: { xs: 13, md: 14.5 } }}>
-                Tablero de control en tiempo real: monitoreo automático de objetivos, lineamientos y planes de acción por cada vigencia del PED.
-              </Typography>
             </Box>
 
             <Stack direction="row" spacing={1.5} alignItems="center" sx={{ alignSelf: { xs: 'flex-start', md: 'center' } }}>
-              <Tooltip title="Actualizar datos en tiempo real desde el Plan Estratégico">
+              <Tooltip title="Actualizar datos estadísticos desde el Plan Estratégico">
                 <span>
                   <Button
                     variant="contained"
@@ -1986,15 +2091,15 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
                 onClick={exportFullConsolidateExcel}
                 disabled={!statsData || loading}
                 sx={{
-                  bgcolor: '#10b981',
-                  color: '#ffffff',
+                  bgcolor: '#ffffff',
+                  color: '#1e3a8a',
                   textTransform: 'none',
                   fontWeight: 800,
                   borderRadius: 2,
-                  px: 2,
+                  px: 2.2,
                   height: 40,
-                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
-                  '&:hover': { bgcolor: '#059669' }
+                  boxShadow: '0 6px 16px rgba(15, 23, 42, 0.22)',
+                  '&:hover': { bgcolor: '#eff6ff' }
                 }}
               >
                 Exportar Excel
@@ -2004,7 +2109,7 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
 
           <Stack direction="row" spacing={1.5} alignItems="center" mt={2} pt={1.5} sx={{ borderTop: '1px solid rgba(255,255,255,0.16)' }}>
             <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontSize: 11.5 }}>
-              Última sincronización en tiempo real: {lastUpdated.toLocaleTimeString('es-CO')}
+              Última actualización estadística: {lastUpdated.toLocaleTimeString('es-CO')}
             </Typography>
             <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)' }}>•</Typography>
             <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.95)', fontWeight: 800, fontSize: 11.5 }}>
@@ -2012,6 +2117,164 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
             </Typography>
           </Stack>
         </Paper>
+
+        {/* DOS SEGMENTOS INTERACTIVOS PRINCIPALES (DISEÑO LIMPIO SIN SUBTÍTULOS LARGOS) */}
+        <Box
+          sx={{
+            display: 'grid',
+            gap: 2,
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+            mb: 2.5
+          }}
+        >
+          {[
+            {
+              key: 'estadistico',
+              badge: 'TABLERO INTERACTIVO',
+              title: 'Monitoreo Estadístico del PED',
+              chips: [
+                `${formatNumber(statsData?.rows?.length || 0)} registros`,
+                `${formatPercent(metrics.ejecucionGeneral || 0)} ejecución`
+              ],
+              icon: <InsightsIcon sx={{ fontSize: 26 }} />,
+              accent: '#1d4ed8',
+              gradient: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
+              activeBg: 'linear-gradient(135deg, #ffffff 0%, #eff6ff 100%)',
+              badgeBg: '#dbeafe',
+              badgeColor: '#1e40af'
+            },
+            {
+              key: 'tablas_referencia',
+              badge: 'EXPORTACIÓN DE DATOS',
+              title: 'Tablas de Datos y Referencia',
+              chips: [
+                `${(statsData?.fieldDefinitions || []).length} campos`,
+                `${(statsData?.termDependencies || []).length} dependencias`,
+                `${(statsData?.actionPlansList || []).length} planes`
+              ],
+              icon: <StorageIcon sx={{ fontSize: 26 }} />,
+              accent: '#0284c7',
+              gradient: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #0284c7 100%)',
+              activeBg: 'linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%)',
+              badgeBg: '#e0f2fe',
+              badgeColor: '#0369a1'
+            }
+          ].map((item) => {
+            const active = segment === item.key;
+            return (
+              <Paper
+                key={item.key}
+                elevation={0}
+                onClick={() => setSegment(item.key)}
+                sx={{
+                  px: { xs: 2, md: 2.4 },
+                  py: { xs: 1.8, md: 2 },
+                  borderRadius: 3.5,
+                  cursor: 'pointer',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  border: active ? `2px solid ${item.accent}` : '1.5px solid #dbeafe',
+                  background: active ? item.activeBg : '#ffffff',
+                  boxShadow: active
+                    ? '0 14px 28px rgba(30, 58, 138, 0.12)'
+                    : '0 4px 14px rgba(15, 23, 42, 0.04)',
+                  transform: active ? 'translateY(-2px)' : 'none',
+                  transition: 'all 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': {
+                    transform: 'translateY(-3px)',
+                    borderColor: item.accent,
+                    boxShadow: '0 16px 32px rgba(30, 58, 138, 0.13)',
+                    '& .seg-icon': {
+                      transform: 'scale(1.06) rotate(-3deg)'
+                    }
+                  }
+                }}
+              >
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 4,
+                    background: active ? item.gradient : 'transparent',
+                    transition: 'all 0.22s ease'
+                  }}
+                />
+                <Stack direction="row" spacing={1.8} alignItems="center">
+                  <Box
+                    className="seg-icon"
+                    sx={{
+                      width: 52,
+                      height: 52,
+                      borderRadius: 2.8,
+                      background: active ? item.gradient : '#f1f5f9',
+                      color: active ? '#ffffff' : item.accent,
+                      display: 'grid',
+                      placeItems: 'center',
+                      flexShrink: 0,
+                      boxShadow: active ? '0 8px 18px rgba(30, 64, 175, 0.22)' : 'none',
+                      transition: 'all 0.22s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                  >
+                    {item.icon}
+                  </Box>
+
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                      <Chip
+                        label={item.badge}
+                        size="small"
+                        sx={{
+                          height: 20,
+                          fontSize: 9.5,
+                          fontWeight: 900,
+                          letterSpacing: 0.4,
+                          bgcolor: item.badgeBg,
+                          color: item.badgeColor
+                        }}
+                      />
+                      <Chip
+                        label={active ? 'Activo' : 'Abrir'}
+                        size="small"
+                        sx={{
+                          height: 21,
+                          fontSize: 10,
+                          fontWeight: 800,
+                          bgcolor: active ? item.accent : '#f8fafc',
+                          color: active ? '#ffffff' : '#64748b',
+                          border: active ? 'none' : '1px solid #e2e8f0'
+                        }}
+                      />
+                    </Stack>
+
+                    <Typography sx={{ fontSize: { xs: 16.5, md: 18.5 }, fontWeight: 900, color: '#0f172a', mt: 0.6, lineHeight: 1.2 }}>
+                      {item.title}
+                    </Typography>
+
+                    <Stack direction="row" spacing={0.8} alignItems="center" flexWrap="wrap" sx={{ mt: 0.8 }}>
+                      {item.chips.map((chipText) => (
+                        <Chip
+                          key={chipText}
+                          label={chipText}
+                          size="small"
+                          sx={{
+                            height: 21,
+                            fontSize: 10.5,
+                            fontWeight: 800,
+                            bgcolor: active ? 'rgba(255,255,255,0.85)' : '#f8fafc',
+                            color: item.accent,
+                            border: '1px solid #dbeafe'
+                          }}
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
+                </Stack>
+              </Paper>
+            );
+          })}
+        </Box>
 
         {/* SELECTOR DE PED SI HAY VARIOS DISPONIBLES */}
         {availablePlans.length > 1 && (
@@ -2024,7 +2287,7 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
                 select
                 fullWidth
                 size="small"
-                value={selectedPlanId || ''}
+                value={selectedPlanId || statsData?.plan?.id || ''}
                 onChange={(e) => setSelectedPlanId(e.target.value)}
                 SelectProps={{ native: true }}
                 sx={{
@@ -2046,63 +2309,6 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
           </Paper>
         )}
 
-        {/* NAVEGACIÓN PRINCIPAL: TABS EXACTOS AL TABLERO CLÁSICO */}
-        <Paper
-          elevation={0}
-          sx={{
-            p: 0.8,
-            mb: 2.8,
-            borderRadius: 3.5,
-            border: '1px solid #dbeafe',
-            background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)',
-            boxShadow: '0 10px 24px rgba(15,23,42,.04)'
-          }}
-        >
-          <Tabs
-            value={tab}
-            onChange={(_, next) => setTab(next)}
-            variant="fullWidth"
-            sx={{
-              minHeight: 58,
-              '& .MuiTabs-indicator': {
-                height: 0
-              },
-              '& .MuiTabs-flexContainer': { gap: { xs: 0.5, md: 1 } },
-              '& .MuiTab-root': {
-                textTransform: 'none',
-                fontWeight: 800,
-                minHeight: 52,
-                minWidth: 0,
-                py: 1.4,
-                px: { xs: 1, md: 2 },
-                borderRadius: 2.5,
-                color: '#64748b',
-                transition: 'all .2s ease'
-              },
-              '& .MuiTab-root.Mui-selected': {
-                color: '#1d4ed8',
-                background: 'linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)',
-                boxShadow: 'inset 0 0 0 1px rgba(59,130,246,.22), 0 8px 18px rgba(37,99,235,.08)'
-              },
-              '& .MuiTab-root:hover': {
-                backgroundColor: '#f8fafc'
-              },
-              '& .MuiTab-iconWrapper': {
-                mr: 1
-              }
-            }}
-          >
-            <Tab value="estadistica" icon={<DashboardIcon fontSize="small" />} iconPosition="start" label="Estadística Planes de Acción" />
-            <Tab value="planes" icon={<AssignmentTurnedInIcon fontSize="small" />} iconPosition="start" label="Planes de Acción" />
-            <Tab value="seguimiento" icon={<ShowChartIcon fontSize="small" />} iconPosition="start" label="Seguimiento Planes de Acción" />
-            <Tab value="dependencias" icon={<CorporateFareIcon fontSize="small" />} iconPosition="start" label="Planes por Dependencia" />
-          </Tabs>
-        </Paper>
-
-        {/* FILTROS SUPERIORES (cuando no estamos en seguimiento, donde se renderiza adentro) */}
-        {tab !== 'seguimiento' && tab !== 'dependencias' && filterBarNode}
-
-        {/* CONTENIDO DE CADA PESTAÑA */}
         {loading ? (
           <Paper elevation={0} sx={{ py: 10, mt: 3, borderRadius: 3, border: '1px solid #e2e8f0' }}>
             <Stack spacing={1.5} alignItems="center">
@@ -2112,31 +2318,93 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
               </Typography>
             </Stack>
           </Paper>
-        ) : !deferredRows.length && tab !== 'dependencias' ? (
-          <Alert severity="info" sx={{ mt: 3, borderRadius: 3 }}>
-            No se encontraron actividades ni planes de acción con los filtros seleccionados para este PED.
-          </Alert>
+        ) : segment === 'tablas_referencia' ? (
+          <PedDataReferenceTables statsData={statsData} />
         ) : (
-          <Box sx={{ mt: tab !== 'seguimiento' && tab !== 'dependencias' ? 3 : 0 }}>
-            {tab === 'estadistica' && <>
-              <EstadisticaTab rows={deferredRows} metrics={metrics} />
-              <DynamicFieldsSummary rows={deferredRows} fields={statsData?.fieldDefinitions || []} />
-            </>}
-            {tab === 'planes' && <PlanesAccionTab rows={deferredRows} />}
-            {tab === 'seguimiento' && (
-              <SeguimientoTabV2
-                rows={deferredRows}
-                filtersNode={filterBarNode}
-              />
-            )}
-            {tab === 'dependencias' && (
-              <DependenciesTab
-                dependencies={statsData?.dependenciesProgress || []}
-                search={dependencySearch}
-                onSearchChange={setDependencySearch}
-              />
-            )}
-          </Box>
+          <>
+            {/* NAVEGACIÓN PRINCIPAL: TABS EXACTOS AL TABLERO CLÁSICO */}
+            <Paper
+              elevation={0}
+              sx={{
+                p: 0.8,
+                mb: 2.8,
+                borderRadius: 3.5,
+                border: '1px solid #dbeafe',
+                background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)',
+                boxShadow: '0 10px 24px rgba(15,23,42,.04)'
+              }}
+            >
+              <Tabs
+                value={tab}
+                onChange={(_, next) => setTab(next)}
+                variant="fullWidth"
+                sx={{
+                  minHeight: 58,
+                  '& .MuiTabs-indicator': {
+                    height: 0
+                  },
+                  '& .MuiTabs-flexContainer': { gap: { xs: 0.5, md: 1 } },
+                  '& .MuiTab-root': {
+                    textTransform: 'none',
+                    fontWeight: 800,
+                    minHeight: 52,
+                    minWidth: 0,
+                    py: 1.4,
+                    px: { xs: 1, md: 2 },
+                    borderRadius: 2.5,
+                    color: '#64748b',
+                    transition: 'all .2s ease'
+                  },
+                  '& .MuiTab-root.Mui-selected': {
+                    color: '#1d4ed8',
+                    background: 'linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)',
+                    boxShadow: 'inset 0 0 0 1px rgba(59,130,246,.22), 0 8px 18px rgba(37,99,235,.08)'
+                  },
+                  '& .MuiTab-root:hover': {
+                    backgroundColor: '#f8fafc'
+                  },
+                  '& .MuiTab-iconWrapper': {
+                    mr: 1
+                  }
+                }}
+              >
+                <Tab value="estadistica" icon={<DashboardIcon fontSize="small" />} iconPosition="start" label="Estadística Planes de Acción" />
+                <Tab value="planes" icon={<AssignmentTurnedInIcon fontSize="small" />} iconPosition="start" label="Planes de Acción" />
+                <Tab value="seguimiento" icon={<ShowChartIcon fontSize="small" />} iconPosition="start" label="Seguimiento Planes de Acción" />
+                <Tab value="dependencias" icon={<CorporateFareIcon fontSize="small" />} iconPosition="start" label="Planes por Dependencia" />
+              </Tabs>
+            </Paper>
+
+            {/* FILTROS SUPERIORES (cuando no estamos en seguimiento, donde se renderiza adentro) */}
+            {tab !== 'seguimiento' && tab !== 'dependencias' && filterBarNode}
+
+            <Box sx={{ mt: tab !== 'seguimiento' && tab !== 'dependencias' ? 3 : 0 }}>
+              {tab === 'estadistica' && (
+                <>
+                  <EstadisticaTab rows={deferredRows} metrics={metrics} />
+                  <DynamicFieldsSummary
+                    rows={deferredRows}
+                    fields={statsData?.fieldDefinitions || []}
+                    isFiltered={Boolean(filters.anio || filters.responsable)}
+                  />
+                </>
+              )}
+              {tab === 'planes' && <PlanesAccionTab rows={deferredRows} />}
+              {tab === 'seguimiento' && (
+                <SeguimientoTabV2
+                  rows={deferredRows}
+                  filtersNode={filterBarNode}
+                />
+              )}
+              {tab === 'dependencias' && (
+                <DependenciesTab
+                  dependencies={statsData?.dependenciesProgress || []}
+                  search={dependencySearch}
+                  onSearchChange={setDependencySearch}
+                />
+              )}
+            </Box>
+          </>
         )}
       </Box>
     </Fade>
