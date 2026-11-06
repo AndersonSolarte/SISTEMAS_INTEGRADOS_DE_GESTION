@@ -1,3 +1,4 @@
+import useImprovementConfirmation from './useImprovementConfirmation';
 import { planIndicatorErrors } from './activityIndicatorRules';
 import { missingLinkFields } from './linkFields';
 import InstitutionalPolicyActivityField from '../../../../components/InstitutionalPolicyActivityField';
@@ -280,6 +281,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [loading, setLoading] = useState(true);
   const [plansLoadError, setPlansLoadError] = useState('');
   const plansRetryRef = useRef(0);
+  const { confirm: confirmAction, dialog: confirmationDialog } = useImprovementConfirmation();
   const [catalogs, setCatalogs] = useState({});
   const [opportunities, setOpportunities] = useState([]);
   const [loadingOpportunities, setLoadingOpportunities] = useState(false);
@@ -437,6 +439,25 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     });
   }, [selectedActionPlan, linkingTarget, linkFormData.actividad, linkFormData.activity]);
 
+  useEffect(() => {
+    if (!linkModalOpen || !editor?.id || !linkingTarget?.activity?.uid) return undefined;
+    let disposed = false;
+    let pending = false;
+    const refreshSchema = async () => {
+      if (pending || document.hidden) return;
+      pending = true;
+      try {
+        const response = await planMejoramientoService.getActionPlanCandidates(editor.id, linkingTarget.activity.uid);
+        const plans = response?.plans || response?.data?.plans || (Array.isArray(response) ? response : []);
+        if (!disposed) setLinkingCandidates(plans.filter((plan) => plan.same_responsible));
+      } catch (_) { /* Keep entered values; the server revalidates the live schema on submit. */ }
+      finally { pending = false; }
+    };
+    const interval = setInterval(refreshSchema, 15000);
+    window.addEventListener('focus', refreshSchema);
+    return () => { disposed = true; clearInterval(interval); window.removeEventListener('focus', refreshSchema); };
+  }, [linkModalOpen, editor?.id, linkingTarget?.activity?.uid]);
+
   const dynamicFormFields = useMemo(() => {
     const raw = selectedActionPlan?.form_schema?.fields;
     const EXCLUDED_ACTION_PLAN_KEYS = new Set([
@@ -451,20 +472,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
       return filtered;
     }
-    return [
-      { key: 'strategic_objective', label: 'Objetivos Estratégicos', data_type: 'list', required: true },
-      { key: 'strategic_guideline', label: 'Lineamientos Estratégicos', data_type: 'strategic_relation', required: true },
-      { key: 'macroactividad', label: 'Macroactividad', data_type: 'long_text', required: true },
-      { key: 'activity', label: 'Actividades', data_type: 'long_text', required: true },
-      { key: 'indicator_type', label: 'Tipo de Indicador', data_type: 'list', required: true },
-      { key: 'starts_on', label: 'Fecha inicio', data_type: 'date', required: true },
-      { key: 'ends_on', label: 'Fecha fin', data_type: 'date', required: true },
-      { key: 'indicator', label: 'Indicador', data_type: 'long_text', required: true },
-      { key: 'target', label: 'Meta', data_type: 'text', required: true },
-      { key: 'responsible', label: 'Responsable de Ejecución', data_type: 'catalog', required: true },
-      { key: 'co_responsibles', label: 'Corresponsable', data_type: 'catalog_multi', required: false },
-      { key: 'entregable', label: 'Entregable', data_type: 'long_text', required: true }
-    ];
+    return [];
   }, [selectedActionPlan]);
 
   const renderDynamicFormField = (field) => {
@@ -472,6 +480,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     const label = field.label || key;
     const isRequired = field.required === true;
     const dataType = field.data_type || 'text';
+    const normalizedLabel = String(label).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
     if (field.validation_rules?.shared_catalog === 'institutional_policies') {
       return <Box key={key} sx={{ gridColumn: { xs: '1 / -1', md: 'span 6' }, minWidth: 0 }}>
@@ -489,7 +498,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       </Box>;
     }
     // 1. Responsable de ejecución: precargado automáticamente con el líder del Plan de Acción
-    if (key === 'responsible' || key === 'responsable' || key === 'responsable_de_ejecucion' || (field.validation_rules?.catalog_type === 'organizational_unit' && dataType === 'catalog')) {
+    if (key === 'responsible' || key === 'responsable' || key === 'responsable_de_ejecucion' || (normalizedLabel.includes('responsable') && !normalizedLabel.includes('corresponsable') && dataType === 'catalog')) {
       return (
         <Paper
           key={key}
@@ -518,32 +527,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       );
     }
 
-    // 2. Corresponsable
-    if (key === 'co_responsibles' || key === 'corresponsable' || key === 'co_responsible') {
-      return (
-        <TextField
-          key={key}
-          label={`${label} (opcional)`}
-          placeholder="Dependencia o proceso corresponsable"
-          value={linkFormData[key] || linkFormData.corresponsable || ''}
-          onChange={(e) => {
-            const val = e.target.value;
-            setLinkFormData((prev) => ({
-              ...prev,
-              [key]: val,
-              corresponsable: val,
-              co_responsible: val,
-              co_responsibles: val ? [val] : []
-            }));
-          }}
-          sx={{ gridColumn: { xs: '1 / -1', md: 'span 6' } }}
-        />
-      );
-    }
-
     // 3. Objetivo Estratégico
-    if (key === 'strategic_objective' || key === 'objetivo_estrategico' || key === 'objetivoEstrategico') {
-      const options = field.options?.length ? field.options : (catalogs.strategicObjectives || []);
+    if (key === 'strategic_objective' || key === 'objetivo_estrategico' || key === 'objetivoEstrategico' || (['list', 'strategic_relation'].includes(dataType) && normalizedLabel.includes('objetivo'))) {
+      const options = selectedActionPlan?.strategic_catalog?.strategicObjectives || field.options || [];
       const currentVal = linkFormData[key] || linkFormData.objetivoEstrategico || linkFormData.strategic_objective || '';
       return (
         <TextField
@@ -574,16 +560,18 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     }
 
     // 4. Lineamiento Estratégico
-    if (key === 'strategic_guideline' || key === 'lineamiento_estrategico' || key === 'lineamientoEstrategico') {
+    if (key === 'strategic_guideline' || key === 'lineamiento_estrategico' || key === 'lineamientoEstrategico' || (['list', 'strategic_relation'].includes(dataType) && normalizedLabel.includes('lineamiento'))) {
       const parentObj = linkFormData.strategic_objective || linkFormData.objetivoEstrategico || '';
-      const cascadedOptions = catalogs.objectiveProjects?.[parentObj] || field.options || [];
+      const relations = selectedActionPlan?.strategic_catalog?.strategicRelations || [];
+      const relation = relations.find((row) => row.label === parentObj || (row.code && parentObj.startsWith(row.code + ' ')));
+      const cascadedOptions = relation?.guidelines?.map((row) => row.label) || [];
       const currentVal = linkFormData[key] || linkFormData.lineamientoEstrategico || linkFormData.strategic_guideline || '';
       return (
         <TextField
           key={key}
           select
           label={`${label} ${isRequired ? '*' : ''}`}
-          value={currentVal}
+          value={cascadedOptions.includes(currentVal) ? currentVal : ''}
           onChange={(e) => {
             const val = e.target.value;
             setLinkFormData((prev) => ({
@@ -597,7 +585,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           disabled={!parentObj}
           sx={{ gridColumn: { xs: '1 / -1', md: 'span 4' } }}
         >
-          {withCurrent(cascadedOptions, currentVal).map((item) => (
+          {cascadedOptions.map((item) => (
             <MenuItem key={item} value={item}>{item}</MenuItem>
           ))}
         </TextField>
@@ -732,26 +720,22 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       );
     }
 
-    // Default genérico para cualquier otro campo dinámico agregado al PED
     const isMulti = dataType === 'long_text' || dataType === 'textarea';
-    const isSelect = dataType === 'list' && Array.isArray(field.options) && field.options.length > 0;
-
-    return (
-      <TextField
-        key={key}
-        select={isSelect}
-        multiline={isMulti}
-        minRows={isMulti ? 1 : undefined}
-        label={`${label} ${isRequired ? '*' : ''}`}
-        value={linkFormData[key] ?? ''}
-        onChange={(e) => setLinkFormData((prev) => ({ ...prev, [key]: e.target.value }))}
-        sx={{ gridColumn: { xs: '1 / -1', md: isMulti ? 'span 12' : 'span 4' } }}
-      >
-        {isSelect ? field.options.map((opt) => (
-          <MenuItem key={opt} value={opt}>{opt}</MenuItem>
-        )) : null}
-      </TextField>
-    );
+    const multiple = dataType === 'catalog_multi';
+    const isSelect = ['list', 'catalog', 'catalog_multi', 'strategic_relation'].includes(dataType);
+    const catalogType = field.validation_rules?.catalog_type;
+    const catalogOptions = catalogType ? (selectedActionPlan?.form_schema?.catalogs || []).filter((entry) => entry.active !== false && entry.catalog_type === catalogType).map((entry) => ({ value: entry.id, label: entry.code ? `${entry.code} · ${entry.name}` : entry.name })) : [];
+    const options = catalogOptions.length ? catalogOptions : (field.options || []).map((option) => typeof option === 'object' ? { value: option.value ?? option.id ?? option.label, label: option.label || option.name || String(option.value || '') } : { value: option, label: String(option) });
+    const raw = linkFormData[key];
+    const value = multiple ? (Array.isArray(raw) ? raw : raw ? [raw] : []) : raw ?? '';
+    return <TextField key={key} select={isSelect} required={isRequired} multiline={isMulti && !isSelect} minRows={isMulti ? 1 : undefined}
+      type={!isSelect && dataType === 'date' ? 'date' : !isSelect && ['number', 'currency', 'percentage'].includes(dataType) ? 'number' : 'text'}
+      InputLabelProps={dataType === 'date' ? { shrink: true } : undefined}
+      SelectProps={multiple ? { multiple: true } : undefined} label={label} value={value}
+      onChange={(e) => setLinkFormData((previous) => ({ ...previous, [key]: e.target.value }))}
+      sx={{ gridColumn: { xs: '1 / -1', md: isMulti ? 'span 12' : 'span 4' } }}>
+      {isSelect ? options.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>) : null}
+    </TextField>;
   };
 
   const handleDownloadBlankTemplate = async (programa = '') => {
@@ -1020,7 +1004,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   };
 
   const remove = async (id) => {
-    if (!window.confirm('¿Desea eliminar este plan de mejoramiento?')) return;
+    if (!(await confirmAction({ kind: 'delete', title: 'Eliminar plan', name: plans.find((plan) => String(plan.id) === String(id))?.programa,
+      description: 'Se eliminará este plan de mejoramiento con su información registrada. Esta acción no se puede deshacer.', confirmLabel: 'Eliminar plan' }))) return;
     try { await planMejoramientoService.remove(id); enqueueSnackbar('Plan eliminado', { variant: 'success' }); await loadPlans(); }
     catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar el plan', { variant: 'error' }); }
   };
@@ -1472,6 +1457,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     if (linkingCandidates.length === 0) {
       return enqueueSnackbar('No es posible asociar: no hay ningún Plan de Acción disponible que coincida con el responsable.', { variant: 'warning' });
     }
+    if (!dynamicFormFields.length) return enqueueSnackbar(selectedActionPlan?.schema_error || 'No se pudo cargar el formulario vigente. Vuelva a consultar los planes disponibles.', { variant: 'warning' });
     const actName = (linkFormData.actividad || linkFormData.activity || linkingTarget.activity?.nombre || '').trim();
     if (!actName) {
       return enqueueSnackbar('El nombre de la actividad no puede estar vacío', { variant: 'warning' });
@@ -1532,7 +1518,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   };
 
   const handleUnlinkActivity = async (objectiveIndex, activityIndex, activity) => {
-    if (!window.confirm(`¿Desea desvincular la actividad "${activity.nombre}" del Plan de Acción?`)) return;
+    if (!(await confirmAction({ kind: 'unlink', title: 'Desvincular actividad', name: activity.nombre || 'Actividad sin nombre', context: activity.linkedActionPlanCode || activity.linkedActionPlanName,
+      description: 'La actividad se retirará del Plan de Acción y dejará de sincronizarse. Su información se conservará en Mejoramiento.', confirmLabel: 'Desvincular' }))) return;
     setLinkingBusy(true);
     try {
       await planMejoramientoService.unlinkFromActionPlan(editor.id, activity.uid);
@@ -1890,6 +1877,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   if (!editor) {
     return (
       <Box>
+        {confirmationDialog}
         <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5, color: '#64748b' }}>
           <Button size="small" onClick={onBack} sx={{ textTransform: 'none', color: '#52637b', px: .5 }}>{executionMode ? 'Inicio' : 'Autoevaluación'}</Button>
           <Typography aria-hidden="true" variant="body2">/</Typography>
@@ -2039,6 +2027,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       onClose={() => setEditor(null)}
       PaperProps={{ sx: { bgcolor: '#f5f7fb', backgroundImage: 'linear-gradient(180deg, #f8fbff 0%, #f5f7fb 100%)' } }}
     >
+    {confirmationDialog}
     <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', overflow: 'visible', p: { xs: 1.5, md: 2.5 } }}>
       <Paper elevation={0} sx={{ p: { xs: 1.7, md: 2.2 }, borderRadius: 3.5, border: '1px solid #dbeafe', mb: 1.5, flexShrink: 0, bgcolor: 'rgba(255,255,255,.97)', backdropFilter: 'blur(12px)', boxShadow: '0 8px 26px rgba(15,23,42,.06)' }}>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ pb: 1.25, mb: 1.75, borderBottom: '1px solid #edf0f5' }}>
@@ -2974,6 +2963,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             </Stack>
 
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.6 }}>
+              {!dynamicFormFields.length && <Alert severity="warning" sx={{ gridColumn: '1 / -1' }}>{selectedActionPlan?.schema_error || 'No se pudo cargar el formulario vigente del Plan de Acción. Consulte nuevamente los planes disponibles.'}</Alert>}
               {dynamicFormFields.map((field) => renderDynamicFormField(field))}
             </Box>
 
@@ -2998,6 +2988,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             disabled={
               linkingBusy ||
               loadingCandidates ||
+              !dynamicFormFields.length ||
               linkingCandidates.length === 0 ||
               !selectedActionPlanId ||
               Boolean(currentModalDuplicate) ||

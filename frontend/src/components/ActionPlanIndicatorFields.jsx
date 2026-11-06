@@ -133,6 +133,9 @@ export default function ActionPlanIndicatorFields({ field, values = {}, onChange
 
       {kinds.map((k) => {
         if (!currentValues[k.active]) return null;
+        const isIndEmpty = !String(currentValues[k.field] || '').trim();
+        const isTargetEmpty = !String(currentValues[k.target] || '').trim();
+
         return (
           <Box
             key={k.key}
@@ -162,6 +165,9 @@ export default function ActionPlanIndicatorFields({ field, values = {}, onChange
               size="small"
               multiline
               minRows={2}
+              required
+              error={isIndEmpty}
+              helperText={isIndEmpty ? 'Redacte el indicador o elimínelo con el ícono de basura.' : ''}
               InputLabelProps={{ shrink: true }}
               disabled={disabled}
               value={currentValues[k.field] || ''}
@@ -175,6 +181,9 @@ export default function ActionPlanIndicatorFields({ field, values = {}, onChange
               size="small"
               multiline
               minRows={2}
+              required
+              error={isTargetEmpty}
+              helperText={isTargetEmpty ? 'Redacte la meta o elimínelo con el ícono de basura.' : ''}
               InputLabelProps={{ shrink: true }}
               disabled={disabled}
               value={currentValues[k.target] || ''}

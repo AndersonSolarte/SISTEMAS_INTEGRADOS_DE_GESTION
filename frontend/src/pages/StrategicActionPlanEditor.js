@@ -2440,6 +2440,27 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       if (primaryTgt) payloadCustomValues.target = primaryTgt;
       if (primaryType) payloadCustomValues.indicator_type = primaryType;
 
+      // Validar si agregó indicadores estructurados y los dejó vacíos
+      const incompleteIndicators = [];
+      ['Resultado', 'Logro', 'Impacto'].forEach((kind) => {
+        const indKey = `indicador${kind}`;
+        const activeKey = `indicador${kind}Activo`;
+        if (item.custom_values?.[activeKey] || payloadCustomValues[activeKey]) {
+          const indText = String(payloadCustomValues[indKey] || '').trim();
+          if (!indText || indText.toLowerCase() === 'sin indicador') {
+            incompleteIndicators.push(`Indicador de ${kind.toLowerCase()}`);
+          }
+        }
+      });
+
+      if (incompleteIndicators.length > 0) {
+        enqueueSnackbar(`Debe redactar el contenido de los indicadores agregados (${incompleteIndicators.join(', ')}) o eliminarlos con el ícono de la papelera si no los va a utilizar.`, {
+          variant: 'error',
+          autoHideDuration: 6000
+        });
+        return;
+      }
+
       // Asegurar que las banderas de activo solo sean true si realmente tienen texto de indicador
       ['Resultado', 'Logro', 'Impacto'].forEach((kind) => {
         const indKey = `indicador${kind}`;
@@ -4179,7 +4200,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                         ) : (
                           filteredTableItems.slice(itemsPage * itemsRowsPerPage, itemsPage * itemsRowsPerPage + itemsRowsPerPage).map((row) => (
                             <TableRow key={row.id} hover sx={{ '&:nth-of-type(even)': { bgcolor: '#f8fafc' } }}>
-                              <TableCell sx={{ position: 'sticky', left: 0, bgcolor: 'inherit', fontWeight: 900, color: '#5688c7', zIndex: 1 }}>
+                              <TableCell sx={{ position: 'sticky', left: 0, bgcolor: 'inherit', fontWeight: 900, color: '#5688c7', zIndex: 1, borderBottom: '2px solid #cbd5e1', borderRight: '1.5px solid #cbd5e1' }}>
                                 <Stack direction="row" spacing={0.7} alignItems="center">
                                   <span>{row.code}</span>
                                   {row.custom_values?.source_module === 'plan_mejoramiento' && (
@@ -4195,7 +4216,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                 const pmProgram = row.custom_values?.pm_programa || row.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '') || '';
 
                                 return (
-                                  <TableCell key={field.key} sx={{ maxWidth: 320, whiteSpace: 'normal', fontSize: 13, color: '#334155' }}>
+                                  <TableCell key={field.key} sx={{ maxWidth: 320, whiteSpace: 'normal', fontSize: 13, color: '#334155', borderBottom: '2px solid #cbd5e1', borderRight: '1px solid #f1f5f9' }}>
                                     {isActivityCol ? (
                                       <Stack spacing={0.5} alignItems="flex-start">
                                         {isPm && (
@@ -4227,7 +4248,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   </TableCell>
                                 );
                               })}
-                              <TableCell align="center" sx={{ position: 'sticky', right: 0, bgcolor: 'inherit', width: 72 }}>
+                              <TableCell align="center" sx={{ position: 'sticky', right: 0, bgcolor: 'inherit', width: 72, borderBottom: '2px solid #cbd5e1', borderLeft: '1.5px solid #cbd5e1' }}>
                                 <Tooltip title="Opciones de la actividad (Editar, Trasladar, Replicar, Eliminar)">
                                   <IconButton
                                     size="small"
@@ -6692,14 +6713,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             </TableCell>
                           </TableRow>
                         ) : (
-                          tab4FilteredItems.slice(tab4Page * tab4RowsPerPage, tab4Page * tab4RowsPerPage + tab4RowsPerPage).map((it) => {
+                          tab4FilteredItems.slice(tab4Page * tab4RowsPerPage, tab4Page * tab4RowsPerPage + tab4RowsPerPage).map((it, idx) => {
                             const evidences = it.evidence || [];
                             const indicators = getActiveIndicators(it);
                             const indCount = indicators.length;
                             const overallProg = calculateOverallFulfillment(it, periods);
+                            const isEvenActivity = idx % 2 === 0;
+                            const activityBg = isEvenActivity ? '#ffffff' : '#f8fafc';
 
                             return indicators.map((ind, indIdx) => {
                               const isFirstSubrow = indIdx === 0;
+                              const isLastSubrow = indIdx === indCount - 1;
+                              const cellBorderBottom = isLastSubrow ? '2.5px solid #94a3b8' : '1px dashed #cbd5e1';
                               const indProg = calculateIndicatorFulfillment(it, periods, ind.kind);
                               const indEvidences = filterEvidencesByIndicator(evidences, ind.kind);
 
@@ -6708,9 +6733,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   key={`${it.id}-${ind.kind}-${indIdx}`}
                                   hover
                                   sx={{
-                                    '&:hover': { bgcolor: '#f8fafc' },
-                                    borderBottom: indIdx === indCount - 1 ? '2px solid #cbd5e1' : '1px solid #f1f5f9',
-                                    bgcolor: indIdx > 0 ? '#fcfdfd' : 'inherit'
+                                    '&:hover': { bgcolor: '#f1f5f9' },
+                                    bgcolor: activityBg
                                   }}
                                 >
                                   {/* Código (agrupado con rowSpan) */}
@@ -6722,8 +6746,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                         verticalAlign: 'middle',
                                         py: 1.2,
                                         px: 1,
-                                        bgcolor: '#ffffff',
-                                        borderRight: indCount > 1 ? '1px solid #f1f5f9' : 'none'
+                                        bgcolor: activityBg,
+                                        borderRight: '1.5px solid #cbd5e1',
+                                        borderBottom: '2.5px solid #94a3b8'
                                       }}
                                     >
                                       <Stack direction="row" spacing={0.7} alignItems="center" justifyContent="center">
@@ -6751,8 +6776,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                         px: 1.5,
                                         minWidth: 200,
                                         maxWidth: { xs: 230, sm: 280, md: 320 },
-                                        bgcolor: '#ffffff',
-                                        borderRight: indCount > 1 ? '1px solid #f1f5f9' : 'none'
+                                        bgcolor: activityBg,
+                                        borderRight: '1.5px solid #cbd5e1',
+                                        borderBottom: '2.5px solid #94a3b8'
                                       }}
                                     >
                                       <Stack spacing={0.5} alignItems="flex-start">
@@ -6832,7 +6858,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   )}
 
                                   {/* Indicador y Meta (sub-fila específica de cada indicador) */}
-                                  <TableCell sx={{ verticalAlign: 'middle', py: 1.2, px: 1.5 }}>
+                                  <TableCell sx={{ verticalAlign: 'middle', py: 1.2, px: 1.5, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
                                     {(indCount > 1 || ind.kind !== 'principal') && (
                                       <Box sx={{ mb: 0.4 }}>
                                         <Chip
@@ -6859,7 +6885,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   </TableCell>
 
                                   {/* Plazo */}
-                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
+                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
                                     <Typography sx={{ fontSize: 11, color: '#475569', lineHeight: 1.35 }}>
                                       {formatFecha(it.starts_on)}
                                       <br />
@@ -6873,7 +6899,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                     const obs = getIndicatorObservations(it, p.id, ind.kind);
                                     const applies = isPeriodApplicableToItem(it, p);
                                     return (
-                                      <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5 }}>
+                                      <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
                                         {prog !== null ? (
                                           <Tooltip title={obs ? `Obs: ${obs}` : `Avance ${p.code}: ${prog}%`} arrow>
                                             <Chip
@@ -6914,7 +6940,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   })}
 
                                   {/* COLUMNA DE CUMPLIMIENTO */}
-                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
+                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
                                     {indProg !== null && indProg > 100 ? (
                                       <Tooltip title={`Sobrecumplimiento (${indProg}%). Superó el 100% de la meta.`} arrow>
                                         <Stack alignItems="center" spacing={0.3}>
@@ -7007,7 +7033,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   </TableCell>
 
                                   {/* Evidencias cargadas */}
-                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5 }}>
+                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
                                     {indEvidences.length > 0 ? (
                                       <Tooltip title={`Clic para ver las evidencias cargadas (${ind.shortLabel})`} arrow>
                                         <Chip
@@ -7035,7 +7061,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                   </TableCell>
 
                                   {/* Acción Valorar */}
-                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1 }}>
+                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1, bgcolor: activityBg, borderBottom: cellBorderBottom }}>
                                     <Button
                                       size="small"
                                       variant="contained"

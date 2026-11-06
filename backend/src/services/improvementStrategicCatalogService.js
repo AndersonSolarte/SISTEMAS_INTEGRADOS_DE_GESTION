@@ -38,7 +38,16 @@ const buildStrategicCatalog = (plan, levels, elements) => {
 const buildSnapshotStrategicCatalog = (plan, schema) => {
   if (!schema) return null;
   const structure = buildStrategicCatalog(plan, schema.levels || [], schema.elements || []);
-  if (structure.strategicRelations.length) return structure;
+  if (structure.strategicRelations.length) {
+    const objectiveField = (schema.fields || []).find((field) => /objective|objetivo/.test(normalize(field.key)) || normalize(field.label).includes('objetivo'));
+    const guidelineField = (schema.fields || []).find((field) => /guideline|lineamiento/.test(normalize(field.key)) || normalize(field.label).includes('lineamiento'));
+    const permitted = (row, field) => !Array.isArray(field?.options) || !field.options.length || field.options.some((option) => {
+      const values = typeof option === 'object' && option ? [option.value, option.id, option.label, option.name, option.code] : [option];
+      return values.some((value) => value != null && [row.id, row.label, row.name, row.code].some((candidate) => candidate != null && normalize(candidate).trim() === normalize(value).trim()));
+    });
+    const relations = structure.strategicRelations.filter((row) => permitted(row, objectiveField)).map((row) => ({ ...row, guidelines: row.guidelines.filter((line) => permitted(line, guidelineField)) }));
+    return { ...structure, strategicRelations: relations, strategicObjectives: relations.map((row) => row.label), objectiveProjects: Object.fromEntries(relations.map((row) => [row.label, row.guidelines.map((line) => line.label)])) };
+  }
   const fields = buildFieldStrategicCatalog(plan, schema.fields || [], schema.elements || []);
   return fields.strategicRelations.length ? fields : null;
 };

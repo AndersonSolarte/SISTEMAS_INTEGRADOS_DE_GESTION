@@ -1,3 +1,4 @@
+const { readLiveActionPlanSchema } = require('../services/liveActionPlanSchemaService');
 const { stripActivityDates, stripContentActivityDates } = require('../services/improvementActivityStructure');
 const { missingLinkFields, linkFieldValue } = require('../services/improvementLinkFields');
 const { canSynchronize, assertCanSynchronize } = require('../services/improvementActionPlanSyncGate');
@@ -1336,13 +1337,11 @@ const getActionPlanCandidates = async (req, res) => {
         recommendationReason = `Programa coincidente: ${plan.programa}`;
       }
 
-      let schema = p.metadata?.form_schema || null;
-      if (!schema && p.term?.strategic_plan_id) {
-        try {
-          const { captureActionPlanSchema } = require('../services/strategicActionPlanSchemaService');
-          schema = await captureActionPlanSchema(p.term.strategic_plan_id);
-        } catch (_) {}
-      }
+      let schema = null;
+      let schemaError = null;
+      try { schema = await readLiveActionPlanSchema(p); }
+      catch (error) { schemaError = error.message; }
+      const strategicCatalog = schema ? buildSnapshotStrategicCatalog({ id: p.term?.strategic_plan_id, code: (await readActionPlanStrategicCatalog(p.term?.strategic_plan_id)).strategicSource?.code }, schema) : null;
 
       // Obtener actividades existentes del plan para validar duplicados
       const planItems = await StrategicActionItem.findAll({
@@ -1370,6 +1369,8 @@ const getActionPlanCandidates = async (req, res) => {
         recommendation_reason: recommendationReason,
         same_responsible: sameResponsible,
         form_schema: schema,
+        schema_error: schemaError,
+        strategic_catalog: strategicCatalog,
         existing_activities: existingActivities
       };
     }));
@@ -1541,10 +1542,7 @@ const linkActivityToActionPlan = async (req, res) => {
       'Director del Programa';
 
     const formValues = req.body.form_values || req.body.activity_data || {};
-    let destinationSchema = actionPlan.metadata?.form_schema;
-    if (!destinationSchema?.fields?.length && actionPlan.term?.strategic_plan_id) {
-      destinationSchema = await require('../services/strategicActionPlanSchemaService').captureActionPlanSchema(actionPlan.term.strategic_plan_id);
-    }
+    const destinationSchema = await readLiveActionPlanSchema(actionPlan);
     if (!destinationSchema?.fields?.length) return res.status(409).json({ success: false, message: 'No se pudo obtener el formulario del Plan de Acci\u00f3n. Actualice los planes disponibles antes de vincular.' });
     const submittedValues = { ...formValues, responsible: leaderName, responsable: leaderName, responsable_de_ejecucion: leaderName };
     const missing = missingLinkFields(destinationSchema.fields, submittedValues);
@@ -2063,7 +2061,7 @@ const getCatalogs = async (req, res) => {
     const catalogData = await require('../services/improvementCatalogSources').readCatalogSources({ base: catalogsPromise, policies: readInstitutionalPolicies(), strategic: readActionPlanStrategicCatalog() });
     const actionPlanIds = [...new Set(String(req.query?.actionPlanIds || '').split(',').filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))].slice(0, 100);
     const actionPlans = actionPlanIds.length ? await StrategicActionPlan.findAll({
-      where: { id: { [Op.in]: actionPlanIds }, deleted_at: null }, attributes: ['id', 'metadata'],
+      where: { id: { [Op.in]: actionPlanIds }, deleted_at: null }, attributes: ['id', 'term_id', 'metadata'],
       include: [{ model: StrategicTerm, as: 'term', attributes: ['strategic_plan_id'], required: true }]
     }).catch(() => { catalogData.catalogWarnings.push('No se pudo consultar el PED de los planes vinculados.'); return []; }) : [];
     const byPed = new Map();
@@ -2076,7 +2074,9 @@ const getCatalogs = async (req, res) => {
       }
       const live = byPed.get(pedId);
       const source = live?.strategicSource || { id: pedId };
-      const snapshot = buildSnapshotStrategicCatalog(source, actionPlan.metadata?.form_schema);
+      let snapshot = null;
+      try { snapshot = buildSnapshotStrategicCatalog(source, await readLiveActionPlanSchema(actionPlan)); }
+      catch (_) { catalogData.catalogWarnings.push('No se pudo actualizar el formulario de un plan vinculado.'); }
       if (snapshot || live) strategicByActionPlan[actionPlan.id] = snapshot || live;
     }
     return res.json({ success: true, data: { ...catalogData, strategicByActionPlan } });

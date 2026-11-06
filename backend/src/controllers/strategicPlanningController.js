@@ -931,33 +931,7 @@ const getActionPlan = wrap(async (req, res) => {
     if (replacement) error.data = { replacement_plan_id: replacement.id, replacement_code: replacement.code };
     throw error;
   }
-  const freshSchema = await captureActionPlanSchema(actionPlan.term.strategic_plan_id);
-  const inactiveFieldRows = await StrategicFieldDefinition.findAll({
-    where: { strategic_plan_id: actionPlan.term.strategic_plan_id, active: false },
-    attributes: ['key']
-  });
-  const inactiveFieldKeys = new Set(inactiveFieldRows.map((field) => field.key));
-  const existingFields = Array.isArray(actionPlan.metadata?.form_schema?.fields)
-    ? actionPlan.metadata.form_schema.fields
-    : [];
-  const freshKeys = new Set(freshSchema.fields.map((f) => f.key));
-  const legacyFields = existingFields.filter((f) => !freshKeys.has(f.key) && !inactiveFieldKeys.has(f.key));
-  const mergedFields = [...freshSchema.fields, ...legacyFields].map((f) => {
-    if (['responsible', 'responsable_de_ejecucion', 'co_responsibles'].includes(f.key) && !f.validation_rules?.catalog_type) {
-      return { ...f, validation_rules: { ...(f.validation_rules || {}), catalog_type: 'organizational_unit' } };
-    }
-    return f;
-  });
-
-  const activeSchema = {
-    strategic_plan_id: actionPlan.term.strategic_plan_id,
-    configuration_version: freshSchema.configuration_version,
-    captured_at: freshSchema.captured_at,
-    fields: mergedFields,
-    catalogs: freshSchema.catalogs,
-    levels: freshSchema.levels,
-    elements: freshSchema.elements
-  };
+  const activeSchema = await require('../services/liveActionPlanSchemaService').readLiveActionPlanSchema(actionPlan);
 
   actionPlan.metadata = { ...(actionPlan.metadata || {}), form_schema: activeSchema };
   await actionPlan.update({ metadata: actionPlan.metadata });

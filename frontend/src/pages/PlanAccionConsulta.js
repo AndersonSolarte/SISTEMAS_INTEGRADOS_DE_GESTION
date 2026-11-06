@@ -2147,8 +2147,13 @@ export default function PlanAccionConsulta({
                   const indCount = indicators.length;
                   const overallProg = calculateOverallFulfillment(it, periods);
 
+                  const isEvenActivity = idx % 2 === 0;
+                  const activityBg = isEvenActivity ? '#ffffff' : '#f8fafc';
+
                   return indicators.map((ind, indIdx) => {
                     const isFirstSubrow = indIdx === 0;
+                    const isLastSubrow = indIdx === indCount - 1;
+                    const cellBorderBottom = isLastSubrow ? '2.5px solid #94a3b8' : '1px dashed #cbd5e1';
                     const indProg = calculateIndicatorFulfillment(it, periods, ind.kind);
                     const indEvidences = filterEvidencesByIndicator(evidences, ind.kind);
 
@@ -2157,9 +2162,8 @@ export default function PlanAccionConsulta({
                         key={`${it.id}-${ind.kind}-${indIdx}`}
                         hover
                         sx={{
-                          '&:hover': { bgcolor: '#f8fafc' },
-                          borderBottom: indIdx === indCount - 1 ? '2px solid #cbd5e1' : '1px solid #f1f5f9',
-                          bgcolor: indIdx > 0 ? '#fcfdfd' : 'inherit'
+                          '&:hover': { bgcolor: '#f1f5f9' },
+                          bgcolor: activityBg
                         }}
                       >
                         {/* NO. */}
@@ -2175,7 +2179,8 @@ export default function PlanAccionConsulta({
                               color: '#1f3864',
                               fontSize: 12,
                               zIndex: 1,
-                              borderRight: '1px solid #b4c6e7',
+                              borderRight: '1.5px solid #b4c6e7',
+                              borderBottom: '2.5px solid #94a3b8',
                               verticalAlign: 'middle',
                               width: 55
                             }}
@@ -2193,8 +2198,9 @@ export default function PlanAccionConsulta({
                               verticalAlign: 'middle',
                               py: 1,
                               px: 1,
-                              bgcolor: '#ffffff',
-                              borderRight: indCount > 1 ? '1px solid #f1f5f9' : 'none'
+                              bgcolor: activityBg,
+                              borderRight: '1.5px solid #cbd5e1',
+                              borderBottom: '2.5px solid #94a3b8'
                             }}
                           >
                             <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
@@ -2230,8 +2236,9 @@ export default function PlanAccionConsulta({
                               px: 1,
                               minWidth: 190,
                               maxWidth: { xs: 230, sm: 280, md: 320 },
-                              bgcolor: '#ffffff',
-                              borderRight: indCount > 1 ? '1px solid #f1f5f9' : 'none'
+                              bgcolor: activityBg,
+                              borderRight: '1.5px solid #cbd5e1',
+                              borderBottom: '2.5px solid #94a3b8'
                             }}
                           >
                             {it.custom_values?.source_module === 'plan_mejoramiento' && (
@@ -2311,7 +2318,7 @@ export default function PlanAccionConsulta({
                         )}
 
                         {/* Indicador y Meta */}
-                        <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
+                        <TableCell sx={{ verticalAlign: 'middle', py: 1, px: 1, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
                           {(indCount > 1 || ind.kind !== 'principal') && (
                             <Box sx={{ mb: 0.3 }}>
                               <Chip
@@ -2338,7 +2345,7 @@ export default function PlanAccionConsulta({
                         </TableCell>
 
                         {/* Plazo (Fechas) */}
-                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
                           <Typography sx={{ fontSize: 10.5, color: '#475569', lineHeight: 1.3 }}>
                             {formatFecha(it.starts_on)} al {formatFecha(it.ends_on)}
                           </Typography>
@@ -2350,7 +2357,7 @@ export default function PlanAccionConsulta({
                           const obs = getIndicatorObservations(it, p.id, ind.kind);
                           const applies = isPeriodApplicableToItem(it, p, periods);
                           return (
-                            <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
+                            <TableCell key={p.id} align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
                               {prog !== null ? (
                                 <Tooltip
                                   title={
@@ -2404,7 +2411,7 @@ export default function PlanAccionConsulta({
                         })}
 
                         {/* Columna Cumplimiento */}
-                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
                           {indProg !== null && indProg > 100 ? (
                             <Tooltip title={`Sobrecumplimiento (${indProg}%). Superó el 100% de la meta programada.`} arrow>
                               <Stack alignItems="center" spacing={0.2}>
@@ -2496,7 +2503,7 @@ export default function PlanAccionConsulta({
                         </TableCell>
 
                         {/* Evidencias */}
-                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5 }}>
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
                           {indEvidences.length > 0 ? (
                             <Tooltip title={`Clic para ver evidencias de ${ind.shortLabel}`} arrow>
                               <Chip
@@ -2524,7 +2531,7 @@ export default function PlanAccionConsulta({
                         </TableCell>
 
                         {/* Acción */}
-                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1 }}>
+                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 1, bgcolor: activityBg, borderBottom: cellBorderBottom }}>
                           {readOnly ? (
                             <Chip
                               size="small"

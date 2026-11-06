@@ -124,3 +124,20 @@ de la plantilla cuando no tiene padre configurado: OE1 (LE-001 a LE-004), OE2
 (LE-005 a LE-010) y OE3 (LE-011 a LE-013). En otros PED no se inventan relaciones.
 La migración publicada completa exclusivamente esos padres históricos faltantes;
 no sobrescribe vínculos existentes ni cruza elementos entre PED.
+
+## Formulario vigente compartido con Plan de Acción
+
+El formulario oficial y la vinculación de Mejoramiento consultan
+`liveActionPlanSchemaService.readLiveActionPlanSchema`. Ambos parten de los
+campos, listas, elementos y niveles vigentes del PED de la vigencia destino.
+Los campos desactivados no reaparecen desde capturas históricas. La captura
+guardada no reemplaza la configuración actual ni se usa como alternativa
+silenciosa ante un fallo de consulta.
+
+La vinculación conserva el orden y obligatoriedad del esquema, comparte los
+componentes de indicadores y políticas, y admite catálogos simples y múltiples.
+No genera un formulario fijo cuando falta el esquema. Consulta los cambios cada
+15 segundos y al volver a la ventana, sin borrar los datos en edición. Al enviar,
+el servidor obtiene de nuevo la estructura vigente y valida sus obligatorios.
+Las relaciones de objetivos y lineamientos del diálogo se calculan a partir
+del mismo esquema del Plan de Acción de destino.
