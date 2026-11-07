@@ -217,15 +217,19 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
 
   if (payload.indicators_progress && typeof payload.indicators_progress === 'object') {
     const { getActiveIndicators } = require('./actionPlanIndicators');
-    const activeIndicators = getActiveIndicators(actionItem);
+    let activeIndicators = getActiveIndicators(actionItem);
+    const configured = ['Resultado', 'Logro', 'Impacto'].some((kind) => custom[`indicador${kind}Activo`] !== undefined || Boolean(custom[`indicador${kind}`]));
+    if (!configured && !actionItem.indicator && !custom.indicator && activeIndicators[0]?.kind === 'principal') {
+      activeIndicators = [...new Set(Object.keys(payload.indicators_progress).map((key) => key.toLowerCase()).filter((key) => ['resultado', 'logro', 'impacto', 'principal'].includes(key)))].map((kind) => ({ kind }));
+    }
     const totalCount = activeIndicators.length || 1;
     let sumScores = 0;
     let anyScore = false;
     for (const ind of activeIndicators) {
-      const v = payload.indicators_progress[ind.kind];
+      const v = Object.entries(payload.indicators_progress).find(([key]) => key.toLowerCase() === ind.kind)?.[1];
       const prog = typeof v === 'object' ? Number(v?.progress) : Number(v);
-      if (!isNaN(prog) && prog !== null) {
-        sumScores += Math.max(0, prog);
+      if (Number.isFinite(prog)) {
+        sumScores += Math.min(100, Math.max(0, prog));
         anyScore = true;
       }
     }

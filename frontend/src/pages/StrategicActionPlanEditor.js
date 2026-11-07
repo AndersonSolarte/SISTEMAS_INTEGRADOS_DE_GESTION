@@ -4017,13 +4017,14 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             </Alert>
           </Paper>
         ) : (
-          <Stack gap={2.5} sx={{ width: '100%', maxWidth: 1800, mx: 'auto' }}>
+          <Stack gap={2.5} sx={{ width: '100%', maxWidth: '100%', minWidth: 0, mx: 'auto' }}>
             <Paper variant="outlined" sx={{ borderRadius: 3, p: 1, bgcolor: '#eef3f8', borderColor: '#d9e3ed', boxShadow: '0 5px 20px rgba(90,97,135,.05)' }}>
               <Tabs
                 value={tab}
                 onChange={(_, value) => setTab(value)}
                 variant="scrollable"
                 scrollButtons="auto"
+                allowScrollButtonsMobile
                 sx={{
                   minHeight: 66,
                   '& .MuiTabs-indicator': { display: 'none' },
@@ -4264,11 +4265,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </Typography>
                     </Box>
                   )}
-                  <TableContainer sx={{ maxWidth: '100%', overflowX: 'auto', maxHeight: '55vh' }}>
-                    <Table stickyHeader size="small" sx={{ minWidth: Math.max(850, (recordColumns.length + 2) * 180) }}>
+                  <TableContainer sx={{ width: '100%', maxWidth: '100%', overflowX: 'auto', maxHeight: { xs: 450, sm: 520, md: '60vh' }, WebkitOverflowScrolling: 'touch' }}>
+                    <Table stickyHeader size="small" sx={{ minWidth: Math.max(850, (recordColumns.length + 2) * 150), tableLayout: 'auto' }}>
                       <TableHead>
                         <TableRow>
-                          <TableCell sx={{ position: 'sticky', left: 0, bgcolor: '#f1f5f9', zIndex: 4, fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1' }}>
+                          <TableCell align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', width: 95, whiteSpace: 'nowrap' }}>
                             Código
                           </TableCell>
                           {recordColumns.map((field) => (
@@ -4276,7 +4277,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               {field.label}
                             </TableCell>
                           ))}
-                          <TableCell align="center" sx={{ position: 'sticky', right: 0, bgcolor: '#f1f5f9', zIndex: 4, fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', width: 72 }}>Acción</TableCell>
+                          <TableCell align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', width: 75, whiteSpace: 'nowrap' }}>Acción</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -4313,15 +4314,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                       rowSpan={indCount}
                                       align="center"
                                       sx={{
-                                        position: 'sticky',
-                                        left: 0,
                                         bgcolor: activityBg,
-                                        zIndex: 2,
                                         verticalAlign: 'middle',
                                         borderBottom: '2.5px solid #94a3b8',
                                         borderRight: '1.5px solid #cbd5e1',
                                         py: 1.2,
-                                        px: 1
+                                        px: 1,
+                                        width: 95
                                       }}
                                     >
                                       <Stack direction="row" spacing={0.7} alignItems="center" justifyContent="center">
@@ -4525,11 +4524,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                       rowSpan={indCount}
                                       align="center"
                                       sx={{
-                                        position: 'sticky',
-                                        right: 0,
                                         bgcolor: activityBg,
-                                        zIndex: 2,
-                                        width: 72,
+                                        width: 75,
                                         verticalAlign: 'middle',
                                         borderBottom: '2.5px solid #94a3b8',
                                         borderLeft: '1.5px solid #cbd5e1'

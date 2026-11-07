@@ -4,6 +4,23 @@ const { PlanMejoramiento } = require('../models');
 const catalog = require('../services/institutionalPolicyCatalogService');
 const controller = require('./planMejoramientoController');
 
+test('server stores the equal-weight evidenced indicator average instead of trusting a client total', async () => {
+  const originals = [PlanMejoramiento.create, catalog.listPolicies];
+  let stored;
+  PlanMejoramiento.create = async (values) => { stored = values; return { id: 1, toJSON: () => ({ id: 1, ...values }) }; };
+  catalog.listPolicies = async () => [];
+  const activity = { indicadorResultadoActivo: true, indicadorResultado: 'Informes', metaResultado: 'Uno', fechaInicioResultado: '2026-01-01', fechaFinResultado: '2026-12-31',
+    indicadorLogroActivo: true, indicadorLogro: 'Cobertura', metaLogro: 'Total', fechaInicioLogro: '2026-01-01', fechaFinLogro: '2026-12-31', metaAlcanzada: 999,
+    seguimientoIndicadores: { Resultado: { porcentaje: 100, fecha: '2026-01-02', evidencias: [{ driveFileId: 'r' }] }, Logro: { porcentaje: 50, fecha: '2026-01-02', evidencias: [{ driveFileId: 'l' }] } } };
+  const res = { status(value) { this.code = value; return this; }, json(value) { this.body = value; return this; } };
+  try {
+    await controller.create({ user: { id: 3 }, body: { programa: 'Prueba', contenido: { objetivos: [{ actividades: [activity] }] } } }, res);
+    assert.equal(res.code, 201, JSON.stringify(res.body));
+    assert.equal(stored.contenido.objetivos[0].actividades[0].metaAlcanzada, 75);
+    assert.equal(res.body.data.resumen.avance, 75);
+  } finally { [PlanMejoramiento.create, catalog.listPolicies] = originals; }
+});
+
 test('server rejects an incomplete active indicator before creating a database record', async () => {
   const original = PlanMejoramiento.create;
   let writes = 0;

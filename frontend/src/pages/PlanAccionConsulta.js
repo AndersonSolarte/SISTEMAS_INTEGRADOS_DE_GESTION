@@ -2172,13 +2172,10 @@ export default function PlanAccionConsulta({
                             rowSpan={indCount}
                             align="center"
                             sx={{
-                              position: 'sticky',
-                              left: 0,
                               bgcolor: '#d9e2f3',
                               fontWeight: 900,
                               color: '#1f3864',
                               fontSize: 12,
-                              zIndex: 1,
                               borderRight: '1.5px solid #b4c6e7',
                               borderBottom: '2.5px solid #94a3b8',
                               verticalAlign: 'middle',
@@ -2737,7 +2734,7 @@ export default function PlanAccionConsulta({
                         }}
                       >
                         {/* NO. */}
-                        <TableCell align="center" sx={{ position: 'sticky', left: 0, bgcolor: '#fef3c7', fontWeight: 900, color: '#78350f', fontSize: 12, zIndex: 1, borderRight: '1px solid #fde68a', verticalAlign: 'middle', width: 55 }}>
+                        <TableCell align="center" sx={{ bgcolor: '#fef3c7', fontWeight: 900, color: '#78350f', fontSize: 12, borderRight: '1px solid #fde68a', verticalAlign: 'middle', width: 55 }}>
                           {coRespPage * coRespRowsPerPage + idx + 1}
                         </TableCell>
 

@@ -207,3 +207,18 @@ sus relaciones y evidencias; las bajas administrativas no se restauran.
 La ventana usa el formulario vigente y mantiene los controles de acceso y
 vigencia. El frontend interpreta los IDs de la respuesta anidada del servidor
 para mostrar correctamente la acción Desvincular.
+
+### Verificación de integración para despliegue
+
+Las rutas de carga y consulta pasan el tipo de indicador al repositorio,
+persisten su lista de evidencias y sirven la vista previa Word autenticada.
+El servidor recalcula el promedio por indicador y conserva el seguimiento
+de los colaboradores. Las fechas generales del vínculo se derivan de sus
+indicadores. Los archivos ya existentes se trasladan físicamente al cambiar
+de subcarpeta, conservando su ID.
+
+Esta revisión no agrega tablas, variables de entorno ni dependencias nuevas;
+usa JSONB y la dependencia `mammoth` ya declarada para producción. El despliegue
+manual habitual ejecuta las migraciones pendientes mediante `./deploy.sh`.
+Las pruebas automatizadas de Drive utilizan clientes simulados; la carga real
+y las credenciales del servidor deben comprobarse después del despliegue.

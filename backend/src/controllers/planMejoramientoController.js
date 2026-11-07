@@ -3,6 +3,7 @@ const { stripActivityDates, stripContentActivityDates } = require('../services/i
 const { missingLinkFields, linkFieldValue } = require('../services/improvementLinkFields');
 const { canSynchronize, assertCanSynchronize } = require('../services/improvementActionPlanSyncGate');
 const { belongsToActivity, reusableLink, detachActivity } = require('../services/improvementLinkLifecycle');
+const { activeKinds, trackingProgress, validateTracking } = require('../services/improvementIndicatorTracking');
 const { aspectKey, uniqueAspects, validateAspectAssignments } = require('../services/improvementAspectIdentity');
 const { enrichImprovementPolicyDimensions } = require('../services/activityPolicyStatisticsService');
 const { clampProgress, periodCuts, latestResult, fulfillment, periodContribution, trackCurrentFollowup } = require('../services/improvementMonitoringRules');
@@ -19,7 +20,7 @@ const { syncSinglePlanOfficialWorkbook } = require('../services/actionPlanReposi
 const policyCatalog = require('../services/institutionalPolicyCatalogService');
 const { readActionPlanStrategicCatalog, buildSnapshotStrategicCatalog } = require('../services/improvementStrategicCatalogService');
 const { writeActivityIndicators, readActivityIndicators } = require('../services/activityIndicatorWorkbookService');
-const { resolveActivityIndicators, formatActivityIndicators, planIndicatorErrors } = require('../services/activityIndicators');
+const { resolveActivityIndicators, formatActivityIndicators, planIndicatorErrors, activityIndicatorPeriod } = require('../services/activityIndicators');
 const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
 
 const PLAN_MANAGER_ROLES = new Set([
@@ -201,6 +202,7 @@ const mergeExecutionContent = (stored = {}, incoming = {}, allowedActivityUids =
         return {
           ...activity,
           metaAlcanzada: update.metaAlcanzada ?? activity.metaAlcanzada,
+          seguimientoIndicadores: update.seguimientoIndicadores ?? activity.seguimientoIndicadores,
           fechaSeguimiento: update.fechaSeguimiento ?? activity.fechaSeguimiento,
           evidencia: update.evidencia ?? activity.evidencia,
           observaciones: update.observaciones ?? activity.observaciones,
@@ -317,7 +319,7 @@ const reconcileLinkedActivities = async (plan, { persist = true, force = false }
         const results = actionItem.monitoringResults || [];
         const liveTime = Date.parse(act.seguimientoActual?.registradoAt || '') || 0;
         const remoteTime = Math.max(0, ...results.map((r) => Date.parse(r.updated_at || r.updatedAt || r.created_at || r.createdAt || '') || 0));
-        if (results.length && (force || !liveTime || remoteTime >= liveTime)) {
+        if (!act.seguimientoIndicadores && results.length && (force || !liveTime || remoteTime >= liveTime)) {
           const ids = results.map((r) => r.monitoring_period_id);
           const periods = await StrategicMonitoringPeriod.findAll({ where: { id: { [Op.in]: ids } } });
           const latest = latestResult(results, periods);
@@ -658,6 +660,10 @@ const executionBadge = async (req, res) => {
 const normalizePayload = (body = {}) => {
   const currentYear = new Date().getFullYear();
   const contenido = stripContentActivityDates(body.contenido && typeof body.contenido === 'object' ? body.contenido : {});
+  for (const objective of array(contenido.objetivos)) for (const activity of array(objective.actividades)) {
+    validateTracking(activity);
+    if (activity.seguimientoIndicadores) activity.metaAlcanzada = trackingProgress(activity);
+  }
   validateAspectAssignments(array(contenido.objetivos));
   const indicatorIssues = planIndicatorErrors(array(contenido.objetivos));
   if (indicatorIssues.length) throw Object.assign(new Error(indicatorIssues[0].message), { status: 422, details: indicatorIssues });
@@ -701,6 +707,7 @@ const serialize = (plan) => {
     const objectiveActivities = array(objective.actividades);
     if (!objectiveActivities.length) return 0;
     return objectiveActivities.reduce((sum, activity) => {
+      if (activity.seguimientoIndicadores || activeKinds(activity).length) return sum + trackingProgress(activity);
       const meta = number(activity.meta);
       return sum + (meta > 0 ? Math.min(100, Math.max(0, (number(activity.metaAlcanzada) / meta) * 100)) : 0);
     }, 0) / objectiveActivities.length;
@@ -964,6 +971,14 @@ const readActivityEvidence = async (req, res) => {
     if (!activity) return res.status(404).json({ success: false, message: 'Actividad no encontrada' });
     const result = await planMejoramientoDriveService.readActivityEvidence(activity, req.params.fileId);
     if (!req.params.fileId) return res.json({ success: true, data: result });
+    if (req.query?.preview === '1') {
+      const html = await require('../services/improvementEvidencePreview').previewEvidence(result);
+      if (html !== null) {
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        return res.type('html').send(html);
+      }
+    }
     res.setHeader('Content-Type', result.mimeType);
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -1005,10 +1020,21 @@ const uploadActivityEvidence = async (req, res) => {
     }
     if (!req.file?.buffer) return res.status(400).json({ success: false, message: 'Seleccione un archivo de evidencia' });
 
-    const uploaded = await planMejoramientoDriveService.uploadActivityEvidence(plan, activityUid, req.file);
+    const indicatorKind = text(req.body?.indicator_kind);
+    const sourceActivity = array(plan.contenido?.objetivos).flatMap((objective) => array(objective.actividades)).find((activity) => String(activity.uid) === activityUid);
+    if (indicatorKind && (!sourceActivity || !activeKinds(sourceActivity).includes(indicatorKind))) return res.status(422).json({ success: false, message: 'El indicador seleccionado no está activo en esta actividad.' });
+    const uploaded = await planMejoramientoDriveService.uploadActivityEvidence(plan, activityUid, req.file, indicatorKind);
     for (const objective of array(uploaded.content?.objetivos)) {
       const activity = array(objective.actividades).find((a) => String(a.uid) === String(activityUid));
-      if (activity) activity.ultimaEvidencia = uploaded.evidence;
+      if (activity) {
+        activity.ultimaEvidencia = uploaded.evidence;
+        if (indicatorKind) {
+          activity.cumplimientoAnterior ??= activity.metaAlcanzada;
+          const previous = activity.seguimientoIndicadores?.[indicatorKind] || {};
+          activity.seguimientoIndicadores = { ...activity.seguimientoIndicadores, [indicatorKind]: { ...previous, evidencias: [...array(previous.evidencias), uploaded.evidence] } };
+          activity.metaAlcanzada = trackingProgress(activity);
+        }
+      }
     }
     await plan.update({ contenido: uploaded.content, actualizado_por: req.user?.id });
     // Sincronizar evidencia con Plan de Acción si la actividad está vinculada
@@ -1037,8 +1063,8 @@ const uploadActivityEvidence = async (req, res) => {
             await StrategicEvidence.create({
               action_item_id: actionItem.id,
               monitoring_period_id: period.id,
-              original_name: req.file.originalname,
-              stored_name: req.file.originalname,
+              original_name: uploaded.evidence?.nombre || req.file.originalname,
+              stored_name: uploaded.evidence?.nombre || req.file.originalname,
               storage_key: `pm-evidence-${plan.id}-${activityUid}-${Date.now()}`,
               mime_type: req.file.mimetype || 'application/octet-stream',
               size_bytes: req.file.size || 0,
@@ -1046,7 +1072,8 @@ const uploadActivityEvidence = async (req, res) => {
               drive_file_id: uploaded.evidence?.linkedEvidence?.driveFileId || uploaded.evidence?.driveFileId || null,
               drive_folder_id: uploaded.evidence?.linkedEvidence?.folderId || uploaded.evidence?.carpetaId || null,
               sync_status: 'synced',
-              uploaded_by: req.user.id
+              uploaded_by: req.user.id,
+              description: indicatorKind ? `[${indicatorKind.toLowerCase()}] Evidencia desde Plan de Mejoramiento` : 'Evidencia desde Plan de Mejoramiento'
             });
           }
         }
@@ -1154,6 +1181,7 @@ const syncLinkedActionPlansTracking = async (plan, req) => {
       const indicators = resolveActivityIndicators(act);
       const indicatorsChanged = Object.entries(indicators).some(([key, value]) => value !== (custom[key] || ''));
       Object.assign(custom, indicators);
+      if (act.seguimientoIndicadores) custom.pm_indicator_tracking = act.seguimientoIndicadores;
       if (indicatorsChanged) {
         custom.indicator = formatActivityIndicators(act);
         custom.indicador = custom.indicator;
@@ -1170,13 +1198,22 @@ const syncLinkedActionPlansTracking = async (plan, req) => {
           console.warn(`[syncLinkedActionPlansTracking] Periodo ${position} no encontrado para item ${actionItem.id}`);
           continue;
         }
-        const signature = JSON.stringify([cut.fecha, cut.porcentaje, cut.observaciones || '', cut.id || '']);
+        const signature = JSON.stringify([cut.fecha, cut.porcentaje, cut.observaciones || '', cut.id || '', cut.seguimientoIndicadores || null]);
         if (signatures[position] === signature) continue;
         const [result] = await StrategicMonitoringResult.findOrCreate({
           where: { action_item_id: actionItem.id, monitoring_period_id: period.id },
           defaults: { action_item_id: actionItem.id, monitoring_period_id: period.id, created_by: req.user.id }
         });
         const contribution = periodContribution(cut.porcentaje, currentResults.filter((r) => Number(periods.find((p) => String(p.id) === String(r.monitoring_period_id))?.position) < position));
+        if (cut.seguimientoIndicadores) {
+          const entries = {};
+          for (const kind of activeKinds(act)) {
+            const record = cut.seguimientoIndicadores[kind];
+            const earlier = periods.filter((p) => Number(p.position) < position).reduce((sum, p) => sum + Number(custom.monitoring_indicators?.[p.id]?.[kind.toLowerCase()]?.progress || 0), 0);
+            entries[kind.toLowerCase()] = { progress: Math.max(0, Math.min(100, Number(record?.evidencias?.length ? record.porcentaje : 0) || 0) - earlier), observations: record?.observaciones || '' };
+          }
+          custom.monitoring_indicators = { ...custom.monitoring_indicators, [period.id]: entries };
+        }
         await result.update({ physical_progress: contribution, observations: cut.observaciones || '', status: 'submitted', updated_by: req.user.id });
         const existingIndex = currentResults.findIndex((r) => String(r.monitoring_period_id) === String(period.id));
         if (existingIndex >= 0) currentResults[existingIndex] = { monitoring_period_id: period.id, physical_progress: contribution };
@@ -1557,7 +1594,10 @@ const linkActivityToActionPlan = async (req, res) => {
       actionPlan.organizationalUnit?.name ||
       'Director del Programa';
 
-    const formValues = req.body.form_values || req.body.activity_data || {};
+    const scheduledPeriod = activityIndicatorPeriod(targetActivity);
+    const formValues = { ...(req.body.form_values || req.body.activity_data || {}) };
+    if (scheduledPeriod.starts_on) Object.assign(formValues, { starts_on: scheduledPeriod.starts_on, fecha_inicio: scheduledPeriod.starts_on, fechaInicio: scheduledPeriod.starts_on });
+    if (scheduledPeriod.ends_on) Object.assign(formValues, { ends_on: scheduledPeriod.ends_on, fecha_fin: scheduledPeriod.ends_on, fechaFin: scheduledPeriod.ends_on });
     const destinationSchema = await readLiveActionPlanSchema(actionPlan);
     if (!destinationSchema?.fields?.length) return res.status(409).json({ success: false, message: 'No se pudo obtener el formulario del Plan de Acci\u00f3n. Actualice los planes disponibles antes de vincular.' });
     const submittedValues = { ...formValues, responsible: leaderName, responsable: leaderName, responsable_de_ejecucion: leaderName };
@@ -2175,6 +2215,7 @@ const activityRows = (contenido = {}) => array(contenido.objetivos).flatMap((obj
   const activities = array(objective.actividades);
   const normalized = activities.length ? activities : [{}];
   const currentObjectiveProgress = normalized.reduce((sum, activity) => {
+    if (activity.seguimientoIndicadores || activeKinds(activity).length) return sum + trackingProgress(activity) / 100;
     const goal = number(activity.meta);
     return sum + (goal > 0 ? Math.min(1, Math.max(0, number(activity.metaAlcanzada) / goal)) : 0);
   }, 0) / normalized.length;

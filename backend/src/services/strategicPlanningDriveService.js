@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
 const { google } = require('googleapis');
+const { driveMoveParameters } = require('./actionPlanEvidenceLocation');
 const { Op } = require('sequelize');
 const {
   StrategicEvidence, StrategicSyncJob, StrategicActionItem, StrategicActionPlan,
@@ -425,7 +426,8 @@ const syncEvidence = async (evidenceId, options = {}) => {
   const media = { mimeType: evidence.mime_type, body: fs.createReadStream(evidence.storage_key) };
   let file;
   if (evidence.drive_file_id) {
-    file = await drive.files.update({ fileId: evidence.drive_file_id, requestBody, media, fields: 'id,md5Checksum,webViewLink,webContentLink', supportsAllDrives: true });
+    const existing = await drive.files.get({ fileId: evidence.drive_file_id, fields: 'parents', supportsAllDrives: true });
+    file = await drive.files.update({ fileId: evidence.drive_file_id, requestBody, media, ...driveMoveParameters(existing.data.parents, folderId), fields: 'id,md5Checksum,webViewLink,webContentLink', supportsAllDrives: true });
   } else {
     file = await drive.files.create({ requestBody: { ...requestBody, parents: [folderId] }, media, fields: 'id,md5Checksum,webViewLink,webContentLink', supportsAllDrives: true });
   }
