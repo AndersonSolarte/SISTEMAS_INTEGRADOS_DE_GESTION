@@ -2410,97 +2410,130 @@ export default function PlanAccionConsulta({
                           );
                         })}
 
-                        {/* Columna Cumplimiento */}
-                        <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
-                          {indProg !== null && indProg > 100 ? (
-                            <Tooltip title={`Sobrecumplimiento (${indProg}%). Superó el 100% de la meta programada.`} arrow>
-                              <Stack alignItems="center" spacing={0.2}>
-                                <Chip
-                                  size="small"
-                                  icon={<PriorityHighIcon sx={{ fontSize: '12px !important', color: '#f59e0b !important', fontWeight: 900 }} />}
-                                  label={`${indProg}%`}
-                                  sx={{
-                                    fontWeight: 900,
-                                    fontSize: 11,
-                                    height: 23,
-                                    borderRadius: 1.2,
-                                    bgcolor: '#064e3b',
-                                    color: '#ecfdf5',
-                                    border: '1.5px dashed #f59e0b',
-                                    cursor: 'help'
-                                  }}
-                                />
-                                <Typography sx={{ fontSize: 9, fontWeight: 800, color: '#b45309', lineHeight: 1 }}>
-                                  Revisar meta
-                                </Typography>
-                              </Stack>
-                            </Tooltip>
-                          ) : indProg !== null && indProg === 100 ? (
-                            <Tooltip title="¡Meta cumplida al 100%!" arrow>
-                              <Stack alignItems="center" spacing={0.2}>
-                                <Chip
-                                  size="small"
-                                  icon={<CheckCircleIcon sx={{ fontSize: '13px !important', color: '#16a34a !important' }} />}
-                                  label="100%"
-                                  sx={{
-                                    fontWeight: 850,
-                                    fontSize: 11,
-                                    height: 22,
-                                    borderRadius: 1,
-                                    bgcolor: '#dcfce7',
-                                    color: '#15803d',
-                                    border: '1px solid #86efac'
-                                  }}
-                                />
-                                <Typography sx={{ fontSize: 9, fontWeight: 750, color: '#15803d', lineHeight: 1 }}>
-                                  Cumplida
-                                </Typography>
-                              </Stack>
-                            </Tooltip>
-                          ) : indProg !== null && indProg > 0 ? (
-                            <Tooltip title={`Avance actual: ${indProg}%. Falta ${Number((100 - indProg).toFixed(1))}%`} arrow>
-                              <Stack alignItems="center" spacing={0.2}>
-                                <Chip
-                                  size="small"
-                                  label={`${indProg}%`}
-                                  sx={{
-                                    fontWeight: 800,
-                                    fontSize: 11,
-                                    height: 22,
-                                    borderRadius: 1,
-                                    bgcolor: '#fffbeb',
-                                    color: '#b45309',
-                                    border: '1px solid #fde68a'
-                                  }}
-                                />
-                                <Typography sx={{ fontSize: 9, fontWeight: 750, color: '#b45309', lineHeight: 1 }}>
-                                  Falta {Number((100 - indProg).toFixed(0))}%
-                                </Typography>
-                              </Stack>
-                            </Tooltip>
-                          ) : (
-                            <Tooltip title="Sin avances registrados aún." arrow>
-                              <Stack alignItems="center" spacing={0.2}>
-                                <Chip
-                                  size="small"
-                                  label="0%"
-                                  sx={{
-                                    fontWeight: 750,
-                                    fontSize: 10.5,
-                                    height: 21,
-                                    borderRadius: 1,
-                                    bgcolor: '#f1f5f9',
-                                    color: '#64748b',
-                                    border: '1px solid #cbd5e1'
-                                  }}
-                                />
-                                <Typography sx={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', lineHeight: 1 }}>
-                                  Falta 100%
-                                </Typography>
-                              </Stack>
-                            </Tooltip>
-                          )}
-                        </TableCell>
+                        {/* Columna Cumplimiento (Agrupada por actividad, promedio de los indicadores) */}
+                        {isFirstSubrow && (
+                          <TableCell
+                            rowSpan={indCount}
+                            align="center"
+                            sx={{
+                              verticalAlign: 'middle',
+                              py: 1,
+                              px: 0.5,
+                              bgcolor: activityBg,
+                              borderBottom: '2.5px solid #94a3b8',
+                              borderRight: '1.5px solid #cbd5e1'
+                            }}
+                          >
+                            {overallProg !== null && overallProg > 100 ? (
+                              <Tooltip title={`Sobrecumplimiento (${overallProg}%). Superó el 100% de la meta programada.`} arrow>
+                                <Stack alignItems="center" spacing={0.2}>
+                                  <Chip
+                                    size="small"
+                                    icon={<PriorityHighIcon sx={{ fontSize: '12px !important', color: '#f59e0b !important', fontWeight: 900 }} />}
+                                    label={`${overallProg}%`}
+                                    sx={{
+                                      fontWeight: 900,
+                                      fontSize: 11,
+                                      height: 23,
+                                      borderRadius: 1.2,
+                                      bgcolor: '#064e3b',
+                                      color: '#ecfdf5',
+                                      border: '1.5px dashed #f59e0b',
+                                      cursor: 'help'
+                                    }}
+                                  />
+                                  <Typography sx={{ fontSize: 9, fontWeight: 800, color: '#b45309', lineHeight: 1 }}>
+                                    Revisar meta
+                                  </Typography>
+                                  {indCount > 1 && (
+                                    <Typography sx={{ fontSize: 8.5, color: '#64748b', fontWeight: 700 }}>
+                                      Promedio ({indCount} ind.)
+                                    </Typography>
+                                  )}
+                                </Stack>
+                              </Tooltip>
+                            ) : overallProg !== null && overallProg >= 100 ? (
+                              <Tooltip title="¡Meta cumplida al 100%!" arrow>
+                                <Stack alignItems="center" spacing={0.2}>
+                                  <Chip
+                                    size="small"
+                                    icon={<CheckCircleIcon sx={{ fontSize: '13px !important', color: '#16a34a !important' }} />}
+                                    label="100%"
+                                    sx={{
+                                      fontWeight: 850,
+                                      fontSize: 11,
+                                      height: 22,
+                                      borderRadius: 1,
+                                      bgcolor: '#dcfce7',
+                                      color: '#15803d',
+                                      border: '1px solid #86efac'
+                                    }}
+                                  />
+                                  <Typography sx={{ fontSize: 9, fontWeight: 750, color: '#15803d', lineHeight: 1 }}>
+                                    Cumplida
+                                  </Typography>
+                                  {indCount > 1 && (
+                                    <Typography sx={{ fontSize: 8.5, color: '#15803d', fontWeight: 700 }}>
+                                      Promedio ({indCount} ind.)
+                                    </Typography>
+                                  )}
+                                </Stack>
+                              </Tooltip>
+                            ) : overallProg !== null && overallProg > 0 ? (
+                              <Tooltip title={`Cumplimiento general: ${overallProg}%. Falta ${Number((100 - overallProg).toFixed(1))}%`} arrow>
+                                <Stack alignItems="center" spacing={0.2}>
+                                  <Chip
+                                    size="small"
+                                    label={`${overallProg}%`}
+                                    sx={{
+                                      fontWeight: 800,
+                                      fontSize: 11,
+                                      height: 22,
+                                      borderRadius: 1,
+                                      bgcolor: '#fffbeb',
+                                      color: '#b45309',
+                                      border: '1px solid #fde68a'
+                                    }}
+                                  />
+                                  <Typography sx={{ fontSize: 9, fontWeight: 750, color: '#b45309', lineHeight: 1 }}>
+                                    Falta {Number((100 - overallProg).toFixed(0))}%
+                                  </Typography>
+                                  {indCount > 1 && (
+                                    <Typography sx={{ fontSize: 8.5, color: '#b45309', fontWeight: 700 }}>
+                                      Promedio ({indCount} ind.)
+                                    </Typography>
+                                  )}
+                                </Stack>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip title="Sin avances registrados aún." arrow>
+                                <Stack alignItems="center" spacing={0.2}>
+                                  <Chip
+                                    size="small"
+                                    label="0%"
+                                    sx={{
+                                      fontWeight: 750,
+                                      fontSize: 10.5,
+                                      height: 21,
+                                      borderRadius: 1,
+                                      bgcolor: '#f1f5f9',
+                                      color: '#64748b',
+                                      border: '1px solid #cbd5e1'
+                                    }}
+                                  />
+                                  <Typography sx={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', lineHeight: 1 }}>
+                                    Falta 100%
+                                  </Typography>
+                                  {indCount > 1 && (
+                                    <Typography sx={{ fontSize: 8.5, color: '#94a3b8', fontWeight: 700 }}>
+                                      Promedio ({indCount} ind.)
+                                    </Typography>
+                                  )}
+                                </Stack>
+                              </Tooltip>
+                            )}
+                          </TableCell>
+                        )}
 
                         {/* Evidencias */}
                         <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1, px: 0.5, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>

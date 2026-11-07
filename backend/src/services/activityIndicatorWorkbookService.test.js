@@ -3,6 +3,20 @@ const assert = require('node:assert/strict');
 const ExcelJS = require('exceljs');
 const { writeActivityIndicators, readActivityIndicators } = require('./activityIndicatorWorkbookService');
 
+test('indicator progress and its own evidence survive Excel round trip', async () => {
+  const ExcelJS = require('exceljs');
+  const workbook = new ExcelJS.Workbook();
+  const tracking = { Resultado: { porcentaje: 60, fecha: '2026-04-01', observaciones: 'Informe parcial', evidencias: [{ driveFileId: 'file-a', nombre: 'informe.pdf' }] } };
+  const objectives = [{ codigo: 'OPM_01', actividades: [{ nombre: 'Informar', indicadorResultadoActivo: true, indicadorResultado: 'Informe', metaResultado: 'Un informe', fechaInicioResultado: '2026-01-01', fechaFinResultado: '2026-06-30', seguimientoIndicadores: tracking }] }];
+  writeActivityIndicators(workbook, objectives);
+  const restored = new ExcelJS.Workbook();
+  await restored.xlsx.load(await workbook.xlsx.writeBuffer());
+  const target = [{ codigo: 'OPM_01', actividades: [{ nombre: 'Informar' }] }];
+  readActivityIndicators(restored, target);
+  assert.deepEqual(target[0].actividades[0].seguimientoIndicadores, tracking);
+  assert.equal(target[0].actividades[0].metaAlcanzada, 60);
+});
+
 test('each indicator start and end date survive export and import', async () => {
   const activity = { indicadorLogro: 'Entregas', metaLogro: '12 productos', indicadorLogroActivo: true, fechaInicioLogro: '2026-11-01', fechaFinLogro: '2026-12-10' };
   const book = new ExcelJS.Workbook();

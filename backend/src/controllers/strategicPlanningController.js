@@ -1403,10 +1403,6 @@ const searchActivitySuggestions = wrap(async (req, res) => {
   const planId = req.params.id;
   const rawQ = String(req.query.q || '').trim();
 
-  if (rawQ.length < 2) {
-    return ok(res, []);
-  }
-
   let currentPlan = null;
   if (planId) {
     currentPlan = await StrategicActionPlan.findByPk(planId, {
@@ -1423,10 +1419,25 @@ const searchActivitySuggestions = wrap(async (req, res) => {
 
   const queryWords = rawQ.split(/\s+/).map(normalize).filter(Boolean);
 
+  let whereCondition = { deleted_at: null };
+
+  if (queryWords.length > 0) {
+    const searchConditions = queryWords.map((word) => ({
+      [Op.or]: [
+        { activity: { [Op.iLike]: `%${word}%` } },
+        sequelize.where(
+          sequelize.cast(sequelize.col('StrategicActionItem.custom_values'), 'text'),
+          { [Op.iLike]: `%${word}%` }
+        )
+      ]
+    }));
+    whereCondition[Op.and] = searchConditions;
+  } else if (currentPlan?.catalog_item_id) {
+    whereCondition['$actionPlan.catalog_item_id$'] = currentPlan.catalog_item_id;
+  }
+
   const items = await StrategicActionItem.findAll({
-    where: {
-      deleted_at: null
-    },
+    where: whereCondition,
     attributes: [
       'id', 'code', 'activity', 'indicator_type', 'indicator', 'target',
       'starts_on', 'ends_on', 'co_responsibles', 'custom_values', 'action_plan_id'
@@ -1441,11 +1452,16 @@ const searchActivitySuggestions = wrap(async (req, res) => {
             model: StrategicCatalogItem,
             as: 'organizationalUnit',
             attributes: ['id', 'name', 'code']
+          },
+          {
+            model: StrategicTerm,
+            as: 'term',
+            attributes: ['id', 'year']
           }
         ]
       }
     ],
-    limit: 400,
+    limit: 60,
     order: [['id', 'DESC']]
   });
 
@@ -1454,42 +1470,50 @@ const searchActivitySuggestions = wrap(async (req, res) => {
   const seenTexts = new Set();
 
   for (const it of items) {
-    const actText = (it.activity || it.custom_values?.activity || '').trim();
+    const actText = (it.activity || it.custom_values?.activity || it.custom_values?.actividad || '').trim();
     if (!actText) continue;
 
     const normText = normalize(actText);
-    const matchesAllWords = queryWords.every((w) => normText.includes(w));
-    if (!matchesAllWords) continue;
+    if (queryWords.length > 0) {
+      const matchesAllWords = queryWords.every((w) => normText.includes(w));
+      if (!matchesAllWords) continue;
+    }
 
     if (seenTexts.has(normText)) continue;
     seenTexts.add(normText);
 
     const isSamePlan = currentPlan && String(it.action_plan_id) === String(currentPlan.id);
     const isSameDep = currentDepId && String(it.actionPlan?.catalog_item_id) === String(currentDepId);
+    const termYear = it.actionPlan?.term?.year || (String(it.actionPlan?.code || it.actionPlan?.title).match(/(20\d\d)/)?.[1] || '');
 
     matching.push({
       id: it.id,
       code: it.code,
       activity: actText,
-      indicator_type: it.indicator_type || '',
-      indicator: it.indicator || '',
-      target: it.target || '',
-      starts_on: it.starts_on || '',
-      ends_on: it.ends_on || '',
-      co_responsibles: it.co_responsibles || [],
+      indicator_type: it.indicator_type || it.custom_values?.tipo_indicador || it.custom_values?.tipoIndicador || 'Resultado',
+      indicator: it.indicator || it.custom_values?.indicador || '',
+      target: it.target || it.custom_values?.meta || '',
+      starts_on: it.starts_on || it.custom_values?.starts_on || '',
+      ends_on: it.ends_on || it.custom_values?.ends_on || '',
+      macroactivity: it.custom_values?.macroactivity || it.custom_values?.macroactividad || '',
+      co_responsibles: it.co_responsibles || it.custom_values?.co_responsibles || [],
       custom_values: it.custom_values || {},
       is_same_plan: Boolean(isSamePlan),
       is_same_dependency: Boolean(isSameDep),
       dependency_name: it.actionPlan?.organizationalUnit?.name || it.actionPlan?.title || '',
-      action_plan_code: it.actionPlan?.code || ''
+      action_plan_code: it.actionPlan?.code || '',
+      term_year: termYear ? Number(termYear) : null
     });
 
-    if (matching.length >= 25) break;
+    if (matching.length >= 35) break;
   }
 
   matching.sort((a, b) => {
     if (a.is_same_dependency && !b.is_same_dependency) return -1;
     if (!a.is_same_dependency && b.is_same_dependency) return 1;
+    const yearA = Number(a.term_year) || 0;
+    const yearB = Number(b.term_year) || 0;
+    if (yearA !== yearB) return yearB - yearA;
     return a.activity.length - b.activity.length;
   });
 
@@ -3489,7 +3513,7 @@ const uploadEvidence = wrap(async (req, res) => {
   // Sincronización automática e inmediata en Google Drive en la carpeta a nombre de la actividad
   let driveSyncSuccess = false;
   try {
-    const driveResult = await syncEvidence(evidence.id);
+    const driveResult = await syncEvidence(evidence.id, { indicator_kind: req.body.indicator_kind });
     if (driveResult && !driveResult.skipped) {
       driveSyncSuccess = true;
       await evidence.reload();
@@ -3696,18 +3720,22 @@ const getActionItemDriveFolder = wrap(async (req, res) => {
     }
   }
 
-  const syncedEvidence = effectivePeriodId
-    ? (item.evidence || []).find((e) => String(e.monitoring_period_id) === String(effectivePeriodId) && e.drive_folder_id)
-    : (item.evidence || []).find((e) => e.drive_folder_id);
-
-  if (syncedEvidence) {
-    return ok(res, {
-      folderId: syncedEvidence.drive_folder_id,
-      folderUrl: `https://drive.google.com/drive/folders/${syncedEvidence.drive_folder_id}`
+  const reqKind = req.query.indicatorKind || req.query.kind || null;
+  if (reqKind) {
+    const matchedEvidence = (item.evidence || []).find((e) => {
+      const matchPeriod = effectivePeriodId ? String(e.monitoring_period_id) === String(effectivePeriodId) : true;
+      const desc = String(e.description || '').toLowerCase();
+      return matchPeriod && e.drive_folder_id && (desc.includes(`[${reqKind.toLowerCase()}]`) || desc.includes(reqKind.toLowerCase()));
     });
+    if (matchedEvidence) {
+      return ok(res, {
+        folderId: matchedEvidence.drive_folder_id,
+        folderUrl: `https://drive.google.com/drive/folders/${matchedEvidence.drive_folder_id}`
+      });
+    }
   }
   try {
-    const folderInfo = await getActivityDriveFolder(item.id, effectivePeriodId);
+    const folderInfo = await getActivityDriveFolder(item.id, effectivePeriodId, req.query.indicatorKind || req.query.kind || null);
     return ok(res, folderInfo);
   } catch (e) {
     return ok(res, { folderId: null, folderUrl: null, message: e.message });

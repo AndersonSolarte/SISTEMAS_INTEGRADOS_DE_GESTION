@@ -4,7 +4,9 @@ const {
   getActiveIndicators,
   getIndicatorProgress,
   calculateOverallFulfillment,
-  filterEvidencesByIndicator
+  filterEvidencesByIndicator,
+  getIndicatorFolderName,
+  resolveEvidenceIndicatorKind
 } = require('./actionPlanIndicators');
 
 test('getActiveIndicators parses single indicator activity', () => {
@@ -94,4 +96,16 @@ test('filterEvidencesByIndicator filters evidences tagged by kind', () => {
 
   assert.equal(resultadoEvs.length, 2);
   assert.equal(logroEvs.length, 1);
+});
+
+test('getIndicatorFolderName and resolveEvidenceIndicatorKind correctly identify dynamic drive subfolders', () => {
+  assert.equal(getIndicatorFolderName({ kind: 'resultado' }), 'Resultado');
+  assert.equal(getIndicatorFolderName({ kind: 'principal' }), 'Resultado');
+  assert.equal(getIndicatorFolderName({ kind: 'logro' }), 'Logro');
+  assert.equal(getIndicatorFolderName({ kind: 'impacto' }), 'Impacto');
+
+  assert.equal(resolveEvidenceIndicatorKind({ indicator_kind: 'logro' }), 'logro');
+  assert.equal(resolveEvidenceIndicatorKind({ description: '[impacto] Encuesta egresados' }), 'impacto');
+  assert.equal(resolveEvidenceIndicatorKind({ original_name: 'informe_logro.pdf' }), 'logro');
+  assert.equal(resolveEvidenceIndicatorKind({ description: 'General doc' }), 'resultado');
 });

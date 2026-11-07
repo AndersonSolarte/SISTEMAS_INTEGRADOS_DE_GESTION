@@ -18,6 +18,11 @@ const {
   parsePeriodDate,
   intersectsPeriod
 } = require('./actionPlanRepositoryDriveService');
+const {
+  getActiveIndicators,
+  getIndicatorFolderName,
+  resolveEvidenceIndicatorKind
+} = require('./actionPlanIndicators');
 
 const buildWritableDriveClient = () => {
   return buildActionRepositoryDriveClient();
@@ -124,7 +129,7 @@ const findOrCreateFolder = async (drive, { parentId, name, key }) => {
   return created.data.id;
 };
 
-const ensureEvidenceFolder = async (drive, evidence) => {
+const ensureEvidenceFolder = async (drive, evidence, options = {}) => {
   const item = await StrategicActionItem.findByPk(evidence.action_item_id, {
     include: [{
       model: StrategicActionPlan, as: 'actionPlan',
@@ -240,14 +245,42 @@ const ensureEvidenceFolder = async (drive, evidence) => {
     ? `action-repository:activity:${item.id}:period:${selectedPeriod.id}`
     : `action-repository:activity:${item.id}`;
 
-  return findOrCreateFolder(drive, {
+  const activityFolderId = await findOrCreateFolder(drive, {
     parentId: parentForActivity,
     name: activityFolderName,
     key: activityKey
   });
+
+  // 7. Subcarpetas dinámicas por indicador según los indicadores activos de la actividad
+  const activeIndicators = getActiveIndicators(item);
+  const targetKind = resolveEvidenceIndicatorKind(evidence);
+  let targetIndicatorFolderId = null;
+
+  for (const ind of activeIndicators) {
+    const indFolderName = getIndicatorFolderName(ind);
+    const indKey = selectedPeriod
+      ? `action-repository:indicator:${item.id}:period:${selectedPeriod.id}:${ind.kind}`
+      : `action-repository:indicator:${item.id}:${ind.kind}`;
+
+    const indFolderId = await findOrCreateFolder(drive, {
+      parentId: activityFolderId,
+      name: indFolderName,
+      key: indKey
+    });
+
+    if (ind.kind === targetKind || (targetKind === 'resultado' && ind.kind === 'principal')) {
+      targetIndicatorFolderId = indFolderId;
+    }
+  }
+
+  if (options && options.activityOnly) {
+    return activityFolderId;
+  }
+
+  return targetIndicatorFolderId || activityFolderId;
 };
 
-const getActivityDriveFolder = async (actionItemId, periodId = null) => {
+const getActivityDriveFolder = async (actionItemId, periodId = null, indicatorKind = null) => {
   const item = await StrategicActionItem.findByPk(actionItemId, {
     include: [{
       model: StrategicActionPlan, as: 'actionPlan', include: [
@@ -258,7 +291,11 @@ const getActivityDriveFolder = async (actionItemId, periodId = null) => {
   });
   if (!item) throw new Error('Actividad no encontrada.');
   const drive = buildWritableDriveClient();
-  const folderId = await ensureEvidenceFolder(drive, { action_item_id: item.id, monitoring_period_id: periodId });
+  const folderId = await ensureEvidenceFolder(drive, {
+    action_item_id: item.id,
+    monitoring_period_id: periodId,
+    indicator_kind: indicatorKind
+  }, { activityOnly: !indicatorKind });
   return {
     folderId,
     folderUrl: `https://drive.google.com/drive/folders/${folderId}`
@@ -323,7 +360,7 @@ const ensureActivityFoldersInDrive = async (actionItemId) => {
     const folderId = await ensureEvidenceFolder(drive, {
       action_item_id: item.id,
       monitoring_period_id: period.id
-    });
+    }, { activityOnly: true });
     folderResults.push({
       periodId: period.id,
       periodName: period.name,
@@ -372,12 +409,15 @@ const getMinutesDriveFolder = async (actionPlanId) => {
 };
 
 
-const syncEvidence = async (evidenceId) => {
+const syncEvidence = async (evidenceId, options = {}) => {
   const evidence = await StrategicEvidence.findByPk(evidenceId);
   if (!evidence || evidence.deleted_at) return { skipped: true };
   if (!fs.existsSync(evidence.storage_key)) throw new Error(`No existe la copia temporal ${evidence.storage_key}`);
   const drive = buildWritableDriveClient();
-  const folderId = evidence.drive_folder_id || await ensureEvidenceFolder(drive, evidence);
+  const folderId = await ensureEvidenceFolder(drive, {
+    ...evidence.toJSON(),
+    indicator_kind: options.indicator_kind || evidence.indicator_kind
+  });
   const requestBody = {
     name: safeName(evidence.stored_name, 160),
     appProperties: { siacPeiEvidenceId: String(evidence.id), sha256: evidence.sha256, version: String(evidence.version) }

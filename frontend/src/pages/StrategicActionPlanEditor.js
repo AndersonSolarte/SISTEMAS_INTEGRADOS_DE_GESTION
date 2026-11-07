@@ -16,6 +16,7 @@ import logoFormatos from '../assets/logo_formatos.jpg';
 import RichTextEditor, { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
 import MeetingCalendarScheduler from '../components/meetingMinute/MeetingCalendarScheduler';
 import PlanAccionConsulta from './PlanAccionConsulta';
+import { actionPlanFormFields } from '../utils/actionPlanFormFields';
 import { getPlanEffectiveSchedule } from '../utils/strategicPlanSchedule';
 
 const ACTION_LABELS = {
@@ -41,7 +42,6 @@ const DEFAULT_ACTIVITY_FIELDS = [
   { id: 'def-ends-on', key: 'ends_on', label: 'Fecha de fin', data_type: 'date', required: false, position: 6 },
   { id: 'def-co-responsibles', key: 'co_responsibles', label: 'Corresponsable(s)', data_type: 'text', required: false, position: 7 }
 ];
-const ACTIVITY_FORM_EXCLUDED_KEYS = new Set(['progress_s1','observations_s1','progress_s2','observations_s2','total_progress','avance_a_ip_2026','avance_a_iip_2026','observaciones','observaciones_2','total']);
 const normalizeFieldText = (str) =>
   String(str || '')
     .toLowerCase()
@@ -266,6 +266,22 @@ const isIndicatorField = (field) => {
     k === 'indicator' ||
     k === 'indicador' ||
     (l.includes('indicador') && !l.includes('tipo'))
+  );
+};
+
+const isIndicatorLevelField = (field) => {
+  if (!field) return false;
+  const k = normalizeFieldText(field.key);
+  const l = normalizeFieldText(field.label);
+  return (
+    isIndicatorBlockField(field) ||
+    isIndicatorField(field) ||
+    k === 'target' ||
+    k === 'meta' ||
+    k === 'indicator_type' ||
+    k === 'tipo_indicador' ||
+    l.includes('meta') ||
+    k.includes('meta')
   );
 };
 
@@ -502,6 +518,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [actaData, setActaData] = useState({
     responsables: '', dependencia: '', lugar: '', fecha: '', horario: '', objetivo: '', desarrollo: '', conclusiones: '', participantes: []
   });
+  const [refreshingSignatures, setRefreshingSignatures] = useState(false);
   const [calendarSchedulerOpen, setCalendarSchedulerOpen] = useState(false);
 
   // Sugerencias de actividades existentes por palabras clave
@@ -692,11 +709,75 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const isFinalized = Boolean(activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized');
 
+  const previewParticipants = useMemo(() => {
+    const currentMeeting = activeMeeting || detail?.meetings?.[0];
+    const latestMin = latestMinute || [...(currentMeeting?.minuteVersions || [])]
+      .sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
+    const signaturesByParticipant = new Map(
+      (latestMin?.signatures || []).map((s) => [String(s.participant_id), s])
+    );
+    const rolePosition = { principal: 0, co_responsible: 1, collaborator: 2, participant: 3 };
+
+    const sourceList = (meetingParticipants && meetingParticipants.length)
+      ? meetingParticipants
+      : (currentMeeting?.participants || []);
+
+    if (!sourceList.length && actaData.participantes?.length) {
+      return actaData.participantes;
+    }
+
+    return sourceList.map((p) => {
+      const sig = signaturesByParticipant.get(String(p.id));
+      const isSigned = Boolean(sig || p.status === 'signed');
+      return {
+        id: p.id,
+        nombre: p.name || p.nombre || '',
+        cargo: p.role_title || p.cargo || p.organization || '',
+        rol_reunion: p.meeting_role || p.rol_reunion || 'participant',
+        status: isSigned ? 'signed' : (p.status || 'invited'),
+        signature_preview: sig?.signature_preview || p.signature_preview || ''
+      };
+    }).sort((a, b) => (rolePosition[a.rol_reunion] ?? 3) - (rolePosition[b.rol_reunion] ?? 3));
+  }, [activeMeeting, detail?.meetings, latestMinute, meetingParticipants, actaData.participantes]);
+
+  const handleRefreshSignatures = useCallback(async (silent = false) => {
+    if (!planId) return;
+    if (!silent) setRefreshingSignatures(true);
+    try {
+      const planResponse = await strategicPlanningService.getActionPlan(planId);
+      if (planResponse?.data) {
+        setDetail(planResponse.data);
+        if (!silent) {
+          const updatedMeeting = (planResponse.data.meetings || []).find((m) => String(m.id) === String(selectedMeetingId)) || planResponse.data.meetings?.[0];
+          const latestMin = (updatedMeeting?.minuteVersions || []).sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
+          const signedCount = (latestMin?.signatures || []).length;
+          const totalReq = (updatedMeeting?.participants || []).filter((p) => p.signature_required !== false).length || (updatedMeeting?.participants || []).length;
+          enqueueSnackbar(`Firmas actualizadas en tiempo real (${signedCount} de ${totalReq} firmadas).`, {
+            variant: 'success',
+            autoHideDuration: 2500
+          });
+        }
+      }
+    } catch (_) {
+      if (!silent) {
+        enqueueSnackbar('No fue posible sincronizar las firmas.', { variant: 'warning' });
+      }
+    } finally {
+      if (!silent) setRefreshingSignatures(false);
+    }
+  }, [planId, selectedMeetingId, enqueueSnackbar]);
+
   useEffect(() => {
-    if (!open || editingActa || latestMinute?.status !== 'signing') return undefined;
-    const signatureRefresh = setInterval(() => load(false), 15000);
-    return () => clearInterval(signatureRefresh);
-  }, [open, editingActa, latestMinute?.id, latestMinute?.status, load]);
+    if (!open || editingActa || (latestMinute?.status !== 'signing' && activeMeeting?.status !== 'in_progress')) return undefined;
+    // Sincronización en tiempo real cada 3.5 segundos mientras esté en firma
+    const signatureRefresh = setInterval(() => handleRefreshSignatures(true), 3500);
+    const onFocus = () => handleRefreshSignatures(true);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(signatureRefresh);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [open, editingActa, latestMinute?.id, latestMinute?.status, activeMeeting?.status, handleRefreshSignatures]);
 
   const handleDownloadPdf = async (type = 'original') => {
     setPdfMenuAnchor(null);
@@ -792,6 +873,32 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       // Si ya está cargada esta misma reunión en los inputs y el usuario ya está interactuando,
       // no sobreescribir los campos locales para no interrumpir la escritura ni resetear el foco.
       if (lastLoadedMeetingKeyRef.current === meetingKey) {
+        // Sincronizar en tiempo real las firmas y estados de participantes sin tocar los campos de texto
+        const latestMin = [...(currentMeeting.minuteVersions || [])]
+          .sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
+        const signaturesByParticipant = new Map(
+          (latestMin?.signatures || []).map((s) => [String(s.participant_id), s])
+        );
+        isApplyingLoadRef.current = true;
+        setMeetingParticipants((prevList) => {
+          let hasDiff = false;
+          const nextList = prevList.map((p) => {
+            const serverP = (currentMeeting.participants || []).find((sp) => String(sp.id) === String(p.id) || (sp.email && p.email && sp.email.toLowerCase() === p.email.toLowerCase()));
+            const sig = signaturesByParticipant.get(String(p.id)) || (serverP ? signaturesByParticipant.get(String(serverP.id)) : null);
+            const isSigned = Boolean(sig || serverP?.status === 'signed');
+            const targetStatus = isSigned ? 'signed' : (serverP?.status || p.status || 'invited');
+            const targetPreview = sig?.signature_preview || p.signature_preview || '';
+            if (p.status !== targetStatus || (p.signature_preview || '') !== targetPreview) {
+              hasDiff = true;
+              return { ...p, status: targetStatus, signature_preview: targetPreview };
+            }
+            return p;
+          });
+          return hasDiff ? nextList : prevList;
+        });
+        window.setTimeout(() => {
+          isApplyingLoadRef.current = false;
+        }, 300);
         return;
       }
       lastLoadedMeetingKeyRef.current = meetingKey;
@@ -1072,32 +1179,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const schemaFields = useMemo(() => (Array.isArray(formSchema?.fields) ? formSchema.fields : []).filter((f) => f && f.active !== false), [formSchema?.fields]);
   const pedFields = useMemo(() => (activePed?.fieldDefinitions || platformPlan?.fieldDefinitions || []).filter((f) => f && f.active !== false), [activePed?.fieldDefinitions, platformPlan?.fieldDefinitions]);
 
-  const activityFields = useMemo(() => {
-    const mergedFieldsMap = new Map();
-    // 1. Agregar campos del esquema guardado
-    schemaFields.forEach((f) => mergedFieldsMap.set(f.key, { ...f }));
-    // 2. Complementar o actualizar con los campos configurados en el PED
-    pedFields.forEach((f) => {
-      const existing = mergedFieldsMap.get(f.key);
-      if (!existing) {
-        mergedFieldsMap.set(f.key, { ...f });
-      } else {
-        const pedOptions = Array.isArray(f.options) && f.options.length > 0 ? f.options : null;
-        mergedFieldsMap.set(f.key, {
-          ...existing,
-          ...f,
-          options: pedOptions || existing.options || [],
-          validation_rules: { ...(existing.validation_rules || {}), ...(f.validation_rules || {}) }
-        });
-      }
-    });
-
-    const rawFields = (mergedFieldsMap.size > 0 ? Array.from(mergedFieldsMap.values()) : (schemaFields.length > 0 ? schemaFields : pedFields))
-      .sort((a, b) => (a.position || 0) - (b.position || 0));
-
-    const active = rawFields.length > 0 ? rawFields : DEFAULT_ACTIVITY_FIELDS;
-    return active.filter((field) => field.data_type !== 'formula' && !ACTIVITY_FORM_EXCLUDED_KEYS.has(field.key));
-  }, [schemaFields, pedFields]);
+  const activityFields = useMemo(() => actionPlanFormFields(schemaFields, pedFields, DEFAULT_ACTIVITY_FIELDS), [schemaFields, pedFields]);
 
   const recordColumns = activityFields;
 
@@ -3254,12 +3336,16 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   // Seguimiento de cambios y autoguardado de reunión / acta
   useEffect(() => {
     if (isApplyingLoadRef.current) return;
+    const isLockedNow = Boolean(activeMeeting?.id && (latestMinute?.status === 'signing' || activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized'));
+    if (isLockedNow && !editingActa) return;
     hasUnsavedChangesRef.current = true;
     setSaveStatus((prev) => (prev === 'saving' ? prev : 'pending'));
-  }, [meeting, meetingParticipants]);
+  }, [meeting, meetingParticipants, editingActa, activeMeeting?.id, activeMeeting?.status, latestMinute?.status]);
 
   useEffect(() => {
     if (!open || tab !== 'meeting' || !hasUnsavedChangesRef.current || isApplyingLoadRef.current) return undefined;
+    const isLockedNow = Boolean(activeMeeting?.id && (latestMinute?.status === 'signing' || activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized'));
+    if (isLockedNow && !editingActa) return undefined;
     if (!meeting.title?.trim() || !meeting.starts_at || !richTextPlain(meeting.objective)) return undefined;
     if (!meetingParticipants.length || !meetingParticipants.some((p) => p.meeting_role === 'principal')) return undefined;
 
@@ -3268,7 +3354,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }, 1200);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meeting, meetingParticipants, open, tab]);
+  }, [meeting, meetingParticipants, open, tab, editingActa, activeMeeting?.id, activeMeeting?.status, latestMinute?.status]);
   // eslint-disable-next-line no-unused-vars
   const generateMinute = async (meetingId) => {
     try {
@@ -3640,7 +3726,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         return enqueueSnackbar('Ingrese al menos un porcentaje de avance válido en los indicadores.', { variant: 'warning' });
       }
 
-      finalProg = Number((numericScores.reduce((a, b) => a + b, 0) / numericScores.length).toFixed(1));
+      // El promedio de la actividad se divide entre el total de indicadores configurados
+      const totalActiveCount = indicators.length || 1;
+      const sumScores = numericScores.reduce((a, b) => a + b, 0);
+      finalProg = Number((sumScores / totalActiveCount).toFixed(1));
       finalPayload = {
         physical_progress: finalProg,
         observations: evalForm.observations || '',
@@ -4179,7 +4268,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     <Table stickyHeader size="small" sx={{ minWidth: Math.max(850, (recordColumns.length + 2) * 180) }}>
                       <TableHead>
                         <TableRow>
-                          <TableCell sx={{ position: 'sticky', left: 0, bgcolor: '#f1f5f9', zIndex: 3, fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1' }}>
+                          <TableCell sx={{ position: 'sticky', left: 0, bgcolor: '#f1f5f9', zIndex: 4, fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1' }}>
                             Código
                           </TableCell>
                           {recordColumns.map((field) => (
@@ -4187,7 +4276,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               {field.label}
                             </TableCell>
                           ))}
-                          <TableCell align="center" sx={{ position: 'sticky', right: 0, bgcolor: '#f1f5f9', zIndex: 3, fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', width: 72 }}>Acción</TableCell>
+                          <TableCell align="center" sx={{ position: 'sticky', right: 0, bgcolor: '#f1f5f9', zIndex: 4, fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', width: 72 }}>Acción</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -4198,77 +4287,278 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                             </TableCell>
                           </TableRow>
                         ) : (
-                          filteredTableItems.slice(itemsPage * itemsRowsPerPage, itemsPage * itemsRowsPerPage + itemsRowsPerPage).map((row) => (
-                            <TableRow key={row.id} hover sx={{ '&:nth-of-type(even)': { bgcolor: '#f8fafc' } }}>
-                              <TableCell sx={{ position: 'sticky', left: 0, bgcolor: 'inherit', fontWeight: 900, color: '#5688c7', zIndex: 1, borderBottom: '2px solid #cbd5e1', borderRight: '1.5px solid #cbd5e1' }}>
-                                <Stack direction="row" spacing={0.7} alignItems="center">
-                                  <span>{row.code}</span>
-                                  {row.custom_values?.source_module === 'plan_mejoramiento' && (
-                                    <Tooltip title={`Originada en Plan de Mejoramiento (${row.custom_values?.pm_programa || ''})`}>
-                                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#ea580c', flexShrink: 0, boxShadow: '0 0 0 2px #ffedd5' }} />
-                                    </Tooltip>
-                                  )}
-                                </Stack>
-                              </TableCell>
-                              {recordColumns.map((field) => {
-                                const isActivityCol = isActivityField(field);
-                                const isPm = row.custom_values?.source_module === 'plan_mejoramiento';
-                                const pmProgram = row.custom_values?.pm_programa || row.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '') || '';
+                          filteredTableItems.slice(itemsPage * itemsRowsPerPage, itemsPage * itemsRowsPerPage + itemsRowsPerPage).map((row, rowIdx) => {
+                            const indicators = getActiveIndicators(row);
+                            const indCount = indicators.length;
+                            const isEvenActivity = rowIdx % 2 === 0;
+                            const activityBg = isEvenActivity ? '#ffffff' : '#f8fafc';
 
-                                return (
-                                  <TableCell key={field.key} sx={{ maxWidth: 320, whiteSpace: 'normal', fontSize: 13, color: '#334155', borderBottom: '2px solid #cbd5e1', borderRight: '1px solid #f1f5f9' }}>
-                                    {isActivityCol ? (
-                                      <Stack spacing={0.5} alignItems="flex-start">
-                                        {isPm && (
-                                          <Tooltip title={`Actividad interoperable desde Plan de Mejoramiento${pmProgram ? ` (${pmProgram})` : ''}`}>
-                                            <Chip
-                                              size="small"
-                                              icon={<TrendingUp sx={{ fontSize: '13px !important', color: '#c2410c !important' }} />}
-                                              label={`Plan de Mejoramiento${pmProgram ? ` · ${pmProgram}` : ''}`}
-                                              sx={{
-                                                height: 22,
-                                                fontSize: 10.5,
-                                                fontWeight: 900,
-                                                bgcolor: '#fff7ed',
-                                                color: '#c2410c',
-                                                border: '1px solid #fed7aa',
-                                                borderRadius: 1.5,
-                                                '& .MuiChip-icon': { ml: 0.5 }
-                                              }}
-                                            />
+                            return indicators.map((ind, indIdx) => {
+                              const isFirstSubrow = indIdx === 0;
+                              const isLastSubrow = indIdx === indCount - 1;
+                              const cellBorderBottom = isLastSubrow ? '2.5px solid #94a3b8' : '1px dashed #cbd5e1';
+
+                              return (
+                                <TableRow
+                                  key={`${row.id}-${ind.kind}-${indIdx}`}
+                                  hover
+                                  sx={{
+                                    bgcolor: activityBg,
+                                    '&:hover': { bgcolor: '#f1f5f9' }
+                                  }}
+                                >
+                                  {/* Código (sticky left, agrupado con rowSpan por actividad) */}
+                                  {isFirstSubrow && (
+                                    <TableCell
+                                      rowSpan={indCount}
+                                      align="center"
+                                      sx={{
+                                        position: 'sticky',
+                                        left: 0,
+                                        bgcolor: activityBg,
+                                        zIndex: 2,
+                                        verticalAlign: 'middle',
+                                        borderBottom: '2.5px solid #94a3b8',
+                                        borderRight: '1.5px solid #cbd5e1',
+                                        py: 1.2,
+                                        px: 1
+                                      }}
+                                    >
+                                      <Stack direction="row" spacing={0.7} alignItems="center" justifyContent="center">
+                                        <Chip
+                                          size="small"
+                                          label={row.code || '—'}
+                                          sx={{
+                                            fontWeight: 800,
+                                            bgcolor: row.custom_values?.source_module === 'plan_mejoramiento' ? '#ffedd5' : '#e2e8f0',
+                                            color: row.custom_values?.source_module === 'plan_mejoramiento' ? '#c2410c' : '#1e293b',
+                                            fontSize: 11,
+                                            height: 24,
+                                            borderRadius: 1,
+                                            border: row.custom_values?.source_module === 'plan_mejoramiento' ? '1px solid #fed7aa' : 'none'
+                                          }}
+                                        />
+                                        {row.custom_values?.source_module === 'plan_mejoramiento' && (
+                                          <Tooltip title={`Originada en Plan de Mejoramiento (${row.custom_values?.pm_programa || ''})`}>
+                                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#ea580c', flexShrink: 0, boxShadow: '0 0 0 2px #ffedd5' }} />
                                           </Tooltip>
                                         )}
-                                        <Typography sx={{ fontSize: 13, fontWeight: isPm ? 700 : 500, color: '#1e293b' }}>
-                                          {recordValue(row, field)}
-                                        </Typography>
                                       </Stack>
-                                    ) : (
-                                      recordValue(row, field)
-                                    )}
-                                  </TableCell>
-                                );
-                              })}
-                              <TableCell align="center" sx={{ position: 'sticky', right: 0, bgcolor: 'inherit', width: 72, borderBottom: '2px solid #cbd5e1', borderLeft: '1.5px solid #cbd5e1' }}>
-                                <Tooltip title="Opciones de la actividad (Editar, Trasladar, Replicar, Eliminar)">
-                                  <IconButton
-                                    size="small"
-                                    onClick={(e) => handleOpenRowMenu(e, row)}
-                                    sx={{
-                                      bgcolor: '#f1f5f9',
-                                      color: '#1e293b',
-                                      border: '1px solid #cbd5e1',
-                                      borderRadius: 2,
-                                      p: 0.75,
-                                      transition: 'all 0.15s ease',
-                                      '&:hover': { bgcolor: '#e2e8f0', color: '#0f172a', borderColor: '#94a3b8' }
-                                    }}
-                                  >
-                                    <MoreVert fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </TableCell>
-                            </TableRow>
-                          ))
+                                    </TableCell>
+                                  )}
+
+                                  {/* Columnas dinámicas de recordColumns */}
+                                  {recordColumns.map((field) => {
+                                    const isIndLevel = isIndicatorLevelField(field);
+
+                                    if (isIndLevel) {
+                                      // Renderiza en CADA sub-fila (carril de indicador)
+                                      return (
+                                        <TableCell
+                                          key={field.key}
+                                          sx={{
+                                            maxWidth: 360,
+                                            whiteSpace: 'normal',
+                                            fontSize: 12.5,
+                                            color: '#334155',
+                                            bgcolor: activityBg,
+                                            borderBottom: cellBorderBottom,
+                                            borderRight: '1px solid #e2e8f0',
+                                            verticalAlign: 'middle',
+                                            py: 1.2,
+                                            px: 1.5
+                                          }}
+                                        >
+                                          {isIndicatorBlockField(field) ? (
+                                            <Box>
+                                              {(indCount > 1 || ind.kind !== 'principal') && (
+                                                <Box sx={{ mb: 0.4 }}>
+                                                  <Chip
+                                                    size="small"
+                                                    label={ind.shortLabel}
+                                                    sx={{
+                                                      height: 19,
+                                                      fontSize: 9.5,
+                                                      fontWeight: 800,
+                                                      bgcolor: ind.badgeBg || '#eff6ff',
+                                                      color: ind.color || '#2563eb',
+                                                      border: `1px solid ${ind.borderColor || '#bfdbfe'}`,
+                                                      borderRadius: 1
+                                                    }}
+                                                  />
+                                                </Box>
+                                              )}
+                                              <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#1e293b', lineHeight: 1.35 }}>
+                                                {ind.indicator}
+                                              </Typography>
+                                              {Boolean(ind.target) && (
+                                                <Typography sx={{ fontSize: 11.5, color: '#059669', fontWeight: 700, mt: 0.3 }}>
+                                                  Meta: {ind.target}
+                                                </Typography>
+                                              )}
+                                            </Box>
+                                          ) : isIndicatorField(field) ? (
+                                            <Box>
+                                              {(indCount > 1 || ind.kind !== 'principal') && (
+                                                <Chip
+                                                  size="small"
+                                                  label={ind.shortLabel}
+                                                  sx={{
+                                                    height: 19,
+                                                    fontSize: 9.5,
+                                                    fontWeight: 800,
+                                                    bgcolor: ind.badgeBg || '#eff6ff',
+                                                    color: ind.color || '#2563eb',
+                                                    border: `1px solid ${ind.borderColor || '#bfdbfe'}`,
+                                                    borderRadius: 1,
+                                                    mr: 0.8,
+                                                    verticalAlign: 'middle'
+                                                  }}
+                                                />
+                                              )}
+                                              <Typography component="span" sx={{ fontSize: 12, fontWeight: 500, color: '#1e293b' }}>
+                                                {ind.indicator}
+                                              </Typography>
+                                            </Box>
+                                          ) : (field.key === 'target' || field.key === 'meta') ? (
+                                            <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#059669' }}>
+                                              {ind.target || '—'}
+                                            </Typography>
+                                          ) : (
+                                            <Chip
+                                              size="small"
+                                              label={ind.shortLabel}
+                                              sx={{
+                                                height: 19,
+                                                fontSize: 9.5,
+                                                fontWeight: 800,
+                                                bgcolor: ind.badgeBg || '#eff6ff',
+                                                color: ind.color || '#2563eb',
+                                                border: `1px solid ${ind.borderColor || '#bfdbfe'}`,
+                                                borderRadius: 1
+                                              }}
+                                            />
+                                          )}
+                                        </TableCell>
+                                      );
+                                    }
+
+                                    // Columnas a nivel de actividad: solo se renderizan en la primera sub-fila con rowSpan
+                                    if (!isFirstSubrow) return null;
+
+                                    const isActivityCol = isActivityField(field);
+                                    const isPm = row.custom_values?.source_module === 'plan_mejoramiento';
+                                    const pmProgram = row.custom_values?.pm_programa || row.custom_values?.drive_subfolder?.replace(/^Plan de Mejoramiento -\s*/i, '') || '';
+
+                                    return (
+                                      <TableCell
+                                        key={field.key}
+                                        rowSpan={indCount}
+                                        sx={{
+                                          maxWidth: isActivityCol ? 340 : 280,
+                                          minWidth: isActivityCol ? 200 : 120,
+                                          whiteSpace: 'normal',
+                                          fontSize: 12.5,
+                                          color: '#334155',
+                                          bgcolor: activityBg,
+                                          borderBottom: '2.5px solid #94a3b8',
+                                          borderRight: '1px solid #cbd5e1',
+                                          verticalAlign: 'middle',
+                                          py: 1.2,
+                                          px: 1.5
+                                        }}
+                                      >
+                                        {isActivityCol ? (
+                                          <Stack spacing={0.6} alignItems="flex-start">
+                                            {isPm && (
+                                              <Tooltip title={`Actividad interoperable desde Plan de Mejoramiento${pmProgram ? ` (${pmProgram})` : ''}`}>
+                                                <Chip
+                                                  size="small"
+                                                  icon={<TrendingUp sx={{ fontSize: '13px !important', color: '#c2410c !important' }} />}
+                                                  label={`Plan de Mejoramiento${pmProgram ? ` • ${pmProgram}` : ''}`}
+                                                  sx={{
+                                                    height: 22,
+                                                    fontSize: 10.5,
+                                                    fontWeight: 900,
+                                                    bgcolor: '#fff7ed',
+                                                    color: '#c2410c',
+                                                    border: '1px solid #fed7aa',
+                                                    borderRadius: 1.5,
+                                                    '& .MuiChip-icon': { ml: 0.5 }
+                                                  }}
+                                                />
+                                              </Tooltip>
+                                            )}
+                                            <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a', lineHeight: 1.35 }}>
+                                              {recordValue(row, field)}
+                                            </Typography>
+                                            {indCount > 1 && (
+                                              <Chip
+                                                size="small"
+                                                label={`${indCount} indicadores`}
+                                                sx={{
+                                                  height: 19,
+                                                  fontSize: 9.5,
+                                                  fontWeight: 800,
+                                                  bgcolor: '#f1f5f9',
+                                                  color: '#475569',
+                                                  border: '1px solid #cbd5e1',
+                                                  borderRadius: 1
+                                                }}
+                                              />
+                                            )}
+                                          </Stack>
+                                        ) : isStartDateField(field) || isEndDateField(field) ? (
+                                          <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: '#475569' }}>
+                                            {formatFecha(recordValue(row, field))}
+                                          </Typography>
+                                        ) : (
+                                          recordValue(row, field)
+                                        )}
+                                      </TableCell>
+                                    );
+                                  })}
+
+                                  {/* Acción (sticky right, agrupada con rowSpan por actividad) */}
+                                  {isFirstSubrow && (
+                                    <TableCell
+                                      rowSpan={indCount}
+                                      align="center"
+                                      sx={{
+                                        position: 'sticky',
+                                        right: 0,
+                                        bgcolor: activityBg,
+                                        zIndex: 2,
+                                        width: 72,
+                                        verticalAlign: 'middle',
+                                        borderBottom: '2.5px solid #94a3b8',
+                                        borderLeft: '1.5px solid #cbd5e1'
+                                      }}
+                                    >
+                                      <Tooltip title="Opciones de la actividad (Editar, Trasladar, Replicar, Eliminar)">
+                                        <IconButton
+                                          size="small"
+                                          onClick={(e) => handleOpenRowMenu(e, row)}
+                                          sx={{
+                                            bgcolor: '#ffffff',
+                                            color: '#1e293b',
+                                            border: '1px solid #cbd5e1',
+                                            borderRadius: 2,
+                                            p: 0.75,
+                                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                                            transition: 'all 0.15s ease',
+                                            '&:hover': { bgcolor: '#f1f5f9', color: '#0f172a', borderColor: '#94a3b8' }
+                                          }}
+                                        >
+                                          <MoreVert fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </TableCell>
+                                  )}
+                                </TableRow>
+                              );
+                            });
+                          })
                         )}
                       </TableBody>
                     </Table>
@@ -5283,43 +5573,110 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           </Button>
                         )}
 
-                        <Stack
-                          direction="row"
-                          alignItems="center"
-                          gap={0.75}
-                          sx={{
-                            color: saveStatus === 'error' ? '#b91c1c' : saveStatus === 'saved' ? '#15803d' : '#a16207',
-                            fontSize: 11,
-                            fontWeight: 750,
-                            bgcolor: saveStatus === 'error' ? '#fef2f2' : saveStatus === 'saved' ? '#f0fdf4' : '#fffbeb',
-                            px: 1,
-                            py: 0.35,
-                            borderRadius: 1.5,
-                            border: `1px solid ${saveStatus === 'error' ? '#fecaca' : saveStatus === 'saved' ? '#bbf7d0' : '#fde68a'}`
-                          }}
-                        >
-                          {saveStatus === 'saving' ? (
-                            <CircularProgress size={10} color="inherit" />
-                          ) : (
-                            <Box
+                        {(() => {
+                          const isLockedStatus = Boolean(activeMeeting?.id && (latestMinute?.status === 'signing' || activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized'));
+                          if (isLockedStatus && !editingActa) {
+                            if (isFinalized) {
+                              return (
+                                <Chip
+                                  size="small"
+                                  icon={<CheckCircle sx={{ color: '#16a34a !important', fontSize: 14 }} />}
+                                  label="Acta formalizada"
+                                  sx={{
+                                    fontSize: 11,
+                                    fontWeight: 800,
+                                    bgcolor: '#f0fdf4',
+                                    color: '#15803d',
+                                    border: '1px solid #bbf7d0',
+                                    height: 24
+                                  }}
+                                />
+                              );
+                            }
+                            return (
+                              <Chip
+                                size="small"
+                                icon={<AccessTime sx={{ color: '#0284c7 !important', fontSize: 14 }} />}
+                                label="Proceso de firmas activo"
+                                sx={{
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  bgcolor: '#f0f9ff',
+                                  color: '#0369a1',
+                                  border: '1px solid #bae6fd',
+                                  height: 24
+                                }}
+                              />
+                            );
+                          }
+
+                          if (saveStatus === 'saving') {
+                            return (
+                              <Chip
+                                size="small"
+                                icon={<CircularProgress size={11} sx={{ color: '#0284c7 !important' }} />}
+                                label="Guardando…"
+                                sx={{
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  bgcolor: '#f0f9ff',
+                                  color: '#0369a1',
+                                  border: '1px solid #bae6fd',
+                                  height: 24
+                                }}
+                              />
+                            );
+                          }
+                          if (saveStatus === 'pending') {
+                            return (
+                              <Chip
+                                size="small"
+                                icon={<Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#f59e0b', ml: 0.5 }} />}
+                                label="Cambios pendientes"
+                                sx={{
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  bgcolor: '#fffbeb',
+                                  color: '#92400e',
+                                  border: '1px solid #fde68a',
+                                  height: 24
+                                }}
+                              />
+                            );
+                          }
+                          if (saveStatus === 'error') {
+                            return (
+                              <Chip
+                                size="small"
+                                icon={<Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#ef4444', ml: 0.5 }} />}
+                                label="Error al guardar"
+                                sx={{
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  bgcolor: '#fef2f2',
+                                  color: '#991b1b',
+                                  border: '1px solid #fecaca',
+                                  height: 24
+                                }}
+                              />
+                            );
+                          }
+                          return (
+                            <Chip
+                              size="small"
+                              icon={<CheckCircle sx={{ color: '#16a34a !important', fontSize: 14 }} />}
+                              label="Guardado"
                               sx={{
-                                width: 7,
-                                height: 7,
-                                borderRadius: '50%',
-                                bgcolor: saveStatus === 'error' ? '#ef4444' : saveStatus === 'saved' ? '#22c55e' : '#eab308'
+                                fontSize: 11,
+                                fontWeight: 800,
+                                bgcolor: '#f0fdf4',
+                                color: '#15803d',
+                                border: '1px solid #bbf7d0',
+                                height: 24
                               }}
                             />
-                          )}
-                          <span>
-                            {saveStatus === 'saving'
-                              ? 'Guardando automáticamente…'
-                              : saveStatus === 'pending'
-                              ? 'Cambios pendientes…'
-                              : saveStatus === 'error'
-                              ? 'Error al guardar'
-                              : 'Todo guardado · Autoguardado activo'}
-                          </span>
-                        </Stack>
+                          );
+                        })()}
                       </Stack>
                     </Stack>
 
@@ -5327,8 +5684,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       const isFinalized = Boolean(activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized');
                       const isSigning = Boolean(latestMinute?.status === 'signing');
                       const isLocked = Boolean(activeMeeting?.id && (isSigning || isFinalized));
+                      const signedIds = new Set((latestMinute?.signatures || []).map((s) => String(s.participant_id)));
                       const requiredParticipants = meetingParticipants.filter((p) => p.signature_required !== false);
-                      const signedParticipants = requiredParticipants.filter((p) => p.status === 'signed');
+                      const signedParticipants = requiredParticipants.filter((p) => p.status === 'signed' || signedIds.has(String(p.id)));
                       const pendingCount = Math.max(0, requiredParticipants.length - signedParticipants.length);
                       const allSigned = requiredParticipants.length > 0 && pendingCount === 0;
                       const canRevise = Boolean(isSigning || isFinalized);
@@ -5402,11 +5760,12 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                 id="meeting-refresh-signatures-button"
                                 fullWidth
                                 variant="outlined"
-                                startIcon={<Refresh fontSize="small" />}
-                                disabled={saving}
-                                onClick={() => load(false)}
+                                startIcon={refreshingSignatures ? <CircularProgress size={16} color="inherit" /> : <Refresh fontSize="small" />}
+                                disabled={saving || refreshingSignatures}
+                                onClick={() => handleRefreshSignatures(false)}
+                                sx={{ fontWeight: 800 }}
                               >
-                                Actualizar firmas
+                                {refreshingSignatures ? 'Actualizando firmas...' : 'Actualizar firmas'}
                               </Button>
                             </Box>
 
@@ -5668,7 +6027,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                         <Box sx={{ p: 0.5, borderRight: '1px solid #000000' }}>Cargo</Box>
                         <Box sx={{ p: 0.5 }}>Firma</Box>
                       </Box>
-                      {(actaData.participantes || []).map((p, i) => (
+                      {(previewParticipants || []).map((p, i) => (
                         <Box key={i} sx={{ display: 'grid', gridTemplateColumns: '8% 44% 28% 20%', borderBottom: '1px solid #000000', minHeight: p.status === 'signed' ? 54 : 32, alignItems: 'center' }}>
                           <Box sx={{ p: 0.5, textAlign: 'center', borderRight: '1px solid #000000', fontWeight: 800 }}>{i + 1}</Box>
                           <Box sx={{ p: 0.5, borderRight: '1px solid #000000' }}>
@@ -6939,100 +7298,133 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                     );
                                   })}
 
-                                  {/* COLUMNA DE CUMPLIMIENTO */}
-                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
-                                    {indProg !== null && indProg > 100 ? (
-                                      <Tooltip title={`Sobrecumplimiento (${indProg}%). Superó el 100% de la meta.`} arrow>
-                                        <Stack alignItems="center" spacing={0.3}>
-                                          <Chip
-                                            size="small"
-                                            icon={<PriorityHigh sx={{ fontSize: '13px !important', color: '#f59e0b !important', fontWeight: 900 }} />}
-                                            label={`${indProg}%`}
-                                            sx={{
-                                              fontWeight: 900,
-                                              fontSize: 11.5,
-                                              height: 25,
-                                              borderRadius: 1.5,
-                                              bgcolor: '#064e3b',
-                                              color: '#ecfdf5',
-                                              border: '1.5px dashed #f59e0b',
-                                              boxShadow: '0 1px 4px rgba(6,78,59,0.25)',
-                                              cursor: 'help'
-                                            }}
-                                          />
-                                          <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#b45309', lineHeight: 1.1 }}>
-                                            Revisar meta
-                                          </Typography>
-                                        </Stack>
-                                      </Tooltip>
-                                    ) : indProg !== null && indProg === 100 ? (
-                                      <Tooltip title="¡Meta cumplida al 100%!" arrow>
-                                        <Stack alignItems="center" spacing={0.3}>
-                                          <Chip
-                                            size="small"
-                                            icon={<CheckCircle sx={{ fontSize: '14px !important', color: '#16a34a !important' }} />}
-                                            label="100%"
-                                            sx={{
-                                              fontWeight: 850,
-                                              fontSize: 11.5,
-                                              height: 24,
-                                              borderRadius: 1.2,
-                                              bgcolor: '#dcfce7',
-                                              color: '#15803d',
-                                              border: '1px solid #86efac'
-                                            }}
-                                          />
-                                          <Typography sx={{ fontSize: 9.5, fontWeight: 750, color: '#15803d', lineHeight: 1.1 }}>
-                                            Completada
-                                          </Typography>
-                                        </Stack>
-                                      </Tooltip>
-                                    ) : indProg !== null && indProg > 0 ? (
-                                      <Tooltip title={`Avance actual: ${indProg}%. Falta ${Number((100 - indProg).toFixed(1))}%`} arrow>
-                                        <Stack alignItems="center" spacing={0.3}>
-                                          <Chip
-                                            size="small"
-                                            label={`${indProg}%`}
-                                            sx={{
-                                              fontWeight: 800,
-                                              fontSize: 11.5,
-                                              height: 24,
-                                              borderRadius: 1.2,
-                                              bgcolor: '#fffbeb',
-                                              color: '#b45309',
-                                              border: '1px solid #fde68a'
-                                            }}
-                                          />
-                                          <Typography sx={{ fontSize: 9.5, fontWeight: 750, color: '#b45309', lineHeight: 1.1 }}>
-                                            Falta {Number((100 - indProg).toFixed(0))}%
-                                          </Typography>
-                                        </Stack>
-                                      </Tooltip>
-                                    ) : (
-                                      <Tooltip title="Sin avances registrados aún." arrow>
-                                        <Stack alignItems="center" spacing={0.3}>
-                                          <Chip
-                                            size="small"
-                                            label="0%"
-                                            sx={{
-                                              fontWeight: 750,
-                                              fontSize: 11,
-                                              height: 22,
-                                              borderRadius: 1.2,
-                                              bgcolor: '#f1f5f9',
-                                              color: '#64748b',
-                                              border: '1px solid #cbd5e1'
-                                            }}
-                                          />
-                                          <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#94a3b8', lineHeight: 1.1 }}>
-                                            Falta 100%
-                                          </Typography>
-                                        </Stack>
-                                      </Tooltip>
-                                    )}
-                                  </TableCell>
+                                  {/* COLUMNA DE CUMPLIMIENTO (Agrupada por actividad, promedio de los indicadores) */}
+                                  {isFirstSubrow && (
+                                    <TableCell
+                                      rowSpan={indCount}
+                                      align="center"
+                                      sx={{
+                                        verticalAlign: 'middle',
+                                        py: 1.2,
+                                        px: 1,
+                                        bgcolor: activityBg,
+                                        borderBottom: '2.5px solid #94a3b8',
+                                        borderRight: '1.5px solid #cbd5e1'
+                                      }}
+                                    >
+                                      {overallProg !== null && overallProg > 100 ? (
+                                        <Tooltip title={`Sobrecumplimiento (${overallProg}%). Superó el 100% de la meta.`} arrow>
+                                          <Stack alignItems="center" spacing={0.3}>
+                                            <Chip
+                                              size="small"
+                                              icon={<PriorityHigh sx={{ fontSize: '13px !important', color: '#f59e0b !important', fontWeight: 900 }} />}
+                                              label={`${overallProg}%`}
+                                              sx={{
+                                                fontWeight: 900,
+                                                fontSize: 11.5,
+                                                height: 25,
+                                                borderRadius: 1.5,
+                                                bgcolor: '#064e3b',
+                                                color: '#ecfdf5',
+                                                border: '1.5px dashed #f59e0b',
+                                                boxShadow: '0 1px 4px rgba(6,78,59,0.25)',
+                                                cursor: 'help'
+                                              }}
+                                            />
+                                            <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#b45309', lineHeight: 1.1 }}>
+                                              Revisar meta
+                                            </Typography>
+                                            {indCount > 1 && (
+                                              <Typography sx={{ fontSize: 9, color: '#64748b', fontWeight: 700 }}>
+                                                Promedio ({indCount} ind.)
+                                              </Typography>
+                                            )}
+                                          </Stack>
+                                        </Tooltip>
+                                      ) : overallProg !== null && overallProg >= 100 ? (
+                                        <Tooltip title="¡Meta cumplida al 100%!" arrow>
+                                          <Stack alignItems="center" spacing={0.3}>
+                                            <Chip
+                                              size="small"
+                                              icon={<CheckCircle sx={{ fontSize: '14px !important', color: '#16a34a !important' }} />}
+                                              label="100%"
+                                              sx={{
+                                                fontWeight: 850,
+                                                fontSize: 11.5,
+                                                height: 24,
+                                                borderRadius: 1.2,
+                                                bgcolor: '#dcfce7',
+                                                color: '#15803d',
+                                                border: '1px solid #86efac'
+                                              }}
+                                            />
+                                            <Typography sx={{ fontSize: 9.5, fontWeight: 750, color: '#15803d', lineHeight: 1.1 }}>
+                                              Completada
+                                            </Typography>
+                                            {indCount > 1 && (
+                                              <Typography sx={{ fontSize: 9, color: '#16a34a', fontWeight: 700 }}>
+                                                Promedio ({indCount} ind.)
+                                              </Typography>
+                                            )}
+                                          </Stack>
+                                        </Tooltip>
+                                      ) : overallProg !== null && overallProg > 0 ? (
+                                        <Tooltip title={`Cumplimiento general: ${overallProg}%. Falta ${Number((100 - overallProg).toFixed(1))}%`} arrow>
+                                          <Stack alignItems="center" spacing={0.3}>
+                                            <Chip
+                                              size="small"
+                                              label={`${overallProg}%`}
+                                              sx={{
+                                                fontWeight: 800,
+                                                fontSize: 11.5,
+                                                height: 24,
+                                                borderRadius: 1.2,
+                                                bgcolor: '#fffbeb',
+                                                color: '#b45309',
+                                                border: '1px solid #fde68a'
+                                              }}
+                                            />
+                                            <Typography sx={{ fontSize: 9.5, fontWeight: 750, color: '#b45309', lineHeight: 1.1 }}>
+                                              Falta {Number((100 - overallProg).toFixed(0))}%
+                                            </Typography>
+                                            {indCount > 1 && (
+                                              <Typography sx={{ fontSize: 9, color: '#b45309', fontWeight: 700 }}>
+                                                Promedio ({indCount} ind.)
+                                              </Typography>
+                                            )}
+                                          </Stack>
+                                        </Tooltip>
+                                      ) : (
+                                        <Tooltip title="Sin avances registrados aún." arrow>
+                                          <Stack alignItems="center" spacing={0.3}>
+                                            <Chip
+                                              size="small"
+                                              label="0%"
+                                              sx={{
+                                                fontWeight: 750,
+                                                fontSize: 11,
+                                                height: 22,
+                                                borderRadius: 1.2,
+                                                bgcolor: '#f1f5f9',
+                                                color: '#64748b',
+                                                border: '1px solid #cbd5e1'
+                                              }}
+                                            />
+                                            <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#94a3b8', lineHeight: 1.1 }}>
+                                              Falta 100%
+                                            </Typography>
+                                            {indCount > 1 && (
+                                              <Typography sx={{ fontSize: 9, color: '#94a3b8', fontWeight: 700 }}>
+                                                Promedio ({indCount} ind.)
+                                              </Typography>
+                                            )}
+                                          </Stack>
+                                        </Tooltip>
+                                      )}
+                                    </TableCell>
+                                  )}
 
-                                  {/* Evidencias cargadas */}
+                                  {/* Evidencias cargadas (por indicador) */}
                                   <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 0.5, bgcolor: activityBg, borderBottom: cellBorderBottom, borderRight: '1px solid #e2e8f0' }}>
                                     {indEvidences.length > 0 ? (
                                       <Tooltip title={`Clic para ver las evidencias cargadas (${ind.shortLabel})`} arrow>
@@ -7060,28 +7452,40 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                     )}
                                   </TableCell>
 
-                                  {/* Acción Valorar */}
-                                  <TableCell align="center" sx={{ verticalAlign: 'middle', py: 1.2, px: 1, bgcolor: activityBg, borderBottom: cellBorderBottom }}>
-                                    <Button
-                                      size="small"
-                                      variant="contained"
-                                      startIcon={<EditNote sx={{ fontSize: 16 }} />}
-                                      onClick={() => handleOpenEvalModal(it, ind.kind)}
+                                  {/* Acción Valorar (Agrupada por actividad) */}
+                                  {isFirstSubrow && (
+                                    <TableCell
+                                      rowSpan={indCount}
+                                      align="center"
                                       sx={{
-                                        borderRadius: 2,
-                                        textTransform: 'none',
-                                        fontWeight: 850,
-                                        fontSize: 12,
-                                        py: 0.5,
-                                        px: 1.5,
-                                        bgcolor: '#2563eb',
-                                        boxShadow: '0 2px 6px rgba(37,99,235,0.22)',
-                                        '&:hover': { bgcolor: '#1d4ed8', boxShadow: '0 4px 10px rgba(37,99,235,0.3)' }
+                                        verticalAlign: 'middle',
+                                        py: 1.2,
+                                        px: 1,
+                                        bgcolor: activityBg,
+                                        borderBottom: '2.5px solid #94a3b8'
                                       }}
                                     >
-                                      Valorar
-                                    </Button>
-                                  </TableCell>
+                                      <Button
+                                        size="small"
+                                        variant="contained"
+                                        startIcon={<EditNote sx={{ fontSize: 16 }} />}
+                                        onClick={() => handleOpenEvalModal(it, ind.kind)}
+                                        sx={{
+                                          borderRadius: 2,
+                                          textTransform: 'none',
+                                          fontWeight: 850,
+                                          fontSize: 12,
+                                          py: 0.5,
+                                          px: 1.5,
+                                          bgcolor: '#2563eb',
+                                          boxShadow: '0 2px 6px rgba(37,99,235,0.22)',
+                                          '&:hover': { bgcolor: '#1d4ed8', boxShadow: '0 4px 10px rgba(37,99,235,0.3)' }
+                                        }}
+                                      >
+                                        Valorar
+                                      </Button>
+                                    </TableCell>
+                                  )}
                                 </TableRow>
                               );
                             });
@@ -7478,10 +7882,20 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               const activeIndicators = evaluatingItem ? getActiveIndicators(evaluatingItem) : [];
               if (activeIndicators.length > 1) {
                 // Cálculo dinámico del promedio
-                const scores = activeIndicators
-                  .map((ind) => Number(evalForm.indicators_progress?.[ind.kind]?.progress))
-                  .filter((n) => !isNaN(n) && n !== null && n !== undefined);
-                const currentAvg = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : null;
+                const totalActiveCount = activeIndicators.length || 1;
+                let sumScores = 0;
+                let hasAnyScore = false;
+                for (const ind of activeIndicators) {
+                  const rawVal = evalForm.indicators_progress?.[ind.kind]?.progress;
+                  if (rawVal !== undefined && rawVal !== null && rawVal !== '') {
+                    const numVal = Number(rawVal);
+                    if (!isNaN(numVal)) {
+                      sumScores += Math.max(0, numVal);
+                      hasAnyScore = true;
+                    }
+                  }
+                }
+                const currentAvg = hasAnyScore ? (sumScores / totalActiveCount).toFixed(1) : null;
 
                 return (
                   <Stack spacing={2}>

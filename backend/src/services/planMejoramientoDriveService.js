@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
 const { google } = require('googleapis');
+const { activeKinds } = require('./improvementIndicatorTracking');
+const { kinds, folderName, evidenceName } = require('./improvementEvidenceLabels');
 
 const ROOT_ENV = 'SIAC_PLAN_IMPROVEMENT_DRIVE_ROOT_ID';
 const DRIVE_FOLDER = 'application/vnd.google-apps.folder';
@@ -167,7 +169,24 @@ const ensurePlanRepository = async (plan) => {
         evidenceDriveStatus: 'synced',
         evidenceDriveSyncedAt: new Date().toISOString()
       });
-      activityFolders.push({ uid, objectiveCode, folderId: evidenceFolderId, folderUrl: folderUrl(evidenceFolderId) });
+      const indicatorFolders = { ...activity.indicatorEvidenceFolders };
+      for (const kind of activeKinds(activity)) {
+        const id = await findOrCreateFolder(drive, { parentId: evidenceFolderId, name: folderName(kind), key: `plan-mejoramiento:plan:${plan.id}:activity:${uid}:evidence:${kind.toLowerCase()}` });
+        indicatorFolders[kind] = { folderId: id, folderUrl: folderUrl(id) };
+        for (const evidence of activity.seguimientoIndicadores?.[kind]?.evidencias || []) {
+          if (!evidence.driveFileId) continue;
+          let metadata;
+          try { metadata = (await drive.files.get({ fileId: evidence.driveFileId, fields: 'id,name,parents,trashed', supportsAllDrives: true })).data; }
+          catch (error) { if (Number(error.code || error.response?.status) === 404) continue; throw error; }
+          if (metadata.trashed || !metadata.parents?.some((parent) => parent === evidenceFolderId || parent === id)) continue;
+          const name = evidenceName(metadata.name || evidence.nombre, kind);
+          const move = metadata.parents.includes(evidenceFolderId) && id !== evidenceFolderId;
+          if (move || metadata.name !== name) await drive.files.update({ fileId: evidence.driveFileId, requestBody: { name }, ...(move ? { addParents: id, removeParents: evidenceFolderId } : {}), supportsAllDrives: true });
+          Object.assign(evidence, { nombre: name, indicatorKind: kind, indicatorFolderId: id, indicatorFolderUrl: folderUrl(id) });
+        }
+      }
+      activity.indicatorEvidenceFolders = indicatorFolders;
+      activityFolders.push({ uid, objectiveCode, folderId: evidenceFolderId, folderUrl: folderUrl(evidenceFolderId), indicatorFolders });
     }
   }
 
@@ -178,10 +197,11 @@ const ensurePlanRepository = async (plan) => {
   return { drive, content, repository: content.driveRepository, activities: activityFolders };
 };
 
-const uploadActivityEvidence = async (plan, activityUid, file) => {
+const uploadActivityEvidence = async (plan, activityUid, file, indicatorKind = '') => {
   const sourceActivity = (plan.contenido?.objetivos || []).flatMap((o) => o.actividades || [])
     .find((a) => String(a.uid) === String(activityUid));
   if (!sourceActivity) throw Object.assign(new Error('Actividad no encontrada'), { statusCode: 404 });
+  if (indicatorKind && !activeKinds(sourceActivity).includes(indicatorKind)) throw Object.assign(new Error('Indicador no activo en esta actividad.'), { statusCode: 422 });
   const synchronized = await ensurePlanRepository(plan);
   const activity = synchronized.activities.find((item) => String(item.uid) === String(activityUid));
   if (!activity) {
@@ -189,13 +209,14 @@ const uploadActivityEvidence = async (plan, activityUid, file) => {
     error.statusCode = 404;
     throw error;
   }
-  const originalName = cleanName(file.originalname || 'evidencia', 180);
+  const originalName = evidenceName(cleanName(file.originalname || 'evidencia', 180), indicatorKind);
+  const targetFolder = activity.indicatorFolders?.[indicatorKind]?.folderId || activity.folderId;
   const response = await synchronized.drive.files.create({
     requestBody: {
-      name: originalName, parents: [activity.folderId],
+      name: originalName, parents: [targetFolder],
       appProperties: {
         [PROPERTY_KEY]: `plan-mejoramiento:evidence:${plan.id}:${activityUid}:${Date.now()}`,
-        planId: String(plan.id), activityUid: String(activityUid)
+        planId: String(plan.id), activityUid: String(activityUid), ...(indicatorKind ? { indicatorKind } : {})
       }
     },
     media: { mimeType: file.mimetype || 'application/octet-stream', body: Readable.from(file.buffer) },
@@ -211,7 +232,7 @@ const uploadActivityEvidence = async (plan, activityUid, file) => {
     const month = Number(String(sourceActivity.fechaSeguimiento || new Date().toISOString().slice(0, 10)).slice(5, 7));
     const period = await StrategicMonitoringPeriod.findOne({ where: { term_id: item?.actionPlan?.term_id, position: month <= 7 ? 1 : 2 } });
     if (!period) throw new Error('No existe periodo de seguimiento para sincronizar la evidencia vinculada.');
-    const target = await strategic.getActivityDriveFolder(item.id, period.id);
+    const target = await strategic.getActivityDriveFolder(item.id, period.id, indicatorKind ? indicatorKind.toLowerCase() : null);
     const linkedDrive = strategic.buildWritableDriveClient();
     const result = await linkedDrive.files.create({
       requestBody: { name: originalName, parents: [target.folderId] },
@@ -226,6 +247,10 @@ const uploadActivityEvidence = async (plan, activityUid, file) => {
     evidence: {
       nombre: uploaded.name || originalName,
       driveFileId: uploaded.id,
+      indicatorKind: indicatorKind || null,
+      indicatorFolderId: indicatorKind ? targetFolder : null,
+      indicatorFolderUrl: indicatorKind ? folderUrl(targetFolder) : null,
+      indicatorEvidenceFolders: activity.indicatorFolders,
       linkedEvidence,
       url: uploaded.webViewLink || `https://drive.google.com/file/d/${uploaded.id}/view`,
       carpetaId: activity.folderId,
@@ -252,23 +277,38 @@ const readActivityEvidence = async (activity, fileId) => {
   for (const createClient of clients) {
     try {
       const drive = createClient();
+      const scopes = [{ folderId, kind: null }];
+      for (const kind of kinds) {
+        const childId = activity.indicatorEvidenceFolders?.[kind]?.folderId;
+        if (!childId || childId === folderId || !/^[\w-]+$/.test(childId)) continue;
+        let child;
+        try { child = (await drive.files.get({ fileId: childId, fields: 'id,mimeType,parents,trashed', supportsAllDrives: true })).data; }
+        catch (error) { if (Number(error.code || error.response?.status) === 404) continue; throw error; }
+        if (!child.trashed && child.mimeType === DRIVE_FOLDER && child.parents?.includes(folderId)) scopes.push({ folderId: childId, kind });
+      }
       if (!fileId) {
         const files = [];
+        for (const scope of scopes) {
         let pageToken;
         do {
           const result = await drive.files.list({
-            q: `'${escapeQuery(folderId)}' in parents and trashed=false and mimeType!='${DRIVE_FOLDER}'`,
-            fields: 'nextPageToken,files(id,name,mimeType,size,createdTime)', pageSize: 100,
+            q: `'${escapeQuery(scope.folderId)}' in parents and trashed=false and mimeType!='${DRIVE_FOLDER}'`,
+            fields: 'nextPageToken,files(id,name,mimeType,size,createdTime,appProperties)', pageSize: 100,
             orderBy: 'createdTime desc,name',
             pageToken, supportsAllDrives: true, includeItemsFromAllDrives: true
           });
-          files.push(...(result.data.files || []));
+          files.push(...(result.data.files || []).map((file) => {
+            const associated = kinds.find((kind) => (activity.seguimientoIndicadores?.[kind]?.evidencias || []).some((record) => String(record.driveFileId) === String(file.id)));
+            const kind = scope.kind || file.appProperties?.indicatorKind || associated;
+            return { ...file, ...(kinds.includes(kind) ? { indicatorKind: kind, displayName: evidenceName(file.name, kind) } : {}) };
+          }));
           pageToken = result.data.nextPageToken;
         } while (pageToken);
-        return files;
+        }
+        return files.sort((a, b) => (kinds.includes(a.indicatorKind) ? kinds.indexOf(a.indicatorKind) : 3) - (kinds.includes(b.indicatorKind) ? kinds.indexOf(b.indicatorKind) : 3) || String(b.createdTime || '').localeCompare(String(a.createdTime || '')));
       }
       const { data: metadata } = await drive.files.get({ fileId, fields: 'id,name,mimeType,parents,trashed', supportsAllDrives: true });
-      if (metadata.trashed || !metadata.parents?.includes(folderId)) {
+      if (metadata.trashed || !scopes.some((scope) => metadata.parents?.includes(scope.folderId))) {
         const error = new Error('La evidencia no pertenece a esta actividad.');
         error.statusCode = 404;
         throw error;

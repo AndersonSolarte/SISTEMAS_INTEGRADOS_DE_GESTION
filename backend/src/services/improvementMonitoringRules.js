@@ -57,7 +57,7 @@ const trackCurrentFollowup = (stored = {}, incoming = {}, timestamp = new Date()
   return { ...incoming, objetivos: (incoming.objetivos || []).map((objective) => ({ ...objective,
     actividades: (objective.actividades || []).map((activity) => {
       const old = previous.get(String(activity.uid));
-      const changed = old && ['metaAlcanzada', 'fechaSeguimiento', 'observaciones'].some((key) => String(old[key] ?? '') !== String(activity[key] ?? ''));
+      const changed = old && (['metaAlcanzada', 'fechaSeguimiento', 'observaciones'].some((key) => String(old[key] ?? '') !== String(activity[key] ?? '')) || JSON.stringify(old.seguimientoIndicadores) !== JSON.stringify(activity.seguimientoIndicadores));
       const hasProgress = activity.metaAlcanzada !== '' && activity.metaAlcanzada != null && !isNaN(Number(String(activity.metaAlcanzada).replace(',', '.').replace('%', '')));
       const valid = hasProgress;
       const parsedDate = parseDateParts(activity.fechaSeguimiento);
@@ -66,7 +66,8 @@ const trackCurrentFollowup = (stored = {}, incoming = {}, timestamp = new Date()
         : `${parsedDate.year}-${String(parsedDate.month).padStart(2, '0')}-01`;
       return { ...activity, seguimientoActual: changed && valid ? {
         id: `actual-${activity.uid}`, fecha: normalizedDate,
-        porcentaje: clampProgress(activity.metaAlcanzada), observaciones: activity.observaciones || '', registradoAt: timestamp
+        porcentaje: clampProgress(activity.metaAlcanzada), observaciones: activity.observaciones || '', registradoAt: timestamp,
+        ...(activity.seguimientoIndicadores ? { seguimientoIndicadores: activity.seguimientoIndicadores } : {})
       } : old?.seguimientoActual };
     })
   })) };

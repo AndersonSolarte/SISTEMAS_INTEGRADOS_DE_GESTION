@@ -42,6 +42,18 @@ const writeActivityIndicators = (workbook, objectives) => {
       ...resolveActivityIndicators(activity)
     }));
   }
+  const oldTracking = workbook.getWorksheet('SEGUIMIENTO_INDICADORES');
+  if (oldTracking) workbook.removeWorksheet(oldTracking.id);
+  const tracking = workbook.addWorksheet('SEGUIMIENTO_INDICADORES');
+  tracking.columns = [
+    { header: 'OBJETIVO', key: 'objective', width: 18 }, { header: 'NÚMERO ACTIVIDAD', key: 'position', width: 22 },
+    { header: 'TIPO', key: 'kind', width: 18 }, { header: 'CUMPLIMIENTO %', key: 'porcentaje', width: 20 },
+    { header: 'FECHA CORTE', key: 'fecha', width: 20 }, { header: 'OBSERVACIONES', key: 'observaciones', width: 60 },
+    { header: 'EVIDENCIAS JSON', key: 'evidencias', width: 60 }
+  ];
+  for (const objective of objectives || []) (objective.actividades || []).forEach((activity, index) => {
+    for (const [kind, record] of Object.entries(activity.seguimientoIndicadores || {})) tracking.addRow({ objective: objective.codigo, position: index + 1, kind, ...record, evidencias: JSON.stringify(record.evidencias || []) });
+  });
 };
 
 const readActivityIndicators = (workbook, objectives) => {
@@ -83,6 +95,20 @@ const readActivityIndicators = (workbook, objectives) => {
         }
       });
     }
+  });
+  const tracking = workbook.getWorksheet('SEGUIMIENTO_INDICADORES');
+  if (tracking) tracking.eachRow((row, number) => {
+    if (number === 1) return;
+    const objective = objectives.find((item) => item.codigo === String(row.getCell(1).value || '').trim());
+    const activity = objective?.actividades?.[Number(row.getCell(2).value) - 1];
+    const kind = String(row.getCell(3).value || '');
+    if (!activity || !['Resultado', 'Logro', 'Impacto'].includes(kind)) return;
+    let evidencias;
+    try { evidencias = JSON.parse(String(row.getCell(7).value || '[]')); } catch (_) { throw Object.assign(new Error('Evidencias inválidas en SEGUIMIENTO_INDICADORES.'), { status: 422 }); }
+    if (!Array.isArray(evidencias)) throw Object.assign(new Error('Las evidencias deben ser una lista.'), { status: 422 });
+    activity.seguimientoIndicadores = { ...activity.seguimientoIndicadores, [kind]: { porcentaje: row.getCell(4).value ?? '', fecha: readDeliveryDate(row.getCell(5).value), observaciones: String(row.getCell(6).value || ''), evidencias } };
+    require('./improvementIndicatorTracking').validateTracking(activity);
+    activity.metaAlcanzada = require('./improvementIndicatorTracking').trackingProgress(activity);
   });
 };
 

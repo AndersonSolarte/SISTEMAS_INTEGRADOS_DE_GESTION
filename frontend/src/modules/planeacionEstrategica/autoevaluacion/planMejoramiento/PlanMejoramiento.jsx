@@ -1,6 +1,12 @@
 import useImprovementConfirmation from './useImprovementConfirmation';
-import { planIndicatorErrors } from './activityIndicatorRules';
-import { missingLinkFields } from './linkFields';
+import { planIndicatorErrors, activityIndicatorPeriod, resolveActivityIndicators as resolveLinkIndicators } from './activityIndicatorRules';
+import { missingLinkFields, linkFieldValue, prefillLinkFields, resolveLinkStrategy } from './linkFields';
+import { actionPlanFormFields } from '../../../../utils/actionPlanFormFields';
+import ActivityAccordion from './ActivityAccordion';
+import ActivityResourceField from './ActivityResourceField';
+import { readLinkResult, unlinkLocalActivity, resolveLinkOperation } from './linkLifecycle';
+import IndicatorTrackingFields from './IndicatorTrackingFields';
+import { activeKinds, trackingProgress, validateTracking } from './indicatorTracking';
 import InstitutionalPolicyActivityField from '../../../../components/InstitutionalPolicyActivityField';
 import ActionPlanIndicatorFields from '../../../../components/ActionPlanIndicatorFields';
 import { aspectKey, uniqueAspects } from './aspectIdentity';
@@ -41,6 +47,7 @@ import {
 import { useSnackbar } from 'notistack';
 import * as XLSX from 'xlsx';
 import planMejoramientoService from '../../../../services/planMejoramientoService';
+import { loadImprovementCatalogs, catalogFailureMessage } from '../../../../services/loadImprovementCatalogs';
 import gestionInformacionService from '../../../../services/gestionInformacionService';
 import { canApplyTrackingRefresh } from './trackingRefreshGuard';
 
@@ -113,13 +120,14 @@ const planSnapshot = (plan) => JSON.stringify(buildPlanPayload(plan));
 const driveRepositorySignature = (plan) => JSON.stringify((plan?.objetivos || []).map((objective) => ({
   codigo: objective.codigo || '',
   objetivo: objective.objetivo || '',
-  actividades: (objective.actividades || []).map((activity) => ({ uid: activity.uid || '', nombre: activity.nombre || '' }))
+  actividades: (objective.actividades || []).map((activity) => ({ uid: activity.uid || '', nombre: activity.nombre || '', indicadores: activeKinds(activity) }))
 })));
 
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const withCurrent = (options = [], current = '') => current && !options.includes(current) ? [current, ...options] : options;
 const asStringArray = (value) => Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
 const percent = (activity) => {
+  if (activity.seguimientoIndicadores || activeKinds(activity).length) return trackingProgress(activity);
   const value = Number(String(activity?.metaAlcanzada ?? '').replace(',', '.').replace('%', '').trim());
   return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
 };
@@ -356,7 +364,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       const files = await planMejoramientoService.listActivityEvidence(editor.id, activity.uid);
       if (request === evidenceRequest.current) {
         setEvidenceFilesList(files || []);
-        const first = files?.[0];
+        const first = activity.previewEvidence ? (files || []).find((file) => String(file.id || file.driveFileId) === String(activity.previewEvidence.driveFileId || activity.previewEvidence.id)) || files?.[0] : files?.[0];
         if (first) await viewEvidenceFile(first, context);
       }
     } catch {
@@ -371,7 +379,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     setEvidenceError('');
     setPreviewFile(null);
     try {
-      const response = await planMejoramientoService.readActivityEvidence(context.planId, context.uid, file.id);
+      const response = await planMejoramientoService.readActivityEvidence(context.planId, context.uid, file.id, true);
       if (request === evidenceRequest.current) setPreviewFile({ url: URL.createObjectURL(response.data), type: response.data.type, name: file.name, id: file.id });
     } catch {
       if (request === evidenceRequest.current) setEvidenceError('No fue posible abrir esta evidencia.');
@@ -379,10 +387,23 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       if (request === evidenceRequest.current) setEvidenceLoading(false);
     }
   };
+  const downloadPreviewOriginal = async () => {
+    try {
+      const response = await planMejoramientoService.readActivityEvidence(evidencePreview.planId, evidencePreview.uid, previewFile.id);
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = previewFile.name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      enqueueSnackbar('No fue posible descargar la evidencia original.', { variant: 'error' });
+    }
+  };
   const [editor, setEditor] = useState(null);
   const [assignmentPlan, setAssignmentPlan] = useState(null);
   const [tab, setTab] = useState(0);
-  const [expandedObjective, setExpandedObjective] = useState(null);
+  const [expandedActivityKey, setExpandedActivityKey] = useState(null);
   const [expandedTraceability, setExpandedTraceability] = useState(false);
   const [expandedFollowUpObjective, setExpandedFollowUpObjective] = useState(0);
   const [expandedFollowUpActivity, setExpandedFollowUpActivity] = useState(null);
@@ -425,19 +446,12 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     return linkingCandidates.find((p) => String(p.id) === String(selectedActionPlanId)) || linkingCandidates[0] || null;
   }, [linkingCandidates, selectedActionPlanId]);
 
-  const currentModalDuplicate = useMemo(() => {
-    if (!selectedActionPlan || !linkingTarget) return null;
-    const actName = (linkFormData.actividad || linkFormData.activity || linkingTarget.activity?.nombre || '').trim();
-    if (!actName) return null;
-    const norm = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const actNorm = norm(actName);
-    return (selectedActionPlan.existing_activities || []).find((it) => {
-      if (linkingTarget.activity?.linkedActionItemId && String(it.id) === String(linkingTarget.activity.linkedActionItemId)) {
-        return false;
-      }
-      return norm(it.activity) === actNorm;
-    });
-  }, [selectedActionPlan, linkingTarget, linkFormData.actividad, linkFormData.activity]);
+  const [updateTargetId, setUpdateTargetId] = useState('');
+  const linkOperation = useMemo(() => resolveLinkOperation(selectedActionPlan, linkingTarget?.activity, editor?.id,
+    linkFormData.actividad || linkFormData.activity || linkingTarget?.activity?.nombre || '', updateTargetId),
+  [selectedActionPlan, linkingTarget, editor?.id, linkFormData.actividad, linkFormData.activity, updateTargetId]);
+  useEffect(() => { setUpdateTargetId(''); }, [selectedActionPlanId, linkingTarget?.activity?.uid]);
+  const currentModalDuplicate = linkOperation.duplicateItem;
 
   useEffect(() => {
     if (!linkModalOpen || !editor?.id || !linkingTarget?.activity?.uid) return undefined;
@@ -449,7 +463,15 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       try {
         const response = await planMejoramientoService.getActionPlanCandidates(editor.id, linkingTarget.activity.uid);
         const plans = response?.plans || response?.data?.plans || (Array.isArray(response) ? response : []);
-        if (!disposed) setLinkingCandidates(plans.filter((plan) => plan.same_responsible));
+        if (!disposed) {
+          const currentYearPlan = Number(editor?.periodoInicio) || currentYear;
+          const allowedYears = [currentYearPlan, currentYearPlan + 1];
+          const filtered = plans.filter((p) => {
+            const planYear = Number(p.year) || (String(p.code || p.title).match(/(20\d\d)/) ? parseInt(String(p.code || p.title).match(/(20\d\d)/)[1], 10) : null);
+            return !planYear || allowedYears.includes(planYear);
+          });
+          setLinkingCandidates(filtered);
+        }
       } catch (_) { /* Keep entered values; the server revalidates the live schema on submit. */ }
       finally { pending = false; }
     };
@@ -458,22 +480,17 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     return () => { disposed = true; clearInterval(interval); window.removeEventListener('focus', refreshSchema); };
   }, [linkModalOpen, editor?.id, linkingTarget?.activity?.uid]);
 
-  const dynamicFormFields = useMemo(() => {
-    const raw = selectedActionPlan?.form_schema?.fields;
-    const EXCLUDED_ACTION_PLAN_KEYS = new Set([
-      'progress_s1', 'observations_s1', 'progress_s2', 'observations_s2',
-      'total_progress', 'avance_a_ip_2026', 'avance_a_iip_2026',
-      'observaciones', 'observaciones_2', 'total'
-    ]);
-    if (Array.isArray(raw) && raw.length > 0) {
-      const filtered = raw
-        .filter((f) => f && f.active !== false && f.data_type !== 'formula' && !EXCLUDED_ACTION_PLAN_KEYS.has(f.key))
-        .sort((a, b) => (a.position || 0) - (b.position || 0));
+  const dynamicFormFields = useMemo(() => actionPlanFormFields(selectedActionPlan?.form_schema?.fields || []), [selectedActionPlan]);
 
-      return filtered;
-    }
-    return [];
-  }, [selectedActionPlan]);
+  useEffect(() => {
+    if (!linkModalOpen || !dynamicFormFields.length) return;
+    setLinkFormData((previous) => {
+      const strategy = resolveLinkStrategy(previous, selectedActionPlan?.strategic_catalog);
+      const next = { ...previous, ...strategy };
+      const fields = prefillLinkFields(dynamicFormFields, next);
+      return { ...fields, ...Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined && value !== '')), ...strategy };
+    });
+  }, [linkModalOpen, dynamicFormFields, selectedActionPlan?.strategic_catalog]);
 
   const renderDynamicFormField = (field) => {
     const key = field.key;
@@ -616,7 +633,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     }
 
     // 6. Actividad
-    if (key === 'activity' || key === 'actividad') {
+    if (['activity', 'actividad', 'nombre_actividad', 'nombreActividad'].includes(key) || ['actividad', 'actividades', 'nombre de la actividad'].includes(normalizedLabel)) {
       const currentVal = linkFormData[key] || linkFormData.actividad || linkFormData.activity || '';
       return (
         <TextField
@@ -639,19 +656,21 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       );
     }
 
-    // Three indicators are authored in the activity; do not ask for one type here.
-    if (['indicator_type', 'tipo_indicador', 'tipoIndicador'].includes(key)) return null;
-
     // 8. Fechas
     if (dataType === 'date' || key.includes('fecha') || key === 'starts_on' || key === 'ends_on') {
       const isStart = key === 'starts_on' || key === 'fecha_inicio' || key === 'fechaInicio';
-      const currentVal = linkFormData[key] || (isStart ? linkFormData.fechaInicio : linkFormData.fechaFin) || '';
+      const isActivityPeriod = ['starts_on', 'ends_on', 'fecha_inicio', 'fecha_fin', 'fechaInicio', 'fechaFin'].includes(key);
+      const period = activityIndicatorPeriod(linkingTarget?.activity || {});
+      const derivedValue = isActivityPeriod ? (isStart ? period.starts_on : period.ends_on) : '';
+      const currentVal = derivedValue || linkFormData[key] || (isStart ? linkFormData.fechaInicio : linkFormData.fechaFin) || '';
       return (
         <TextField
           key={key}
           label={`${label} ${isRequired ? '*' : ''}`}
           type="date"
           InputLabelProps={{ shrink: true }}
+          InputProps={{ readOnly: Boolean(derivedValue) }}
+          title={derivedValue ? 'Calculada a partir de las fechas de los indicadores de esta actividad' : undefined}
           value={currentVal}
           onChange={(e) => {
             const val = e.target.value;
@@ -833,7 +852,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const loadCatalogs = useCallback(async () => {
     const version = ++catalogRequestVersion.current;
     try {
-      const data = await planMejoramientoService.catalogs({ actionPlanIds: catalogActionPlanIds });
+      const data = await loadImprovementCatalogs(() => planMejoramientoService.catalogs({ actionPlanIds: catalogActionPlanIds }));
       if (version !== catalogRequestVersion.current) return null;
       setCatalogs((previous) => ({ ...previous, ...(data || {}), strategicByActionPlan: { ...previous.strategicByActionPlan, ...data?.strategicByActionPlan } }));
       const warning = (data?.catalogWarnings || []).join(' ');
@@ -842,7 +861,11 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       if (data?.tariffVersion?.vigencia) setTariffYear(Number(data.tariffVersion.vigencia));
       return data;
     } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar las listas automáticas de la plantilla', { variant: 'warning' });
+      if (version !== catalogRequestVersion.current) return null;
+      console.error('[plan-mejoramiento] No se pudieron cargar los catálogos', error);
+      const message = catalogFailureMessage(error);
+      if (message !== lastCatalogWarning.current) enqueueSnackbar(message, { variant: 'warning' });
+      lastCatalogWarning.current = message;
       return null;
     }
   }, [enqueueSnackbar, catalogActionPlanIds]);
@@ -914,7 +937,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       driveSyncedPlanRef.current = null;
       setDriveSyncStatus(nextEditor.objetivos.flatMap((item) => item.actividades || []).every((item) => item.evidenceFolderUrl) ? 'synced' : 'idle');
       setDriveSyncMessage('');
-      setExpandedObjective(null);
+      setExpandedActivityKey(null);
       setExpandedTraceability(false);
       setExpandedFollowUpObjective(0);
       setExpandedFollowUpActivity(nextEditor.objetivos?.[0]?.actividades?.[0]?.uid || null);
@@ -1108,13 +1131,17 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     })
   }));
   const addObjective = () => {
-    setExpandedObjective(editor?.objetivos.length || 0);
+    setExpandedActivityKey(null);
     setEditor((previous) => {
       const nextNumber = Math.max(0, ...previous.objetivos.map((item) => Number(String(item.codigo || '').match(/([0-9]+)$/)?.[1] || 0))) + 1;
       return { ...previous, objetivos: [...previous.objetivos, emptyObjective(nextNumber)] };
     });
   };
-  const addActivity = (objectiveIndex) => setEditor((previous) => ({ ...previous, objetivos: previous.objetivos.map((objective, index) => index === objectiveIndex ? { ...objective, actividades: [...objective.actividades, emptyActivity()] } : objective) }));
+  const addActivity = (objectiveIndex) => {
+    const activity = emptyActivity();
+    setEditor((previous) => ({ ...previous, objetivos: previous.objetivos.map((objective, index) => index === objectiveIndex ? { ...objective, actividades: [...objective.actividades, activity] } : objective) }));
+    setExpandedActivityKey(activity.uid);
+  };
   const removeObjective = (objectiveIndex) => setEditor((previous) => ({ ...previous, objetivos: previous.objetivos.filter((_, index) => index !== objectiveIndex) }));
   const removeActivity = (objectiveIndex, activityIndex) => setEditor((previous) => ({ ...previous, objetivos: previous.objetivos.map((objective, index) => index === objectiveIndex ? { ...objective, actividades: objective.actividades.filter((_, i) => i !== activityIndex) } : objective) }));
   const addBudget = () => setEditor((previous) => ({ ...previous, presupuesto: [...previous.presupuesto, { categoria: 'personal', subcategoria: 'docente_tc', codigoObjetivo: previous.objetivos[0]?.codigo || '', concepto: '', descripcion: '', cantidad: 1, valorUnitario: 0, tarifaVersionId: null, tarifaVigencia: null, tarifaNombre: '' }] }));
@@ -1168,7 +1195,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     }
   };
 
-  const uploadEvidenceImmediately = async (objectiveIndex, activityIndex, selectedFiles) => {
+  const uploadEvidenceImmediately = async (objectiveIndex, activityIndex, selectedFiles, indicatorKind) => {
     const files = Array.from(selectedFiles || []);
     if (!files.length || evidenceUploadLock.current) return;
     const file = files[files.length - 1];
@@ -1183,17 +1210,20 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       const activity = current.objetivos[objectiveIndex]?.actividades?.[activityIndex];
       const uid = activity?.uid;
       if (!uid) throw new Error('Guarde la actividad antes de adjuntar evidencias.');
+      const indicatorEvidence = [];
       const uploaded = await uploadEvidenceBatch(files, {
-        upload: (currentFile) => planMejoramientoService.uploadActivityEvidence(planId, uid, currentFile),
+        upload: (currentFile) => planMejoramientoService.uploadActivityEvidence(planId, uid, currentFile, indicatorKind),
         onStart: (currentFile, index, total) => setEvidenceFiles((previous) => ({ ...previous, [uid]: { name: `${index + 1}/${total}: ${currentFile.name}` } })),
-        onUploaded: (result, currentFile) => setEvidenceFiles((previous) => ({ ...previous, [uid]: { name: currentFile.name, uploaded: result } }))
+        onUploaded: (result, currentFile) => { indicatorEvidence.push(result); setEvidenceFiles((previous) => ({ ...previous, [uid]: { name: currentFile.name, uploaded: result } })); }
       });
       const latest = editorRef.current;
       if (latest.id !== planId) return;
       const next = { ...latest, objetivos: latest.objetivos.map((objective) => ({
         ...objective, actividades: objective.actividades.map((item) => item.uid !== uid ? item : {
           ...item, evidenceFolderId: uploaded.carpetaId, evidenceFolderUrl: uploaded.carpetaUrl,
-          evidencia: uploaded.carpetaUrl, evidenceDriveStatus: 'synced', ultimaEvidencia: uploaded
+          indicatorEvidenceFolders: uploaded.indicatorEvidenceFolders || item.indicatorEvidenceFolders,
+          evidencia: uploaded.carpetaUrl, evidenceDriveStatus: 'synced', ultimaEvidencia: uploaded,
+          ...(indicatorKind ? { cumplimientoAnterior: item.cumplimientoAnterior ?? item.metaAlcanzada, seguimientoIndicadores: { ...item.seguimientoIndicadores, [indicatorKind]: { ...item.seguimientoIndicadores?.[indicatorKind], evidencias: [...(item.seguimientoIndicadores?.[indicatorKind]?.evidencias || []), ...indicatorEvidence] } } } : {})
         })
       })) };
       editorRef.current = next;
@@ -1210,10 +1240,13 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     }
   };
 
-  const registerFollowUp = async (objectiveIndex, activityIndex) => {
+  const registerFollowUp = async (objectiveIndex, activityIndex, indicatorKind) => {
     if (evidenceUploadLock.current) return;
-    const objective = editor.objetivos[objectiveIndex];
-    const activity = objective?.actividades?.[activityIndex];
+    const objective = editorRef.current.objetivos[objectiveIndex];
+    const originalActivity = objective?.actividades?.[activityIndex];
+    const indicatorRecord = originalActivity?.seguimientoIndicadores?.[indicatorKind];
+    const activity = indicatorKind ? { ...originalActivity, fechaSeguimiento: indicatorRecord?.fecha || '', observaciones: indicatorRecord?.observaciones || '', metaAlcanzada: trackingProgress(originalActivity) } : originalActivity;
+    try { validateTracking(activity); } catch (error) { return enqueueSnackbar(error.message, { variant: 'warning' }); }
     if (!activity?.fechaSeguimiento) return enqueueSnackbar('Ingrese la fecha del seguimiento', { variant: 'warning' });
     const activityKey = activity.uid || `${objectiveIndex}_${activityIndex}`;
     const evidenceFile = evidenceFiles[activityKey];
@@ -1237,7 +1270,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       }
       planId = editorRef.current?.id || planId;
 
-      const uploadedEvidence = evidenceFile?.uploaded || (evidenceFile ? await planMejoramientoService.uploadActivityEvidence(planId, activityKey, evidenceFile) : activity.ultimaEvidencia || null);
+      const uploadedEvidence = indicatorKind ? indicatorRecord?.evidencias?.slice(-1)[0] : evidenceFile?.uploaded || (evidenceFile ? await planMejoramientoService.uploadActivityEvidence(planId, activityKey, evidenceFile) : activity.ultimaEvidencia || null);
       if (uploadedEvidence) setEvidenceFiles((previous) => ({ ...previous, [activityKey]: { name: uploadedEvidence.nombre, uploaded: uploadedEvidence } }));
       let localUser = {};
       try { localUser = JSON.parse(localStorage.getItem('user') || '{}'); } catch (_) { localUser = {}; }
@@ -1267,7 +1300,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         registradoPorId: uploadedEvidence?.cargadoPorId || localUser.id || null,
         objetivoCodigo: objective.codigo,
         actividadNombre: activity.nombre,
-        indicadorPlaneado: activity.indicador
+        indicadorPlaneado: activity.indicador,
+        indicatorKind: indicatorKind || null,
+        seguimientoIndicadores: activity.seguimientoIndicadores || null
       };
       const nextEditor = {
         ...editorRef.current,
@@ -1276,6 +1311,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
           actividades: (item.actividades || []).map((current, ai) => ai !== activityIndex ? current : {
             ...current,
             metaAlcanzada: progress,
+            fechaSeguimiento: activity.fechaSeguimiento,
+            observaciones: activity.observaciones,
             evidencia: record.evidenciaCarpetaUrl,
             evidenceFolderId: uploadedEvidence?.carpetaId || current.evidenceFolderId || '',
             evidenceFolderUrl: record.evidenciaCarpetaUrl,
@@ -1321,6 +1358,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               ...activity,
               evidenceFolderId: folder.folderId,
               evidenceFolderUrl: folder.folderUrl,
+              indicatorEvidenceFolders: folder.indicatorFolders || activity.indicatorEvidenceFolders,
               evidenceDriveStatus: 'synced'
             } : activity;
           })
@@ -1342,7 +1380,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
   const currentDriveRepositoryKey = editor?.id ? `${editor.id}:${driveRepositorySignature(editor)}` : '';
   const currentDriveActivities = (editor?.objetivos || []).flatMap((objective) => objective.actividades || []);
-  const currentDriveActivitiesReady = currentDriveActivities.length > 0 && currentDriveActivities.every((activity) => activity.evidenceFolderUrl);
+  const currentDriveActivitiesReady = currentDriveActivities.length > 0 && currentDriveActivities.every((activity) => activity.evidenceFolderUrl && activeKinds(activity).every((kind) => activity.indicatorEvidenceFolders?.[kind]?.folderId));
 
   useEffect(() => {
     if (tab !== 4 || !editor?.id) return undefined;
@@ -1380,11 +1418,13 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     setLinkingCandidates([]);
     setSelectedActionPlanId('');
 
-    let initObj = activity.objetivoEstrategico || catalogs.strategicObjectives?.[0] || '';
-    if (/^OE1/i.test(initObj)) initObj = 'OE1 Diseñar e implementar estrategias integrales e innovadoras, para arraigar la identidad Universidad CESMAG.';
-    else if (/^OE2/i.test(initObj)) initObj = 'OE2 Articular las labores institucionales (formativas, académicas, docentes, científicas, culturales, extensión, financieras y administrativas) desde una óptica transformadora de la persona para impactar la sociedad desde el reconocimiento de las culturas y las comunidades.';
-    else if (/^OE3/i.test(initObj)) initObj = 'OE3 Desarrollar una arquitectura institucional bajo los principios de ética y buen gobierno';
+    const initObj = activity.objetivoEstrategico || '';
 
+    const indicatorPeriod = activityIndicatorPeriod(activity);
+    const indicatorValues = resolveLinkIndicators(activity);
+    const primaryKind = ['Resultado', 'Logro', 'Impacto'].find((kind) => indicatorValues[`indicador${kind}Activo`]);
+    const primaryIndicator = primaryKind ? indicatorValues[`indicador${primaryKind}`] : activity.indicador || '';
+    const primaryTarget = primaryKind ? indicatorValues[`meta${primaryKind}`] : activity.meta ?? '';
     setLinkFormData({
       objetivoEstrategico: initObj,
       strategic_objective: initObj,
@@ -1396,20 +1436,24 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       macroactivity: '',
       actividad: activity.nombre || '',
       activity: activity.nombre || '',
-      tipoIndicador: activity.tipoIndicador || 'Resultado',
-      indicator_type: activity.tipoIndicador || 'Resultado',
-      tipo_indicador: activity.tipoIndicador || 'Resultado',
-      fechaInicio: '',
-      starts_on: '',
-      fechaFin: '',
-      ends_on: '',
-      indicador: activity.indicador || '',
-      indicator: activity.indicador || '',
-      meta: String(activity.meta || '1'),
-      target: String(activity.meta || '1'),
+      tipoIndicador: primaryKind || activity.tipoIndicador || '',
+      indicator_type: primaryKind || activity.tipoIndicador || '',
+      tipo_indicador: primaryKind || activity.tipoIndicador || '',
+      fechaInicio: indicatorPeriod.starts_on,
+      starts_on: indicatorPeriod.starts_on,
+      fechaFin: indicatorPeriod.ends_on,
+      ends_on: indicatorPeriod.ends_on,
+      indicador: primaryIndicator,
+      indicator: primaryIndicator,
+      meta: String(primaryTarget),
+      target: String(primaryTarget),
+      budget: /^\d+(?:[.,]\d+)?$/.test(String(activity.recursos || '').trim()) ? activity.recursos : '',
+      recursos: activity.recursos || '',
       corresponsable: '',
       co_responsible: '',
       entregable: activity.descripcion || '',
+      descripcion: activity.descripcion || '',
+      description: activity.descripcion || '',
       deliverable: activity.descripcion || '',
       politicas: asStringArray(activity.politicasInstitucionales),
       lineasAccion: asStringArray(activity.lineasAccionPolitica),
@@ -1421,7 +1465,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       indicadorLogroActivo: activity.indicadorLogroActivo ?? Boolean(activity.indicadorLogro),
       indicadorImpacto: activity.indicadorImpacto || '',
       metaImpacto: String(activity.metaImpacto || ''),
-      indicadorImpactoActivo: activity.indicadorImpactoActivo ?? Boolean(activity.indicadorImpacto)
+      indicadorImpactoActivo: activity.indicadorImpactoActivo ?? Boolean(activity.indicadorImpacto),
+      ...indicatorValues
     });
     setLinkModalOpen(true);
     setLoadingCandidates(true);
@@ -1433,12 +1478,17 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       const allowedYears = [currentYearPlan, currentYearPlan + 1];
       const plans = rawPlans.filter((p) => {
         const planYear = Number(p.year) || (String(p.code || p.title).match(/(20\d\d)/) ? parseInt(String(p.code || p.title).match(/(20\d\d)/)[1], 10) : null);
-        const matchesYear = !planYear || allowedYears.includes(planYear);
-        const matchesResponsible = Boolean(p.same_responsible);
-        return matchesYear && matchesResponsible;
+        return !planYear || allowedYears.includes(planYear);
+      });
+      plans.sort((a, b) => {
+        if (a.is_recommended && !b.is_recommended) return -1;
+        if (!a.is_recommended && b.is_recommended) return 1;
+        if (a.same_responsible && !b.same_responsible) return -1;
+        if (!a.same_responsible && b.same_responsible) return 1;
+        return (a.title || a.code || '').localeCompare(b.title || b.code || '');
       });
       setLinkingCandidates(plans);
-      const recommended = plans.find((p) => p.is_recommended) || plans[0];
+      const recommended = plans.find((p) => p.is_recommended) || plans.find((p) => p.same_responsible) || plans[0];
       if (recommended) {
         setSelectedActionPlanId(recommended.id);
       }
@@ -1450,6 +1500,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   };
 
   const handleConfirmLink = async () => {
+    if (linkOperation.needsSelection) return enqueueSnackbar('Seleccione la actividad existente que desea actualizar.', { variant: 'warning' });
     const targetPlanId = selectedActionPlanId || linkingCandidates[0]?.id;
     if (!linkingTarget || !targetPlanId) {
       return enqueueSnackbar('Seleccione un plan de acción destino que coincida con el responsable de la actividad', { variant: 'warning' });
@@ -1458,7 +1509,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       return enqueueSnackbar('No es posible asociar: no hay ningún Plan de Acción disponible que coincida con el responsable.', { variant: 'warning' });
     }
     if (!dynamicFormFields.length) return enqueueSnackbar(selectedActionPlan?.schema_error || 'No se pudo cargar el formulario vigente. Vuelva a consultar los planes disponibles.', { variant: 'warning' });
-    const actName = (linkFormData.actividad || linkFormData.activity || linkingTarget.activity?.nombre || '').trim();
+    const actName = String(linkFieldValue('activity', linkFormData) || linkingTarget.activity?.nombre || '').trim();
     if (!actName) {
       return enqueueSnackbar('El nombre de la actividad no puede estar vacío', { variant: 'warning' });
     }
@@ -1472,6 +1523,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     try {
       const res = await planMejoramientoService.linkToActionPlan(editor.id, linkingTarget.activity.uid, {
         action_plan_id: targetPlanId,
+        action_item_id: linkOperation.updateItem?.id || undefined,
         form_values: {
           ...linkFormData,
           actividad: actName,
@@ -1479,6 +1531,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         }
       });
       const data = res?.data || res;
+      const linkedState = readLinkResult(data);
+      if (!linkedState.linkedActionItemId) throw new Error('No se recibió la identificación de la actividad vinculada. Consulte el plan antes de reintentar.');
       const linkedPlan = linkingCandidates.find((p) => String(p.id) === String(targetPlanId));
 
       setEditor((previous) => ({
@@ -1495,13 +1549,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             proyectoPdi: linkFormData.lineamientoEstrategico || linkFormData.strategic_guideline || act.proyectoPdi,
             politicasInstitucionales: linkFormData.politicas?.length ? linkFormData.politicas : act.politicasInstitucionales,
             lineasAccionPolitica: linkFormData.lineasAccion?.length ? linkFormData.lineasAccion : act.lineasAccionPolitica,
-            linkedActionPlanId: data?.action_plan_id || targetPlanId,
-            linkedActionItemId: data?.action_item_id,
-            linkedActionPlanCode: data?.action_plan_code || linkedPlan?.code || '',
-            linkedActionPlanName: data?.action_plan_name || linkedPlan?.name || '',
-            linkedDirectorNombre: data?.director_nombre || linkedPlan?.responsible_name || '',
-            evidenceFolderUrl: data?.drive_folder_url || act.evidenceFolderUrl,
-            evidenceFolderId: data?.drive_folder_id || act.evidenceFolderId,
+            ...linkedState,
+            linkedActionPlanId: linkedState.linkedActionPlanId || targetPlanId,
             evidenceDriveStatus: 'synced'
           })
         })
@@ -1522,21 +1571,18 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       description: 'La actividad se retirará del Plan de Acción y dejará de sincronizarse. Su información se conservará en Mejoramiento.', confirmLabel: 'Desvincular' }))) return;
     setLinkingBusy(true);
     try {
-      await planMejoramientoService.unlinkFromActionPlan(editor.id, activity.uid);
-      setEditor((previous) => ({
+      const planId = await flushCurrentPlanForExport();
+      const detached = await planMejoramientoService.unlinkFromActionPlan(planId, activity.uid);
+      const previous = editorRef.current;
+      const next = {
         ...previous,
         objetivos: previous.objetivos.map((obj, oi) => oi !== objectiveIndex ? obj : {
           ...obj,
-          actividades: obj.actividades.map((act, ai) => ai !== activityIndex ? act : {
-            ...act,
-            linkedActionPlanId: null,
-            linkedActionItemId: null,
-            linkedActionPlanCode: '',
-            linkedActionPlanName: '',
-            linkedDirectorNombre: ''
-          })
+          actividades: obj.actividades.map((act) => act.uid !== activity.uid ? act : unlinkLocalActivity(act, detached))
         })
-      }));
+      };
+      editorRef.current = next;
+      setEditor(next);
       enqueueSnackbar('Actividad desvinculada del Plan de Acción', { variant: 'success' });
     } catch (err) {
       enqueueSnackbar(err.response?.data?.message || err.message || 'No fue posible desvincular la actividad', { variant: 'error' });
@@ -1855,7 +1901,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         const latest = editorRef.current;
         if (disposed || latest?.id !== planId || !mayRefresh(latest)) return;
         const activities = new Map((remote?.contenido?.objetivos || []).flatMap((o) => o.actividades || []).map((a) => [a.uid, a]));
-        const fields = ['metaAlcanzada', 'fechaSeguimiento', 'observaciones', 'evidencia', 'evidenceFolderId', 'evidenceFolderUrl', 'evidenceDriveStatus', 'seguimientos', 'ultimaEvidencia'];
+        const fields = ['metaAlcanzada', 'fechaSeguimiento', 'observaciones', 'evidencia', 'evidenceFolderId', 'evidenceFolderUrl', 'evidenceDriveStatus', 'seguimientos', 'ultimaEvidencia', 'seguimientoIndicadores', 'indicatorEvidenceFolders'];
         const next = { ...latest, objetivos: latest.objetivos.map((objective) => ({ ...objective,
           actividades: objective.actividades.map((activity) => {
             const source = activities.get(activity.uid);
@@ -2287,8 +2333,6 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     direction="row"
                     justifyContent="space-between"
                     alignItems="center"
-                    onClick={() => setExpandedObjective((current) => current === objectiveIndex ? null : objectiveIndex)}
-                    sx={{ cursor: 'pointer' }}
                   >
                     <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                       <Chip label={objective.codigo} color="primary" sx={{ fontWeight: 900 }} />
@@ -2300,10 +2344,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     </Stack>
                     <Stack direction="row" spacing={0.5} alignItems="center">
                       <Tooltip title="Eliminar objetivo"><IconButton color="error" onClick={(event) => { event.stopPropagation(); removeObjective(objectiveIndex); }}><DeleteIcon /></IconButton></Tooltip>
-                      <IconButton size="small" sx={{ transform: expandedObjective === objectiveIndex ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .2s' }}><ExpandMoreIcon /></IconButton>
                     </Stack>
                   </Stack>
-                  <Collapse in={expandedObjective === objectiveIndex} timeout="auto" unmountOnExit>
                   <Box sx={{ pt: 2 }}>
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5, alignItems: 'start' }}>
                     <TextField label="Código" value={objective.codigo} onChange={(e) => updateObjective(objectiveIndex, 'codigo', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
@@ -2406,13 +2448,16 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                   <Divider sx={{ my: 2.5 }} />
                   <Stack spacing={2}>
                     {objective.actividades.map((activity, activityIndex) => (
-                      <Paper key={activityIndex} elevation={0} sx={{ p: 2, borderRadius: 2.5, border: '1px dashed #94a3b8', bgcolor: 'white' }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}><Typography sx={{ fontWeight: 900, color: '#1d4ed8' }}>Actividad {activityIndex + 1}</Typography>{objective.actividades.length > 1 && <IconButton size="small" color="error" onClick={() => removeActivity(objectiveIndex, activityIndex)}><DeleteIcon /></IconButton>}</Stack>
+                      <ActivityAccordion key={activity.uid || activityIndex}
+                        number={activityIndex + 1} name={activity.nombre}
+                        expanded={expandedActivityKey === (activity.uid || `${objectiveIndex}_${activityIndex}`)}
+                        onToggle={() => setExpandedActivityKey((current) => current === (activity.uid || `${objectiveIndex}_${activityIndex}`) ? null : (activity.uid || `${objectiveIndex}_${activityIndex}`))}
+                        onRemove={objective.actividades.length > 1 ? () => removeActivity(objectiveIndex, activityIndex) : undefined}>
                         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5, alignItems: 'start' }}>
                           <TextField label="Nombre de la actividad" value={activity.nombre} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'nombre', e.target.value)} fullWidth size="small" multiline minRows={1} sx={{ gridColumn: '1 / -1' }} />
                           <TextField label="Descripción de la actividad" value={activity.descripcion} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'descripcion', e.target.value)} fullWidth size="small" multiline minRows={1} sx={{ gridColumn: '1 / -1' }} />
                           <ActivityIndicatorFields activity={activity} onChange={(field, value) => updateActivity(objectiveIndex, activityIndex, field, value)} />
-                          <TextField label="Recursos" size="small" multiline minRows={1} value={activity.recursos} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'recursos', e.target.value)} sx={{ gridColumn: '1 / -1' }} />
+                          <ActivityResourceField value={activity.recursos} onChange={(value) => updateActivity(objectiveIndex, activityIndex, 'recursos', value)} />
                           <TextField select label="Proceso responsable" value={activity.procesoResponsable} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'procesoResponsable', e.target.value)} sx={{ gridColumn: { md: 'span 4' } }}>{withCurrent(catalogs.processes?.length ? catalogs.processes : PROCESSES, activity.procesoResponsable).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
                           <Box sx={{ gridColumn: { md: 'span 5' }, minWidth: 0 }}>
                             <ResponsibleAutocomplete activity={activity} onChange={(user) => updateActivityResponsible(objectiveIndex, activityIndex, user)} />
@@ -2501,12 +2546,11 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                             )}
                           </Box>
                         </Box>
-                      </Paper>
+                      </ActivityAccordion>
                     ))}
                     <Button startIcon={<AddIcon />} onClick={() => addActivity(objectiveIndex)} sx={{ alignSelf: 'start', textTransform: 'none', fontWeight: 850 }}>Agregar actividad</Button>
                   </Stack>
                   </Box>
-                  </Collapse>
                 </Paper>
               ))}
               <Button variant="outlined" startIcon={<AddIcon />} onClick={addObjective} sx={{ alignSelf: 'start', textTransform: 'none', fontWeight: 900 }}>Crear objetivo de mejoramiento</Button>
@@ -2675,6 +2719,19 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     );
                   })()}
                   <LinearProgress variant="determinate" value={percent(activity)} sx={{ mb: 2, height: 8, borderRadius: 8, bgcolor: '#e2e8f0', '& .MuiLinearProgress-bar': { borderRadius: 8, bgcolor: percent(activity) >= 100 ? '#16a34a' : '#2563eb' } }} />
+                  {activeKinds(activity).length > 0 ? <IndicatorTrackingFields
+                    activity={activity}
+                    disabled={executionLocked || (collaboratorMode && !['en_ejecucion', 'devuelta'].includes(activityAssignment(activity)?.estado_flujo))}
+                    busy={uploadingEvidence || Boolean(recordingFollowUp)}
+                    onChange={(kind, record) => {
+                      const seguimientoIndicadores = { ...activity.seguimientoIndicadores, [kind]: record };
+                      updateActivity(objectiveIndex, activityIndex, { seguimientoIndicadores, fechaSeguimiento: record.fecha, observaciones: record.observaciones || '', metaAlcanzada: trackingProgress({ ...activity, seguimientoIndicadores }) });
+                    }}
+                    onUpload={(kind, files) => uploadEvidenceImmediately(objectiveIndex, activityIndex, files, kind)}
+                    onRegister={(kind) => registerFollowUp(objectiveIndex, activityIndex, kind)}
+                    onPreview={(evidence) => openEvidencePreview({ ...activity, previewEvidence: evidence })}
+                    onCopy={copyEvidenceUrl}
+                  /> : <>
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5, alignItems: 'start' }}>
                     {activity.linkedActionItemId && (
                       <Box sx={{ gridColumn: { md: 'span 12' } }}>
@@ -2746,6 +2803,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     </Button>
                   </Stack>
                   {activity.ultimaEvidencia?.nombre && <Typography variant="body2" sx={{ mt: 1, color: '#64748b' }}>Último documento: {activity.ultimaEvidencia.nombre}</Typography>}
+                  </>}
                   </Box>
                   </Collapse>
                 </Paper>
@@ -2818,14 +2876,16 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             const file = evidenceFilesList.find((item) => item.id === event.target.value);
             if (file) viewEvidenceFile(file);
           }} sx={{ mb: 2 }}>
-            {evidenceFilesList.map((file) => <MenuItem key={file.id} value={file.id}>{file.name}</MenuItem>)}
+            {evidenceFilesList.map((file) => <MenuItem key={file.id} value={file.id}>{file.displayName || file.name}</MenuItem>)}
           </TextField>}
-          {previewFile && (previewFile.type === 'application/pdf'
+          {previewFile && (previewFile.type.startsWith('text/html')
+            ? <Box component="iframe" sandbox="" title={previewFile.name} src={previewFile.url} sx={{ display: 'block', width: '100%', height: '65vh', border: '1px solid #dce4ef', borderRadius: 2, bgcolor: '#fff' }} />
+            : previewFile.type === 'application/pdf'
             ? <Box component="iframe" title={previewFile.name} src={previewFile.url} sx={{ width: '100%', height: '60vh', border: 0 }} />
             : /^image\/(png|jpeg|webp)$/.test(previewFile.type)
               ? <Box component="img" alt={previewFile.name} src={previewFile.url} sx={{ display: 'block', maxWidth: '100%', maxHeight: '60vh', mx: 'auto', objectFit: 'contain' }} />
               : <Alert severity="info">Este formato se puede consultar descargando el archivo.</Alert>)}
-          {previewFile && <Button component="a" href={previewFile.url} download={previewFile.name} startIcon={<DownloadIcon />}>Descargar evidencia</Button>}
+          {previewFile && <Button onClick={downloadPreviewOriginal} startIcon={<DownloadIcon />}>Descargar evidencia original</Button>}
         </DialogContent>
         <DialogActions>
           <Button onClick={closeEvidencePreview}>Cerrar</Button>
@@ -2883,7 +2943,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               </Box>
             ) : linkingCandidates.length === 0 ? (
               <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                No es posible asociar: no se encontraron Planes de Acción registrados a cargo de <strong>{linkingTarget?.activity?.responsableNombre || 'este responsable'}</strong> para la vigencia actual ({editor?.periodoInicio || currentYear}) ni para la siguiente ({Number(editor?.periodoInicio || currentYear) + 1}). <strong>Si no hay un responsable que coincida entre el Plan de Acción institucional y el Plan de Mejoramiento, no se puede asociar.</strong>
+                No se encontraron Planes de Acción registrados para la vigencia actual ({editor?.periodoInicio || currentYear}) ni para la siguiente ({Number(editor?.periodoInicio || currentYear) + 1}).
               </Alert>
             ) : (
               <RadioGroup
@@ -2964,12 +3024,16 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
 
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.6 }}>
               {!dynamicFormFields.length && <Alert severity="warning" sx={{ gridColumn: '1 / -1' }}>{selectedActionPlan?.schema_error || 'No se pudo cargar el formulario vigente del Plan de Acción. Consulte nuevamente los planes disponibles.'}</Alert>}
+              {linkOperation.updateCandidates.length > 1 && <TextField select required label="Actividad existente a actualizar" value={linkOperation.updateItem?.id || ''} onChange={(event) => setUpdateTargetId(event.target.value)} sx={{ gridColumn: '1 / -1' }}>
+                {linkOperation.updateCandidates.map((item) => <MenuItem key={item.id} value={item.id}>{item.code}: {item.activity}</MenuItem>)}
+              </TextField>}
               {dynamicFormFields.map((field) => renderDynamicFormField(field))}
             </Box>
 
+            {linkOperation.updateItem && !currentModalDuplicate && <Typography variant="body2" sx={{ mt: 2, color: '#475569' }}>Se actualizará {linkOperation.updateItem.code || 'la actividad existente'}, conservando su código y evidencias.</Typography>}
             {currentModalDuplicate && (
               <Alert severity="error" sx={{ mt: 2, borderRadius: 2.5, fontWeight: 700 }}>
-                Esta actividad ya se encuentra registrada en el Plan de Acción destino ({currentModalDuplicate.code}: &ldquo;{currentModalDuplicate.activity}&rdquo;). No se permite registrar actividades duplicadas.
+                No es posible registrar actividades duplicadas en el mismo Plan de Acción. Ya existe la actividad &ldquo;{currentModalDuplicate.activity}&rdquo; ({currentModalDuplicate.code}) en este plan destino.
               </Alert>
             )}
           </Paper>
@@ -2988,7 +3052,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             disabled={
               linkingBusy ||
               loadingCandidates ||
-              !dynamicFormFields.length ||
+              !dynamicFormFields.length || linkOperation.needsSelection ||
               linkingCandidates.length === 0 ||
               !selectedActionPlanId ||
               Boolean(currentModalDuplicate) ||
@@ -3007,7 +3071,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               boxShadow: '0 4px 14px rgba(22, 163, 74, 0.3)'
             }}
           >
-            {linkingBusy ? 'Enviando y creando en Drive…' : 'Enviar y Crear en Plan de Acción'}
+            {linkingBusy ? 'Guardando cambios…' : linkOperation.updateItem ? `Actualizar ${linkOperation.updateItem.code || 'actividad'} en Plan de Acción` : 'Vincular con Plan de Acción'}
           </Button>
         </DialogActions>
       </Dialog>

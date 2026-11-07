@@ -98,13 +98,33 @@ const calculateOverallFulfillment = (item, periods = []) => {
   return Number((totalSum / indicators.length).toFixed(1));
 };
 
+const getIndicatorFolderName = (ind) => {
+  const kind = String(ind?.kind || ind || '').toLowerCase();
+  if (kind === 'resultado' || kind === 'principal') return 'Resultado';
+  if (kind === 'logro') return 'Logro';
+  if (kind === 'impacto') return 'Impacto';
+  return ind?.shortLabel || ind?.label || 'Resultado';
+};
+
+const resolveEvidenceIndicatorKind = (evidence = {}) => {
+  if (evidence.indicator_kind) return String(evidence.indicator_kind).toLowerCase();
+  const desc = String(evidence.description || '').toLowerCase();
+  const name = String(evidence.original_name || evidence.stored_name || '').toLowerCase();
+  if (desc.includes('[logro]') || desc.includes('indicador de logro') || name.includes('logro')) return 'logro';
+  if (desc.includes('[impacto]') || desc.includes('indicador de impacto') || name.includes('impacto')) return 'impacto';
+  return 'resultado';
+};
+
 const filterEvidencesByIndicator = (evidences = [], kind) => {
   if (!kind || kind === 'principal') return evidences;
+  const target = kind.toLowerCase();
   return evidences.filter((ev) => {
+    const evKind = resolveEvidenceIndicatorKind(ev);
+    if (evKind === target) return true;
     const desc = String(ev.description || '').toLowerCase();
     const name = String(ev.original_name || '').toLowerCase();
-    const tag = `[${kind.toLowerCase()}]`;
-    return desc.includes(tag) || desc.includes(`indicador de ${kind.toLowerCase()}`) || name.includes(kind.toLowerCase());
+    const tag = `[${target}]`;
+    return desc.includes(tag) || desc.includes(`indicador de ${target}`) || name.includes(target);
   });
 };
 
@@ -112,5 +132,7 @@ module.exports = {
   getActiveIndicators,
   getIndicatorProgress,
   calculateOverallFulfillment,
-  filterEvidencesByIndicator
+  filterEvidencesByIndicator,
+  getIndicatorFolderName,
+  resolveEvidenceIndicatorKind
 };

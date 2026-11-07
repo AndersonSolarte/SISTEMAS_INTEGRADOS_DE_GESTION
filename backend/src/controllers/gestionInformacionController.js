@@ -9533,6 +9533,7 @@ const importFromExcel = async (req, res) => {
 
     let headers = [];
     let rows = [];
+    let sheetName = null;
 
     if (isCsvUpload) {
       const csvData = await readCsvRows(req.file.path);
@@ -9543,7 +9544,7 @@ const importFromExcel = async (req, res) => {
         return cleanRow;
       });
     } else {
-      const sheetName = resolveDefaultImportSheetName(workbook, categoria, fixedSubcategoria);
+      sheetName = resolveDefaultImportSheetName(workbook, categoria, fixedSubcategoria);
       if (!sheetName) {
         return res.status(400).json({ success: false, message: 'El archivo Excel no contiene hojas con datos válidos' });
       }

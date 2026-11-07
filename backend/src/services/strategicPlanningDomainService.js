@@ -216,11 +216,21 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
 
 
   if (payload.indicators_progress && typeof payload.indicators_progress === 'object') {
-    const scores = Object.values(payload.indicators_progress)
-      .map((v) => typeof v === 'object' ? Number(v?.progress) : Number(v))
-      .filter((n) => !isNaN(n));
-    if (scores.length > 0 && isPlanningStaff) {
-      progress = Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1));
+    const { getActiveIndicators } = require('./actionPlanIndicators');
+    const activeIndicators = getActiveIndicators(actionItem);
+    const totalCount = activeIndicators.length || 1;
+    let sumScores = 0;
+    let anyScore = false;
+    for (const ind of activeIndicators) {
+      const v = payload.indicators_progress[ind.kind];
+      const prog = typeof v === 'object' ? Number(v?.progress) : Number(v);
+      if (!isNaN(prog) && prog !== null) {
+        sumScores += Math.max(0, prog);
+        anyScore = true;
+      }
+    }
+    if (anyScore && isPlanningStaff) {
+      progress = Number((sumScores / totalCount).toFixed(1));
     }
     custom.monitoring_indicators = {
       ...(custom.monitoring_indicators || {}),

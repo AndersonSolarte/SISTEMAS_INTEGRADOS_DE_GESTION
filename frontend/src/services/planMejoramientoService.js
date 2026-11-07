@@ -29,13 +29,14 @@ const planMejoramientoService = {
   getActionPlanCandidates: (id, uid) => api.get(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/planes-accion-candidatos`).then(unwrap),
   linkToActionPlan: (id, uid, payload) => api.post(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/vincular-plan-accion`, payload).then(unwrap),
   unlinkFromActionPlan: (id, uid) => api.post(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/desvincular-plan-accion`).then(unwrap),
-  uploadActivityEvidence: (id, uid, file) => {
+  uploadActivityEvidence: (id, uid, file, indicatorKind) => {
     const formData = new FormData();
     formData.append('file', file);
+    if (indicatorKind) formData.append('indicator_kind', indicatorKind);
     return api.post(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/evidencias`, formData).then(unwrap);
   },
   listActivityEvidence: (id, uid) => api.get(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/evidencias`).then(unwrap),
-  readActivityEvidence: (id, uid, fileId) => api.get(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/evidencias/${encodeURIComponent(fileId)}`, { responseType: 'blob' }),
+  readActivityEvidence: (id, uid, fileId, preview = false) => api.get(`/autoevaluacion/planes-mejoramiento/${id}/actividades/${encodeURIComponent(uid)}/evidencias/${encodeURIComponent(fileId)}`, { responseType: 'blob', params: preview ? { preview: '1' } : undefined }),
   uploadEvidence: (id, file) => {
     const formData = new FormData();
     formData.append('file', file);

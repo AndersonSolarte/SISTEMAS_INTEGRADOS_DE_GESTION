@@ -2,6 +2,7 @@ const { readLiveActionPlanSchema } = require('../services/liveActionPlanSchemaSe
 const { stripActivityDates, stripContentActivityDates } = require('../services/improvementActivityStructure');
 const { missingLinkFields, linkFieldValue } = require('../services/improvementLinkFields');
 const { canSynchronize, assertCanSynchronize } = require('../services/improvementActionPlanSyncGate');
+const { belongsToActivity, reusableLink, detachActivity } = require('../services/improvementLinkLifecycle');
 const { aspectKey, uniqueAspects, validateAspectAssignments } = require('../services/improvementAspectIdentity');
 const { enrichImprovementPolicyDimensions } = require('../services/activityPolicyStatisticsService');
 const { clampProgress, periodCuts, latestResult, fulfillment, periodContribution, trackCurrentFollowup } = require('../services/improvementMonitoringRules');
@@ -276,7 +277,7 @@ const reconcileLinkedActivities = async (plan, { persist = true, force = false }
     let modified = false;
     for (const obj of array(content.objetivos)) {
       for (const act of array(obj.actividades)) {
-        if (!act.linkedActionItemId && act.uid) {
+        if (!act.linkedActionItemId && act.uid && act.actionPlanLinkState !== 'unlinked') {
           const foundItem = await StrategicActionItem.findOne({
             where: {
               deleted_at: null,
@@ -1116,7 +1117,7 @@ const update = async (req, res) => {
 const syncLinkedActionPlansTracking = async (plan, req) => {
   for (const obj of array(plan.contenido?.objetivos)) {
     for (const act of array(obj.actividades)) {
-      if (!act.linkedActionItemId && act.uid) {
+      if (!act.linkedActionItemId && act.uid && act.actionPlanLinkState !== 'unlinked') {
         const foundItem = await StrategicActionItem.findOne({
           where: {
             deleted_at: null,
@@ -1348,11 +1349,20 @@ const getActionPlanCandidates = async (req, res) => {
         where: { action_plan_id: p.id, deleted_at: null },
         attributes: ['id', 'code', 'activity', 'custom_values']
       });
-      const existingActivities = planItems.map((it) => ({
-        id: it.id,
-        code: it.code,
-        activity: it.activity || it.custom_values?.activity || it.custom_values?.actividad || ''
-      }));
+      const existingActivities = planItems.map((it) => {
+        const isSameLink = Boolean(
+          (targetActivity.linkedActionItemId && String(it.id) === String(targetActivity.linkedActionItemId)) ||
+          belongsToActivity(it, plan.id, targetActivity.uid)
+        );
+        return {
+          id: it.id,
+          code: it.code,
+          activity: it.activity || it.custom_values?.activity || it.custom_values?.actividad || '',
+          pm_actividad_uid: it.custom_values?.pm_actividad_uid || it.custom_values?.pm_activity_uid || null,
+          pm_plan_id: it.custom_values?.pm_plan_id || null,
+          is_same_linked_activity: isSameLink
+        };
+      });
 
       return {
         id: p.id,
@@ -1371,15 +1381,21 @@ const getActionPlanCandidates = async (req, res) => {
         form_schema: schema,
         schema_error: schemaError,
         strategic_catalog: strategicCatalog,
-        existing_activities: existingActivities
+        existing_activities: existingActivities,
+        linked_action_item_id: reusableLink(planItems, plan.id, targetActivity.uid, { itemId: targetActivity.linkedActionItemId || (String(targetActivity.lastActionPlanLink?.actionPlanId) === String(p.id) ? targetActivity.lastActionPlanLink?.actionItemId : null), name: targetActivity.nombre })?.id || null
       };
     }));
 
-    // Regla estricta: Solo asociar con los planes de acción actuales (vigencia baseYear) que correspondan al MISMO responsable
-    const matchedResponsiblePlans = mappedPlans.filter((p) => p.same_responsible && p.year === baseYear);
+    // Permitir radicar en cualquier Plan de Acción de la vigencia, priorizando recomendados y mismo responsable
+    const candidatePlans = mappedPlans.filter((p) => p.year === baseYear || p.year === baseYear + 1);
 
-    // Ordenar por código
-    matchedResponsiblePlans.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+    candidatePlans.sort((a, b) => {
+      if (a.is_recommended && !b.is_recommended) return -1;
+      if (!a.is_recommended && b.is_recommended) return 1;
+      if (a.same_responsible && !b.same_responsible) return -1;
+      if (!a.same_responsible && b.same_responsible) return 1;
+      return (a.code || '').localeCompare(b.code || '');
+    });
 
     return res.json({
       success: true,
@@ -1395,7 +1411,7 @@ const getActionPlanCandidates = async (req, res) => {
         },
         program: plan.programa,
         responsible: targetActivity.responsableNombre || plan.asignacion?.usuario_nombre || '',
-        plans: matchedResponsiblePlans
+        plans: candidatePlans
       }
     });
   } catch (error) {
@@ -1504,22 +1520,22 @@ const linkActivityToActionPlan = async (req, res) => {
       (userSessionNorm && leaderNorm && (userSessionNorm.includes(leaderNorm) || leaderNorm.includes(userSessionNorm)))
     );
 
-    if (!isSameResponsible) {
-      return res.status(400).json({
-        success: false,
-        message: `No es posible asociar la actividad: el responsable del Plan de Acción ("${leaderFullName}") no coincide con el responsable de la actividad ("${targetActivity.responsableNombre || 'este responsable'}"). Si no hay un responsable que coincida entre el Plan de Acción y el Plan de Mejoramiento, no se puede asociar.`
-      });
-    }
+    // Se permite radicar en otros planes de acción aunque el responsable sea diferente ("porque puede venir con otros responsables y en los demás se convierte en su propia actividad")
+    // El líder del plan destino será el responsable institucional de esa actividad en el PED destino
 
-    const existingItems = await StrategicActionItem.findAll({
-      where: { action_plan_id: actionPlan.id, deleted_at: null },
-      attributes: ['id', 'code', 'activity', 'custom_values']
+    const allItems = await StrategicActionItem.findAll({
+      where: { action_plan_id: actionPlan.id },
+      attributes: ['id', 'code', 'activity', 'custom_values', 'deleted_at']
     });
-    const existingLink = existingItems.find((item) =>
-      String(item.custom_values?.pm_plan_id) === String(plan.id)
-      && String(item.custom_values?.pm_actividad_uid) === String(targetActivity.uid));
+    const existingItems = allItems.filter((item) => !item.deleted_at);
+    const existingLink = reusableLink(allItems, plan.id, targetActivity.uid, {
+      itemId: req.body.action_item_id || targetActivity.linkedActionItemId || (String(targetActivity.lastActionPlanLink?.actionPlanId) === String(actionPlan.id) ? targetActivity.lastActionPlanLink?.actionItemId : null),
+      name: linkFieldValue('activity', req.body.form_values || req.body.activity_data || {}) || targetActivity.nombre
+    });
+    if (req.body.action_item_id && String(req.body.action_item_id) !== String(existingLink?.id)) return res.status(409).json({ success: false, message: 'La actividad existente no corresponde a este vínculo. Actualice los planes disponibles.' });
+    if (!existingLink && allItems.some((item) => belongsToActivity(item, plan.id, targetActivity.uid))) return res.status(409).json({ success: false, message: 'Seleccione el registro existente que desea actualizar. No se creará otra actividad.' });
     if (existingLink) targetActivity.linkedActionItemId = existingLink.id;
-    const existingCodes = new Set(existingItems.map((it) => it.code));
+    const existingCodes = new Set(allItems.map((it) => it.code));
     let maxNum = 0;
     for (const code of existingCodes) {
       const match = String(code).match(/^ACT-(\d+)$/i);
@@ -1562,6 +1578,12 @@ const linkActivityToActionPlan = async (req, res) => {
       if (targetActivity.linkedActionItemId && String(it.id) === String(targetActivity.linkedActionItemId)) {
         return false;
       }
+      if (existingLink && String(it.id) === String(existingLink.id)) {
+        return false;
+      }
+      if (String(it.custom_values?.pm_plan_id) === String(plan.id) && String(it.custom_values?.pm_actividad_uid) === String(targetActivity.uid)) {
+        return false;
+      }
       const existingName = it.activity || it.custom_values?.activity || it.custom_values?.actividad || '';
       return normActivityText(existingName) === candidateNorm;
     });
@@ -1569,7 +1591,7 @@ const linkActivityToActionPlan = async (req, res) => {
     if (duplicate) {
       return res.status(400).json({
         success: false,
-        message: `No es posible registrar actividades duplicadas. Ya existe la actividad "${duplicate.activity || activityName}" (${duplicate.code}) en el Plan de Acción "${actionPlan.title || actionPlan.code}".`
+        message: `No es posible registrar actividades duplicadas en el mismo Plan de Acción. Ya existe la actividad "${duplicate.activity || activityName}" (${duplicate.code}) en este plan.`
       });
     }
     const indicatorName = text(linkFieldValue('indicator', formValues)) || formatActivityIndicators(targetActivity);
@@ -1590,6 +1612,8 @@ const linkActivityToActionPlan = async (req, res) => {
     let actionItem;
     if (targetActivity.linkedActionItemId) {
       actionItem = await StrategicActionItem.findByPk(targetActivity.linkedActionItemId);
+      if (actionItem && (String(actionItem.action_plan_id) !== String(actionPlan.id) || !belongsToActivity(actionItem, plan.id, targetActivity.uid))) actionItem = null;
+      if (actionItem?.deleted_at && actionItem.custom_values?.pm_link_status !== 'unlinked') actionItem = null;
     }
 
     const customValuesPayload = {
@@ -1628,8 +1652,11 @@ const linkActivityToActionPlan = async (req, res) => {
       drive_subfolder: `Plan de Mejoramiento - ${plan.programa}`
     };
 
-    if (actionItem && !actionItem.deleted_at) {
+    customValuesPayload.pm_link_status = 'linked';
+    if (actionItem) {
       await actionItem.update({
+        deleted_at: null,
+        status: 'active',
         activity: activityName,
         indicator: indicatorName,
         indicator_type: indicatorType,
@@ -1668,6 +1695,7 @@ const linkActivityToActionPlan = async (req, res) => {
     }
 
     targetActivity.linkedActionPlanId = actionPlan.id;
+    targetActivity.actionPlanLinkState = 'linked';
     targetActivity.linkedActionPlanCode = actionPlan.code;
     targetActivity.linkedActionPlanTitle = actionPlan.title;
     targetActivity.linkedActionItemId = actionItem.id;
@@ -1675,7 +1703,7 @@ const linkActivityToActionPlan = async (req, res) => {
     targetActivity.tipoIndicador = indicatorType;
     targetActivity.linkedAt = new Date().toISOString();
     if (driveFolderUrl) {
-      targetActivity.evidenceFolderUrl = driveFolderUrl;
+      targetActivity.linkedEvidenceFolderUrl = driveFolderUrl;
     }
 
     await plan.update({ contenido: content, actualizado_por: req.user.id });
@@ -1834,7 +1862,7 @@ const repairLinkedActionItems = async () => {
 
     for (const item of items) {
       const cv = item.custom_values || {};
-      if (cv.source_module === 'plan_mejoramiento' && (!cv.strategic_objective || cv.strategic_objective === '-' || !cv.macroactividad || item.deleted_at)) {
+      if (cv.source_module === 'plan_mejoramiento' && !item.deleted_at && cv.pm_link_status !== 'unlinked' && (!cv.strategic_objective || cv.strategic_objective === '-' || !cv.macroactividad)) {
         const destination = await StrategicActionPlan.findByPk(item.action_plan_id, { include: [{ model: StrategicTerm, as: 'term' }] });
         if (!(await canSynchronize(destination)).allowed) continue;
         const pmPlan = await PlanMejoramiento.findByPk(cv.pm_plan_id);
@@ -1844,7 +1872,7 @@ const repairLinkedActionItems = async () => {
           const found = array(obj.actividades).find((a) => String(a.uid) === String(cv.pm_actividad_uid));
           if (found) { targetAct = found; break; }
         }
-        if (!targetAct) continue;
+        if (!targetAct || targetAct.actionPlanLinkState === 'unlinked' || String(targetAct.linkedActionItemId) !== String(item.id)) continue;
 
         let objStr = targetAct.objetivoEstrategico || '';
         if (/^OE1/i.test(objStr)) objStr = 'OE1 Diseñar e implementar estrategias integrales e innovadoras, para arraigar la identidad Universidad CESMAG.';
@@ -1875,51 +1903,40 @@ const repairLinkedActionItems = async () => {
     console.warn('[repairLinkedActionItems warning]:', err.message);
   }
 };
-setTimeout(() => repairLinkedActionItems(), 3000);
+// Do not run historical repair on startup: it must not overwrite intentional edits or detached links.
 
 const unlinkActivityFromActionPlan = async (req, res) => {
   try {
-    const plan = await PlanMejoramiento.findByPk(req.params.id);
-    if (!plan) return res.status(404).json({ success: false, message: 'Plan de mejoramiento no encontrado' });
-
-    const activityUid = text(req.params.uid);
-    let targetActivity = null;
-
-    const content = JSON.parse(JSON.stringify(plan.contenido || {}));
-    for (const obj of array(content.objetivos)) {
-      const found = array(obj.actividades).find((a) => String(a.uid) === activityUid);
-      if (found) { targetActivity = found; break; }
-    }
-    if (!targetActivity) return res.status(404).json({ success: false, message: 'Actividad no encontrada' });
-
-    if (targetActivity.linkedActionItemId) {
-      const actionItem = await StrategicActionItem.findByPk(targetActivity.linkedActionItemId);
-      if (actionItem) {
-        await actionItem.update({
-          deleted_at: new Date(),
-          status: 'deleted',
-          updated_by: req.user.id
-        });
-        syncSinglePlanOfficialWorkbook(actionItem.action_plan_id).catch(() => {});
+    let syncPlanId = null;
+    const detached = await sequelize.transaction(async (transaction) => {
+      const plan = await PlanMejoramiento.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!plan) throw Object.assign(new Error('Plan no encontrado'), { status: 404 });
+      const activityUid = text(req.params.uid);
+      if (!(await canAccessPlan(req, plan.id)) || !(await canManageActivityEvidence(req, plan.id, activityUid))) {
+        throw Object.assign(new Error('No tiene acceso a esta actividad.'), { status: 403 });
       }
-    }
-
-    targetActivity.linkedActionPlanId = null;
-    targetActivity.linkedActionPlanCode = null;
-    targetActivity.linkedActionPlanTitle = null;
-    targetActivity.linkedActionItemId = null;
-    targetActivity.linkedActionItemCode = null;
-    targetActivity.linkedAt = null;
-
-    await plan.update({ contenido: content, actualizado_por: req.user.id });
-
-    return res.json({
-      success: true,
-      message: 'Actividad desvinculada del Plan de Acción',
-      data: targetActivity
+      const content = JSON.parse(JSON.stringify(plan.contenido || {}));
+      const activity = array(content.objetivos).flatMap((objective) => array(objective.actividades)).find((item) => String(item.uid) === activityUid);
+      if (!activity) throw Object.assign(new Error('Actividad no encontrada'), { status: 404 });
+      const item = activity.linkedActionItemId ? await StrategicActionItem.findByPk(activity.linkedActionItemId, { transaction, lock: transaction.LOCK.UPDATE }) : null;
+      if (item) {
+        if (!belongsToActivity(item, plan.id, activityUid)) throw Object.assign(new Error('El registro vinculado no corresponde a esta actividad.'), { status: 409 });
+        const destination = await StrategicActionPlan.findByPk(item.action_plan_id, { include: [{ model: StrategicTerm, as: 'term' }], transaction });
+        await assertCanSynchronize(destination);
+        const timestamp = new Date().toISOString();
+        await item.update({ deleted_at: new Date(timestamp), status: 'deleted', updated_by: req.user.id,
+          custom_values: { ...item.custom_values, pm_link_status: 'unlinked', pm_unlinked_at: timestamp }
+        }, { transaction });
+        syncPlanId = item.action_plan_id;
+      }
+      Object.assign(activity, detachActivity(activity, item, new Date().toISOString()));
+      await plan.update({ contenido: content, actualizado_por: req.user.id }, { transaction });
+      return activity;
     });
+    if (syncPlanId) syncSinglePlanOfficialWorkbook(syncPlanId).catch(() => {});
+    return res.json({ success: true, message: 'Actividad desvinculada del Plan de Accion', data: detached });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message || 'Error al desvincular actividad' });
+    return res.status(error.statusCode || error.status || 500).json({ success: false, message: error.message || 'Error al desvincular actividad' });
   }
 };
 

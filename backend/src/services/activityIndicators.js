@@ -35,4 +35,12 @@ const formatActivityIndicators = (activity) => {
   return [['Resultado', 'indicadorResultado'], ['Logro', 'indicadorLogro'], ['Impacto', 'indicadorImpacto']]
     .filter(([, field]) => values[`${field}Activo`] && String(values[field]).trim()).map(([label, field]) => `${label}: ${values[field]}`).join('\n');
 };
-module.exports = { resolveActivityIndicators, formatActivityIndicators, indicatorErrors, planIndicatorErrors };
+const activityIndicatorPeriod = (activity = {}) => {
+  const values = resolveActivityIndicators(activity);
+  const active = ['Resultado', 'Logro', 'Impacto'].filter((kind) => values[`indicador${kind}Activo`]);
+  const dates = (prefix) => active.map((kind) => values[`${prefix}${kind}`]).filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)).sort();
+  const starts = dates('fechaInicio');
+  const ends = dates('fechaFin');
+  return { starts_on: starts[0] || '', ends_on: ends[ends.length - 1] || '' };
+};
+module.exports = { resolveActivityIndicators, formatActivityIndicators, indicatorErrors, planIndicatorErrors, activityIndicatorPeriod };

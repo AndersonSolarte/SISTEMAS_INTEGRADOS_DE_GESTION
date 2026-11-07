@@ -31,4 +31,12 @@ const indicatorErrors = (activity = {}) => {
 const planIndicatorErrors = (objectives = []) => objectives.flatMap((objective, objectiveIndex) => (objective.actividades || []).flatMap((activity, activityIndex) => Object.entries(indicatorErrors(activity)).map(([field, message]) => ({ objectiveIndex, activityIndex, field, message: `${objective.codigo || `Objetivo ${objectiveIndex + 1}`} · Actividad ${activityIndex + 1}: ${message}` }))));
 
 
-export { resolveActivityIndicators, indicatorErrors, planIndicatorErrors };
+const activityIndicatorPeriod = (activity = {}) => {
+  const values = resolveActivityIndicators(activity);
+  const active = ['Resultado', 'Logro', 'Impacto'].filter((kind) => values[`indicador${kind}Activo`]);
+  const dates = (prefix) => active.map((kind) => values[`${prefix}${kind}`]).filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)).sort();
+  const starts = dates('fechaInicio');
+  const ends = dates('fechaFin');
+  return { starts_on: starts[0] || '', ends_on: ends[ends.length - 1] || '' };
+};
+export { resolveActivityIndicators, indicatorErrors, planIndicatorErrors, activityIndicatorPeriod };

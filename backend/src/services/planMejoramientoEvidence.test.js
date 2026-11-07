@@ -92,6 +92,7 @@ test('linked upload waits for both Drive repositories and propagates mirror fail
   } });
   Module._load = function (request, parent, isMain) {
     if (parent?.filename.endsWith('planMejoramientoDriveService.js')) {
+      if (request === './improvementActionPlanSyncGate') return { canSynchronize: async () => ({ allowed: true }) };
       if (request === '../models') return {
         StrategicActionPlan: {},
         StrategicActionItem: { findByPk: async () => ({ id: 10, actionPlan: { term_id: 2 } }) },

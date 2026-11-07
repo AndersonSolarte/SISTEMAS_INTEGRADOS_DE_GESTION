@@ -17,7 +17,7 @@ export default function PolicyActionFields({ policies = [], selectedPolicies = [
     return !selectedLines.length || ownLines.some((line) => selectedLines.some((chosen) => normalize(chosen) === normalize(line)));
   });
   const options = [...new Set([...relatedPolicies.map((item) => item.name), ...selected])];
-  const lines = [...new Set(policies.filter((item) => lineDriven || !selected.length || selectedKeys.has(normalize(item.name))).flatMap((item) => item.actionLines || []))];
+  const lines = [...new Set(policies.filter((item) => query || lineDriven || !selected.length || selectedKeys.has(normalize(item.name))).flatMap((item) => item.actionLines || []))];
   const refresh = async () => {
     if (!onRefresh || loading) return;
     setLoading(true);
@@ -51,12 +51,14 @@ export default function PolicyActionFields({ policies = [], selectedPolicies = [
       size="small"
       forcePopupIcon
       disableCloseOnSelect
+      blurOnSelect={false}
+      inputValue={lineQuery}
       options={lines}
       value={selectedLines}
       open={linesOpen}
       onOpen={() => { setLinesOpen(true); refresh(); }}
       onClose={() => setLinesOpen(false)}
-      onInputChange={(_event, value, reason) => { if (reason === 'input' || reason === 'clear' || reason === 'reset') setLineQuery(value); }}
+      onInputChange={(_event, value, reason) => { if (reason === 'input' || reason === 'clear') setLineQuery(value); }}
       onChange={(_event, values) => {
         const owners = policies.filter((policy) => (policy.actionLines || []).some((line) => values.some((chosen) => normalize(chosen) === normalize(line)))).map((policy) => policy.name);
         const names = [...new Set([...manualPolicies, ...owners])];

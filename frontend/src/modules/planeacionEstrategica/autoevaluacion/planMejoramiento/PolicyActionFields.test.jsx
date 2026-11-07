@@ -8,6 +8,35 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
+test('keyword results and query remain while selecting lines across policies and every owner is added', async () => {
+  const catalog = [
+    { name: 'Política Curricular', actionLines: ['Diseño curricular', 'Evaluación'] },
+    { name: 'Política Docente', actionLines: ['Desarrollo curricular'] },
+    { name: 'Política Académica', actionLines: ['Mejoramiento curricular'] }
+  ];
+  function SearchForm() {
+    const [names, setNames] = useState(['Política Curricular']);
+    const [lines, setLines] = useState([]);
+    return <><PolicyActionFields policies={catalog} selectedPolicies={names} selectedLines={lines} onPolicyChange={setNames} onLinesChange={setLines} />
+      <output data-testid="policies">{names.join('|')}</output><output data-testid="lines">{lines.join('|')}</output></>;
+  }
+  render(<SearchForm />);
+  const input = screen.getByRole('combobox', { name: 'Líneas de acción' });
+  fireEvent.change(input, { target: { value: 'curricular' } });
+  fireEvent.mouseDown(input);
+  expect(await screen.findAllByRole('option')).toHaveLength(3);
+  fireEvent.click(screen.getByRole('option', { name: 'Diseño curricular' }));
+  expect(input).toHaveValue('curricular');
+  expect(screen.getAllByRole('option')).toHaveLength(3);
+  fireEvent.click(screen.getByRole('option', { name: 'Desarrollo curricular' }));
+  expect(input).toHaveValue('curricular');
+  expect(screen.getAllByRole('option')).toHaveLength(3);
+  fireEvent.click(screen.getByRole('option', { name: 'Mejoramiento curricular' }));
+  expect(screen.getByTestId('lines')).toHaveTextContent('Diseño curricular|Desarrollo curricular|Mejoramiento curricular');
+  expect(screen.getByTestId('policies')).toHaveTextContent('Política Curricular|Política Docente|Política Académica');
+  expect(input).toHaveValue('curricular');
+});
+
 const policies = [
   { name: 'Política de Calidad', actionLines: ['Mejora continua', 'Evaluación'] },
   { name: 'Política de Bienestar', actionLines: ['Atención integral'] }

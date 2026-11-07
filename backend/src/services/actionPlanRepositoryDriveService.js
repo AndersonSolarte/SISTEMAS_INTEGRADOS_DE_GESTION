@@ -13,6 +13,11 @@ const { Op } = require('sequelize');
 const { generatePlanAccionBuffer } = require('./planAccionExportService');
 const { listTermDependencies } = require('./strategicTermDependencyService');
 const { ensureMinuteFinalPdfBuffer } = require('./strategicMinutePdfService');
+const {
+  getActiveIndicators,
+  getIndicatorFolderName,
+  resolveEvidenceIndicatorKind
+} = require('./actionPlanIndicators');
 
 // Este servicio es deliberadamente independiente de la sincronizacion PEI existente.
 // Mientras se habilita el OAuth de Planes de Accion puede reutilizar, solo para Drive,
@@ -780,6 +785,18 @@ const syncActionPlanRepositoryTerm = async (termId) => {
           key: `action-repository:activity:${item.id}:period:${period.id}`
         }, counters);
         activityFolders.set(`${item.id}:${period.id}`, activityFolder);
+
+        // Subcarpetas dinámicas por indicador según los indicadores configurados en la actividad
+        const activeIndicators = getActiveIndicators(item);
+        for (const ind of activeIndicators) {
+          const indName = getIndicatorFolderName(ind);
+          const indFolder = await ensureFolder(drive, {
+            parentId: activityFolder,
+            name: indName,
+            key: `action-repository:indicator:${item.id}:period:${period.id}:${ind.kind}`
+          }, counters);
+          activityFolders.set(`${item.id}:${period.id}:${ind.kind}`, indFolder);
+        }
       }
     }
     return { actionPlan, minutesFolder, officialFolder, activityFolders };
@@ -878,9 +895,13 @@ const syncActionPlanRepositoryTerm = async (termId) => {
         const activityFolder = activityFolders.get(`${item.id}:${period.id}`);
         for (const evidence of (item.evidence || []).filter((file) => String(file.monitoring_period_id) === String(period.id))) {
           if (!evidence.storage_key || !fs.existsSync(evidence.storage_key)) continue;
+          const kind = resolveEvidenceIndicatorKind(evidence);
+          const targetFolder = activityFolders.get(`${item.id}:${period.id}:${kind}`)
+            || activityFolders.get(`${item.id}:${period.id}:resultado`)
+            || activityFolder;
           const buffer = fs.readFileSync(evidence.storage_key);
           await upsertFile(drive, {
-            parentId: activityFolder,
+            parentId: targetFolder,
             name: compactFileName(evidence.original_name || evidence.stored_name, `EV-${String(evidence.id).slice(0, 8)}`, 64),
             key: `action-repository:evidence:${evidence.id}`, mimeType: evidence.mime_type,
             buffer, hash: evidence.sha256 || contentHash(buffer)

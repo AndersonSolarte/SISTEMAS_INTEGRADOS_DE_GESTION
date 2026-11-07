@@ -1,6 +1,6 @@
 const excluded = new Set(['progress_s1', 'observations_s1', 'progress_s2', 'observations_s2', 'total_progress', 'avance_a_ip_2026', 'avance_a_iip_2026', 'observaciones', 'observaciones_2', 'total']);
 const aliases = [
-  ['activity', 'actividad', 'nombre'], ['indicator', 'indicador'], ['indicator_type', 'tipoIndicador', 'tipo_indicador'],
+  ['activity', 'actividad', 'nombre', 'nombre_actividad', 'nombreActividad'], ['indicator', 'indicador'], ['indicator_type', 'tipoIndicador', 'tipo_indicador'],
   ['target', 'meta'], ['starts_on', 'fechaInicio', 'fecha_inicio'], ['ends_on', 'fechaFin', 'fecha_fin'],
   ['strategic_objective', 'objetivoEstrategico', 'objetivo_estrategico'], ['strategic_guideline', 'lineamientoEstrategico', 'lineamiento_estrategico'],
   ['macroactivity', 'macroactividad'], ['deliverable', 'entregable'], ['responsible', 'responsable', 'responsable_de_ejecucion'],

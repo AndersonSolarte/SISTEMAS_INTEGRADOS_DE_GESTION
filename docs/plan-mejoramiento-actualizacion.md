@@ -141,3 +141,69 @@ No genera un formulario fijo cuando falta el esquema. Consulta los cambios cada
 el servidor obtiene de nuevo la estructura vigente y valida sus obligatorios.
 Las relaciones de objetivos y lineamientos del diálogo se calculan a partir
 del mismo esquema del Plan de Acción de destino.
+
+Al vincular una actividad, su fecha de inicio en el Plan de Acción corresponde
+al inicio más temprano de sus indicadores activos; la fecha fin corresponde
+al fin más tardío. Los indicadores retirados no afectan este rango. El servidor
+recalcula las fechas usando la actividad almacenada y conserva las fechas de
+cada indicador en los datos de la actividad vinculada. No requiere migración:
+se utilizan las columnas de fechas y los campos JSON existentes.
+
+El editor oficial y la vinculación comparten `actionPlanFormFields` para obtener
+los campos de captura, su orden y obligatoriedad. La vinculación no oculta el
+tipo de indicador configurado. Precarga las equivalencias de actividad/nombre,
+descripción y referencias institucionales usando las claves del esquema destino;
+el indicador y la meta simples provienen del indicador activo, conservando
+además el bloque completo de indicadores. Los campos adicionales configurados
+permanecen disponibles para diligenciarse en la vinculación.
+
+### Seguimiento por indicador
+
+Cada actividad muestra únicamente sus indicadores activos. Cada indicador
+conserva porcentaje, fecha de corte, observaciones y una lista de evidencias
+propia en `contenido.objetivos[].actividades[].seguimientoIndicadores`.
+El cumplimiento de la actividad es el promedio de todos sus indicadores
+activos; un indicador sin evidencia aporta cero. Las actividades tienen el
+mismo peso dentro del objetivo. Las fechas indican por iniciar, en plazo,
+vencido o cumplido fuera de plazo, sin producir cumplimiento automático.
+
+El servidor valida porcentajes y fechas de corte y conserva la asociación
+de cada archivo con Resultado, Logro o Impacto. Los datos históricos generales
+se conservan; no se atribuyen retrospectivamente a un indicador específico.
+La sincronización usa `monitoring_indicators` del Plan de Acción y etiqueta
+las evidencias por indicador. Excel incluye `SEGUIMIENTO_INDICADORES` para
+exportar y recuperar estos datos. No se agregan tablas: se utiliza el JSONB
+existente y las columnas de evidencias del Plan de Acción.
+
+En formulación, la información del objetivo permanece siempre visible y cada
+actividad dispone de su propio acordeón, identificado por número y nombre.
+Las actividades nuevas se abren automáticamente. Cerrar un acordeón no elimina
+los valores del formulario ni modifica los datos almacenados.
+
+El ojo abre automáticamente la evidencia seleccionada. Para Word `.docx`, la
+consulta autenticada con `preview=1` convierte el contenido a HTML y lo muestra
+en un visor aislado, sin scripts ni recursos externos. La descarga solicita
+siempre el archivo original. PDF e imágenes conservan su visor existente.
+
+Las evidencias se identifican como `[Evidencia de resultado] archivo.ext`,
+`[Evidencia de logro] archivo.ext` o `[Evidencia de impacto] archivo.ext`.
+Dentro de `ACTIVIDAD/EVIDENCIAS` se crean las carpetas de indicadores activos
+`01 - Evidencias de resultado`, `02 - Evidencias de logro` y
+`03 - Evidencias de impacto`. Se reutilizan mediante claves estables de Drive.
+Los archivos existentes que tengan una asociación explícita a un indicador
+se trasladan desde la carpeta general sin cambiar su ID; los no clasificados
+se conservan. El visor consulta las subcarpetas y comprueba que pertenecen a
+la actividad antes de servir sus archivos. Copiar URL usa la subcarpeta del
+indicador. La copia vinculada en Plan de Acción recibe el mismo tipo de indicador.
+
+### Desvincular, ajustar y volver a vincular
+
+La desvinculación conserva indicadores, programación y evidencias en
+Mejoramiento. Marca el registro del Plan de Acción como retirado y actualiza
+ambos registros en una transacción. La recuperación automática no restaura
+vínculos retirados deliberadamente. Al volver a vincular al mismo destino,
+se reutilizan el ID y código del registro retirado explícitamente, manteniendo
+sus relaciones y evidencias; las bajas administrativas no se restauran.
+La ventana usa el formulario vigente y mantiene los controles de acceso y
+vigencia. El frontend interpreta los IDs de la respuesta anidada del servidor
+para mostrar correctamente la acción Desvincular.
