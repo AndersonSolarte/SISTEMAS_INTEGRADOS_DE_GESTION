@@ -165,9 +165,9 @@ const PERSONALES_SUBTYPES = [
   { group: 'Permisos y Licencias', value: 'luto_familiares_cercanos', label: 'Licencia por luto de familiares cercanos' },
   { group: 'Permisos y Licencias', value: 'fallecimiento_otros_familiares', label: 'Fallecimiento de otros familiares diferentes a los contemplados en la licencia por luto' },
   { group: 'Permisos y Licencias', value: 'matrimonio_union_marital', label: 'Permiso por matrimonio o unión marital de hecho' },
-  { group: 'Permisos y Novedades', value: 'comisiones_sindicales', label: 'Comisiones sindicales' },
   { group: 'Permisos y Licencias', value: 'obligaciones_escolares', label: 'Asistencia a obligaciones escolares' },
   { group: 'Permisos y Licencias', value: 'citaciones_judiciales', label: 'Citaciones judiciales, administrativas o legales' },
+  { group: 'Permisos y Novedades', value: 'comisiones_sindicales', label: 'Comisiones sindicales' },
   { group: 'Permisos y Novedades', value: 'cuidado_hijo_ley_2174', label: 'Cuidado de hijo(a) - Términos de la Ley 2174 de 2021' },
   { group: 'Permisos y Novedades', value: 'otra', label: 'Otra, ¿cuál?:' }
 ];
