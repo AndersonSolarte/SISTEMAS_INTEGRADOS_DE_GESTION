@@ -3,13 +3,16 @@ import { planIndicatorErrors, activityIndicatorPeriod, resolveActivityIndicators
 import { missingLinkFields, linkFieldValue, prefillLinkFields, resolveLinkStrategy } from './linkFields';
 import { actionPlanFormFields } from '../../../../utils/actionPlanFormFields';
 import ActivityAccordion from './ActivityAccordion';
+import BufferedTextField from './BufferedTextField';
+import PendingAspectFields from './PendingAspectFields';
+import ObjectiveAccordion from './ObjectiveAccordion';
 import ActivityResourceField from './ActivityResourceField';
 import { readLinkResult, unlinkLocalActivity, resolveLinkOperation } from './linkLifecycle';
 import IndicatorTrackingFields from './IndicatorTrackingFields';
 import { activeKinds, trackingProgress, validateTracking } from './indicatorTracking';
 import InstitutionalPolicyActivityField from '../../../../components/InstitutionalPolicyActivityField';
 import ActionPlanIndicatorFields from '../../../../components/ActionPlanIndicatorFields';
-import { aspectKey, uniqueAspects } from './aspectIdentity';
+import { aspectKey, uniqueAspects, pendingAspects } from './aspectIdentity';
 import ActivityIndicatorFields, { resolveActivityIndicators } from './ActivityIndicatorFields';
 import StrategicObjectiveFields from './StrategicObjectiveFields';
 import PolicyActionFields from './PolicyActionFields';
@@ -33,6 +36,7 @@ import {
   ContentCopyRounded as CopyIcon,
   CalendarMonthRounded as CalendarIcon,
   FlagRounded as ObjectiveIcon,
+  HistoryRounded as HistoryIcon,
   LinkOffRounded as LinkOffIcon,
   LinkRounded as LinkIcon,
   MonetizationOnRounded as BudgetIcon,
@@ -68,6 +72,7 @@ const makeLocalId = () => window.crypto?.randomUUID?.() || `local_${Date.now()}_
 const emptyActivity = () => ({
   uid: makeLocalId(),
   nombre: '', descripcion: '', indicador: '', tipoIndicador: 'Resultado', meta: '', recursos: '',
+  indicadorResultadoActivo: false, indicadorLogroActivo: false, indicadorImpactoActivo: false,
   procesoResponsable: '', responsableId: null, responsableNombre: '', responsableDocumento: '', responsableEmail: '',
   responsableDependencia: '', responsableVicerrectoria: '', cargoResponsable: '', alcance: 'PROGRAMA', ejeEstrategico: '', objetivoEstrategico: '',
   proyectoPdi: '', politicasInstitucionales: [], lineasAccionPolitica: [],
@@ -1081,7 +1086,13 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     }
   };
 
-  const updateObjective = (index, key, value) => setEditor((previous) => ({ ...previous, objetivos: previous.objetivos.map((item, i) => i === index ? { ...item, [key]: value } : item) }));
+  const updateObjective = (index, key, value) => {
+    const previous = editorRef.current;
+    const next = { ...previous, objetivos: previous.objetivos.map((item, i) => i === index ? { ...item, [key]: value } : item) };
+    editorRef.current = next;
+    setSaveStatus('pending');
+    setEditor(next);
+  };
   const updateActivity = (objectiveIndex, activityIndex, key, value) => {
     trackingRevisionRef.current += 1;
     const previous = editorRef.current;
@@ -1131,10 +1142,11 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     })
   }));
   const addObjective = () => {
-    setExpandedActivityKey(null);
     setEditor((previous) => {
       const nextNumber = Math.max(0, ...previous.objetivos.map((item) => Number(String(item.codigo || '').match(/([0-9]+)$/)?.[1] || 0))) + 1;
-      return { ...previous, objetivos: [...previous.objetivos, emptyObjective(nextNumber)] };
+      const next = { ...previous, objetivos: [...previous.objetivos, emptyObjective(nextNumber)] };
+      editorRef.current = next;
+      return next;
     });
   };
   const addActivity = (objectiveIndex) => {
@@ -1716,17 +1728,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     return uniqueAspects(Array.from(map.values()));
   }, [editor?.oportunidadesAutoevaluacion, opportunities]);
 
-  const assignedOpportunityIds = () => new Set((editor?.objetivos || [])
-    .flatMap((item) => item.aspectosAutoevaluacion?.length
-      ? item.aspectosAutoevaluacion.map((aspect) => String(aspect.id))
-      : [String(item.origenAutoevaluacion?.id || '')])
-    .filter(Boolean));
-
-  const pendingOpportunities = () => {
-    const assignedIds = assignedOpportunityIds();
-    const assignedKeys = new Set((editor?.objetivos || []).flatMap((objective) => objective.aspectosAutoevaluacion?.length ? objective.aspectosAutoevaluacion : objective.origenAutoevaluacion?.id ? [{ ...objective, id: objective.origenAutoevaluacion.id }] : []).map(aspectKey));
-    return planOpportunities.filter((item) => !assignedIds.has(String(item.id)) && !assignedKeys.has(aspectKey(item)));
-  };
+  const pendingOpportunityList = useMemo(() => pendingAspects(planOpportunities, editor?.objetivos || []), [editor?.objetivos, planOpportunities]);
+  const pendingOpportunities = () => pendingOpportunityList;
 
   const aspectOptionsForObjective = (objective) => pendingOpportunities()
     .filter((item) => item.factor === objective.factor && item.caracteristica === objective.caracteristica);
@@ -1751,7 +1754,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       if (index !== objectiveIndex) return objective;
       const current = objective.aspectosAutoevaluacion || [];
       const currentIds = new Set(current.map((item) => String(item.id)));
-      const additions = planOpportunities.filter((item) => selectedIds.includes(String(item.id)) && !currentIds.has(String(item.id)));
+      const additions = pendingAspects(planOpportunities, previous.objetivos).filter((item) => selectedIds.includes(String(item.id)) && !currentIds.has(String(item.id)));
       const assignedElsewhere = new Set(previous.objetivos.filter((_, i) => i !== objectiveIndex).flatMap((item) => item.aspectosAutoevaluacion || []).map(aspectKey));
       const selected = uniqueAspects([...current, ...additions.filter((item) => !assignedElsewhere.has(aspectKey(item)))]);
       if (!selected.length) return objective;
@@ -1802,9 +1805,6 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const availableObjectives = associationOpportunity
     ? (editor?.objetivos || []).map((objective, index) => ({ objective, index }))
     : [];
-  const nextAssociationObjectiveNumber = Math.max(0, ...(editor?.objetivos || []).map((item) => Number(String(item.codigo || '').match(/([0-9]+)$/)?.[1] || 0))) + 1;
-  const nextAssociationObjectiveCode = `OPM_${String(nextAssociationObjectiveNumber).padStart(2, '0')}`;
-
   const openObjectiveAssociation = (opportunity) => {
     setAssociationOpportunity(opportunity);
     setAssociationObjectiveIndex('new');
@@ -1820,7 +1820,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       const nextNumber = Math.max(0, ...objectives.map((item) => Number(String(item.codigo || '').match(/([0-9]+)$/)?.[1] || 0))) + 1;
       const currentObjective = objectives[selectedIndex] || { ...emptyObjective(nextNumber), objetivo: associationNewObjectiveText.trim() };
       const currentAspects = currentObjective.aspectosAutoevaluacion || [];
-      if (objectives.some((objective) => (objective.aspectosAutoevaluacion || []).some((item) => aspectKey(item) === aspectKey(associationOpportunity)))) return previous;
+      if (!pendingAspects(planOpportunities, objectives).some((item) => aspectKey(item) === aspectKey(associationOpportunity))) return previous;
       const selected = [...currentAspects, associationOpportunity];
       const source = objectiveFromOpportunity(selected[0], selectedIndex + 1);
       const scores = selected.map((item) => Number(item.calificacion)).filter(Number.isFinite);
@@ -1840,7 +1840,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
         aspectosAutoevaluacion: selected,
         actividades: activities
       };
-      return { ...previous, objetivos: objectives };
+      const next = { ...previous, objetivos: objectives };
+      editorRef.current = next;
+      return next;
     });
     enqueueSnackbar('Aspecto asociado al objetivo. Ya no aparece en la lista de pendientes.', { variant: 'success' });
     setAssociationOpportunity(null);
@@ -2070,7 +2072,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     <Dialog
       open
       fullScreen
-      onClose={() => setEditor(null)}
+      disableEscapeKeyDown
       PaperProps={{ sx: { bgcolor: '#f5f7fb', backgroundImage: 'linear-gradient(180deg, #f8fbff 0%, #f5f7fb 100%)' } }}
     >
     {confirmationDialog}
@@ -2157,14 +2159,11 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             )}
             {executionMode && collaboratorMode && <Alert severity="info" sx={{ py: 0 }}>Vista de colaborador: gestione únicamente las actividades que el líder le delegó.</Alert>}
             {(editor.asignacion?.historial || []).length > 0 && (
-              <Button
-                size="small"
-                onClick={() => setExpandedTraceability((current) => !current)}
-                endIcon={<ExpandMoreIcon sx={{ transform: expandedTraceability ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />}
-                sx={{ minWidth: 'max-content', color: '#475569', textTransform: 'none', fontWeight: 850 }}
-              >
-                Historial ({editor.asignacion.historial.length})
-              </Button>
+              <Tooltip title="Consultar historial">
+                <IconButton size="small" aria-label="Consultar historial" onClick={() => setExpandedTraceability(true)} sx={{ color: '#64748b', alignSelf: 'center' }}>
+                  <HistoryIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
             )}
           </Stack>
           {editor.asignacion?.ultima_observacion && <Typography variant="caption" sx={{ display: 'block', mt: 0.6, ml: { lg: 6.2 }, color: '#9a3412', fontWeight: 750 }}>Última observación: {editor.asignacion.ultima_observacion}</Typography>}
@@ -2181,13 +2180,22 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
               <Button color="warning" variant="outlined" disabled={workflowBusy} onClick={() => executeWorkflowAction('reabrir')} sx={{ textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap' }}>Reabrir ejecución</Button>
             </Stack>
           )}
-          <Collapse in={expandedTraceability} timeout="auto" unmountOnExit>
-            <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid #e2e8f0' }}>
-              <Stack direction="row" spacing={0.8} sx={{ overflowX: 'auto', pb: 0.2 }}>
-                {(editor.asignacion?.historial || []).map((item) => <Chip key={item.id} size="small" variant="outlined" label={`${workflowTone(item.estado_nuevo).label} · ${item.actor_nombre || 'Usuario'} · ${item.createdAt ? new Date(item.createdAt).toLocaleString('es-CO') : ''}${item.observacion ? ` · ${item.observacion}` : ''}`} sx={{ flexShrink: 0, maxWidth: 520, bgcolor: '#f8fafc' }} />)}
+          <Dialog open={expandedTraceability} onClose={() => setExpandedTraceability(false)} fullWidth maxWidth="sm" aria-labelledby="assignment-history-title" PaperProps={{ sx: { borderRadius: 3 } }}>
+            <DialogTitle id="assignment-history-title">Historial del responsable</DialogTitle>
+            <DialogContent dividers>
+              <Stack spacing={2} divider={<Divider />}>
+                {(editor.asignacion?.historial || []).map((item) => (
+                  <Box key={item.id}>
+                    <Typography variant="body2" sx={{ fontWeight: 750 }}>{workflowTone(item.estado_nuevo).label}</Typography>
+                    <Typography variant="body2" sx={{ color: '#475569' }}>{item.actor_nombre || 'Usuario'}</Typography>
+                    {item.createdAt && <Typography variant="caption" sx={{ color: '#64748b' }}>{new Date(item.createdAt).toLocaleString('es-CO')}</Typography>}
+                    {item.observacion && <Typography variant="body2" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>{item.observacion}</Typography>}
+                  </Box>
+                ))}
               </Stack>
-            </Box>
-          </Collapse>
+            </DialogContent>
+            <DialogActions><Button onClick={() => setExpandedTraceability(false)}>Cerrar</Button></DialogActions>
+          </Dialog>
         </Paper>
       )}
 
@@ -2328,33 +2336,12 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                 </Alert>
               )}
               {editor.objetivos.map((objective, objectiveIndex) => (
-                <Paper key={`${objective.codigo}-${objectiveIndex}`} elevation={0} sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 3, border: '1px solid #cbd5e1', bgcolor: '#fbfdff' }}>
-                  <Stack
-                    direction="row"
-                    justifyContent="space-between"
-                    alignItems="center"
-                  >
-                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                      <Chip label={objective.codigo} color="primary" sx={{ fontWeight: 900 }} />
-                      {objective.origenAutoevaluacion?.id && <Chip size="small" label="Importado de Autoevaluación" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 850 }} />}
-                      <Box>
-                        <Typography sx={{ fontWeight: 900 }}>{objective.objetivo?.trim() || `Objetivo de mejoramiento ${objectiveIndex + 1}`}</Typography>
-                        <Typography variant="caption" sx={{ color: '#64748b' }}>{objective.factor || 'Sin factor'} · {objective.caracteristica || 'Sin característica'}</Typography>
-                      </Box>
-                    </Stack>
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      <Tooltip title="Eliminar objetivo"><IconButton color="error" onClick={(event) => { event.stopPropagation(); removeObjective(objectiveIndex); }}><DeleteIcon /></IconButton></Tooltip>
-                    </Stack>
-                  </Stack>
-                  <Box sx={{ pt: 2 }}>
+                <ObjectiveAccordion key={objectiveIndex} number={objectiveIndex + 1} imported={Boolean(objective.origenAutoevaluacion?.id)} onRemove={() => removeObjective(objectiveIndex)}>
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5, alignItems: 'start' }}>
-                    <TextField label="Código" value={objective.codigo} onChange={(e) => updateObjective(objectiveIndex, 'codigo', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
-                    <TextField select label="Factor / condición" value={objective.factor} onChange={(e) => changeObjectiveFactor(objectiveIndex, e.target.value)} sx={{ gridColumn: { md: 'span 5' } }}>
-                      {withCurrent(Array.from(new Set(pendingOpportunities().map((item) => item.factor).filter(Boolean))), objective.factor).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
-                    </TextField>
-                    <TextField select label="Característica" value={objective.caracteristica} onChange={(e) => changeObjectiveCharacteristic(objectiveIndex, e.target.value)} sx={{ gridColumn: { md: 'span 5' } }} disabled={!objective.factor}>
-                      {withCurrent(Array.from(new Set(pendingOpportunities().filter((item) => item.factor === objective.factor).map((item) => item.caracteristica).filter(Boolean))), objective.caracteristica).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
-                    </TextField>
+                    <BufferedTextField label="Código" value={objective.codigo} onChange={(e) => updateObjective(objectiveIndex, 'codigo', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
+                    <PendingAspectFields pending={pendingOpportunityList} factor={objective.factor} characteristic={objective.caracteristica}
+                      onFactorChange={(value) => changeObjectiveFactor(objectiveIndex, value)}
+                      onCharacteristicChange={(value) => changeObjectiveCharacteristic(objectiveIndex, value)} />
                     <TextField
                       select
                       label="Agregar aspectos / hallazgos pendientes"
@@ -2435,7 +2422,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                       </TableContainer>
                     </Box>
                   )}
-                  <TextField
+                  <BufferedTextField
                     fullWidth
                     size="small"
                     label="Objetivo"
@@ -2446,6 +2433,9 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     sx={{ mt: 1.5 }}
                   />
                   <Divider sx={{ my: 2.5 }} />
+                  <Box sx={{ mb: 1.25 }}>
+                    <Chip component="h3" label="Actividades" sx={{ m: 0, bgcolor: '#166545', color: '#fff', fontWeight: 900 }} />
+                  </Box>
                   <Stack spacing={2}>
                     {objective.actividades.map((activity, activityIndex) => (
                       <ActivityAccordion key={activity.uid || activityIndex}
@@ -2454,8 +2444,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                         onToggle={() => setExpandedActivityKey((current) => current === (activity.uid || `${objectiveIndex}_${activityIndex}`) ? null : (activity.uid || `${objectiveIndex}_${activityIndex}`))}
                         onRemove={objective.actividades.length > 1 ? () => removeActivity(objectiveIndex, activityIndex) : undefined}>
                         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5, alignItems: 'start' }}>
-                          <TextField label="Nombre de la actividad" value={activity.nombre} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'nombre', e.target.value)} fullWidth size="small" multiline minRows={1} sx={{ gridColumn: '1 / -1' }} />
-                          <TextField label="Descripción de la actividad" value={activity.descripcion} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'descripcion', e.target.value)} fullWidth size="small" multiline minRows={1} sx={{ gridColumn: '1 / -1' }} />
+                          <BufferedTextField label="Nombre de la actividad" value={activity.nombre} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'nombre', e.target.value)} fullWidth size="small" multiline minRows={1} sx={{ gridColumn: '1 / -1' }} />
+                          <BufferedTextField label="Descripción de la actividad" value={activity.descripcion} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'descripcion', e.target.value)} fullWidth size="small" multiline minRows={1} sx={{ gridColumn: '1 / -1' }} />
                           <ActivityIndicatorFields activity={activity} onChange={(field, value) => updateActivity(objectiveIndex, activityIndex, field, value)} />
                           <ActivityResourceField value={activity.recursos} onChange={(value) => updateActivity(objectiveIndex, activityIndex, 'recursos', value)} />
                           <TextField select label="Proceso responsable" value={activity.procesoResponsable} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'procesoResponsable', e.target.value)} sx={{ gridColumn: { md: 'span 4' } }}>{withCurrent(catalogs.processes?.length ? catalogs.processes : PROCESSES, activity.procesoResponsable).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
@@ -2550,8 +2540,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                     ))}
                     <Button startIcon={<AddIcon />} onClick={() => addActivity(objectiveIndex)} sx={{ alignSelf: 'start', textTransform: 'none', fontWeight: 850 }}>Agregar actividad</Button>
                   </Stack>
-                  </Box>
-                </Paper>
+                </ObjectiveAccordion>
               ))}
               <Button variant="outlined" startIcon={<AddIcon />} onClick={addObjective} sx={{ alignSelf: 'start', textTransform: 'none', fontWeight: 900 }}>Crear objetivo de mejoramiento</Button>
             </Stack>
@@ -2831,20 +2820,20 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             onChange={(event) => setAssociationObjectiveIndex(event.target.value)}
           >
             {availableObjectives.map(({ objective, index }) => (
-              <MenuItem key={`${objective.codigo}-${index}`} value={String(index)}>{objective.codigo} · {objective.objetivo || `Objetivo de mejoramiento ${index + 1}`}</MenuItem>
+              <MenuItem key={`${objective.codigo}-${index}`} value={String(index)}>{`Objetivo de mejoramiento ${index + 1}`}</MenuItem>
             ))}
-            <MenuItem value="new">+ Crear nuevo objetivo · {nextAssociationObjectiveCode}</MenuItem>
+            <MenuItem value="new">+ Crear objetivo de mejoramiento {(editor?.objetivos?.length || 0) + 1}</MenuItem>
           </TextField>
           {associationObjectiveIndex === 'new' ? (
             <Paper elevation={0} sx={{ mt: 1.5, p: 1.5, borderRadius: 2.5, border: '1px solid #dbeafe', bgcolor: '#f8fbff' }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ sm: 'flex-start' }}>
-                <Chip label={nextAssociationObjectiveCode} color="primary" sx={{ mt: { sm: 0.7 }, fontWeight: 900 }} />
+                <Chip label={`Objetivo de mejoramiento ${(editor?.objetivos?.length || 0) + 1}`} color="primary" sx={{ mt: { sm: 0.7 }, fontWeight: 900 }} />
                 <TextField
                   fullWidth
                   autoFocus
                   multiline
                   minRows={1}
-                  label="Redactar nuevo objetivo"
+                  label="Objetivo"
                   value={associationNewObjectiveText}
                   onChange={(event) => setAssociationNewObjectiveText(event.target.value)}
                   placeholder="Escriba el objetivo de mejoramiento que agrupará este aspecto"
@@ -2855,8 +2844,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
             const selectedObjective = editor?.objetivos?.[Number(associationObjectiveIndex)];
             return selectedObjective ? (
               <Paper elevation={0} sx={{ mt: 1.5, p: 1.5, borderRadius: 2.5, border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
-                <Typography sx={{ color: '#0f172a', fontWeight: 900 }}>{selectedObjective.objetivo || `Objetivo de mejoramiento ${Number(associationObjectiveIndex) + 1}`}</Typography>
-                <Typography variant="caption" sx={{ display: 'block', mt: 0.35, color: '#64748b' }}>{selectedObjective.factor || 'Sin factor'} · {(selectedObjective.aspectosAutoevaluacion || []).length} aspecto(s) asociado(s)</Typography>
+                <Chip label={`Objetivo de mejoramiento ${Number(associationObjectiveIndex) + 1}`} color="primary" sx={{ fontWeight: 900 }} />
+                {selectedObjective.objetivo?.trim() && <Typography sx={{ mt: 1, color: '#0f172a', fontWeight: 750 }}>{selectedObjective.objetivo}</Typography>}
               </Paper>
             ) : null;
           })()}
