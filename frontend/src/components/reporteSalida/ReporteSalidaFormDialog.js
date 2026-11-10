@@ -1703,6 +1703,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       const assigned = assignedDependencies.find((item) => normalizeOption(item.dependencia) === normalizeOption(form.laboral.dependencia));
       if (!assigned) { setJefe(null); return; }
       if (assigned.vicerrectoria && assigned.vicerrectoria !== form.laboral.vicerrectoria) update('laboral', 'vicerrectoria', assigned.vicerrectoria);
+      if (assigned.cargo && assigned.cargo !== form.laboral.cargo) update('laboral', 'cargo', assigned.cargo);
       const boss = jefes.find((item) => normalizeOption(item.nombre || item.jefe_inmediato) === normalizeOption(assigned.jefe_inmediato));
       setJefe(boss || (assigned.jefe_inmediato ? { nombre: assigned.jefe_inmediato, email: '', userId: null, source: 'users' } : null));
       return;

@@ -3,7 +3,7 @@ const key = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u0
 const text = (value) => String(value || '').trim().slice(0, 220);
 
 const getUserAssignments = (user = {}) => {
-  const primary = { dependencia: user.dependencia, vicerrectoria: user.vicerrectoria, jefe_inmediato: user.jefe_inmediato };
+  const primary = { dependencia: user.dependencia, vicerrectoria: user.vicerrectoria, jefe_inmediato: user.jefe_inmediato, cargo: user.cargo };
   const assignments = [primary, ...(Array.isArray(user.dependencias_asignadas) ? user.dependencias_asignadas : [])];
   const seen = new Set();
   return assignments.filter((item) => {
@@ -11,7 +11,7 @@ const getUserAssignments = (user = {}) => {
     if (!id || seen.has(id)) return false;
     seen.add(id);
     return true;
-  }).map((item) => ({ dependencia: text(item.dependencia), vicerrectoria: text(item.vicerrectoria), jefe_inmediato: text(item.jefe_inmediato) }));
+  }).map((item) => ({ dependencia: text(item.dependencia), vicerrectoria: text(item.vicerrectoria), jefe_inmediato: text(item.jefe_inmediato), ...(item.cargo ? { cargo: text(item.cargo) } : {}) }));
 };
 
 const validateAssignments = (items, primary = '') => {
@@ -24,7 +24,7 @@ const validateAssignments = (items, primary = '') => {
     if (!text(item?.jefe_inmediato)) throw new Error(`Seleccione el jefe inmediato de ${official}.`);
     if (!text(item?.vicerrectoria)) throw new Error(`Seleccione la vicerrectoría de ${official}.`);
     seen.add(key(official));
-    return { dependencia: official, vicerrectoria: text(item.vicerrectoria), jefe_inmediato: text(item.jefe_inmediato) };
+    return { dependencia: official, vicerrectoria: text(item.vicerrectoria), jefe_inmediato: text(item.jefe_inmediato), ...(item.cargo ? { cargo: text(item.cargo) } : {}) };
   });
 };
 
@@ -34,7 +34,7 @@ const applySelectedAssignment = (payload, user) => {
   if (assignments.length < 2) return;
   const selected = assignments.find((item) => key(item.dependencia) === key(payload.laboral?.dependencia));
   if (!selected) throw new Error('Seleccione una de sus dependencias asignadas para radicar la solicitud.');
-  payload.laboral = { ...payload.laboral, ...selected, cargo: user.cargo || payload.laboral?.cargo };
+  payload.laboral = { ...payload.laboral, ...selected, cargo: selected.cargo || user.cargo || payload.laboral?.cargo };
   payload.jefeInmediatoUserId = null;
   payload.jefeInmediato = { nombre: selected.jefe_inmediato };
 };

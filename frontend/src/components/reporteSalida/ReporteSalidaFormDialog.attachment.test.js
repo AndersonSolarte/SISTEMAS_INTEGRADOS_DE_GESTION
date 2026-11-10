@@ -70,7 +70,7 @@ describe('adjunto del formulario de reporte de salida', () => {
   test('un usuario de consulta cambia entre sus dependencias y carga el jefe correspondiente', async () => {
     const assignments = [
       { dependencia: 'Programa A', vicerrectoria: 'Vicerrectoria Academica', jefe_inmediato: 'Jefe A' },
-      { dependencia: 'Programa B', vicerrectoria: 'Vicerrectoria de Investigacion y Extension', jefe_inmediato: 'Jefe B' }
+      { dependencia: 'Programa B', vicerrectoria: 'Vicerrectoria de Investigacion y Extension', jefe_inmediato: 'Jefe B', cargo: 'Coordinador' }
     ];
     const employee = { ...user, ...assignments[0], role: 'consulta', cargo: 'Docente Hora Cátedra', dependencias_asignadas: [assignments[1]] };
     reporteSalidaService.getCatalogoLaboral.mockResolvedValue({ data: {
@@ -91,6 +91,7 @@ describe('adjunto del formulario de reporte de salida', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Programa B' }));
     await waitFor(() => expect(screen.getByLabelText('Jefe inmediato')).toHaveValue('Jefe B (jefeb@unicesmag.edu.co)'));
     expect(screen.getByRole('combobox', { name: /Rectoría \/ Vicerrectoría/ })).toHaveValue(assignments[1].vicerrectoria);
+    expect(screen.getByRole('combobox', { name: /^Cargo/ })).toHaveValue('Coordinador');
   });
 
   test('el Rector radica sin jefe inmediato y sin transmitir el jefe antiguo del perfil', async () => {

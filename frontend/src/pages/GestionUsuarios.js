@@ -645,7 +645,7 @@ function GestionUsuarios() {
         email: user.email,
         username: user.username,
         dependencia: user.dependencia || '',
-        dependencias_asignadas: user.dependencias_asignadas || [],
+        dependencias_asignadas: (user.dependencias_asignadas || []).map((item) => ({ ...item, cargo: item.cargo || user.cargo || '' })),
         vicerrectoria: user.vicerrectoria || '',
         cargo: user.cargo || '',
         jefe_inmediato: user.jefe_inmediato || '',
@@ -768,8 +768,8 @@ function GestionUsuarios() {
         jefe_inmediato: String(formData.jefe_inmediato || '').trim()
       };
 
-      if ((formData.dependencias_asignadas || []).some((item) => !item.jefe_inmediato || !item.vicerrectoria)) {
-        enqueueSnackbar('Complete la vicerrectoría y el jefe de cada dependencia adicional.', { variant: 'error' });
+      if ((formData.dependencias_asignadas || []).length && [formData, ...formData.dependencias_asignadas].some((item) => !item.dependencia || !item.jefe_inmediato || !item.vicerrectoria || !item.cargo)) {
+        enqueueSnackbar('Complete la dependencia, vicerrectoría, cargo y jefe de cada bloque.', { variant: 'error' });
         return;
       }
 
@@ -2706,76 +2706,9 @@ function GestionUsuarios() {
                 options={dependenciaOptions}
                 relations={fieldSuggestions.relaciones || suggestionRows}
                 bosses={jefeInmediatoOptions}
+                vicerrectorias={vicerrectoriaOptions}
+                cargos={cargoOptions}
                 error={formErrors.dependencia}
-              />
-              <Autocomplete
-                freeSolo
-                autoHighlight
-                options={vicerrectoriaOptions}
-                value={formData.vicerrectoria || ''}
-                inputValue={formData.vicerrectoria || ''}
-                getOptionLabel={(option) => (option ? String(option) : '')}
-                loading={loadingSuggestions}
-                loadingText="Cargando vicerrectorías..."
-                noOptionsText="Sin coincidencias, puedes escribir una nueva"
-                onChange={(event, newValue) => setFormData({ ...formData, vicerrectoria: newValue || '' })}
-                onInputChange={(event, newInputValue) => setFormData({ ...formData, vicerrectoria: newInputValue || '' })}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    fullWidth
-                    label="Vicerrectoría"
-                    helperText="Elige una existente o escribe una nueva"
-                    inputProps={{ ...params.inputProps, maxLength: 220 }}
-                  />
-                )}
-                sx={smartAutocompleteSx}
-              />
-              <Autocomplete
-                freeSolo
-                autoHighlight
-                options={cargoOptions}
-                value={formData.cargo || ''}
-                inputValue={formData.cargo || ''}
-                getOptionLabel={(option) => (option ? String(option) : '')}
-                loading={loadingSuggestions}
-                loadingText="Cargando cargos..."
-                noOptionsText="Sin coincidencias, puedes escribir uno nuevo"
-                onChange={(event, newValue) => setFormData({ ...formData, cargo: newValue || '' })}
-                onInputChange={(event, newInputValue) => setFormData({ ...formData, cargo: newInputValue || '' })}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    fullWidth
-                    label="Cargo"
-                    helperText="Elige un cargo existente o escribe uno nuevo"
-                    inputProps={{ ...params.inputProps, maxLength: 220 }}
-                  />
-                )}
-                sx={smartAutocompleteSx}
-              />
-              <Autocomplete
-                freeSolo
-                autoHighlight
-                options={jefeInmediatoOptions}
-                value={formData.jefe_inmediato || ''}
-                inputValue={formData.jefe_inmediato || ''}
-                getOptionLabel={(option) => (option ? String(option) : '')}
-                loading={loadingSuggestions}
-                loadingText="Cargando jefes..."
-                noOptionsText="Sin coincidencias, puedes escribir un nuevo nombre"
-                onChange={(event, newValue) => setFormData({ ...formData, jefe_inmediato: newValue || '' })}
-                onInputChange={(event, newInputValue) => setFormData({ ...formData, jefe_inmediato: newInputValue || '' })}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    fullWidth
-                    label="Jefe inmediato"
-                    helperText="Elige un jefe registrado o escribe el nombre"
-                    inputProps={{ ...params.inputProps, maxLength: 220 }}
-                  />
-                )}
-                sx={smartAutocompleteSx}
               />
               <FormControl fullWidth sx={{ mb: 2 }} disabled={!isFullAdminUser}>
                 <InputLabel>Rol</InputLabel>

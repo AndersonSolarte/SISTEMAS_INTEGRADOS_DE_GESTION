@@ -5001,7 +5001,7 @@ const radicarSolicitud = async (req, res) => {
         laboral: {
           dependencia: ((isAdminUser(req.user) || getUserAssignments(req.user).length > 1) && req.body.laboral?.dependencia) ? cleanDependenciaLabel(req.body.laboral.dependencia) : (cleanDependenciaLabel(req.user.dependencia) || cleanDependenciaLabel(req.body.laboral?.dependencia)),
           vicerrectoria: ((isAdminUser(req.user) || getUserAssignments(req.user).length > 1) && req.body.laboral?.vicerrectoria) ? sanitizeText(selectedVicerrectoriaName, 220) : (sanitizeText(req.user.vicerrectoria || selectedVicerrectoriaName, 220)),
-          cargo: (isAdminUser(req.user) && req.body.laboral?.cargo) ? sanitizeText(req.body.laboral.cargo) : (sanitizeText(req.user.cargo || req.body.laboral?.cargo)),
+          cargo: ((isAdminUser(req.user) || getUserAssignments(req.user).length > 1) && req.body.laboral?.cargo) ? sanitizeText(req.body.laboral.cargo) : (sanitizeText(req.user.cargo || req.body.laboral?.cargo)),
           tipoVinculacion: reposicionLaboralProfile.tipoVinculacion,
           nivelContratacion: reposicionLaboralProfile.nivelContratacion,
           reposicionPerfil: reposicionLaboralProfile

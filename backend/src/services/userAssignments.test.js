@@ -25,6 +25,14 @@ test('seleccionar otra dependencia usa su jefe institucional y descarta un jefe 
   assert.equal(payload.jefeInmediatoUserId, null);
   assert.deepEqual(payload.jefeInmediato, { nombre: 'Jefe B' });
 });
+
+test('cada asignación conserva su cargo y lo aplica al seleccionar la dependencia', () => {
+  const assignment = { ...extra, cargo: 'Coordinador' };
+  assert.equal(validateAssignments([assignment])[0].cargo, 'Coordinador');
+  const payload = { laboral: { dependencia: second } };
+  applySelectedAssignment(payload, { ...user, dependencias_asignadas: [assignment] });
+  assert.equal(payload.laboral.cargo, 'Coordinador');
+});
 test('rechaza dependencias ajenas o sin seleccionar y preserva el flujo de perfiles de una dependencia', () => {
   assert.throws(() => applySelectedAssignment({ laboral: { dependencia: 'Ajena' } }, user));
   assert.throws(() => applySelectedAssignment({}, user));

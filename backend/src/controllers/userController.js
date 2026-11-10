@@ -1980,7 +1980,7 @@ const getUserFieldSuggestions = async (req, res) => {
     ]);
 
     const preloadedDependencias = Object.keys(DEPENDENCY_EMAILS_RAW || {});
-    const profiles = await User.findAll({ where: { estado: 'activo' }, attributes: ['nombre', 'dependencia', 'dependencias_asignadas', 'vicerrectoria', 'jefe_inmediato'], raw: true });
+    const profiles = await User.findAll({ where: { estado: 'activo' }, attributes: ['nombre', 'dependencia', 'dependencias_asignadas', 'vicerrectoria', 'jefe_inmediato', 'cargo'], raw: true });
     const relaciones = profiles.flatMap(getUserAssignments);
     const dependenciasSet = new Map();
     preloadedDependencias.forEach((item) => {
