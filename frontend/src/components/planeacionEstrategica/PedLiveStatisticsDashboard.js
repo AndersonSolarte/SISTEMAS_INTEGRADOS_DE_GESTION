@@ -1770,6 +1770,7 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
   // Filtros aplicables a las pestañas
   const [filters, setFilters] = useState({
     anio: '',
+    dependencia: '',
     responsable: ''
   });
 
@@ -1835,7 +1836,8 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
   const deferredRows = useDeferredValue(filteredRows);
   const metrics = useMemo(() => {
     const computed = buildMetrics(deferredRows);
-    if (!deferredRows.length && statsData?.kpis && !filters.anio && !filters.responsable) {
+    const hasFilter = Boolean(filters.anio || filters.dependencia || filters.responsable);
+    if (!deferredRows.length && statsData?.kpis && !hasFilter) {
       return {
         ...computed,
         totalObjetivos: statsData.kpis.totalObjetivos || 0,
@@ -1845,31 +1847,75 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
       };
     }
     return computed;
-  }, [deferredRows, statsData?.kpis, filters.anio, filters.responsable]);
+  }, [deferredRows, statsData?.kpis, filters.anio, filters.dependencia, filters.responsable]);
 
-  // Opciones para los filtros
+  // Opciones bidireccionales para el filtro de Vigencia / Año
   const availableYears = useMemo(() => {
     const rawRows = statsData?.rows || [];
-    const set = new Set(rawRows.map((r) => r.anio).filter(Boolean));
+    const targetDep = filters.dependencia || filters.responsable;
+    // Si hay una dependencia o plan seleccionado, solo mostrar los años donde esa dependencia tiene registros
+    const sourceRows = targetDep
+      ? rawRows.filter((r) => r.dependencia === targetDep || r.plan_title === targetDep)
+      : rawRows;
+    const set = new Set(sourceRows.map((r) => r.anio).filter(Boolean));
     return Array.from(set).sort((a, b) => a - b).map(String);
-  }, [statsData?.rows]);
+  }, [statsData?.rows, filters.dependencia, filters.responsable]);
 
-  const availableResponsables = useMemo(() => {
+  // Opciones bidireccionales para el filtro de Plan de Acción / Dependencia (SIN nombres de personas responsables)
+  const availableDependencias = useMemo(() => {
     const rawRows = statsData?.rows || [];
+    // Si hay un año seleccionado, solo mostrar las dependencias con registros en ese año
+    const sourceRows = filters.anio
+      ? rawRows.filter((r) => String(r.anio || '') === String(filters.anio))
+      : rawRows;
     const set = new Set();
-    rawRows.forEach((r) => {
+    sourceRows.forEach((r) => {
+      // SOLO dependencias (Planes de Acción institucionales), nunca personas responsables
       if (r.dependencia) set.add(r.dependencia);
-      if (r.responsable) set.add(r.responsable);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'));
-  }, [statsData?.rows]);
+  }, [statsData?.rows, filters.anio]);
 
+  // Manejo bidireccional inteligente de filtros
   const handleFilterChange = (key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
+    setFilters((prev) => {
+      const next = { ...prev, [key]: value };
+      const rawRows = statsData?.rows || [];
+
+      // Si se cambia el año: verificar si la dependencia actual existe en el nuevo año
+      if (key === 'anio') {
+        const curDep = next.dependencia || next.responsable;
+        if (value && curDep) {
+          const existsInYear = rawRows.some(
+            (r) => String(r.anio || '') === String(value) && (r.dependencia === curDep || r.plan_title === curDep)
+          );
+          if (!existsInYear) {
+            next.dependencia = '';
+            next.responsable = '';
+          }
+        }
+      }
+
+      // Si se cambia la dependencia: verificar si el año actual contiene esa dependencia
+      if (key === 'dependencia' || key === 'responsable') {
+        next.dependencia = value;
+        next.responsable = value;
+        if (value && next.anio) {
+          const existsInDep = rawRows.some(
+            (r) => (r.dependencia === value || r.plan_title === value) && String(r.anio || '') === String(next.anio)
+          );
+          if (!existsInDep) {
+            next.anio = '';
+          }
+        }
+      }
+
+      return next;
+    });
   };
 
   const handleResetFilters = () => {
-    setFilters({ anio: '', responsable: '' });
+    setFilters({ anio: '', dependencia: '', responsable: '' });
   };
 
   // Exportar consolidado global a Excel
@@ -1883,7 +1929,7 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
         ['PLAN ESTRATÉGICO DE DESARROLLO', statsData.plan?.name || 'PED'],
         ['Fecha de exportación', new Date().toLocaleString('es-CO')],
         ['Filtro Año', filters.anio || 'Todos los años'],
-        ['Filtro Responsable', filters.responsable || 'Todos los responsables'],
+        ['Filtro Plan de Acción / Dependencia', filters.dependencia || filters.responsable || 'Todas las dependencias'],
         ['Ejecución General', `${metrics.ejecucionGeneral}%`],
         [],
         ['AÑO', 'DEPENDENCIA', 'RESPONSABLE', 'OBJETIVO', 'LINEAMIENTO', 'MACROACTIVIDAD', 'ACTIVIDAD / INDICADOR', 'META', 'AVANCE IP (%)', 'AVANCE IIP (%)', 'AVANCE TOTAL (%)', 'ESTADO']
@@ -1943,17 +1989,17 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
           fullWidth
           autoHighlight
           clearOnEscape
-          options={availableResponsables}
-          value={filters.responsable || null}
-          onChange={(_, value) => handleFilterChange('responsable', value || '')}
-          noOptionsText="No se encontraron dependencias"
+          options={availableDependencias}
+          value={filters.dependencia || filters.responsable || null}
+          onChange={(_, value) => handleFilterChange('dependencia', value || '')}
+          noOptionsText="No se encontraron planes ni dependencias"
           isOptionEqualToValue={(option, value) => option === value}
           renderInput={(params) => (
             <TextField
               {...params}
-              label="Dependencia o Responsable"
-              placeholder="Escribe una dependencia o nombre"
-              helperText={filters.responsable ? 'Filtro aplicado' : 'Todas las dependencias'}
+              label="Plan de Acción / Dependencia"
+              placeholder="Selecciona una dependencia o plan"
+              helperText={filters.dependencia || filters.responsable ? 'Filtro aplicado' : 'Todas las dependencias'}
             />
           )}
         />
@@ -1980,10 +2026,13 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
 
       <Stack direction="row" spacing={1.2} alignItems="center" sx={{ mt: 1.5, flexWrap: 'wrap' }}>
         <Chip icon={<CalendarMonthIcon />} label={`Años disponibles: ${availableYears.length}`} sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 800 }} />
+        <Chip label={`Planes / Dependencias: ${availableDependencias.length}`} sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 800 }} />
         <Chip label={`Registros filtrados: ${formatNumber(filteredRows.length)}`} sx={{ bgcolor: '#f0fdf4', color: '#15803d', fontWeight: 800 }} />
-        <Button startIcon={<FilterAltOffIcon />} onClick={handleResetFilters} sx={{ textTransform: 'none', fontWeight: 800 }}>
-          Limpiar filtros
-        </Button>
+        {(filters.anio || filters.dependencia || filters.responsable) && (
+          <Button startIcon={<FilterAltOffIcon />} onClick={handleResetFilters} sx={{ textTransform: 'none', fontWeight: 800 }}>
+            Limpiar filtros
+          </Button>
+        )}
       </Stack>
     </Paper>
   );
@@ -2385,7 +2434,7 @@ export default function PedLiveStatisticsDashboard({ onBack }) {
                   <DynamicFieldsSummary
                     rows={deferredRows}
                     fields={statsData?.fieldDefinitions || []}
-                    isFiltered={Boolean(filters.anio || filters.responsable)}
+                    isFiltered={Boolean(filters.anio || filters.dependencia || filters.responsable)}
                   />
                 </>
               )}
