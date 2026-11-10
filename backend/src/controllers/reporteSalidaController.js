@@ -20,6 +20,7 @@ const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailSe
 const { sendInstitutionalEmail } = require('../services/reporteSalidaEmail');
 const { getDependencyEmail } = require('../config/dependencyEmails');
 const workflowEngine = require('../services/reporteSalidaWorkflow');
+const { getUserAssignments, applySelectedAssignment } = require('../services/userAssignments');
 const { isRectorUser, isRectorSolicitud, requiresRectorSst, buildRectorInitialTrace } = require('../services/reporteSalidaWorkflow/rectorPolicy');
 const {
   syncAdminViaticosApproval,
@@ -903,7 +904,7 @@ const serializeUserLaboralRow = (user) => ({
 const getUserProfileLaboralRows = async () => {
   return User.findAll({
     where: { estado: 'activo' },
-    attributes: ['id', 'nombre', 'email', 'username', 'role', 'dependencia', 'vicerrectoria', 'cargo', 'jefe_inmediato'],
+    attributes: ['id', 'nombre', 'email', 'username', 'role', 'dependencia', 'dependencias_asignadas', 'vicerrectoria', 'cargo', 'jefe_inmediato'],
     order: [['dependencia', 'ASC'], ['cargo', 'ASC'], ['nombre', 'ASC']],
     raw: true
   });
@@ -932,7 +933,10 @@ const mapUserProfileBosses = (rows, search = '') => {
     bosses.push(boss);
   };
 
-  rows.forEach((row, index) => {
+  rows.flatMap((row) => {
+    const assignments = getUserAssignments(row);
+    return assignments.length ? assignments.map((assignment) => ({ ...row, ...assignment })) : [row];
+  }).forEach((row, index) => {
     const jefeNombre = sanitizeText(row.jefe_inmediato, 220);
     if (!jefeNombre) return;
     const matchedUser = findBestUserMatch(rows, jefeNombre);
@@ -3818,7 +3822,10 @@ const getCatalogoLaboral = async (req, res) => {
     if (userRows.length) {
       const current = findCurrentUserProfileRow(userRows, req.user);
       const reposicionProfile = await resolveUserReposicionLaboralProfile(req.user, current?.cargo || req.user?.cargo || '');
-      const relaciones = userRows.map(serializeUserLaboralRow).filter((row) => row.dependencia || row.cargo || row.jefe_inmediato);
+      const relaciones = userRows.flatMap((row) => {
+        const assignments = getUserAssignments(row);
+        return assignments.length ? assignments.map((assignment) => serializeUserLaboralRow({ ...row, ...assignment })) : [serializeUserLaboralRow(row)];
+      }).filter((row) => row.dependencia || row.cargo || row.jefe_inmediato);
       const jefes = mapUserProfileBosses(userRows, req.query.search || '')
         .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
 
@@ -3831,6 +3838,7 @@ const getCatalogoLaboral = async (req, res) => {
           cargos: uniqueSortedValues(relaciones.map((row) => row.cargo)),
           jefes,
           relaciones,
+          dependenciasAsignadas: getUserAssignments(current || req.user),
           currentEmployee: current ? {
             nombre: sanitizeText(current.nombre, 220),
             documento: sanitizeText(current.username, 80),
@@ -4648,6 +4656,8 @@ const radicarSolicitud = async (req, res) => {
     }
 
     // Single Exit Flow
+    try { applySelectedAssignment(req.body, req.user); }
+    catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     const errorMessage = validateRadicacionPayload(req.body, req.user);
     if (errorMessage) return res.status(400).json({ success: false, message: errorMessage });
 
@@ -4656,7 +4666,9 @@ const radicarSolicitud = async (req, res) => {
     const { user: jefe, snapshot: jefeSnapshot } = rectorSinJefe ? { user: null, snapshot: {} } : await resolveJefeInmediatoSnapshot({
       jefePayload,
       jefeInmediatoUserId: req.body.jefeInmediatoUserId,
-      user: req.user
+      user: getUserAssignments(req.user).length > 1
+        ? { jefe_inmediato: req.body.jefeInmediato?.nombre }
+        : req.user
     });
     if (!rectorSinJefe && !jefeSnapshot.email) {
       return res.status(400).json({ success: false, message: 'El jefe inmediato seleccionado desde Recurso Humano no tiene correo registrado.' });
@@ -4987,8 +4999,8 @@ const radicarSolicitud = async (req, res) => {
           correo: sanitizeText(req.user.email)
         },
         laboral: {
-          dependencia: (isAdminUser(req.user) && req.body.laboral?.dependencia) ? cleanDependenciaLabel(req.body.laboral.dependencia) : (cleanDependenciaLabel(req.user.dependencia) || cleanDependenciaLabel(req.body.laboral?.dependencia)),
-          vicerrectoria: (isAdminUser(req.user) && req.body.laboral?.vicerrectoria) ? sanitizeText(selectedVicerrectoriaName, 220) : (sanitizeText(req.user.vicerrectoria || selectedVicerrectoriaName, 220)),
+          dependencia: ((isAdminUser(req.user) || getUserAssignments(req.user).length > 1) && req.body.laboral?.dependencia) ? cleanDependenciaLabel(req.body.laboral.dependencia) : (cleanDependenciaLabel(req.user.dependencia) || cleanDependenciaLabel(req.body.laboral?.dependencia)),
+          vicerrectoria: ((isAdminUser(req.user) || getUserAssignments(req.user).length > 1) && req.body.laboral?.vicerrectoria) ? sanitizeText(selectedVicerrectoriaName, 220) : (sanitizeText(req.user.vicerrectoria || selectedVicerrectoriaName, 220)),
           cargo: (isAdminUser(req.user) && req.body.laboral?.cargo) ? sanitizeText(req.body.laboral.cargo) : (sanitizeText(req.user.cargo || req.body.laboral?.cargo)),
           tipoVinculacion: reposicionLaboralProfile.tipoVinculacion,
           nivelContratacion: reposicionLaboralProfile.nivelContratacion,

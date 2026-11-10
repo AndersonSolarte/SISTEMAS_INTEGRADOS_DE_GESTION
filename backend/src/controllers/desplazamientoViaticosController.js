@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
-const { DesplazamientoViaticosSolicitud, ReporteSalidaSolicitud, SystemSetting, UserModulePermission, ViaticosLegalizacion } = require('../models');
+const { DesplazamientoViaticosSolicitud, ReporteSalidaSolicitud, SystemSetting, User, UserModulePermission, ViaticosLegalizacion } = require('../models');
 const { ROLES } = require('../constants/roles');
 const { getDependencyEmail } = require('../config/dependencyEmails');
 const { sequelize } = require('../config/database');
@@ -10,6 +10,7 @@ const { decryptPayload, encryptPayload } = require('../utils/secureUrlToken');
 const { getDesplazamientoViaticosRecipients, normalizeEmail } = require('../config/desplazamientoViaticosConfig');
 const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 const { sendInstitutionalEmail, routeSalidaRecipients } = require('../services/reporteSalidaEmail');
+const { getUserAssignments, applySelectedAssignment } = require('../services/userAssignments');
 const { AUTHORIZATION_TEXT, LEGALIZATION_NOTICE, buildXlsxAttachment, calculateDays, getVisibleLiquidationDetails } = require('../services/desplazamientoViaticos/formatService');
 const { buildLiquidationPdfAttachment, buildPdfAttachment } = require('../services/desplazamientoViaticos/pdfService');
 const { ensureReporteSalidaPdf } = require('../services/reporteSalidaPdfService');
@@ -1371,6 +1372,17 @@ const validatePayload = (body = {}, user = {}) => {
 
 const radicarSolicitud = async (req, res) => {
   try {
+    try {
+      applySelectedAssignment(req.body, req.user);
+      if (getUserAssignments(req.user).length > 1 && !isRectorUser(req.user)) {
+        const bosses = await User.findAll({ where: { nombre: req.body.jefeInmediato?.nombre, estado: 'activo' } });
+        if (bosses.length !== 1 || !bosses[0].email || Number(bosses[0].id) === Number(req.user.id)) {
+          return res.status(400).json({ success: false, message: 'El jefe de la dependencia debe corresponder a un usuario activo con correo registrado.' });
+        }
+        req.body.jefeInmediato = bosses[0].toJSON();
+        req.body.jefeInmediatoUserId = bosses[0].id;
+      }
+    } catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     const issues = validatePayload(req.body, req.user);
     if (issues.length) return res.status(400).json({ success: false, message: issues[0], issues });
     const body = req.body;

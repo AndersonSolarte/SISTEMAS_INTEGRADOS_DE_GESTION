@@ -67,6 +67,32 @@ describe('adjunto del formulario de reporte de salida', () => {
     fireEvent.change(screen.getByLabelText(/Fecha regreso/), { target: { value: '2099-11-05' } });
   };
 
+  test('un usuario de consulta cambia entre sus dependencias y carga el jefe correspondiente', async () => {
+    const assignments = [
+      { dependencia: 'Programa A', vicerrectoria: 'Vicerrectoria Academica', jefe_inmediato: 'Jefe A' },
+      { dependencia: 'Programa B', vicerrectoria: 'Vicerrectoria de Investigacion y Extension', jefe_inmediato: 'Jefe B' }
+    ];
+    const employee = { ...user, ...assignments[0], role: 'consulta', cargo: 'Docente Hora Cátedra', dependencias_asignadas: [assignments[1]] };
+    reporteSalidaService.getCatalogoLaboral.mockResolvedValue({ data: {
+      dependenciasAsignadas: assignments,
+      dependencias: ['Programa A', 'Programa B', 'Dependencia ajena'],
+      relaciones: [],
+      jefes: [
+        { id: 'user:1', userId: 1, nombre: 'Jefe A', email: 'jefea@unicesmag.edu.co' },
+        { id: 'user:2', userId: 2, nombre: 'Jefe B', email: 'jefeb@unicesmag.edu.co' }
+      ]
+    } });
+    render(<ReporteSalidaFormDialog open documento={documento} user={employee} onClose={jest.fn()} />);
+    const dependency = screen.getByRole('combobox', { name: /^Dependencia/ });
+    await waitFor(() => expect(dependency).toBeEnabled());
+    await waitFor(() => expect(screen.getByLabelText('Jefe inmediato')).toHaveValue('Jefe A (jefea@unicesmag.edu.co)'));
+    fireEvent.mouseDown(dependency);
+    expect(screen.queryByRole('option', { name: 'Dependencia ajena' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option', { name: 'Programa B' }));
+    await waitFor(() => expect(screen.getByLabelText('Jefe inmediato')).toHaveValue('Jefe B (jefeb@unicesmag.edu.co)'));
+    expect(screen.getByRole('combobox', { name: /Rectoría \/ Vicerrectoría/ })).toHaveValue(assignments[1].vicerrectoria);
+  });
+
   test('el Rector radica sin jefe inmediato y sin transmitir el jefe antiguo del perfil', async () => {
     const rector = { ...user, role: 'consulta', cargo: 'RECTOR', dependencia: 'RECTORIA', vicerrectoria: 'RECTORIA', jefe_inmediato: 'Jefa antigua' };
     reporteSalidaService.radicarSolicitud.mockResolvedValue({ success: true, data: { consecutivo: 'RS-RECTOR-TEST' } });

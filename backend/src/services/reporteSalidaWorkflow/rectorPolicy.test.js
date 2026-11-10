@@ -45,6 +45,26 @@ const mockWorkflow = (t, users = []) => {
   return { rows, send, fresh };
 };
 
+test('radicar con otra dependencia conserva su adscripción y usa únicamente su jefe registrado', async (t) => {
+  const firstBoss = { id: 701, nombre: 'JEFE PRINCIPAL PRUEBA', email: 'principal.prueba@unicesmag.edu.co', cargo: 'Director', estado: 'activo' };
+  const secondBoss = { id: 702, nombre: 'JEFE SECUNDARIO PRUEBA', email: 'secundario.prueba@unicesmag.edu.co', cargo: 'Director', estado: 'activo' };
+  const employee = { id: 703, nombre: 'DOCENTE MULTIDEPENDENCIA', username: '1000000703', email: 'docente.multi@unicesmag.edu.co', cargo: 'Docente', dependencia: 'Programa A', vicerrectoria: 'Vicerrectoria Academica', jefe_inmediato: firstBoss.nombre,
+    dependencias_asignadas: [{ dependencia: 'Programa B', vicerrectoria: 'Vicerrectoria de Investigacion y Extension', jefe_inmediato: secondBoss.nombre }] };
+  const { fresh, rows } = mockWorkflow(t, [employee, firstBoss, secondBoss]);
+  t.mock.method(require('../../models').User, 'count', async () => 0);
+  const res = response();
+  await fresh.radicarSolicitud({ user: employee, body: { documentoId: 2, personal: { documento: employee.username }, laboral: { dependencia: 'Programa B' }, salida,
+    jefeInmediatoUserId: firstBoss.id, jefeInmediato: firstBoss } }, res);
+  assert.equal(res.statusCode, 201, res.payload?.message);
+  const row = rows.get(res.payload.data.consecutivo);
+  assert.equal(row.jefe_snapshot.email, secondBoss.email);
+  assert.equal(row.jefe_inmediato_user_id, secondBoss.id);
+  assert.equal(row.datos_formulario.laboral.dependencia, 'Programa B');
+  assert.match(row.datos_formulario.laboral.vicerrectoria, /Investigacion/);
+  for (let i = 0; i < 100 && !row.correo_jefe_enviado_at; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(row.correo_jefe_enviado_at);
+});
+
 test('solo el cargo institucional Rector omite el jefe, sin ampliar la excepción al personal de Rectoría', () => {
   assert.equal(isRectorUser(rector), true);
   for (const cargo of ['Vicerrector', 'Vicerrector Financiero', 'Secretaria de Rectoría', 'Asistente del Rector', 'Director', 'RECTORIA', '']) {

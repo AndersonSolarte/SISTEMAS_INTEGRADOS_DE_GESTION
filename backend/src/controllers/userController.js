@@ -9,6 +9,7 @@ const { ROLES } = require('../constants/roles');
 const { ACADEMIC_PROGRAM_PERMISSION_KEYS } = require('../constants/academicPrograms');
 const { sendWelcomeEmail, sendPasswordResetEmail } = require('../services/emailService');
 const { getDependencyEmail, DEPENDENCY_EMAILS_RAW } = require('../config/dependencyEmails');
+const { validateAssignments, getUserAssignments } = require('../services/userAssignments');
 const MAX_BULK_USER_IMPORT_ROWS = Number(process.env.MAX_BULK_USER_IMPORT_ROWS || 2000);
 
 const VALID_ROLES = Object.values(ROLES);
@@ -684,6 +685,9 @@ const performPhysicalUserDelete = async (userId) => {
 // CREAR USUARIO INDIVIDUAL
 const createUser = async (req, res) => {
   try {
+    let assignments;
+    try { assignments = validateAssignments(req.body.dependencias_asignadas || [], req.body.dependencia); }
+    catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     const { nombre, email, username, role, dependencia, vicerrectoria, cargo, jefe_inmediato } = sanitizeUserPayload(req.body);
     const numeroDocumento = username;
     let cleanEmail = String(email || '').trim().toLowerCase();
@@ -777,6 +781,7 @@ const createUser = async (req, res) => {
     
     // Crear usuario
     const user = await User.create({
+      dependencias_asignadas: assignments,
       nombre,
       email: cleanEmail,
       username: usernameFinal,
@@ -845,7 +850,7 @@ const getUsers = async (req, res) => {
       const deps = String(dependencia).split('|||').map(d => d.trim()).filter(Boolean);
       if (deps.length > 0) {
         const normalizedDeps = [...new Set(deps.map(normalizeSearchText).filter(Boolean))];
-        where[Op.and] = [
+        where[Op.and] = [{ [Op.or]: [
           sequelizeWhere(
             fn(
               'translate',
@@ -854,8 +859,11 @@ const getUsers = async (req, res) => {
               'aeiouun'
             ),
             { [Op.in]: normalizedDeps }
-          )
-        ];
+          ),
+          ...deps.map((dep) => ({ dependencias_asignadas: { [Op.contains]: [{
+            dependencia: Object.keys(DEPENDENCY_EMAILS_RAW).find((official) => normalizeSearchText(official) === normalizeSearchText(dep)) || dep
+          }] } }))
+        ] }];
       }
     }
     
@@ -1109,7 +1117,14 @@ const updateUser = async (req, res) => {
 
     const hasPayloadField = (field) => Object.prototype.hasOwnProperty.call(req.body || {}, field);
 
+    let assignments = user.dependencias_asignadas || [];
+    if (hasPayloadField('dependencias_asignadas')) {
+      try { assignments = validateAssignments(req.body.dependencias_asignadas, req.body.dependencia || user.dependencia); }
+      catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+    }
+
     await user.update({
+      dependencias_asignadas: assignments,
       nombre: nombre || user.nombre,
       email: cleanEmail || user.email,
       username: username || user.username,
@@ -1965,6 +1980,8 @@ const getUserFieldSuggestions = async (req, res) => {
     ]);
 
     const preloadedDependencias = Object.keys(DEPENDENCY_EMAILS_RAW || {});
+    const profiles = await User.findAll({ where: { estado: 'activo' }, attributes: ['nombre', 'dependencia', 'dependencias_asignadas', 'vicerrectoria', 'jefe_inmediato'], raw: true });
+    const relaciones = profiles.flatMap(getUserAssignments);
     const dependenciasSet = new Map();
     preloadedDependencias.forEach((item) => {
       const val = String(item || '').trim();
@@ -1984,7 +2001,8 @@ const getUserFieldSuggestions = async (req, res) => {
         dependencias,
         vicerrectorias,
         cargos,
-        jefesInmediatos
+        jefesInmediatos: [...new Set([...jefesInmediatos, ...profiles.map((item) => item.nombre), ...relaciones.map((item) => item.jefe_inmediato)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')),
+        relaciones
       }
     });
   } catch (error) {

@@ -738,6 +738,7 @@ const runMigrations = async () => {
     await sequelize.query("CREATE INDEX IF NOT EXISTS user_activity_logs_action_idx ON user_activity_logs (action)");
 
     await ensureColumn(qi, 'users', 'dependencia', { type: DataTypes.STRING(220), allowNull: true });
+    await ensureColumn(qi, 'users', 'dependencias_asignadas', { type: DataTypes.JSONB, allowNull: false, defaultValue: [] });
     await ensureColumn(qi, 'users', 'vicerrectoria', { type: DataTypes.STRING(220), allowNull: true });
     await ensureColumn(qi, 'users', 'cargo', { type: DataTypes.STRING(220), allowNull: true });
     await ensureColumn(qi, 'users', 'jefe_inmediato', { type: DataTypes.STRING(220), allowNull: true });

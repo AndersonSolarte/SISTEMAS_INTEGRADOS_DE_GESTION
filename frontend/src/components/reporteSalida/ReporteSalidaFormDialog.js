@@ -50,6 +50,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
 import { useAuth } from '../../context/AuthContext';
 import reporteSalidaService from '../../services/reporteSalidaService';
+import { dependencyAssignments } from '../UserDependencyAssignments';
 import desplazamientoViaticosService from '../../services/desplazamientoViaticosService';
 import cronogramaMovilidadService from '../../services/cronogramaMovilidadService';
 import CronogramaMovilidadModule from '../cronogramaMovilidad/CronogramaMovilidadModule';
@@ -716,6 +717,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [dependencias, setDependencias] = useState([]);
   const [cargos, setCargos] = useState([]);
   const [laboralRows, setLaboralRows] = useState([]);
+  const [assignedDependencies, setAssignedDependencies] = useState([]);
   const [catalogYear, setCatalogYear] = useState('');
   const [jefeSearch, setJefeSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -1105,6 +1107,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     if (!session.shouldInitialize) return;
 
     setActiveCategory('salud');
+    setAssignedDependencies(dependencyAssignments(currentUser || {}));
     setConsentimientoSalud(null);
     setForm({
       ...INITIAL_FORM,
@@ -1193,6 +1196,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       .then((response) => {
         const data = response?.data || {};
         setDependencias(data.dependencias || []);
+        setAssignedDependencies(data.dependenciasAsignadas || dependencyAssignments(currentUser || {}));
         setCargos(data.cargos || []);
         setLaboralRows(data.relaciones || []);
         setCatalogYear(data.periodoLabel || data.anio || '');
@@ -1664,7 +1668,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const selectedDependenciaIsCatalog = hasExactOption(form.laboral.dependencia, dependencias);
   const selectedCargoIsCatalog = hasExactOption(form.laboral.cargo, cargos);
 
+  const hasMultipleAssignments = assignedDependencies.length > 1 && !isSalidaMultiple;
   const dependenciaOptions = useMemo(() => {
+    if (hasMultipleAssignments) return assignedDependencies.map((item) => item.dependencia);
     if (!laboralRows.length) return dependencias;
     if (selectedCargoIsCatalog) {
       const filteredRows = laboralRows.filter(
@@ -1673,7 +1679,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       return uniqueSorted(filteredRows.map((row) => row.dependencia));
     }
     return uniqueSorted(laboralRows.map((row) => row.dependencia));
-  }, [dependencias, form.laboral.cargo, laboralRows, selectedCargoIsCatalog]);
+  }, [assignedDependencies, hasMultipleAssignments, dependencias, form.laboral.cargo, laboralRows, selectedCargoIsCatalog]);
 
   const cargoOptions = useMemo(() => {
     if (!laboralRows.length) return cargos;
@@ -1693,6 +1699,14 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   ].filter(Boolean)), [form.laboral.vicerrectoria, laboralRows]);
 
   useEffect(() => {
+    if (hasMultipleAssignments) {
+      const assigned = assignedDependencies.find((item) => normalizeOption(item.dependencia) === normalizeOption(form.laboral.dependencia));
+      if (!assigned) { setJefe(null); return; }
+      if (assigned.vicerrectoria && assigned.vicerrectoria !== form.laboral.vicerrectoria) update('laboral', 'vicerrectoria', assigned.vicerrectoria);
+      const boss = jefes.find((item) => normalizeOption(item.nombre || item.jefe_inmediato) === normalizeOption(assigned.jefe_inmediato));
+      setJefe(boss || (assigned.jefe_inmediato ? { nombre: assigned.jefe_inmediato, email: '', userId: null, source: 'users' } : null));
+      return;
+    }
     if (!laboralRows.length) return;
     const depNormalized = normalizeOption(form.laboral.dependencia);
     const cargoNormalized = normalizeOption(form.laboral.cargo);
@@ -1739,7 +1753,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         });
       }
     }
-  }, [form.laboral.dependencia, form.laboral.cargo, form.laboral.vicerrectoria, laboralRows, jefes, user?.id, user?.username, user?.email, user?.nombre]);
+  }, [assignedDependencies, hasMultipleAssignments, form.laboral.dependencia, form.laboral.cargo, form.laboral.vicerrectoria, laboralRows, jefes, user?.id, user?.username, user?.email, user?.nombre]);
 
   useEffect(() => {
     if (jefe && !jefe.email && jefes.length > 0) {
@@ -2155,14 +2169,14 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required={isOficioSolicitud} label="Rectoría / Vicerrectoría" placeholder={isOficioSolicitud ? "Seleccione Rectoría / Vicerrectoría" : "Opcional para media jornada"} helperText={!isAdmin && Boolean(user?.vicerrectoria) ? "Dato precargado institucional" : ""} />}
                 />
                 <Autocomplete
-                  disabled={!isAdmin}
-                  freeSolo
+                  disabled={!isAdmin && !hasMultipleAssignments}
+                  freeSolo={!hasMultipleAssignments}
                   fullWidth
                   openOnFocus
                   options={dependenciaOptions}
                   value={form.laboral.dependencia || ''}
                   onChange={(_, value) => update('laboral', 'dependencia', value || '')}
-                  onInputChange={(_, value) => update('laboral', 'dependencia', value || '')}
+                  onInputChange={(_, value) => { if (!hasMultipleAssignments) update('laboral', 'dependencia', value || ''); }}
                   ListboxProps={{ sx: autocompleteListSx }}
                   componentsProps={{
                     popper: {
@@ -2173,7 +2187,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       }
                     }
                   }}
-                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Dependencia" placeholder="Buscar dependencia" helperText={!isAdmin ? "Dato precargado institucional" : ""} />}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Dependencia" placeholder="Buscar dependencia" helperText={hasMultipleAssignments ? "Seleccione la dependencia para esta solicitud; su jefe se carga automáticamente." : !isAdmin ? "Dato precargado institucional" : ""} />}
                 />
                 <Autocomplete
                   disabled={!isAdmin}

@@ -16,6 +16,7 @@ import {
 import { useSnackbar } from 'notistack';
 import * as XLSX from 'xlsx';
 import userService from '../services/userService';
+import UserDependencyAssignments, { dependencyAssignments } from '../components/UserDependencyAssignments';
 import { ROLES, ROLE_LABELS } from '../constants/roles';
 import { ACADEMIC_PROGRAM_PERMISSION_OPTIONS, ACADEMIC_PROGRAM_LEVELS } from '../constants/academicPrograms';
 import { useAuth } from '../context/AuthContext';
@@ -644,6 +645,7 @@ function GestionUsuarios() {
         email: user.email,
         username: user.username,
         dependencia: user.dependencia || '',
+        dependencias_asignadas: user.dependencias_asignadas || [],
         vicerrectoria: user.vicerrectoria || '',
         cargo: user.cargo || '',
         jefe_inmediato: user.jefe_inmediato || '',
@@ -765,6 +767,11 @@ function GestionUsuarios() {
         cargo: String(formData.cargo || '').trim(),
         jefe_inmediato: String(formData.jefe_inmediato || '').trim()
       };
+
+      if ((formData.dependencias_asignadas || []).some((item) => !item.jefe_inmediato || !item.vicerrectoria)) {
+        enqueueSnackbar('Complete la vicerrectoría y el jefe de cada dependencia adicional.', { variant: 'error' });
+        return;
+      }
 
       if (dialogMode === 'create') {
         const response = await userService.createUser(payload);
@@ -1599,7 +1606,8 @@ function GestionUsuarios() {
             dependencias: response?.data?.dependencias || [],
             vicerrectorias: response?.data?.vicerrectorias || [],
             cargos: response?.data?.cargos || [],
-            jefesInmediatos: response?.data?.jefesInmediatos || []
+            jefesInmediatos: response?.data?.jefesInmediatos || [],
+            relaciones: response?.data?.relaciones || []
           });
         }
       } catch (error) {
@@ -2363,16 +2371,16 @@ function GestionUsuarios() {
                         <span className="cellText" style={{ fontWeight: 700, color: '#0f172a' }}>{user.username}</span>
                       </TableCell>
                       <TableCell sx={wrapCellSx}>
-                        <span className="cellText">{user.dependencia || '-'}</span>
+                        <span className="cellText">{dependencyAssignments(user).map((item) => item.dependencia).join(' · ') || '-'}</span>
                       </TableCell>
                       <TableCell sx={wrapCellSx}>
-                        <span className="cellText">{user.vicerrectoria || '-'}</span>
+                        <span className="cellText">{[...new Set(dependencyAssignments(user).map((item) => item.vicerrectoria).filter(Boolean))].join(' · ') || user.vicerrectoria || '-'}</span>
                       </TableCell>
                       <TableCell sx={wrapCellSx}>
                         <span className="cellText">{user.cargo || '-'}</span>
                       </TableCell>
                       <TableCell sx={wrapCellSx}>
-                        <span className="cellText">{user.jefe_inmediato || '-'}</span>
+                        <span className="cellText">{[...new Set(dependencyAssignments(user).map((item) => item.jefe_inmediato).filter(Boolean))].join(' · ') || user.jefe_inmediato || '-'}</span>
                       </TableCell>
                       <TableCell align="center" sx={{ ...wrapCellSx }}>
                         <Chip
@@ -2692,37 +2700,13 @@ function GestionUsuarios() {
                 helperText={formErrors.email || 'Si escribes solo el usuario (ej: prueba), se autocompletará @unicesmag.edu.co'}
                 placeholder="usuario@unicesmag.edu.co"
               />
-              <Autocomplete
-                autoHighlight
+              <UserDependencyAssignments
+                profile={formData}
+                onChange={(next) => { setFormData(next); setFormErrors((prev) => ({ ...prev, dependencia: '' })); }}
                 options={dependenciaOptions}
-                value={
-                  dependenciaOptions.find(
-                    (opt) => normalizeSearchText(opt) === normalizeSearchText(formData.dependencia || '')
-                  ) || null
-                }
-                getOptionLabel={(option) => (option ? String(option) : '')}
-                isOptionEqualToValue={(option, val) =>
-                  normalizeSearchText(option) === normalizeSearchText(val)
-                }
-                onChange={(event, newValue) => {
-                  const val = newValue ? String(newValue) : '';
-                  setFormData((prev) => ({ ...prev, dependencia: val }));
-                  setFormErrors((prev) => ({ ...prev, dependencia: '' }));
-                }}
-                loading={loadingSuggestions}
-                loadingText="Cargando dependencias..."
-                noOptionsText="No existe en el catálogo oficial de dependencias"
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    fullWidth
-                    label="Dependencia *"
-                    error={Boolean(formErrors.dependencia)}
-                    helperText={formErrors.dependencia || 'Selecciona una dependencia del catálogo oficial precargado'}
-                    inputProps={{ ...params.inputProps, readOnly: false }}
-                  />
-                )}
-                sx={{ ...smartAutocompleteSx, mb: 2 }}
+                relations={fieldSuggestions.relaciones || suggestionRows}
+                bosses={jefeInmediatoOptions}
+                error={formErrors.dependencia}
               />
               <Autocomplete
                 freeSolo
