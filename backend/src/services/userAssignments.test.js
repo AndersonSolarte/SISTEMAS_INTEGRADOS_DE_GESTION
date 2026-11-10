@@ -41,7 +41,8 @@ test('rechaza dependencias ajenas o sin seleccionar y preserva el flujo de perfi
   assert.equal(old.jefeInmediatoUserId, 3);
 });
 
-test('las API de creación y edición guardan, conservan y eliminan las asignaciones adicionales', async (t) => {
+for (const operatorRole of ['administrador', 'gestion_procesos', 'consulta']) {
+test(`las API conservan las asignaciones al crear y editar desde ${operatorRole}`, async (t) => {
   const { User } = require('../models');
   t.mock.method(require('./emailService'), 'sendWelcomeEmail', async () => ({ success: true }));
   t.mock.method(User, 'findOne', async () => null);
@@ -57,7 +58,7 @@ test('las API de creación y edición guardan, conservan y eliminan las asignaci
   const controller = require(path);
   t.after(() => { if (previous) require.cache[path] = previous; else delete require.cache[path]; });
   const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(value) { this.payload = value; return this; } });
-  const operator = { role: 'administrador' };
+  const operator = { role: operatorRole, allowedGestionProcesosDashboards: ['gestion_usuarios_crear_individual'] };
   const created = response();
   await controller.createUser({ user: operator, body: { ...primary, nombre: 'USUARIO MULTI PRUEBA', email: 'multi.prueba@unicesmag.edu.co', username: '1000000999', role: 'consulta', dependencias_asignadas: [extra] } }, created);
   assert.equal(created.code, 201, created.payload?.message);
@@ -73,3 +74,4 @@ test('las API de creación y edición guardan, conservan y eliminan las asignaci
   await controller.updateUser({ user: operator, params: { id: 999 }, body: { dependencias_asignadas: [] } }, response());
   assert.deepEqual(stored.dependencias_asignadas, []);
 });
+}
