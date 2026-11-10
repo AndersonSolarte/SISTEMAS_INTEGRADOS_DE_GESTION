@@ -2150,7 +2150,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               <SectionTitle title={isSalidaMultiple ? "Información laboral del líder de la actividad" : "Información laboral"} />
               <Box sx={responsiveFieldGrid('minmax(240px, 0.95fr) minmax(300px, 1.25fr) minmax(240px, 0.9fr)')}>
                 <Autocomplete
-                  disabled={!isAdmin && Boolean(user?.vicerrectoria)}
+                  disabled={!isAdmin}
                   fullWidth
                   openOnFocus
                   options={vicerrectoriaOptions}
@@ -2171,6 +2171,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 />
                 <Autocomplete
                   disabled={!isAdmin && !hasMultipleAssignments}
+                  disableClearable={!isAdmin}
                   freeSolo={!hasMultipleAssignments}
                   fullWidth
                   openOnFocus
@@ -2188,7 +2189,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       }
                     }
                   }}
-                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Dependencia" placeholder="Buscar dependencia" helperText={hasMultipleAssignments ? "Seleccione la dependencia para esta solicitud; su jefe se carga automáticamente." : !isAdmin ? "Dato precargado institucional" : ""} />}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Dependencia" placeholder="Buscar dependencia" helperText={hasMultipleAssignments ? "Elija la dependencia para este permiso." : !isAdmin ? "Dato precargado institucional" : ""} />}
                 />
                 <Autocomplete
                   disabled={!isAdmin}
@@ -2218,6 +2219,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   <TextField
                     sx={inputSx}
                     fullWidth
+                    disabled={!isAdmin}
                     InputProps={{ readOnly: true }}
                     size="small"
                     label="Jefe inmediato"

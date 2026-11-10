@@ -1,6 +1,35 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import UserDependencyAssignments, { dependencyAssignments } from './UserDependencyAssignments';
+
+test('permite borrar, escribir y seleccionar cargos independientes en todas las dependencias', () => {
+  function Editor() {
+    const [profile, setProfile] = React.useState({
+      dependencia: 'Programa A', vicerrectoria: 'Académica', jefe_inmediato: 'Jefe A', cargo: 'Docente',
+      dependencias_asignadas: ['Programa B', 'Programa C'].map((dependencia) => ({
+        dependencia, vicerrectoria: 'Investigación', jefe_inmediato: 'Jefe B', cargo: 'Coordinador'
+      }))
+    });
+    return <UserDependencyAssignments profile={profile} onChange={setProfile}
+      options={['Programa A', 'Programa B', 'Programa C']} cargos={['Docente', 'Coordinador', 'Secretario']} />;
+  }
+  render(<Editor />);
+  for (const index of [2, 3]) {
+    const cargo = screen.getByRole('combobox', { name: `Cargo de la dependencia ${index}` });
+    userEvent.clear(cargo);
+    expect(cargo).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Agregar otra dependencia' })).toBeDisabled();
+    userEvent.type(cargo, 'Nuevo cargo');
+    expect(cargo).toHaveValue('Nuevo cargo');
+    userEvent.clear(cargo);
+    userEvent.type(cargo, 'Secre');
+    userEvent.click(screen.getByRole('option', { name: 'Secretario' }));
+    expect(cargo).toHaveValue('Secretario');
+  }
+  expect(screen.getByRole('combobox', { name: 'Cargo de la dependencia 1' })).toHaveValue('Docente');
+  expect(screen.getByRole('button', { name: 'Agregar otra dependencia' })).toBeEnabled();
+});
 
 test('mantiene la asignación principal y precarga el jefe de una dependencia adicional', () => {
   const profile = { cargo: 'Docente', dependencia: 'Programa A', jefe_inmediato: 'Jefe A', vicerrectoria: 'Académica' };

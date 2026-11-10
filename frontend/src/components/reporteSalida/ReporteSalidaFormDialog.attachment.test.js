@@ -69,7 +69,7 @@ describe('adjunto del formulario de reporte de salida', () => {
 
   test('un usuario de consulta cambia entre sus dependencias y carga el jefe correspondiente', async () => {
     const assignments = [
-      { dependencia: 'Programa A', vicerrectoria: 'Vicerrectoria Academica', jefe_inmediato: 'Jefe A' },
+      { dependencia: 'Programa A', vicerrectoria: 'Vicerrectoria Academica', jefe_inmediato: 'Jefe A', cargo: 'Docente Hora Cátedra' },
       { dependencia: 'Programa B', vicerrectoria: 'Vicerrectoria de Investigacion y Extension', jefe_inmediato: 'Jefe B', cargo: 'Coordinador' }
     ];
     const employee = { ...user, ...assignments[0], role: 'consulta', cargo: 'Docente Hora Cátedra', dependencias_asignadas: [assignments[1]] };
@@ -92,6 +92,33 @@ describe('adjunto del formulario de reporte de salida', () => {
     await waitFor(() => expect(screen.getByLabelText('Jefe inmediato')).toHaveValue('Jefe B (jefeb@unicesmag.edu.co)'));
     expect(screen.getByRole('combobox', { name: /Rectoría \/ Vicerrectoría/ })).toHaveValue(assignments[1].vicerrectoria);
     expect(screen.getByRole('combobox', { name: /^Cargo/ })).toHaveValue('Coordinador');
+    expect(screen.getByRole('combobox', { name: /^Cargo/ })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: /Rectoría \/ Vicerrectoría/ })).toBeDisabled();
+    expect(screen.getByLabelText('Jefe inmediato')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+    fireEvent.mouseDown(dependency);
+    fireEvent.click(screen.getByRole('option', { name: 'Programa A' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /^Cargo/ })).toHaveValue('Docente Hora Cátedra'));
+    expect(screen.getByRole('combobox', { name: /Rectoría \/ Vicerrectoría/ })).toHaveValue(assignments[0].vicerrectoria);
+    expect(screen.getByLabelText('Jefe inmediato')).toHaveValue('Jefe A (jefea@unicesmag.edu.co)');
+  });
+
+  test.each(['Vicerrectoria Academica', ''])('consulta con una sola dependencia mantiene todos los campos laborales bloqueados (vicerrectoría: %s)', async (vicerrectoria) => {
+    const employee = { ...user, role: 'consulta', dependencia: 'Programa A', cargo: 'Docente', vicerrectoria, jefe_inmediato: 'Jefe A' };
+    render(<ReporteSalidaFormDialog open documento={documento} user={employee} onClose={jest.fn()} />);
+    await waitFor(() => expect(reporteSalidaService.getCatalogoLaboral).toHaveBeenCalled());
+    expect(screen.getByRole('combobox', { name: /^Dependencia/ })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: /^Cargo/ })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: /Rectoría \/ Vicerrectoría/ })).toBeDisabled();
+    expect(screen.getByLabelText('Jefe inmediato')).toBeDisabled();
+  });
+
+  test('administrador conserva habilitados los selectores laborales', async () => {
+    render(<ReporteSalidaFormDialog open documento={documento} user={user} onClose={jest.fn()} />);
+    await waitFor(() => expect(reporteSalidaService.getCatalogoLaboral).toHaveBeenCalled());
+    expect(screen.getByRole('combobox', { name: /^Dependencia/ })).toBeEnabled();
+    expect(screen.getByRole('combobox', { name: /^Cargo/ })).toBeEnabled();
+    expect(screen.getByRole('combobox', { name: /Rectoría \/ Vicerrectoría/ })).toBeEnabled();
   });
 
   test('el Rector radica sin jefe inmediato y sin transmitir el jefe antiguo del perfil', async () => {

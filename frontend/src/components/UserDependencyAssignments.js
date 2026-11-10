@@ -10,7 +10,7 @@ export const dependencyAssignments = (profile) => {
 
 export default function UserDependencyAssignments({ profile, onChange, options, relations = [], bosses = [], vicerrectorias = [], cargos = [], error = '' }) {
   const empty = { dependencia: '', vicerrectoria: '', jefe_inmediato: '', cargo: '' };
-  const assignments = [{ dependencia: profile.dependencia || '', vicerrectoria: profile.vicerrectoria || '', jefe_inmediato: profile.jefe_inmediato || '', cargo: profile.cargo || '' }, ...(profile.dependencias_asignadas || []).map((item) => ({ ...item, cargo: item.cargo || profile.cargo || '' }))];
+  const assignments = [{ dependencia: profile.dependencia || '', vicerrectoria: profile.vicerrectoria || '', jefe_inmediato: profile.jefe_inmediato || '', cargo: profile.cargo || '' }, ...(profile.dependencias_asignadas || []).map((item) => ({ ...item, cargo: item.cargo ?? profile.cargo ?? '' }))];
   const rector = key(profile.cargo) === 'rector';
   const save = (items) => onChange({ ...profile, ...(items[0] || empty), dependencias_asignadas: items.slice(1) });
   const update = (index, values) => save(assignments.map((item, i) => i === index ? { ...item, ...values } : item));
@@ -27,7 +27,7 @@ export default function UserDependencyAssignments({ profile, onChange, options, 
           onChange={(_, value) => {
             const matches = relations.filter((row) => key(row.dependencia) === key(value) && row.jefe_inmediato);
             const suggested = new Set(matches.map((row) => key(row.jefe_inmediato))).size === 1 ? matches[0] : {};
-            update(index, { dependencia: value || '', vicerrectoria: suggested.vicerrectoria || '', jefe_inmediato: suggested.jefe_inmediato || '', cargo: item.cargo || profile.cargo || '' });
+            update(index, { dependencia: value || '', vicerrectoria: suggested.vicerrectoria || '', jefe_inmediato: suggested.jefe_inmediato || '' });
           }}
           renderInput={(params) => <TextField {...params} required label={`Dependencia ${index + 1}`} error={index === 0 && Boolean(error)} helperText={index === 0 ? error : ''} />} />
         <Autocomplete freeSolo options={vicerrectorias} value={item.vicerrectoria || ''} inputValue={item.vicerrectoria || ''}
