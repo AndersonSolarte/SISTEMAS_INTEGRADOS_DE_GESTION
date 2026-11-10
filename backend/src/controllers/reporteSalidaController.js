@@ -16,7 +16,8 @@ const {
   setReporteSalidaFeatureState
 } = require('../config/reporteSalidaConfig');
 const { ensureReporteSalidaDocx, ensureReporteSalidaPdf, formatMinutes } = require('../services/reporteSalidaPdfService');
-const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
+const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
+const { sendInstitutionalEmail } = require('../services/reporteSalidaEmail');
 const { getDependencyEmail } = require('../config/dependencyEmails');
 const workflowEngine = require('../services/reporteSalidaWorkflow');
 const { isRectorUser, isRectorSolicitud, requiresRectorSst, buildRectorInitialTrace } = require('../services/reporteSalidaWorkflow/rectorPolicy');
@@ -3435,19 +3436,10 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     }
   }
 
-  // Si pertenece a Vicerrectoría de Investigación, la copia final del reporte firmado se remite a ambas cuentas (personal e institucional)
+  // Investigación recibe la copia final exclusivamente en la cuenta de Javier.
   const vicerrectoriaName = getSolicitudVicerrectoria(solicitud);
   if (isInvestigacionVicerrectoria(vicerrectoriaName)) {
-    const researchInstEmail = 'viceinvestiga@unicesmag.edu.co';
     const researchPersonalEmail = INVESTIGATION_VICERRECTOR_EMAIL;
-    if (!copyRecipients.some((recipient) => sameExactEmail(recipient.email, researchInstEmail))) {
-      copyRecipients.push({
-        type: 'dependencia',
-        email: researchInstEmail,
-        label: 'Vicerrectoría de Investigación y Extensión',
-        source: 'vicerrectoria'
-      });
-    }
     if (!copyRecipients.some((recipient) => sameExactEmail(recipient.email, researchPersonalEmail))) {
       copyRecipients.push({
         type: 'dependencia',
@@ -3462,6 +3454,9 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const isJefeRectoria = sameExactEmail(solicitud.jefe_snapshot?.email, RECTORIA_EMAIL);
 
   const finalFilteredCopyRecipients = copyRecipients.filter((recipient) => {
+    // La copia personal ya está incluida; no duplicar por un snapshot histórico.
+    if (sameExactEmail(recipient.email, 'viceinvestiga@unicesmag.edu.co') &&
+        copyRecipients.some((item) => sameExactEmail(item.email, 'jajimenez@unicesmag.edu.co'))) return false;
     if (sameExactEmail(recipient.email, RECTORIA_EMAIL)) {
       // Solo permitir copia a Rectoría si Rectoría es el Jefe Inmediato directo
       return isJefeRectoria;

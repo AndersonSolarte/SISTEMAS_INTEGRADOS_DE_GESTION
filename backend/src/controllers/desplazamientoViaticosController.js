@@ -8,7 +8,8 @@ const { getDependencyEmail } = require('../config/dependencyEmails');
 const { sequelize } = require('../config/database');
 const { decryptPayload, encryptPayload } = require('../utils/secureUrlToken');
 const { getDesplazamientoViaticosRecipients, normalizeEmail } = require('../config/desplazamientoViaticosConfig');
-const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
+const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
+const { sendInstitutionalEmail, routeSalidaRecipients } = require('../services/reporteSalidaEmail');
 const { AUTHORIZATION_TEXT, LEGALIZATION_NOTICE, buildXlsxAttachment, calculateDays, getVisibleLiquidationDetails } = require('../services/desplazamientoViaticos/formatService');
 const { buildLiquidationPdfAttachment, buildPdfAttachment } = require('../services/desplazamientoViaticos/pdfService');
 const { ensureReporteSalidaPdf } = require('../services/reporteSalidaPdfService');
@@ -529,8 +530,9 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {}, user = {}, 
       steps.push({ key: 'vicerrectoria_dependencia', label: 'Vicerrectoría Académica', email: recipients.academica, action: 'approval' });
     }
   } else if (researchAssignment) {
-    const vicePersonalEmail = normalizeEmail(jefe.email);
-    const viceInstitutionalEmail = recipients.investigacion !== vicePersonalEmail ? recipients.investigacion : '';
+    const vicePersonalEmail = routeSalidaRecipients(jefe.email)[0];
+    const researchEmail = routeSalidaRecipients(recipients.investigacion)[0];
+    const viceInstitutionalEmail = researchEmail !== vicePersonalEmail ? researchEmail : '';
     steps.push({
       key: 'jefe',
       label: 'Vicerrector de Investigación y Extensión – jefe inmediato',
@@ -1085,17 +1087,13 @@ const sendNormalReportFinalCopies = async (solicitud, report = null) => {
   const rectoriaFinalCopyEmail = isResearchVicerrectoriaAssignment(solicitud.datos_laborales)
     ? recipients.rectoria
     : '';
-  const researchInstitutionalEmail = isResearchVicerrectoriaAssignment(solicitud.datos_laborales)
-    ? 'viceinvestiga@unicesmag.edu.co'
-    : '';
   const targets = [...new Set([
     recipients.sst,
     recipients.gestionHumana,
     dependenciaEmail,
     authorityEmail,
-    researchInstitutionalEmail,
     rectoriaFinalCopyEmail
-  ].filter(Boolean).map(normalizeEmail))];
+  ].filter(Boolean).flatMap(routeSalidaRecipients))];
   const results = await Promise.all(targets.map((email) => sendInstitutionalEmail({
     to: email,
     subject: `${solicitud.consecutivo} | Reporte de salida aprobado`,

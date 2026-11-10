@@ -32,7 +32,10 @@ class InvestigacionWorkflowStrategy extends BaseWorkflowStrategy {
     const targets = [];
 
     const pushTarget = (email, label, source, forceApproval = false) => {
-      const cleanEmail = normalizeEmail(email);
+      const normalized = normalizeEmail(email);
+      const cleanEmail = normalized === 'viceinvestiga@unicesmag.edu.co'
+        ? 'jajimenez@unicesmag.edu.co'
+        : normalized;
       if (!cleanEmail) return;
       if (sameExactEmail(cleanEmail, RECTORIA_EMAIL)) return;
       
