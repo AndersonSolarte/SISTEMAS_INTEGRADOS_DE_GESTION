@@ -2,7 +2,8 @@ const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const {
   User, PlanAccion, StrategicPlan, StrategicTerm, StrategicCatalogItem,
-  StrategicResponsibility, StrategicActionPlan, StrategicActionItem
+  StrategicResponsibility, StrategicActionPlan, StrategicActionItem,
+  StrategicMonitoringPeriod, StrategicMonitoringResult
 } = require('../models');
 const { captureActionPlanSchema } = require('./strategicActionPlanSchemaService');
 
@@ -144,9 +145,15 @@ const performLegacyReconciliation = async () => {
         });
       }
 
+      const periods = await StrategicMonitoringPeriod.findAll({
+        where: { term_id: term.id },
+        order: [['position', 'ASC']],
+        transaction
+      });
+
       for (const row of rows) {
         const itemCode = `LEGACY-${row.id}`;
-        const [, created] = await StrategicActionItem.findOrCreate({
+        const [item, created] = await StrategicActionItem.findOrCreate({
           where: { action_plan_id: actionPlan.id, code: itemCode },
           defaults: {
             action_plan_id: actionPlan.id, code: itemCode,
@@ -170,6 +177,39 @@ const performLegacyReconciliation = async () => {
           transaction
         });
         if (created) migratedItems += 1;
+
+        if (periods.length && item) {
+          if (periods[0] && row.avance_ip !== null && row.avance_ip !== undefined && row.avance_ip !== '') {
+            const p1 = Number(row.avance_ip);
+            await StrategicMonitoringResult.findOrCreate({
+              where: { action_item_id: item.id, monitoring_period_id: periods[0].id },
+              defaults: {
+                action_item_id: item.id,
+                monitoring_period_id: periods[0].id,
+                physical_progress: p1 > 0 && p1 <= 1 ? p1 * 100 : p1,
+                observations: row.observaciones_ip ? String(row.observaciones_ip) : null,
+                status: 'imported',
+                created_by: creator?.id || owner?.id || fallbackUser.id
+              },
+              transaction
+            });
+          }
+          if (periods[1] && row.avance_iip !== null && row.avance_iip !== undefined && row.avance_iip !== '') {
+            const p2 = Number(row.avance_iip);
+            await StrategicMonitoringResult.findOrCreate({
+              where: { action_item_id: item.id, monitoring_period_id: periods[1].id },
+              defaults: {
+                action_item_id: item.id,
+                monitoring_period_id: periods[1].id,
+                physical_progress: p2 > 0 && p2 <= 1 ? p2 * 100 : p2,
+                observations: row.observaciones_iip ? String(row.observaciones_iip) : null,
+                status: 'imported',
+                created_by: creator?.id || owner?.id || fallbackUser.id
+              },
+              transaction
+            });
+          }
+        }
       }
     });
   }
@@ -177,11 +217,13 @@ const performLegacyReconciliation = async () => {
 };
 
 let legacyReconciliationPromise = null;
-const reconcileLegacyActionPlans = async () => {
+const reconcileLegacyActionPlans = async ({ force = false } = {}) => {
+  if (force) {
+    legacyReconciliationPromise = null;
+  }
   if (!legacyReconciliationPromise) {
-    legacyReconciliationPromise = performLegacyReconciliation().catch((error) => {
+    legacyReconciliationPromise = performLegacyReconciliation().finally(() => {
       legacyReconciliationPromise = null;
-      throw error;
     });
   }
   return legacyReconciliationPromise;

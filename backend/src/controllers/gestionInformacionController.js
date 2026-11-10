@@ -689,24 +689,24 @@ const PLAN_ACCION_ESTRUCTURA_ROWS = [
 ];
 
 const PLAN_ACCION_ROW_ALIASES = {
-  anio: ['AÑO', 'ANIO', 'ANO', 'AÃ‘O'],
-  ped: ['PED'],
+  anio: ['AÑO', 'ANIO', 'ANO', 'AÃ‘O', 'VIGENCIA'],
+  ped: ['PED', 'PLAN ESTRATEGICO', 'PLAN ESTRATÉGICO'],
   objetivo_estrategico: ['OBJETIVOS ESTRATÉGICOS', 'OBJETIVO ESTRATEGICO', 'OBJETIVOS ESTRATEGICOS'],
   lineamiento_estrategico: ['LINEAMIENTOS ESTRATÉGICOS', 'LINEAMIENTO ESTRATEGICO', 'LINEAMIENTOS ESTRATEGICOS'],
-  macroactividad: ['MACROACTIVIDADES ESTRATEGICAS', 'MACROACTIVIDAD'],
-  actividad: ['ACTIVIDADES', 'ACTIVIDAD'],
-  tipo_indicador: ['TIPO DE INDICADOR'],
-  fecha_inicio: ['FECHA INICIO', 'FECHA DE INICIO'],
+  macroactividad: ['MACROACTIVIDADES ESTRATEGICAS', 'MACROACTIVIDAD', 'ACTIVIDADES PED', 'ACTIVIDAD PED'],
+  actividad: ['ACTIVIDADES', 'ACTIVIDAD', 'ACTIVIDAD OPERATIVA'],
+  tipo_indicador: ['TIPO DE INDICADOR', 'TIPO INDICADOR'],
+  fecha_inicio: ['FECHA INICIO', 'FECHA DE INICIO', 'FECHA INICIAL'],
   fecha_fin: ['FECHA FIN', 'FECHA DE FIN', 'FECHA FINAL'],
-  indicador: ['INDICADOR'],
-  meta: ['META'],
-  responsable: ['RESPONSABLE DE EJECUCIÓN', 'RESPONSABLE DE EJECUCION', 'RESPONSABLE'],
-  corresponsable: ['CORRESPONSABLE'],
-  avance_ip: ['PORCENTAJE AVANCE IP', '% AVANCE IP', 'AVANCE IP'],
-  observaciones_ip: ['OBSERVACIONES IP'],
-  avance_iip: ['PORCENTAJE AVANCE IIP', '% AVANCE IIP', 'AVANCE IIP'],
-  observaciones_iip: ['OBSERVACIONES IIP'],
-  total_ejecucion: ['TOTAL EJECUCION', 'TOTAL EJECUCIÓN', '% EJECUCION', 'EJECUCION TOTAL']
+  indicador: ['INDICADOR', 'INDICADORES', 'NOMBRE DEL INDICADOR'],
+  meta: ['META', 'METAS'],
+  responsable: ['RESPONSABLE DE EJECUCIÓN', 'RESPONSABLE DE EJECUCION', 'RESPONSABLE', 'LIDER', 'DEPENDENCIA'],
+  corresponsable: ['CORRESPONSABLE', 'CORRESPONSABLES'],
+  avance_ip: ['PORCENTAJE AVANCE IP', '% AVANCE IP', 'AVANCE IP', 'AVANCE IP_1', 'AVANCE S1'],
+  observaciones_ip: ['OBSERVACIONES IP', 'OBSERVACIONES S1', 'OBSERVACIONES'],
+  avance_iip: ['PORCENTAJE AVANCE IIP', '% AVANCE IIP', 'AVANCE IIP', 'PORCENTAJE AVANCE IIP_2', '% AVANCE IIP_2', 'AVANCE IIP_2', 'AVANCE S2'],
+  observaciones_iip: ['OBSERVACIONES IIP', 'OBSERVACIONES S2', 'OBSERVACIONES _1', 'OBSERVACIONES _2', 'OBSERVACIONES_1', 'OBSERVACIONES_2'],
+  total_ejecucion: ['TOTAL EJECUCION', 'TOTAL EJECUCIÓN', '% EJECUCION', 'EJECUCION TOTAL', 'AVANCE TOTAL', 'TOTAL AVANCE']
 };
 
 const normalizeHeaderKey = (value = '') =>
@@ -9638,9 +9638,18 @@ const importFromExcel = async (req, res) => {
 
     if (categoria === 'Plan de Acción') {
       const receivedHeaders = new Set(headers.map((header) => normalizeHeader(header)));
-      const missingHeaders = PLAN_ACCION_TEMPLATE_HEADERS.filter(
-        (header) => !receivedHeaders.has(normalizeHeader(header))
-      );
+      const requiredFields = [
+        'anio', 'ped', 'objetivo_estrategico', 'lineamiento_estrategico',
+        'macroactividad', 'actividad', 'indicador', 'responsable'
+      ];
+      const missingHeaders = [];
+      for (const field of requiredFields) {
+        const aliases = PLAN_ACCION_ROW_ALIASES[field] || [];
+        const found = aliases.some((alias) => receivedHeaders.has(normalizeHeader(alias)));
+        if (!found) {
+          missingHeaders.push(aliases[0]);
+        }
+      }
 
       if (missingHeaders.length > 0) {
         return res.status(400).json({
@@ -9696,6 +9705,14 @@ const importFromExcel = async (req, res) => {
       } catch (error) {
         await transaction.rollback();
         throw error;
+      }
+
+      // Sincronizar automáticamente hacia los Planes de Acción oficiales del PED
+      try {
+        const { reconcileLegacyActionPlans } = require('../services/strategicLegacyActionPlanService');
+        await reconcileLegacyActionPlans({ force: true });
+      } catch (reconcileError) {
+        console.warn('Advertencia en reconciliación de Plan de Acción hacia el PED:', reconcileError?.message);
       }
 
       return res.json({
