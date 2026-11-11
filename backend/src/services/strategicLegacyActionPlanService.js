@@ -3,9 +3,42 @@ const { sequelize } = require('../config/database');
 const {
   User, PlanAccion, StrategicPlan, StrategicTerm, StrategicCatalogItem,
   StrategicResponsibility, StrategicActionPlan, StrategicActionItem,
-  StrategicMonitoringPeriod, StrategicMonitoringResult
+  StrategicMonitoringPeriod, StrategicMonitoringResult, StrategicEvidence, StrategicBudgetMovement
 } = require('../models');
 const { captureActionPlanSchema } = require('./strategicActionPlanSchemaService');
+const { sameLegacyActivity, fillMissing, schemaLegacyValues } = require('./legacyActionIdentity');
+
+const consolidateLegacyItem = async (item, duplicate, transaction) => {
+  const custom = fillMissing(item.custom_values || {}, duplicate.custom_values || {});
+  custom.legacy_merged_item_ids = [...new Set([...(custom.legacy_merged_item_ids || []),
+    ...(duplicate.custom_values?.legacy_merged_item_ids || []), duplicate.id])];
+  await item.update({
+    ...fillMissing({ starts_on: item.starts_on, ends_on: item.ends_on, target: item.target }, {
+      starts_on: duplicate.starts_on, ends_on: duplicate.ends_on, target: duplicate.target
+    }), custom_values: custom
+  }, { transaction });
+  // Preserve evidence and budget links on the surviving activity. Conflicting period
+  // results and version history remain on the archived row for traceability.
+  for (const model of [StrategicEvidence, StrategicBudgetMovement]) {
+    await model.update({ action_item_id: item.id }, { where: { action_item_id: duplicate.id }, transaction });
+  }
+  const results = await StrategicMonitoringResult.findAll({ where: { action_item_id: duplicate.id }, transaction });
+  for (const result of results) {
+    const existing = await StrategicMonitoringResult.findOne({
+      where: { action_item_id: item.id, monitoring_period_id: result.monitoring_period_id }, transaction
+    });
+    if (!existing) await result.update({ action_item_id: item.id }, { transaction });
+    else if (!result.deleted_at && existing.status === 'imported' && result.status !== 'imported') {
+      const snapshot = result.toJSON();
+      delete snapshot.id; delete snapshot.action_item_id;
+      delete snapshot.created_at; delete snapshot.updated_at;
+      await existing.update(snapshot, { transaction });
+    }
+  }
+  await duplicate.update({ deleted_at: new Date(), custom_values: {
+    ...(duplicate.custom_values || {}), legacy_duplicate_of: item.id
+  } }, { transaction });
+};
 
 const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -56,7 +89,7 @@ const findOrCreateUnit = async ({ plan, dependency, transaction }) => {
  * por plan_codigo o por la combinación vigencia/responsable del formato anterior.
  * En ese formato, "responsable" almacena el código y nombre de la unidad ejecutora.
  */
-const performLegacyReconciliation = async () => {
+const performLegacyReconciliation = async ({ planCode = null } = {}) => {
   const legacyRows = await PlanAccion.findAll({
     where: {
       deleted_at: null,
@@ -84,6 +117,7 @@ const performLegacyReconciliation = async () => {
   let migratedPlans = 0; let migratedItems = 0;
 
   for (const [legacyCode, rows] of groups) {
+    if (planCode && legacyCode !== planCode) continue;
     const first = rows[0];
     const strategicPlan = choosePlan(plans, first);
     const term = strategicPlan?.terms.find((item) => Number(item.year) === Number(first.anio));
@@ -92,6 +126,10 @@ const performLegacyReconciliation = async () => {
     const creator = first.creado_por ? await User.findByPk(first.creado_por) : null;
 
     await sequelize.transaction(async (transaction) => {
+      // Serialize bridge runs across workers as well as within this Node process.
+      await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', {
+        replacements: { key: `legacy-action-plan:${legacyCode}` }, transaction
+      });
       let actionPlan = await StrategicActionPlan.findOne({
         where: {
           [Op.or]: [
@@ -110,10 +148,10 @@ const performLegacyReconciliation = async () => {
           deleted_at: null,
           metadata: restoredMetadata
         }, { transaction });
-        await StrategicActionItem.update(
-          { deleted_at: null },
-          { where: { action_plan_id: actionPlan.id }, transaction }
-        );
+        const archivedItems = await StrategicActionItem.findAll({ where: { action_plan_id: actionPlan.id }, transaction });
+        for (const archived of archivedItems.filter((item) => !item.custom_values?.legacy_duplicate_of)) {
+          await archived.update({ deleted_at: null }, { transaction });
+        }
         if (actionPlan.responsibility_id) {
           await StrategicResponsibility.update(
             { status: 'active', ends_on: null },
@@ -151,9 +189,29 @@ const performLegacyReconciliation = async () => {
         transaction
       });
 
+      const existingItems = await StrategicActionItem.findAll({
+        where: { action_plan_id: actionPlan.id, deleted_at: null },
+        order: [['created_at', 'ASC'], ['id', 'ASC']], transaction
+      });
+      const claimedItems = new Set();
+      const schema = await captureActionPlanSchema(strategicPlan.id, transaction);
+
       for (const row of rows) {
         const itemCode = `LEGACY-${row.id}`;
-        const [item, created] = await StrategicActionItem.findOrCreate({
+        const matches = existingItems.filter((candidate) => !candidate.deleted_at && !claimedItems.has(candidate.id)
+          && sameLegacyActivity(candidate, row));
+        // Never combine two explicitly different schedules, even if a new Excel omitted dates.
+        const canonical = matches[0];
+        const compatibleMatches = [];
+        for (const candidate of matches) {
+          if (compatibleMatches.every((previous) => sameLegacyActivity(candidate, {
+            actividad: previous.activity, indicador: previous.indicator,
+            fecha_inicio: previous.starts_on, fecha_fin: previous.ends_on, meta: previous.target
+          }))) compatibleMatches.push(candidate);
+        }
+        let item = canonical || existingItems.find((candidate) => candidate.code === itemCode && !claimedItems.has(candidate.id));
+        let created = false;
+        if (!item) [item, created] = await StrategicActionItem.findOrCreate({
           where: { action_plan_id: actionPlan.id, code: itemCode },
           defaults: {
             action_plan_id: actionPlan.id, code: itemCode,
@@ -177,6 +235,29 @@ const performLegacyReconciliation = async () => {
           transaction
         });
         if (created) migratedItems += 1;
+        for (const duplicate of compatibleMatches.filter((candidate) => candidate.id !== item.id)) {
+          await consolidateLegacyItem(item, duplicate, transaction);
+        }
+        claimedItems.add(item.id);
+        const sourceCustom = schemaLegacyValues([...(actionPlan.metadata?.form_schema?.fields || []), ...schema.fields], {
+          strategic_objective: row.objetivo_estrategico, strategic_guideline: row.lineamiento_estrategico,
+          macroactivity: row.macroactividad, responsible: row.responsable, co_responsible: row.corresponsable,
+          activity: row.actividad, indicator: row.indicador, target: row.meta,
+          indicator_type: row.tipo_indicador, starts_on: row.fecha_inicio, ends_on: row.fecha_fin,
+          progress_s1: row.avance_ip, progress_s2: row.avance_iip,
+          observations_s1: row.observaciones_ip, observations_s2: row.observaciones_iip,
+          total_progress: row.total_ejecucion
+        });
+        const custom = fillMissing(item.custom_values || {}, sourceCustom);
+        custom.legacy_plan_accion_id = row.id;
+        const repaired = fillMissing({ indicator_type: item.indicator_type, starts_on: item.starts_on,
+          ends_on: item.ends_on, target: item.target }, {
+          indicator_type: row.tipo_indicador, starts_on: row.fecha_inicio, ends_on: row.fecha_fin, target: row.meta
+        });
+        if (JSON.stringify(custom) !== JSON.stringify(item.custom_values)
+          || Object.keys(repaired).some((key) => repaired[key] !== item[key])) {
+          await item.update({ ...repaired, custom_values: custom }, { transaction });
+        }
 
         if (periods.length && item) {
           if (periods[0] && row.avance_ip !== null && row.avance_ip !== undefined && row.avance_ip !== '') {
@@ -358,17 +439,15 @@ const syncMissingPlanLeaders = async ({ transaction = null } = {}) => {
   return syncedCount;
 };
 
-let legacyReconciliationPromise = null;
-const reconcileLegacyActionPlans = async ({ force = false } = {}) => {
-  if (force) {
-    legacyReconciliationPromise = null;
+const legacyReconciliationPromises = new Map();
+const reconcileLegacyActionPlans = async ({ planCode = null } = {}) => {
+  const key = planCode || 'all';
+  if (!legacyReconciliationPromises.has(key)) {
+    legacyReconciliationPromises.set(key, performLegacyReconciliation({ planCode }).finally(() => {
+      legacyReconciliationPromises.delete(key);
+    }));
   }
-  if (!legacyReconciliationPromise) {
-    legacyReconciliationPromise = performLegacyReconciliation().finally(() => {
-      legacyReconciliationPromise = null;
-    });
-  }
-  return legacyReconciliationPromise;
+  return legacyReconciliationPromises.get(key);
 };
 
 const annualRepairPromises = new Map();
@@ -406,4 +485,4 @@ const ensureAnnualDependenciesForActionPlans = async ({ planId = null } = {}) =>
   return annualRepairPromises.get(key);
 };
 
-module.exports = { mapLegacyStatus, reconcileLegacyActionPlans, ensureAnnualDependenciesForActionPlans, syncMissingPlanLeaders };
+module.exports = { mapLegacyStatus, legacyPlanCode, reconcileLegacyActionPlans, ensureAnnualDependenciesForActionPlans, syncMissingPlanLeaders };
