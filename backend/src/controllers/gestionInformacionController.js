@@ -9662,9 +9662,14 @@ const importFromExcel = async (req, res) => {
         fila: index + 2,
         payload: mapPlanAccionRow(row)
       }));
-      const validationErrors = preparedRows
-        .filter(({ payload }) => !payload.anio)
-        .map(({ fila }) => ({ fila, error: 'Campo obligatorio inválido: AÑO' }));
+      const { historicalYear, dependencyCode } = require('../services/legacyActionScope');
+      const validationErrors = preparedRows.flatMap(({ payload, fila }) => {
+        const errors = [];
+        if (!historicalYear(payload.anio)) errors.push({ fila, error: 'La base histórica solo admite vigencias 2022 a 2026. Desde 2027 las actividades se registran en el aplicativo.' });
+        if (!dependencyCode(payload.responsable)) errors.push({ fila, error: 'RESPONSABLE DE EJECUCIÓN debe comenzar con un código oficial Rxx.' });
+        if (!payload.actividad || !payload.indicador) errors.push({ fila, error: 'ACTIVIDADES e INDICADOR son obligatorios para identificar la actividad sin duplicarla.' });
+        return errors;
+      });
 
       if (validationErrors.length > 0) {
         return res.status(400).json({
@@ -9713,6 +9718,10 @@ const importFromExcel = async (req, res) => {
         await reconcileLegacyActionPlans({ force: true });
       } catch (reconcileError) {
         console.warn('Advertencia en reconciliación de Plan de Acción hacia el PED:', reconcileError?.message);
+        return res.status(409).json({ success: false,
+          message: 'La base histórica se importó, pero no se completó la conciliación con los planes del PED. Revise la asignación de dependencias antes de continuar.',
+          data: { total: rows.length, importados: preparedRows.length, conciliacion_pendiente: true, error: reconcileError.message }
+        });
       }
 
       return res.json({

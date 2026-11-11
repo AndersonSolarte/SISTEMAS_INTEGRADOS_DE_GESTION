@@ -2676,6 +2676,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
           const hasCustomSchedule = Boolean(selectedActionTerm.metadata?.formulation_ends_on);
           const hasPlans = selectedYearPlans.length > 0;
           const totalUnitsCount = selectedActionUnits.length;
+          const unitsWithPlansCount = new Set(selectedYearPlans.map((item) => String(item.catalog_item_id || item.organizationalUnit?.id))).size;
 
           if (!hasCustomSchedule) {
             return (
@@ -2720,7 +2721,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                           size="small"
                           color="success"
                           icon={<CheckCircleOutline sx={{ fontSize: '14px !important' }} />}
-                          label={`${selectedYearPlans.length} de ${totalUnitsCount} planes generados`}
+                          label={`${unitsWithPlansCount} de ${totalUnitsCount} dependencias con plan`}
                           sx={{ fontWeight: 850, fontSize: 11 }}
                         />
                       ) : (

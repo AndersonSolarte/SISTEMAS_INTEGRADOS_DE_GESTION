@@ -1,0 +1,39 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { dependencyCode, historicalYear, chooseLegacyUnit, sourceScope } = require('./legacyActionScope');
+const { sameLegacyActivity, isLegacyItem, stripLegacyProvenance } = require('./legacyActionIdentity');
+
+test('normalizes leading zeros without confusing R2, R21 or R200', () => {
+  assert.equal(dependencyCode('R02_Vicerrectoría'), 'R2');
+  assert.equal(dependencyCode('LEG-R2'), 'R2');
+  assert.equal(dependencyCode('R21 Planeación'), 'R21');
+  assert.equal(dependencyCode('DEP-002'), null);
+  assert.equal(sourceScope({ anio: 2026, responsable: 'R02 Académica' }), sourceScope({ anio: 2026, responsable: 'R2_Otro nombre' }));
+});
+test('official code wins over generic name, old catalog and disabled historical unit', () => {
+  const units = [
+    { id: 'wrong', code: 'R21', name: 'Académica' },
+    { id: 'old', code: 'DEP-042', name: 'Académica', metadata: { superseded_by: 'official' } },
+    { id: 'official', code: 'R02', name: 'Vicerrectoría Académica', active: false }
+  ];
+  assert.equal(chooseLegacyUnit(units, 'R2_Académica').id, 'official');
+  assert.equal(chooseLegacyUnit([units[0]], 'R2_Académica'), null);
+  assert.throws(() => chooseLegacyUnit([{ code: 'DEP-A', name: 'Académica' }, { code: 'DEP-B', name: 'Académica' }], 'R2_Académica'), /ambigua/);
+});
+test('historical workbook cannot seed 2027 or subsequent years', () => {
+  for (const year of [2022, 2023, 2024, 2025, 2026]) assert.equal(historicalYear(year), true);
+  for (const year of [null, '', 2021, 2027, 2030, '2026.5']) assert.equal(historicalYear(year), false);
+});
+test('identical activity text never combines different responsible dependencies', () => {
+  const row = { anio: 2026, responsable: 'R74_Acompañamiento', actividad: 'Compartida', indicador: 'Informe' };
+  const item = { code: 'LEGACY-1', activity: row.actividad, indicator: row.indicador, custom_values: { responsible: 'R75_Otra' } };
+  assert.equal(sameLegacyActivity(item, row), false);
+  item.custom_values.responsible = 'R074_Acompañamiento';
+  assert.equal(sameLegacyActivity(item, row), true);
+});
+test('a native activity copied from the application is protected from historical reconciliation', () => {
+  const custom = { legacy_plan_accion_id: 123, legacy_duplicate_of: 'old', strategic_objective: 'OE1', indicator: 'Informe' };
+  assert.equal(isLegacyItem({ code: 'ACT-006', custom_values: custom }), false);
+  assert.deepEqual(stripLegacyProvenance(custom), { strategic_objective: 'OE1', indicator: 'Informe' });
+  assert.equal(custom.legacy_plan_accion_id, 123);
+});

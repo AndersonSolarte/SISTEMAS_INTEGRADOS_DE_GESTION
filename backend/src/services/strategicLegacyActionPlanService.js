@@ -7,6 +7,7 @@ const {
 } = require('../models');
 const { captureActionPlanSchema } = require('./strategicActionPlanSchemaService');
 const { sameLegacyActivity, fillMissing, schemaLegacyValues } = require('./legacyActionIdentity');
+const { historicalYear, chooseLegacyUnit, sourceScope, scopeFromPlanCode } = require('./legacyActionScope');
 
 const consolidateLegacyItem = async (item, duplicate, transaction) => {
   const custom = fillMissing(item.custom_values || {}, duplicate.custom_values || {});
@@ -57,7 +58,10 @@ const choosePlan = (plans, legacy) => {
   const candidates = plans.filter((plan) => plan.terms.some((term) => Number(term.year) === Number(legacy.anio)));
   if (candidates.length < 2) return candidates[0] || null;
   const legacyPed = normalize(legacy.ped);
-  return candidates.find((plan) => legacyPed && [normalize(plan.code), normalize(plan.name)].some((value) => value.includes(legacyPed) || legacyPed.includes(value))) || candidates[0];
+  const matching = candidates.filter((plan) => legacyPed && [normalize(plan.code), normalize(plan.name)]
+    .some((value) => value.length > 5 && (value.includes(legacyPed) || legacyPed.includes(value))));
+  if (matching.length !== 1) throw new Error(`No se puede identificar de forma única el PED histórico de ${legacy.anio}.`);
+  return matching[0];
 };
 
 const findOrCreateUnit = async ({ plan, dependency, transaction }) => {
@@ -66,15 +70,7 @@ const findOrCreateUnit = async ({ plan, dependency, transaction }) => {
   const units = await StrategicCatalogItem.findAll({
     where: { strategic_plan_id: plan.id, catalog_type: { [Op.in]: ['dependency', 'organizational_unit'] } }, transaction
   });
-  const normalizedName = normalize(dependencyName);
-  const existing = units.find((unit) => {
-    const unitCode = String(unit.code || '').toUpperCase();
-    if (prefix && (unitCode === prefix || unitCode.startsWith(`${prefix}_`) || unitCode.startsWith(`${prefix}-`))) {
-      return true;
-    }
-    if (normalize(unit.name) === normalizedName) return true;
-    return false;
-  });
+  const existing = chooseLegacyUnit(units, dependency);
   if (existing) return existing;
   let unitCode = `LEG-${code(prefix || dependencyName, 'DEPENDENCIA')}`.slice(0, 60);
   let sequence = 2;
@@ -98,6 +94,7 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
   const legacyRows = await PlanAccion.findAll({
     where: {
       deleted_at: null,
+      anio: { [Op.between]: [2022, 2026] },
       [Op.or]: [
         { plan_codigo: { [Op.ne]: null } },
         { responsable: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: '' }] } }
@@ -115,15 +112,18 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
 
   const groups = new Map();
   legacyRows.forEach((row) => {
-    const key = legacyPlanCode(row);
+    if (!historicalYear(row.anio)) return;
+    const key = sourceScope(row);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
   });
   let migratedPlans = 0; let migratedItems = 0;
 
-  for (const [legacyCode, rows] of groups) {
-    if (planCode && legacyCode !== planCode) continue;
+  for (const rows of groups.values()) {
     const first = rows[0];
+    const legacyCode = legacyPlanCode(first);
+    if (planCode && !rows.some((row) => legacyPlanCode(row) === planCode)
+      && scopeFromPlanCode(planCode) !== sourceScope(first)) continue;
     const strategicPlan = choosePlan(plans, first);
     const term = strategicPlan?.terms.find((item) => Number(item.year) === Number(first.anio));
     if (!strategicPlan || !term) continue;
@@ -133,9 +133,9 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
     await sequelize.transaction(async (transaction) => {
       // Serialize bridge runs across workers as well as within this Node process.
       await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', {
-        replacements: { key: `legacy-action-plan:${legacyCode}` }, transaction
+        replacements: { key: `legacy-action-plan:${sourceScope(first)}` }, transaction
       });
-      const unit = await findOrCreateUnit({ plan: strategicPlan, dependency: first.dependencia || first.responsable, transaction });
+      const unit = await findOrCreateUnit({ plan: strategicPlan, dependency: first.responsable, transaction });
 
       // Priorizar el plan oficial existente para esta unidad y vigencia (evita duplicar planes con Paso 3)
       let actionPlan = await StrategicActionPlan.findOne({
@@ -144,6 +144,7 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
           catalog_item_id: unit.id,
           deleted_at: null
         },
+        order: [[sequelize.literal("CASE WHEN code LIKE 'LEGACY-%' THEN 1 ELSE 0 END"), 'ASC'], ['created_at', 'ASC']],
         transaction
       });
       if (!actionPlan) {
@@ -156,6 +157,13 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
           },
           transaction
         });
+      }
+      // A legacy code previously attached to the wrong catalog is not a valid target.
+      if (actionPlan && (actionPlan.term_id !== term.id || actionPlan.catalog_item_id !== unit.id)) {
+        await actionPlan.update({ catalog_item_id: unit.id, term_id: term.id, responsible_user_id: null, responsibility_id: null,
+          title: `Plan de Acción ${unit.name} ${term.year}`,
+          metadata: { ...(actionPlan.metadata || {}), legacy_scope_repaired_at: new Date().toISOString() }
+        }, { transaction });
       }
       if (actionPlan?.deleted_at) {
         const restoredMetadata = { ...(actionPlan.metadata || {}) };
@@ -206,6 +214,26 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
         transaction
       });
 
+      // Recover rows that an earlier fuzzy unit match placed in another plan.
+      // Moving the activity ID retains its evidence, versions and monitoring links.
+      const misplaced = await StrategicActionItem.findAll({
+        where: { deleted_at: null, action_plan_id: { [Op.ne]: actionPlan.id } },
+        include: [{ model: StrategicActionPlan, as: 'actionPlan', required: true,
+          where: { term_id: term.id, deleted_at: null }, attributes: ['id', 'term_id'] }], transaction
+      });
+      for (const candidate of misplaced) {
+        if (!candidate.actionPlan || candidate.action_plan_id === actionPlan.id
+          || sourceScope({ anio: first.anio, responsable: candidate.custom_values?.responsible }) !== sourceScope(first)
+          || !rows.some((row) => sameLegacyActivity(candidate, row))) continue;
+        const collision = await StrategicActionItem.findOne({
+          where: { action_plan_id: actionPlan.id, code: candidate.code }, transaction
+        });
+        await candidate.update({ action_plan_id: actionPlan.id,
+          ...(collision ? { code: `LEGACY-MOVED-${candidate.id}` } : {}),
+          custom_values: { ...(candidate.custom_values || {}), legacy_previous_plan_id: candidate.action_plan_id }
+        }, { transaction });
+      }
+
       const existingItems = await StrategicActionItem.findAll({
         where: { action_plan_id: actionPlan.id, deleted_at: null },
         order: [['created_at', 'ASC'], ['id', 'ASC']], transaction
@@ -213,11 +241,12 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
       const claimedItems = new Set();
       const schema = await captureActionPlanSchema(strategicPlan.id, transaction);
 
-      for (const row of rows) {
+      for (const [rowIndex, row] of rows.entries()) {
         const itemCode = `LEGACY-${row.id}`;
         const matches = existingItems.filter((candidate) => !candidate.deleted_at && !claimedItems.has(candidate.id)
           && sameLegacyActivity(candidate, row));
         // Never combine two explicitly different schedules, even if a new Excel omitted dates.
+        matches.sort((a, b) => Number(b.custom_values?.legacy_plan_accion_id === row.id) - Number(a.custom_values?.legacy_plan_accion_id === row.id));
         const canonical = matches[0];
         const compatibleMatches = [];
         for (const candidate of matches) {
@@ -252,8 +281,18 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
           transaction
         });
         if (created) migratedItems += 1;
-        for (const duplicate of compatibleMatches.filter((candidate) => candidate.id !== item.id)) {
+        // Repeated source rows may be individual deliverables. Reserve one slot
+        // per remaining source row instead of treating them as reimport copies.
+        const reserved = rows.slice(rowIndex + 1).filter((next) => sameLegacyActivity(item, next)).length;
+        const surplus = compatibleMatches.filter((candidate) => candidate.id !== item.id);
+        for (const duplicate of surplus.slice(0, Math.max(0, surplus.length - reserved))) {
           await consolidateLegacyItem(item, duplicate, transaction);
+        }
+        if (item.deleted_at && item.status !== 'deleted') {
+          const restored = { ...(item.custom_values || {}) };
+          delete restored.legacy_duplicate_of;
+          delete restored.legacy_orphaned_at;
+          await item.update({ deleted_at: null, custom_values: restored }, { transaction });
         }
         claimedItems.add(item.id);
         const sourceCustom = schemaLegacyValues([...(actionPlan.metadata?.form_schema?.fields || []), ...schema.fields], {
@@ -312,7 +351,8 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
 
       // Desactivar actividades legacy huérfanas que ya no existen en la nueva plantilla importada
       for (const stale of existingItems) {
-        if (!claimedItems.has(stale.id) && /^LEGACY-\d+$/.test(stale.code || '')) {
+        if (!stale.deleted_at && !claimedItems.has(stale.id) && /^LEGACY-\d+$/.test(stale.code || '')
+          && sourceScope({ anio: first.anio, responsable: stale.custom_values?.responsible }) === sourceScope(first)) {
           await stale.update({
             deleted_at: new Date(),
             custom_values: { ...(stale.custom_values || {}), legacy_orphaned_at: new Date().toISOString() }
@@ -330,140 +370,36 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
 };
 
 const syncMissingPlanLeaders = async ({ transaction = null } = {}) => {
-  const plansWithoutLeader = await StrategicActionPlan.findAll({
-    where: { deleted_at: null, responsible_user_id: null },
-    include: [
-      { model: StrategicTerm, as: 'term', required: true },
-      { model: StrategicCatalogItem, as: 'organizationalUnit', required: true }
-    ],
-    transaction
-  });
-
-  if (!plansWithoutLeader.length) return 0;
-
-  const allTerms = await StrategicTerm.findAll({
-    order: [['year', 'DESC']],
-    raw: true,
-    transaction
-  });
-
-  let syncedCount = 0;
-  for (const plan of plansWithoutLeader) {
-    const unit = plan.organizationalUnit;
-    const currentYear = Number(plan.term?.year || 0);
-    const priorTermIds = allTerms.filter((t) => Number(t.year) < currentYear).map((t) => t.id);
-
-    let leaderUser = null;
-
-    // 1. Buscar en vigencias anteriores para la misma unidad
-    if (priorTermIds.length > 0) {
-      const priorResp = await StrategicResponsibility.findOne({
-        where: {
-          term_id: { [Op.in]: priorTermIds },
-          catalog_item_id: plan.catalog_item_id,
-          status: 'active'
-        },
-        include: [{ model: User, as: 'responsibleUser', where: { estado: 'activo' } }],
-        order: [['created_at', 'DESC']],
-        transaction
-      });
-      if (priorResp?.responsibleUser) {
-        leaderUser = priorResp.responsibleUser;
-      }
-    }
-
-    // 2. Si no se encontró, buscar por coincidencia de código o nombre de unidad en vigencias anteriores
-    if (!leaderUser && unit && priorTermIds.length > 0) {
-      const similarUnits = await StrategicCatalogItem.findAll({
-        where: {
-          [Op.or]: [
-            { code: unit.code },
-            { name: unit.name }
-          ]
-        },
-        attributes: ['id'],
-        raw: true,
-        transaction
-      });
-      const similarUnitIds = similarUnits.map((u) => u.id);
-      if (similarUnitIds.length > 0) {
-        const priorRespByName = await StrategicResponsibility.findOne({
-          where: {
-            term_id: { [Op.in]: priorTermIds },
-            catalog_item_id: { [Op.in]: similarUnitIds },
-            status: 'active'
-          },
-          include: [{ model: User, as: 'responsibleUser', where: { estado: 'activo' } }],
-          order: [['created_at', 'DESC']],
-          transaction
-        });
-        if (priorRespByName?.responsibleUser) {
-          leaderUser = priorRespByName.responsibleUser;
-        }
-      }
-    }
-
-    // 3. Buscar en User por dependencia
-    if (!leaderUser && unit?.name) {
-      const cleanName = unit.name.replace(/^(Area|Oficina|Departamento|Direccion|Facultad)\s+de\s+/i, '').trim();
-      leaderUser = await User.findOne({
-        where: {
-          [Op.or]: [
-            { dependencia: { [Op.iLike]: `%${unit.name}%` } },
-            { dependencia: { [Op.iLike]: `%${cleanName}%` } }
-          ],
-          estado: 'activo'
-        },
-        order: [['updated_at', 'DESC']],
-        transaction
+  const plans = await StrategicActionPlan.findAll({ where: { deleted_at: null }, transaction });
+  let synced = 0;
+  for (const plan of plans) {
+    const assignments = await StrategicResponsibility.findAll({
+      where: { term_id: plan.term_id, catalog_item_id: plan.catalog_item_id, status: 'active',
+        [Op.or]: [
+          { action_plan_id: plan.id, responsibility_type: 'action_plan_leader' },
+          { action_plan_id: null, responsibility_type: 'reference_leader' }
+        ] },
+      include: [{ model: User, as: 'responsibleUser', where: { estado: 'activo' }, required: true }],
+      order: [['updated_at', 'DESC'], ['id', 'ASC']], transaction
+    });
+    const specific = assignments.filter((row) => row.action_plan_id === plan.id);
+    const candidates = specific.length ? specific : assignments.filter((row) => !row.action_plan_id);
+    if (!candidates.length || new Set(candidates.map((row) => row.user_id)).size !== 1) continue;
+    let assignment = candidates[0];
+    if (!assignment.action_plan_id) {
+      [assignment] = await StrategicResponsibility.findOrCreate({
+        where: { term_id: plan.term_id, catalog_item_id: plan.catalog_item_id, action_plan_id: plan.id,
+          responsibility_type: 'action_plan_leader', status: 'active' },
+        defaults: { user_id: assignment.user_id, starts_on: assignment.starts_on, ends_on: assignment.ends_on,
+          created_by: plan.created_by || assignment.user_id }, transaction
       });
     }
-
-    if (leaderUser) {
-      await plan.update({ responsible_user_id: leaderUser.id }, { transaction });
-
-      const [actionResp] = await StrategicResponsibility.findOrCreate({
-        where: {
-          term_id: plan.term_id,
-          catalog_item_id: plan.catalog_item_id,
-          action_plan_id: plan.id,
-          responsibility_type: 'action_plan_leader',
-          status: 'active'
-        },
-        defaults: {
-          user_id: leaderUser.id,
-          starts_on: plan.term?.starts_on,
-          ends_on: plan.term?.ends_on,
-          created_by: plan.created_by || leaderUser.id
-        },
-        transaction
-      });
-      if (actionResp && !plan.responsibility_id) {
-        await plan.update({ responsibility_id: actionResp.id }, { transaction });
-      }
-
-      await StrategicResponsibility.findOrCreate({
-        where: {
-          term_id: plan.term_id,
-          catalog_item_id: plan.catalog_item_id,
-          action_plan_id: null,
-          responsibility_type: 'reference_leader',
-          status: 'active'
-        },
-        defaults: {
-          user_id: leaderUser.id,
-          starts_on: plan.term?.starts_on,
-          ends_on: plan.term?.ends_on,
-          created_by: plan.created_by || leaderUser.id
-        },
-        transaction
-      });
-
-      syncedCount += 1;
+    if (plan.responsible_user_id !== assignment.user_id || plan.responsibility_id !== assignment.id) {
+      await plan.update({ responsible_user_id: assignment.user_id, responsibility_id: assignment.id }, { transaction });
+      synced++;
     }
   }
-
-  return syncedCount;
+  return synced;
 };
 
 const legacyReconciliationPromises = new Map();

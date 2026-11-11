@@ -10,6 +10,7 @@
     "migrate:gestion-procesos-role": "node src/migrations/addGestionProcesosRole.js",
     "seed": "node src/seeds/runSeeds.js",
     "repair:legacy-action-plans": "node src/scripts/repairLegacyActionPlans.js",
+    "audit:legacy-action-plans": "node src/scripts/auditLegacyActionScope.js",
     "sanitize:gestion-informacion": "node src/scripts/sanitizeGestionInformacionText.js",
     "audit:document-links": "node src/scripts/auditDocumentDownloadLinks.js",
     "test:pesv-rtm": "node src/scripts/testPesvRtmRules.js",

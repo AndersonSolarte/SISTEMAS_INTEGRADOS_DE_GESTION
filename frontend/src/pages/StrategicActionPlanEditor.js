@@ -1376,6 +1376,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         }
         if (selectedSuggestion.custom_values && typeof selectedSuggestion.custom_values === 'object') {
           Object.entries(selectedSuggestion.custom_values).forEach(([k, v]) => {
+            if (/^(legacy_|progress_s\d|observations_s\d|total_progress|current_progress|avance_|observaciones(?:_|$)|total$)/i.test(k)) return;
             if (v && !nextCustom[k] && !['starts_on', 'ends_on', 'fecha_inicio', 'fecha_fin', 'responsible', 'co_responsibles'].includes(k)) {
               nextCustom[k] = v;
             }

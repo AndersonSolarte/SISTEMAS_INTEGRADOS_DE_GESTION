@@ -140,7 +140,7 @@ const saveActionItem = async ({ req, actionPlan, payload, item = null }) => sequ
     ends_on: payload.ends_on || null,
     responsible_catalog_item_id: payload.responsible_catalog_item_id || null,
     co_responsibles: Array.isArray(payload.co_responsibles) ? payload.co_responsibles : [],
-    custom_values: { ...preservedCustomValues, ...incomingCustomValues },
+    custom_values: { ...preservedCustomValues, ...require('./legacyActionIdentity').stripLegacyProvenance(incomingCustomValues) },
     updated_by: req.user.id
   };
   const { policyDimensions } = require('./activityPolicyStatisticsService');

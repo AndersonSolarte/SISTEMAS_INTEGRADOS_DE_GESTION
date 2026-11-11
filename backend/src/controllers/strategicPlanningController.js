@@ -1746,7 +1746,11 @@ const replicateActionItem = wrap(async (req, res) => {
     }
 
     const targetLeaderName = targetPlan.responsibleUser?.nombre || targetPlan.organizationalUnit?.name || '';
-    const newCustomValues = { ...(sourceItem.custom_values || {}) };
+    const newCustomValues = require('../services/legacyActionIdentity').stripLegacyProvenance(sourceItem.custom_values);
+    for (const key of Object.keys(newCustomValues)) {
+      if (/^(progress_s\d|observations_s\d|total_progress|current_progress|avance_|observaciones(?:_|$)|total$)/i.test(key)) delete newCustomValues[key];
+    }
+    newCustomValues.responsible = targetLeaderName;
 
     Object.keys(newCustomValues).forEach((key) => {
       const normKey = key.toLowerCase();

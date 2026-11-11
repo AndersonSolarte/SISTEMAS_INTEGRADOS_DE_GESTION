@@ -39,7 +39,11 @@ test('three imports with changing IDs retain five activities, manual work, evide
   stub(models.StrategicCatalogItem, 'findAll', async () => [{ id: 'unit', code: 'R74' }]);
   stub(models.StrategicMonitoringPeriod, 'findAll', async () => []);
   stub(models.StrategicActionItem, 'findAll', async () => items.filter((item) => !item.deleted_at));
-  stub(models.StrategicActionItem, 'findOrCreate', async () => { throw new Error('Reimport must not create another copy'); });
+  stub(models.StrategicActionItem, 'findOrCreate', async ({ where }) => {
+    const archived = items.find((item) => item.code === where.code);
+    if (archived) return [archived, false];
+    throw new Error('Reimport must not create another copy');
+  });
   stub(models.StrategicMonitoringResult, 'findAll', async ({ where }) => results.filter((r) => r.action_item_id === where.action_item_id));
   stub(models.StrategicMonitoringResult, 'findOne', async ({ where }) => results.find((r) => r.action_item_id === where.action_item_id && r.monitoring_period_id === where.monitoring_period_id));
   for (const [model, rows] of [[models.StrategicEvidence, evidence], [models.StrategicBudgetMovement, budgets]]) {
@@ -56,6 +60,7 @@ test('three imports with changing IDs retain five activities, manual work, evide
   delete require.cache[modulePath];
   try {
     const { reconcileLegacyActionPlans } = require(modulePath);
+    source.push({ id: 900, anio: 2027, responsable: 'R74_Acompañamiento', actividad: 'No importar desde Excel', indicador: 'Futura' });
     for (let batch = 0; batch < 3; batch++) {
       source.forEach((row, i) => { row.id = 400 + batch * 100 + i; });
       await Promise.all([reconcileLegacyActionPlans({ planCode: plan.code }), reconcileLegacyActionPlans({ planCode: plan.code, force: true })]);
@@ -71,6 +76,16 @@ test('three imports with changing IDs retain five activities, manual work, evide
     assert.equal(evidence[0].action_item_id, '100');
     assert.equal(budgets[0].action_item_id, '100');
     assert.equal(results[0].action_item_id, '100');
+    // An individual row repeated in the original workbook gets its own slot.
+    source.push({ ...source[0], id: 999 });
+    items.push(instance({ ...items[0].toJSON(), id: 'source-copy', code: 'LEGACY-999', deleted_at: new Date(),
+      custom_values: { legacy_plan_accion_id: 999, legacy_duplicate_of: '100', responsible: 'R74_Acompañamiento' } }));
+    await reconcileLegacyActionPlans({ planCode: plan.code });
+    assert.equal(items.filter((item) => !item.deleted_at).length, 7);
+    assert.equal(items.at(-1).custom_values.legacy_duplicate_of, undefined);
+    source.at(-1).id = 1000;
+    await reconcileLegacyActionPlans({ planCode: plan.code });
+    assert.equal(items.filter((item) => !item.deleted_at).length, 7);
   } finally {
     for (const [object, key, fn] of originals.reverse()) object[key] = fn;
     delete require.cache[modulePath];

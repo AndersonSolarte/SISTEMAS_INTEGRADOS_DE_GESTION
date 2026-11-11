@@ -1,10 +1,15 @@
 const text = (value) => String(value ?? '').normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
 const present = (value) => value !== null && value !== undefined && value !== '';
-const isLegacyItem = (item) => /^LEGACY-\d+$/.test(item.code || '') || present(item.custom_values?.legacy_plan_accion_id);
+const isLegacyItem = (item) => !/^ACT-/i.test(item.code || '')
+  && (/^LEGACY-\d+$/.test(item.code || '') || present(item.custom_values?.legacy_plan_accion_id));
+const stripLegacyProvenance = (values) => Object.fromEntries(Object.entries(values || {}).filter(([key]) => !/^legacy_/i.test(key)));
+const { sourceScope } = require('./legacyActionScope');
 
 // The source table is replaced on every Excel import. Its numeric IDs are not identities.
 const sameLegacyActivity = (item, row) => {
   if (!isLegacyItem(item) || !text(row.actividad) || !text(row.indicador)) return false;
+  if (present(item.custom_values?.responsible) && present(row.responsable)
+    && sourceScope({ anio: row.anio, responsable: item.custom_values.responsible }) !== sourceScope(row)) return false;
   return text(item.activity) === text(row.actividad)
     && text(item.indicator) === text(row.indicador)
     && ['starts_on', 'ends_on', 'target'].every((key) => {
@@ -38,4 +43,4 @@ const schemaLegacyValues = (fields, values) => {
   return result;
 };
 
-module.exports = { sameLegacyActivity, fillMissing, isLegacyItem, schemaLegacyValues };
+module.exports = { sameLegacyActivity, fillMissing, isLegacyItem, schemaLegacyValues, stripLegacyProvenance };
