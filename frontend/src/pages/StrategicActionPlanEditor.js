@@ -3228,23 +3228,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
     const initialParticipants = [];
     const peUser = detail?.planningEfectividadUser;
-    const planResp = detail?.planResponsibleUser || detail?.currentResponsibility?.responsibleUser || detail?.owner;
+    const planResp = detail?.planResponsibleUser || detail?.currentResponsibility?.responsibleUser || detail?.responsibleUser || detail?.owner;
 
-    if (peUser) {
-      initialParticipants.push({
-        user_id: peUser.id || null,
-        document: peUser.username || peUser.document || '',
-        name: peUser.nombre || peUser.name || '',
-        email: peUser.email || '',
-        organization: peUser.dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
-        role_title: peUser.cargo || 'Planeación y Efectividad',
-        meeting_role: 'principal',
-        signature_required: true,
-        status: 'invited'
-      });
-    }
-
-    if (planResp && (!peUser || String(planResp.id) !== String(peUser.id))) {
+    if (planResp) {
       initialParticipants.push({
         user_id: planResp.id || null,
         document: planResp.document || planResp.username || '',
@@ -3252,7 +3238,21 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         email: planResp.email || '',
         organization: planResp.dependencia || detail?.organizationalUnit?.name || 'UNICESMAG',
         role_title: planResp.cargo || 'Responsable del Plan de Acción',
-        meeting_role: 'co_responsible',
+        meeting_role: 'principal',
+        signature_required: true,
+        status: 'invited'
+      });
+    }
+
+    if (peUser && (!planResp || String(peUser.id) !== String(planResp.id))) {
+      initialParticipants.push({
+        user_id: peUser.id || null,
+        document: peUser.username || peUser.document || '',
+        name: peUser.nombre || peUser.name || '',
+        email: peUser.email || '',
+        organization: peUser.dependencia || 'Dirección de Planeación y Aseguramiento de la Calidad',
+        role_title: peUser.cargo || 'Planeación y Efectividad',
+        meeting_role: planResp ? 'co_responsible' : 'principal',
         signature_required: true,
         status: 'invited'
       });

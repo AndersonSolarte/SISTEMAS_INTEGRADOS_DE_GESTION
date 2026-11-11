@@ -213,7 +213,149 @@ const performLegacyReconciliation = async () => {
       }
     });
   }
+  try {
+    await syncMissingPlanLeaders();
+  } catch (errSync) {
+    console.warn('[legacy-reconcile] Warning sincronizando líderes faltantes:', errSync.message);
+  }
   return { plans: migratedPlans, items: migratedItems };
+};
+
+const syncMissingPlanLeaders = async ({ transaction = null } = {}) => {
+  const plansWithoutLeader = await StrategicActionPlan.findAll({
+    where: { deleted_at: null, responsible_user_id: null },
+    include: [
+      { model: StrategicTerm, as: 'term', required: true },
+      { model: StrategicCatalogItem, as: 'organizationalUnit', required: true }
+    ],
+    transaction
+  });
+
+  if (!plansWithoutLeader.length) return 0;
+
+  const allTerms = await StrategicTerm.findAll({
+    order: [['year', 'DESC']],
+    raw: true,
+    transaction
+  });
+
+  let syncedCount = 0;
+  for (const plan of plansWithoutLeader) {
+    const unit = plan.organizationalUnit;
+    const currentYear = Number(plan.term?.year || 0);
+    const priorTermIds = allTerms.filter((t) => Number(t.year) < currentYear).map((t) => t.id);
+
+    let leaderUser = null;
+
+    // 1. Buscar en vigencias anteriores para la misma unidad
+    if (priorTermIds.length > 0) {
+      const priorResp = await StrategicResponsibility.findOne({
+        where: {
+          term_id: { [Op.in]: priorTermIds },
+          catalog_item_id: plan.catalog_item_id,
+          status: 'active'
+        },
+        include: [{ model: User, as: 'responsibleUser', where: { estado: 'activo' } }],
+        order: [['created_at', 'DESC']],
+        transaction
+      });
+      if (priorResp?.responsibleUser) {
+        leaderUser = priorResp.responsibleUser;
+      }
+    }
+
+    // 2. Si no se encontró, buscar por coincidencia de código o nombre de unidad en vigencias anteriores
+    if (!leaderUser && unit && priorTermIds.length > 0) {
+      const similarUnits = await StrategicCatalogItem.findAll({
+        where: {
+          [Op.or]: [
+            { code: unit.code },
+            { name: unit.name }
+          ]
+        },
+        attributes: ['id'],
+        raw: true,
+        transaction
+      });
+      const similarUnitIds = similarUnits.map((u) => u.id);
+      if (similarUnitIds.length > 0) {
+        const priorRespByName = await StrategicResponsibility.findOne({
+          where: {
+            term_id: { [Op.in]: priorTermIds },
+            catalog_item_id: { [Op.in]: similarUnitIds },
+            status: 'active'
+          },
+          include: [{ model: User, as: 'responsibleUser', where: { estado: 'activo' } }],
+          order: [['created_at', 'DESC']],
+          transaction
+        });
+        if (priorRespByName?.responsibleUser) {
+          leaderUser = priorRespByName.responsibleUser;
+        }
+      }
+    }
+
+    // 3. Buscar en User por dependencia
+    if (!leaderUser && unit?.name) {
+      const cleanName = unit.name.replace(/^(Area|Oficina|Departamento|Direccion|Facultad)\s+de\s+/i, '').trim();
+      leaderUser = await User.findOne({
+        where: {
+          [Op.or]: [
+            { dependencia: { [Op.iLike]: `%${unit.name}%` } },
+            { dependencia: { [Op.iLike]: `%${cleanName}%` } }
+          ],
+          estado: 'activo'
+        },
+        order: [['updated_at', 'DESC']],
+        transaction
+      });
+    }
+
+    if (leaderUser) {
+      await plan.update({ responsible_user_id: leaderUser.id }, { transaction });
+
+      const [actionResp] = await StrategicResponsibility.findOrCreate({
+        where: {
+          term_id: plan.term_id,
+          catalog_item_id: plan.catalog_item_id,
+          action_plan_id: plan.id,
+          responsibility_type: 'action_plan_leader',
+          status: 'active'
+        },
+        defaults: {
+          user_id: leaderUser.id,
+          starts_on: plan.term?.starts_on,
+          ends_on: plan.term?.ends_on,
+          created_by: plan.created_by || leaderUser.id
+        },
+        transaction
+      });
+      if (actionResp && !plan.responsibility_id) {
+        await plan.update({ responsibility_id: actionResp.id }, { transaction });
+      }
+
+      await StrategicResponsibility.findOrCreate({
+        where: {
+          term_id: plan.term_id,
+          catalog_item_id: plan.catalog_item_id,
+          action_plan_id: null,
+          responsibility_type: 'reference_leader',
+          status: 'active'
+        },
+        defaults: {
+          user_id: leaderUser.id,
+          starts_on: plan.term?.starts_on,
+          ends_on: plan.term?.ends_on,
+          created_by: plan.created_by || leaderUser.id
+        },
+        transaction
+      });
+
+      syncedCount += 1;
+    }
+  }
+
+  return syncedCount;
 };
 
 let legacyReconciliationPromise = null;
@@ -264,4 +406,4 @@ const ensureAnnualDependenciesForActionPlans = async ({ planId = null } = {}) =>
   return annualRepairPromises.get(key);
 };
 
-module.exports = { mapLegacyStatus, reconcileLegacyActionPlans, ensureAnnualDependenciesForActionPlans };
+module.exports = { mapLegacyStatus, reconcileLegacyActionPlans, ensureAnnualDependenciesForActionPlans, syncMissingPlanLeaders };

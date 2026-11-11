@@ -457,17 +457,38 @@ const findCoResponsibleActivitiesForPlan = async (actionPlan, catalogMap = new M
 
       const allCoEntries = [...coList, ...customList];
 
+      const IGNORED_CO_ENTRIES = new Set(['sin corresponsable', 'sin corresponsables', 'ninguno', 'ninguna', 'no aplica', 'na', 'n a', 'sin definir', 'no registra', 'sincorresponsable']);
+      const normUnitName = normalizeMatchText(unitName);
+      const targetUnitCode = unitCode ? String(unitCode).trim().toLowerCase() : '';
+      const targetPrefix = targetUnitCode.match(/^r\d+\b/i)?.[0] || String(unitCode || '').match(/^r\d+\b/i)?.[0]?.toLowerCase() || String(planCode || '').match(/r\d+\b/i)?.[0]?.toLowerCase();
+
       const isMatch = allCoEntries.some((entry) => {
         const strEntry = String(entry || '').trim();
         if (!strEntry) return false;
         if (unitId && String(strEntry) === String(unitId)) return true;
+
         const normEntry = normalizeMatchText(strEntry);
+        if (!normEntry || IGNORED_CO_ENTRIES.has(normEntry)) return false;
+
         const resolvedName = catalogMap.get(strEntry) || '';
         const normResolved = normalizeMatchText(resolvedName);
-        return normTokens.some((tok) =>
-          (normEntry && (normEntry.includes(tok) || (tok.length > 5 && tok.includes(normEntry)))) ||
-          (normResolved && (normResolved.includes(tok) || (tok.length > 5 && tok.includes(normResolved))))
-        );
+
+        // 1. Coincidencia exacta de nombre de unidad
+        if (normUnitName && (normEntry === normUnitName || normResolved === normUnitName)) return true;
+
+        // 2. Coincidencia por código de unidad institucional (ej. R02, R32)
+        if (targetUnitCode && (normEntry === targetUnitCode || normResolved === targetUnitCode)) return true;
+        if (targetPrefix) {
+          const entryPrefix = String(strEntry).match(/\b(R\d+)\b/i)?.[1]?.toLowerCase();
+          if (entryPrefix && entryPrefix === targetPrefix) return true;
+        }
+
+        // 3. Coincidencia de nombre completo institucional (mínimo 14 caracteres para evitar colisiones)
+        if (normUnitName && normUnitName.length >= 14) {
+          if (normEntry.includes(normUnitName) || normResolved.includes(normUnitName)) return true;
+        }
+
+        return false;
       });
 
       if (isMatch) {

@@ -24,15 +24,15 @@ const getSandboxRecipient = () => {
 };
 
 const resolveConfig = () => {
-  const host = String(process.env.PLAN_ACTION_SMTP_HOST || 'smtp.gmail.com').trim();
-  const port = Number(process.env.PLAN_ACTION_SMTP_PORT || 587);
-  const secure = String(process.env.PLAN_ACTION_SMTP_SECURE || 'false').toLowerCase() === 'true';
+  const host = String(process.env.PLAN_ACTION_SMTP_HOST || process.env.SMTP_HOST || 'smtp.gmail.com').trim();
+  const port = Number(process.env.PLAN_ACTION_SMTP_PORT || process.env.SMTP_PORT || 587);
+  const secure = String(process.env.PLAN_ACTION_SMTP_SECURE || process.env.SMTP_SECURE || 'false').toLowerCase() === 'true';
   const legacyAuthRequired = String(process.env.PLAN_ACTION_SMTP_AUTH || 'true').toLowerCase() !== 'false';
   const authMethod = String(process.env.PLAN_ACTION_EMAIL_AUTH_METHOD || (legacyAuthRequired ? 'password' : 'relay')).trim().toLowerCase();
   const requireTLS = String(process.env.PLAN_ACTION_SMTP_REQUIRE_TLS || 'true').toLowerCase() !== 'false';
-  const user = String(process.env.PLAN_ACTION_SMTP_USER || '').trim();
-  const pass = String(process.env.PLAN_ACTION_SMTP_PASS || '').replace(/\s+/g, '');
-  const from = String(process.env.PLAN_ACTION_SMTP_FROM || '').trim()
+  const user = String(process.env.PLAN_ACTION_SMTP_USER || process.env.SMTP_USER || '').trim();
+  const pass = String(process.env.PLAN_ACTION_SMTP_PASS || process.env.SMTP_PASS || '').replace(/\s+/g, '');
+  const from = String(process.env.PLAN_ACTION_SMTP_FROM || process.env.SMTP_FROM || '').trim()
     || `Planeación Estratégica UNICESMAG <${user}>`;
   const replyTo = String(process.env.PLAN_ACTION_REPLY_TO || STRATEGIC_PLANNING_OFFICIAL_EMAIL).trim();
   const oauthClientId = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_ID || '').trim();
@@ -42,16 +42,16 @@ const resolveConfig = () => {
   if (!['password', 'relay', 'oauth2'].includes(authMethod)) {
     throw new Error('PLAN_ACTION_EMAIL_AUTH_METHOD debe ser password, relay u oauth2.');
   }
-  if (!user) throw new Error('Falta PLAN_ACTION_SMTP_USER.');
+  if (!user) throw new Error('Falta configuración de usuario SMTP.');
   if (authMethod !== 'oauth2' && (!host || !Number.isFinite(port) || port <= 0)) {
     throw new Error('Configuración SMTP de Planes de Acción inválida.');
   }
-  if (authMethod === 'password' && !pass) throw new Error('Falta PLAN_ACTION_SMTP_PASS para el modo autenticado.');
+  if (authMethod === 'password' && !pass) throw new Error('Falta contraseña SMTP para el modo autenticado.');
   if (authMethod === 'oauth2' && (!oauthClientId || !oauthClientSecret || !oauthRefreshToken)) {
     throw new Error('Faltan las credenciales OAuth 2.0 exclusivas de Planes de Acción.');
   }
   if (/CAMBIAR/i.test(user) || (authMethod === 'password' && /CAMBIAR|TU_APP_PASSWORD/i.test(pass))) {
-    throw new Error('Las credenciales SMTP de Planes de Acción todavía son valores de ejemplo.');
+    throw new Error('Las credenciales SMTP todavía son valores de ejemplo.');
   }
   return {
     host, port, secure, authMethod, authRequired: authMethod === 'password', requireTLS,
@@ -129,7 +129,7 @@ const sendStrategicPlanningEmail = async ({
     return { success: true, suppressed: true, messageId: 'suppressed-local-testing' };
   }
   const effectiveReplyTo = String(replyTo || STRATEGIC_PLANNING_OFFICIAL_EMAIL).trim();
-  if (process.env.PLAN_ACTION_SMTP_USER) {
+  if (process.env.PLAN_ACTION_SMTP_USER || process.env.SMTP_USER) {
     try {
       const recipients = (Array.isArray(to) ? to : [to]).map(normalizeRecipient);
       const originalTargets = recipients.join(', ');

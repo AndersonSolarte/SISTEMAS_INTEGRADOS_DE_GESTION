@@ -812,6 +812,7 @@ const getMyActionPlans = wrap(async (req, res) => {
         ]
       },
       { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false },
       {
         model: StrategicActionItem, as: 'items',
         where: { deleted_at: null }, required: false, separate: true, order: [['code', 'ASC']],
@@ -906,6 +907,7 @@ const getActionPlan = wrap(async (req, res) => {
     include: [
       { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }, { model: StrategicMonitoringPeriod, as: 'monitoringPeriods', separate: true, order: [['position', 'ASC']] }] },
       { model: StrategicCatalogItem, as: 'organizationalUnit' },
+      { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false },
       { model: StrategicResponsibility, as: 'currentResponsibility', required: false, include: [{ model: StrategicCatalogItem, as: 'position', required: false }, { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false }] },
       { model: StrategicResponsibility, as: 'responsibilityHistory', required: false, separate: true, include: [{ model: StrategicCatalogItem, as: 'position', required: false }, { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username'], required: false }] },
       { model: StrategicActionItem, as: 'items', where: { deleted_at: null }, required: false, separate: true, order: [['code', 'ASC']], include: [{ model: StrategicMonitoringResult, as: 'monitoringResults', required: false, separate: true }, { model: StrategicEvidence, as: 'evidence', required: false, separate: true }] },
@@ -985,7 +987,7 @@ const getActionPlan = wrap(async (req, res) => {
   }
 
   // Resolver usuario con rol de Planeación y Efectividad dinámicamente
-  const peUser = await User.findOne({
+  let peUser = await User.findOne({
     where: {
       role: ROLES.PLANEACION_EFECTIVIDAD,
       estado: 'activo'
@@ -993,6 +995,16 @@ const getActionPlan = wrap(async (req, res) => {
     attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username', 'role'],
     order: [['updated_at', 'DESC']]
   });
+  if (!peUser) {
+    peUser = await User.findOne({
+      where: {
+        role: ROLES.ADMINISTRADOR,
+        estado: 'activo'
+      },
+      attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo', 'username', 'role'],
+      order: [['updated_at', 'DESC']]
+    });
+  }
   if (peUser) {
     actionPlan.setDataValue('planningEfectividadUser', peUser);
   }
@@ -1432,6 +1444,9 @@ const searchActivitySuggestions = wrap(async (req, res) => {
       ]
     }));
     whereCondition[Op.and] = searchConditions;
+    if (currentPlan?.catalog_item_id) {
+      whereCondition['$actionPlan.catalog_item_id$'] = currentPlan.catalog_item_id;
+    }
   } else if (currentPlan?.catalog_item_id) {
     whereCondition['$actionPlan.catalog_item_id$'] = currentPlan.catalog_item_id;
   }
