@@ -67,9 +67,14 @@ const findOrCreateUnit = async ({ plan, dependency, transaction }) => {
     where: { strategic_plan_id: plan.id, catalog_type: { [Op.in]: ['dependency', 'organizational_unit'] } }, transaction
   });
   const normalizedName = normalize(dependencyName);
-  const existing = units.find((unit) => (prefix && String(unit.code).toUpperCase() === prefix)
-    || normalize(unit.name) === normalizedName
-    || (normalizedName.length > 5 && (normalize(unit.name).includes(normalizedName) || normalizedName.includes(normalize(unit.name)))));
+  const existing = units.find((unit) => {
+    const unitCode = String(unit.code || '').toUpperCase();
+    if (prefix && (unitCode === prefix || unitCode.startsWith(`${prefix}_`) || unitCode.startsWith(`${prefix}-`))) {
+      return true;
+    }
+    if (normalize(unit.name) === normalizedName) return true;
+    return false;
+  });
   if (existing) return existing;
   let unitCode = `LEG-${code(prefix || dependencyName, 'DEPENDENCIA')}`.slice(0, 60);
   let sequence = 2;
@@ -130,15 +135,28 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
       await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', {
         replacements: { key: `legacy-action-plan:${legacyCode}` }, transaction
       });
+      const unit = await findOrCreateUnit({ plan: strategicPlan, dependency: first.dependencia || first.responsable, transaction });
+
+      // Priorizar el plan oficial existente para esta unidad y vigencia (evita duplicar planes con Paso 3)
       let actionPlan = await StrategicActionPlan.findOne({
         where: {
-          [Op.or]: [
-            { code: legacyCode },
-            { metadata: { [Op.contains]: { deleted_original_code: legacyCode } } }
-          ]
+          term_id: term.id,
+          catalog_item_id: unit.id,
+          deleted_at: null
         },
         transaction
       });
+      if (!actionPlan) {
+        actionPlan = await StrategicActionPlan.findOne({
+          where: {
+            [Op.or]: [
+              { code: legacyCode },
+              { metadata: { [Op.contains]: { deleted_original_code: legacyCode } } }
+            ]
+          },
+          transaction
+        });
+      }
       if (actionPlan?.deleted_at) {
         const restoredMetadata = { ...(actionPlan.metadata || {}) };
         delete restoredMetadata.deleted_original_code;
@@ -159,7 +177,6 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
           );
         }
       }
-      const unit = await findOrCreateUnit({ plan: strategicPlan, dependency: first.dependencia || first.responsable, transaction });
       if (!actionPlan) {
         const formSchema = await captureActionPlanSchema(strategicPlan.id, transaction);
         actionPlan = await StrategicActionPlan.create({
@@ -290,6 +307,16 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
               transaction
             });
           }
+        }
+      }
+
+      // Desactivar actividades legacy huérfanas que ya no existen en la nueva plantilla importada
+      for (const stale of existingItems) {
+        if (!claimedItems.has(stale.id) && /^LEGACY-\d+$/.test(stale.code || '')) {
+          await stale.update({
+            deleted_at: new Date(),
+            custom_values: { ...(stale.custom_values || {}), legacy_orphaned_at: new Date().toISOString() }
+          }, { transaction });
         }
       }
     });
