@@ -13,3 +13,11 @@ build/
 build_*/
 build_verify*/
 coverage/
+*.pem
+*.key
+*.p12
+*.pfx
+*.siacbackup
+*.enc
+*.bak
+*.old

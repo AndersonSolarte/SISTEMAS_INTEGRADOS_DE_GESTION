@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const { Op } = require('sequelize');
 const { DatabaseBackupRun, SystemSetting } = require('../models');
 const { createIntegralBundle, sha256File } = require('./integralBackupService');
+const { backupRetryDecision } = require('./backupRetryPolicy');
 
 const SETTING_KEY = 'database_backup_automation';
 const SCHEDULE_HOUR = Math.min(23, Math.max(0, Number(process.env.SIAC_BACKUP_HOUR || 18)));
@@ -16,6 +17,7 @@ let activeRunPromise = null;
 let schedulerTimer = null;
 let lastScheduleKey = '';
 let backupBlocked = false;
+let schedulerTickRunning = false;
 
 const automaticBackupsConfigured = () => String(process.env.SIAC_AUTOMATIC_BACKUP_ENABLED || 'true').toLowerCase() !== 'false';
 
@@ -306,27 +308,33 @@ const setPaused = async (paused, userId = null) => {
 };
 
 const schedulerTick = async () => {
-  if (!automaticBackupsConfigured() || activeRunPromise || backupBlocked) return;
-  const { value } = await getSettings();
-  if (value.paused) return;
-  const parts = getBogotaParts();
-  const key = `${parts.year}-${parts.month}-${parts.day}`;
-  const currentMinutes = (Number(parts.hour) * 60) + Number(parts.minute);
-  const scheduledMinutes = (SCHEDULE_HOUR * 60) + SCHEDULE_MINUTE;
-  if (currentMinutes < scheduledMinutes || lastScheduleKey === key) return;
-  const { start, end } = getBogotaDayRange(parts);
-  const alreadyAttempted = await DatabaseBackupRun.count({
-    where: {
-      trigger: 'scheduled',
-      started_at: { [Op.gte]: start, [Op.lt]: end }
+  if (!automaticBackupsConfigured() || activeRunPromise || backupBlocked || schedulerTickRunning) return;
+  schedulerTickRunning = true;
+  try {
+    const { value } = await getSettings();
+    if (value.paused) return;
+    const parts = getBogotaParts();
+    const key = `${parts.year}-${parts.month}-${parts.day}`;
+    const currentMinutes = (Number(parts.hour) * 60) + Number(parts.minute);
+    const scheduledMinutes = (SCHEDULE_HOUR * 60) + SCHEDULE_MINUTE;
+    if (currentMinutes < scheduledMinutes || lastScheduleKey === key) return;
+    const { start, end } = getBogotaDayRange(parts);
+    const attempts = await DatabaseBackupRun.findAll({
+      where: {
+        trigger: 'scheduled',
+        started_at: { [Op.gte]: start, [Op.lt]: end }
+      }
+    });
+    const decision = backupRetryDecision(attempts);
+    if (decision === 'completed' || decision === 'exhausted') {
+      lastScheduleKey = key;
+      return;
     }
-  });
-  if (alreadyAttempted) {
-    lastScheduleKey = key;
-    return;
+    if (decision !== 'run') return;
+    executeBackup({ trigger: 'scheduled' }).catch((error) => console.error('[backup] Copia programada fallida:', describeFailure(error)));
+  } finally {
+    schedulerTickRunning = false;
   }
-  lastScheduleKey = key;
-  executeBackup({ trigger: 'scheduled' }).catch((error) => console.error('[backup] Copia programada fallida:', describeFailure(error)));
 };
 
 const startDatabaseBackupScheduler = async () => {

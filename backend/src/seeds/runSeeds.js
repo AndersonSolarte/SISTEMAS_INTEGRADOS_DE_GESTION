@@ -1,4 +1,12 @@
 require('dotenv').config();
+if (process.env.NODE_ENV === 'production') {
+  throw new Error('Los datos de ejemplo estan deshabilitados en produccion.');
+}
+const seedAdminPassword = process.env.SEED_ADMIN_PASSWORD;
+const seedViewerPassword = process.env.SEED_VIEWER_PASSWORD;
+if (!seedAdminPassword || !seedViewerPassword || seedAdminPassword.length < 16 || seedViewerPassword.length < 16) {
+  throw new Error('Configure SEED_ADMIN_PASSWORD y SEED_VIEWER_PASSWORD de al menos 16 caracteres para el entorno local.');
+}
 const { sequelize, testConnection } = require('../config/database');
 const { User, MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento } = require('../models');
 
@@ -8,8 +16,10 @@ const runSeeds = async () => {
     await testConnection();
     
     // USUARIOS
-    await User.findOrCreate({ where: { email: 'admin@sgc.com' }, defaults: { nombre: 'Administrador del Sistema', email: 'admin@sgc.com', password: 'Admin123!', role: 'administrador' } });
-    await User.findOrCreate({ where: { email: 'consulta@sgc.com' }, defaults: { nombre: 'Usuario de Consulta', email: 'consulta@sgc.com', password: 'Consulta123!', role: 'consulta' } });
+    const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@example.invalid';
+    await User.findOrCreate({ where: { email: adminEmail }, defaults: { nombre: 'Administrador local', email: adminEmail, password: seedAdminPassword, role: 'administrador' } });
+    const viewerEmail = process.env.SEED_VIEWER_EMAIL || 'viewer@example.invalid';
+    await User.findOrCreate({ where: { email: viewerEmail }, defaults: { nombre: 'Consulta local', email: viewerEmail, password: seedViewerPassword, role: 'consulta' } });
     
     // MACRO PROCESOS
     const [mp1] = await MacroProceso.findOrCreate({ where: { nombre: 'Gestión Estratégica' } });
@@ -81,7 +91,7 @@ const runSeeds = async () => {
     console.log('║  📋 Tipos Documentación: 6                     ║');
     console.log('║  📄 Documentos: 15                             ║');
     console.log('╠════════════════════════════════════════════════╣');
-    console.log('║  Login: admin@sgc.com / Admin123!              ║');
+    console.log('Usuarios locales preparados. Las credenciales no se imprimen.');
     console.log('╚════════════════════════════════════════════════╝');
     
     await sequelize.close();

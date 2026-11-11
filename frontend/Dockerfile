@@ -1,9 +1,9 @@
-FROM node:20-alpine AS build
+FROM node:24-alpine AS build
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 COPY . .
 
@@ -27,9 +27,10 @@ ENV CI=false
 
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.30-alpine
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY security-headers.conf /etc/nginx/snippets/siac-security-headers.conf
 COPY --from=build /app/build /usr/share/nginx/html
 
 EXPOSE 80

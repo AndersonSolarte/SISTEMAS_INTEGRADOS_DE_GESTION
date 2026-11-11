@@ -208,6 +208,18 @@ foreach ($dateDirectory in $dateDirectories) {
     }
 }
 
+# No se depuran copias previas si falta el par integral/kit de la ultima jornada
+# esperada. Una descarga sin archivos nuevos no equivale a un respaldo exitoso.
+$coverageScript = Join-Path $PSScriptRoot 'Test-LocalBackupCoverage.ps1'
+if (-not (Test-Path -LiteralPath $coverageScript -PathType Leaf)) {
+    throw 'Falta el verificador de cobertura diaria de respaldos.'
+}
+$bogotaNow = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([datetime]::UtcNow, 'SA Pacific Standard Time')
+$expectedDate = $bogotaNow.Date
+if ($bogotaNow.TimeOfDay -lt [timespan]::Parse('18:35:00')) { $expectedDate = $expectedDate.AddDays(-1) }
+& powershell.exe -NoProfile -NonInteractive -File $coverageScript -BackupRoot $resolvedDestination -EndDate $expectedDate.ToString('yyyy-MM-dd') -Days 1
+if ($LASTEXITCODE -ne 0) { throw 'La ultima jornada esperada no tiene ambos paquetes y sus huellas validas. Se conserva la retencion previa.' }
+
 if ($retentionDays -gt 0) {
     $cutoffDate = (Get-Date).Date.AddDays(-$retentionDays)
     foreach ($dateDirectory in (Get-DateDirectories -RootPath $resolvedDestination)) {

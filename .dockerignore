@@ -2,6 +2,7 @@ node_modules
 build
 dist
 .git
+.deployment-state
 .codex
 .agents
 .claude
@@ -21,6 +22,8 @@ backend/.env
 python-service/__pycache__
 python-service/.pytest_cache
 backend/uploads
+uploads
+backend/uploads_private
 backend/keys
 tmp
 db
@@ -34,3 +37,7 @@ backups
 *.key
 *.pfx
 *.p12
+*.siacbackup
+*.enc
+*.bak
+*.old

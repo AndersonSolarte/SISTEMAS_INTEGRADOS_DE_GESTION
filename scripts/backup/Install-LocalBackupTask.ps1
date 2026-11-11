@@ -16,7 +16,7 @@ $powerShellExe = (Get-Command powershell.exe).Source
 $arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$syncScript`" -ConfigPath `"$ConfigPath`""
 $action = New-ScheduledTaskAction -Execute $powerShellExe -Argument $arguments
 $trigger = New-ScheduledTaskTrigger -Daily -At '18:35'
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 3)
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 3) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 15)
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null

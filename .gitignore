@@ -49,7 +49,10 @@ tmp/
 tmp_docx_inspect/
 backend/tmp_docx_v2/
 backend/uploads/
+uploads/
+backend/uploads_private/
 .docker-tmp/
+.deployment-state/
 python-service/openpyxl.*
 python-service/test_*.xlsx
 python-service/contexto_externo_*/
@@ -61,6 +64,9 @@ sgc_db_*/
 sgc_db_*.sql
 sgc_db_*.zip
 *.dump
+*.siacbackup
+siac_recovery_kit_*.enc
+backup-kit.key
 *.tar
 *.zip
 scripts/backup/backup-client.config.psd1
@@ -69,5 +75,11 @@ scripts/backup/backup-client.config.psd1
 Cert_planeacion.pem
 Cert_planeacion.key
 fullchain.pem
+*.pem
+*.key
+*.p12
+*.pfx
+*.bak
+*.old
 .env.save
 docker-compose.yml.bak_ssl_fix

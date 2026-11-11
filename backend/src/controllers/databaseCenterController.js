@@ -419,7 +419,11 @@ const restoreDatabaseDump = async (req, res) => {
         : 'Base de datos restaurada correctamente. Debe iniciar sesión nuevamente.'
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'No fue posible restaurar la copia. La transacción fue revertida.', detail: error.message });
+    return res.status(500).json({
+      success: false,
+      message: 'No fue posible restaurar la copia. La transacción fue revertida.',
+      detail: process.env.NODE_ENV === 'production' ? undefined : error.message
+    });
   } finally {
     if (ownsRestoreLock) {
       restoreRunning = false;

@@ -29,12 +29,13 @@ const allowedOrigins = getAllowedOrigins();
 
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin || origin === 'null') return callback(null, true);
+    if (!origin) return callback(null, true);
+    if (origin === 'null') return callback(new Error('Origen no permitido por CORS'));
     const normalized = normalizeOrigin(origin);
     if (allowedOrigins.includes(normalized)) return callback(null, true);
     
-    // Permitir siempre origenes locales (localhost / 127.0.0.1) en cualquier puerto
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalized)) {
+    // En desarrollo se admiten puertos locales variables; produccion usa la lista explicita.
+    if (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalized)) {
       return callback(null, true);
     }
     
@@ -241,8 +242,7 @@ const sqlInjectionGuard = (req, res, next) => {
           source,
           path: currentPath,
           ip: req.ip,
-          method: req.method,
-          url: req.originalUrl
+          method: req.method
         });
         return res.status(400).json({
           success: false,
@@ -295,7 +295,7 @@ const sensitivePathGuard = (req, res, next) => {
   if (
     decodedPath.includes('..') ||
     /(^|\/)\.(?!well-known\/)/.test(decodedPath) ||
-    /\.(env|ini|log|bak|backup|old|orig|sql|sqlite|db|dump|pem|key|crt|p12|pfx|config|yml|yaml|zip|tar|gz|map)$/i.test(decodedPath)
+    /\.(env|ini|log|bak|backup|siacbackup|enc|sha256|old|orig|sql|sqlite|db|dump|pem|key|crt|p12|pfx|config|yml|yaml|zip|tar|gz|map)$/i.test(decodedPath)
   ) {
     return res.status(404).json({
       success: false,
@@ -307,13 +307,28 @@ const sensitivePathGuard = (req, res, next) => {
   return next();
 };
 
+// Se aplica antes de express.static tanto a /uploads como a /api/uploads.
+// Los temporales de importacion/restauracion nunca son documentos publicables.
+const uploadsPathGuard = (req, res, next) => {
+  let decoded;
+  try { decoded = decodeURIComponent(String(req.path || '')).toLowerCase(); }
+  catch (_) { return res.status(400).json({ success: false, message: 'Solicitud invalida' }); }
+  if (decoded.includes('\\') || decoded.split('/').some((part) => part === 'temp' || part === 'tmp' || part.startsWith('.'))) {
+    return res.status(404).json({ success: false, message: 'Recurso no encontrado' });
+  }
+  return sensitivePathGuard(req, res, next);
+};
+
 const uploadsStaticOptions = {
   dotfiles: 'deny',
   fallthrough: false,
   index: false,
-  maxAge: '5m',
+  maxAge: 0,
   setHeaders(res) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-store');
+    // Un documento cargado no debe ejecutar scripts bajo el origen del aplicativo.
+    res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   }
 };
@@ -328,5 +343,6 @@ module.exports = {
   sqlInjectionGuard,
   sensitivePathGuard,
   noStore,
+  uploadsPathGuard,
   uploadsStaticOptions
 };

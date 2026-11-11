@@ -11,6 +11,9 @@ npm-debug.log*
 .env.*
 keys/
 uploads/
+uploads_private/
+logs/
+**/*.test.js
 tmp_docx_v2/
 *.sql
 *.dump
@@ -21,4 +24,8 @@ tmp_docx_v2/
 *.key
 *.pfx
 *.p12
+*.siacbackup
+*.enc
+*.bak
+*.old
 coverage/

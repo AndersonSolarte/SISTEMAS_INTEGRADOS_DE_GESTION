@@ -8,7 +8,7 @@ const PLAN_ENV_KEYS = [
   'PLAN_ACTION_SMTP_USER', 'PLAN_ACTION_SMTP_PASS', 'PLAN_ACTION_SMTP_FROM',
   'PLAN_ACTION_REPLY_TO', 'PLAN_ACTION_EMAIL_AUTH_METHOD',
   'PLAN_ACTION_GOOGLE_CLIENT_ID', 'PLAN_ACTION_GOOGLE_CLIENT_SECRET',
-  'PLAN_ACTION_GOOGLE_REFRESH_TOKEN', 'SMTP_USER'
+  'PLAN_ACTION_GOOGLE_REFRESH_TOKEN', 'SMTP_USER', 'SMTP_PASS', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_FROM'
 ];
 
 const withPlanEnvironment = (values, callback) => {
@@ -46,6 +46,32 @@ test('rechaza iniciar el transporte sin la clave exclusiva', () => {
     PLAN_ACTION_SMTP_PASS: ''
   }, () => {
     assert.throws(() => _internals.resolveConfig(), /PLAN_ACTION_SMTP_PASS/);
+  });
+});
+
+test('la cuenta dedicada no consume la clave de la cuenta general', () => {
+  withPlanEnvironment({
+    PLAN_ACTION_SMTP_USER: 'planeacionestrategica@unicesmag.edu.co',
+    SMTP_USER: 'general@example.invalid', SMTP_PASS: 'fixture-general-mail-secret'
+  }, () => {
+    assert.throws(() => _internals.resolveConfig(), /PLAN_ACTION_SMTP_PASS/);
+  });
+});
+
+test('sin cuenta dedicada usa el grupo completo de la cuenta general', () => {
+  withPlanEnvironment({
+    SMTP_USER: 'general@example.invalid', SMTP_PASS: 'fixture-general-mail-secret',
+    SMTP_HOST: 'smtp.example.invalid', SMTP_PORT: '465', SMTP_SECURE: 'true', SMTP_FROM: 'general@example.invalid',
+    PLAN_ACTION_SMTP_HOST: 'unused.example.invalid', PLAN_ACTION_EMAIL_AUTH_METHOD: 'oauth2'
+  }, () => {
+    const config = _internals.resolveConfig();
+    assert.equal(config.user, 'general@example.invalid');
+    assert.equal(config.pass, 'fixture-general-mail-secret');
+    assert.equal(config.host, 'smtp.example.invalid');
+    assert.equal(config.port, 465);
+    assert.equal(config.secure, true);
+    assert.equal(config.authMethod, 'password');
+    assert.equal(config.from, 'general@example.invalid');
   });
 });
 

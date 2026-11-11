@@ -21,7 +21,8 @@ const {
   sqlInjectionGuard,
   sensitivePathGuard,
   noStore,
-  uploadsStaticOptions
+  uploadsStaticOptions,
+  uploadsPathGuard
 } = require('./middlewares/security');
 
 const app = express();
@@ -38,10 +39,17 @@ app.options('*', cors(corsOptions));
 // un límite estricto de 2 MB para la imagen decodificada.
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '3mb' }));
 app.use(express.urlencoded({ extended: false, limit: process.env.URLENCODED_BODY_LIMIT || '256kb' }));
-app.use(morgan('dev'));
+// Registrar la plantilla de ruta evita guardar tokens de enlaces publicos y
+// credenciales OAuth presentes en parametros de ruta o en la query string.
+app.use(morgan((tokens, req, res) => [
+  tokens.method(req, res),
+  typeof req.route?.path === 'string' ? req.route.path : '[ruta no registrada]',
+  tokens.status(req, res),
+  tokens['response-time'](req, res), 'ms'
+].join(' ')));
 app.use(compression());
 
-const uploadsDir = path.join(__dirname, '../uploads');
+const uploadsDir = path.resolve(process.env.SIAC_UPLOADS_DIR || path.join(__dirname, '../uploads'));
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -50,8 +58,8 @@ if (!fs.existsSync(cronogramasUploadsDir)) {
   fs.mkdirSync(cronogramasUploadsDir, { recursive: true });
 }
 
-app.use('/uploads', express.static(uploadsDir, uploadsStaticOptions));
-app.use('/api/uploads', express.static(uploadsDir, uploadsStaticOptions));
+app.use('/uploads', publicLimiter, uploadsPathGuard, express.static(uploadsDir, uploadsStaticOptions));
+app.use('/api/uploads', publicLimiter, uploadsPathGuard, express.static(uploadsDir, uploadsStaticOptions));
 
 app.use('/api/auth', authLimiter);
 app.use('/api/public', publicLimiter);

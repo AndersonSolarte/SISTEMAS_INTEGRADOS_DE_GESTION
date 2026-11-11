@@ -1,6 +1,44 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { sqlInjectionGuard } = require('./security');
+const { corsOptions, uploadsPathGuard, uploadsStaticOptions } = require('./security');
+
+test('impide publicar temporales, restauraciones, claves y respaldos por uploads', () => {
+  for (const requestPath of ['/temp/export.xlsx', '/%74emp/export.xlsx', '/tmp/datos.csv', '/.restore-stage-123/database.dump', '/folder/.backup-cache/file.pdf', '/folder/../secret.pdf', '/folder%5ctemp/file.pdf', '/copia.siacbackup', '/kit.enc', '/clave.key', '/archivo.sha256', '/%ZZ']) {
+    let continued = false;
+    let status;
+    const res = { status(code) { status = code; return this; }, json() {} };
+    uploadsPathGuard({ path: requestPath }, res, () => { continued = true; });
+    assert.equal(continued, false, requestPath);
+    assert.ok([400, 404].includes(status), requestPath);
+  }
+  let continued = false;
+  uploadsPathGuard({ path: '/evidencias/documento.pdf' }, {}, () => { continued = true; });
+  assert.equal(continued, true);
+});
+
+test('los adjuntos no se almacenan en cache y se sirven con sandbox', () => {
+  const headers = {};
+  uploadsStaticOptions.setHeaders({ setHeader(name, value) { headers[name] = value; } });
+  assert.equal(headers['Cache-Control'], 'no-store');
+  assert.match(headers['Content-Security-Policy'], /sandbox/);
+  assert.equal(headers['X-Content-Type-Options'], 'nosniff');
+});
+
+test('produccion no acepta localhost implicito ni origen opaco; desarrollo permite localhost', () => {
+  const previous = process.env.NODE_ENV;
+  try {
+    process.env.NODE_ENV = 'production';
+    for (const origin of ['null', 'http://localhost:43210', 'http://127.0.0.1:43210', 'https://untrusted.invalid']) {
+      corsOptions.origin(origin, (error) => { assert.ok(error, origin); });
+    }
+    corsOptions.origin(undefined, (error, allowed) => { assert.equal(error, null); assert.equal(allowed, true); });
+    process.env.NODE_ENV = 'development';
+    corsOptions.origin('http://localhost:43210', (error, allowed) => { assert.equal(error, null); assert.equal(allowed, true); });
+  } finally {
+    if (previous === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous;
+  }
+});
 
 const runSalidaGuard = (salida) => {
   let response = null;

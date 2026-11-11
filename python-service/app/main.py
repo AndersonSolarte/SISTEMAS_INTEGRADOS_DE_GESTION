@@ -12,7 +12,12 @@ except ModuleNotFoundError as exc:
     saber_pro = None
 
 
-app = FastAPI(title="Saber Pro Analytics Service", version="0.1.0")
+app = FastAPI(
+    title="Saber Pro Analytics Service", version="0.1.0",
+    docs_url=None if os.getenv("NODE_ENV") == "production" else "/docs",
+    redoc_url=None if os.getenv("NODE_ENV") == "production" else "/redoc",
+    openapi_url=None if os.getenv("NODE_ENV") == "production" else "/openapi.json",
+)
 
 app.add_middleware(
     CORSMiddleware,

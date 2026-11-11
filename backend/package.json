@@ -29,8 +29,8 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@napi-rs/canvas": "^0.1.80",
-    "@tesseract.js-data/spa": "^1.0.0",
     "@resvg/resvg-js": "^2.6.2",
+    "@tesseract.js-data/spa": "^1.0.0",
     "axios": "^1.19.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
@@ -48,7 +48,7 @@
     "mammoth": "^1.12.0",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
-    "nodemailer": "^8.0.1",
+    "nodemailer": "10.5.0",
     "nodemon": "^3.0.2",
     "pdf-parse": "1.1.1",
     "pdfjs-dist": "4.10.38",
@@ -58,6 +58,10 @@
     "qrcode": "^1.5.4",
     "sequelize": "^6.35.1",
     "tesseract.js": "^6.0.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "overrides": {
+    "uuid": "11.1.1",
+    "qs": "6.16.1"
   }
 }

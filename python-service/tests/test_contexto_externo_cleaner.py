@@ -1,5 +1,6 @@
 import io
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 from openpyxl import Workbook
@@ -12,18 +13,31 @@ from app.services.contexto_externo_cleaner import (
 
 
 class ContextoExternoCleanerTests(unittest.TestCase):
+    def setUp(self):
+        # Las pruebas usan el esquema canonico actual y no dependen de catalogos
+        # institucionales ni archivos particulares de la maquina que las ejecuta.
+        module = "app.services.contexto_externo_cleaner."
+        for name, value in [
+            ("_load_universities_reference_table", ({}, {})),
+            ("_load_snies_programs_reference_table", {}),
+            ("_load_divipola_reference_table", ({}, {})),
+        ]:
+            patcher = patch(module + name, return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def test_preserves_semantic_duplicates_and_template(self):
         headers = LIST_CONFIG["INSCRITOS_CONTEXTO_EXTERNO"]
         first = {header: "" for header in headers}
         first.update({
-            "CODIGO DE LA INSTITUCION": "101",
-            "PROGRAMA ACADEMICO": "Administración, de Empresas.",
-            "ANO": 2025,
-            "SEMESTRE": 1,
+            "CÓDIGO_INSTITUCIÓN": "101",
+            "Programa Académico": "Administración, de Empresas.",
+            "Año": 2025,
+            "Semestre": 1,
             "INSCRITOS": 25,
         })
         second = dict(first)
-        second["PROGRAMA ACADEMICO"] = "  Administracion de   Empresas "
+        second["Programa Académico"] = "  Administracion de   Empresas "
         content = pd.DataFrame([first, second]).to_csv(index=False).encode("utf-8")
 
         result = clean_contexto_externo_file(
@@ -47,19 +61,19 @@ class ContextoExternoCleanerTests(unittest.TestCase):
         headers = LIST_CONFIG["MATRICULADOS_CONTEXTO_EXTERNO"]
         first = {header: "" for header in headers}
         first.update({
-            "CODIGO DE LA INSTITUCION": "1110",
-            "IES PADRE": "1110",
-            "INSTITUCION DE EDUCACION SUPERIOR (IES)": "Universidad del Cauca",
-            "CODIGO DEL MUNICIPIO IES": "19001",
-            "MUNICIPIO DE DOMICILIO DE LA IES": "POPAYAN",
-            "CODIGO SNIES DEL PROGRAMA": "222",
-            "PROGRAMA ACADEMICO": "Geotecnología",
-            "ANO": "2024-1",
-            "SEMESTRE": 1,
+            "CÓDIGO_INSTITUCIÓN": "1110",
+            "CÓDIGO_INSTITUCIÓN_PADRE": "1110",
+            "Institución de Educación Superior (IES)": "Universidad del Cauca",
+            "Código del Municipio (IES)": "19001",
+            "Municipio de domicilio de la IES": "POPAYAN",
+            "Código SNIES del programa": "222",
+            "Programa Académico": "Geotecnología",
+            "Año": "2024-1",
+            "Semestre": 1,
             "MATRICULADOS": 69,
         })
         second = dict(first)
-        second["MUNICIPIO DE DOMICILIO DE LA IES"] = "POPAYÁN"
+        second["Municipio de domicilio de la IES"] = "POPAYÁN"
 
         workbook = Workbook()
         sheet = workbook.active
@@ -83,7 +97,7 @@ class ContextoExternoCleanerTests(unittest.TestCase):
         self.assertEqual(result.output_rows, 2)
         self.assertEqual(result.duplicates_removed, 0)
         self.assertGreaterEqual(result.corrections_count, 1)
-        self.assertEqual(output.iloc[0]["MUNICIPIO DE DOMICILIO DE LA IES"], "POPAYÁN")
+        self.assertEqual(output.iloc[0]["Municipio de domicilio de la IES"], "POPAYÁN")
         self.assertIn("CANONIZACION_POR_CODIGO", set(report["MOTIVO"]))
 
     def test_normalizes_orthographic_variants_globally_without_removing_rows(self):
@@ -104,11 +118,11 @@ class ContextoExternoCleanerTests(unittest.TestCase):
         for code, program in variants:
             row = {header: "" for header in headers}
             row.update({
-                "CODIGO DE LA INSTITUCION": "101",
-                "CODIGO SNIES DEL PROGRAMA": code,
-                "PROGRAMA ACADEMICO": program,
-                "ANO": 2025,
-                "SEMESTRE": 1,
+                "CÓDIGO_INSTITUCIÓN": "101",
+                "Código SNIES del programa": code,
+                "Programa Académico": program,
+                "Año": 2025,
+                "Semestre": 1,
                 "PRIMER CURSO": 1,
             })
             sheet.append([row[header] for header in headers])
@@ -128,7 +142,7 @@ class ContextoExternoCleanerTests(unittest.TestCase):
         self.assertEqual(result.output_rows, 8)
         self.assertEqual(result.duplicates_removed, 0)
         self.assertEqual(
-            set(output["PROGRAMA ACADEMICO"]),
+            set(output["Programa Académico"]),
             {"ADMINISTRACI\u00d3N DE EMPRESAS", "TECNOLOG\u00cdA EN DESARROLLO DE SOFTWARE"},
         )
         self.assertIn("NORMALIZACION_ORTOGRAFICA", set(report["MOTIVO"]))

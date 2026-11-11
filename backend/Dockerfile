@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:24-alpine3.22
 
 WORKDIR /app
 
@@ -7,7 +7,8 @@ RUN apk add --no-cache libreoffice fontconfig ttf-dejavu postgresql16-client tar
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-COPY . .
+COPY src ./src
+COPY templates ./templates
 
 RUN mkdir -p /app/uploads /app/keys \
   && chown -R node:node /app
