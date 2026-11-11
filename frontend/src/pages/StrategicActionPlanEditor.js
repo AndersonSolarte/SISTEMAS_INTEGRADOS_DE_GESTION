@@ -3395,12 +3395,18 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible publicar el acta.', { variant: 'error' }); }
   };
   const enableQrSigning = async (onlyPending = false) => {
-    if (!activeMeeting) return enqueueSnackbar('Primero guarde la reunión y sus participantes.', { variant: 'warning' });
+    let currentMeeting = activeMeeting;
+    if (!currentMeeting?.id || hasUnsavedChangesRef.current || selectedMeetingId === '__new__') {
+      const saveRes = await saveMeeting(false);
+      if (!saveRes || !saveRes.success) return;
+      currentMeeting = detail?.meetings?.find((m) => String(m.id) === String(selectedMeetingId)) || activeMeeting;
+    }
+    if (!currentMeeting?.id) return enqueueSnackbar('Primero guarde la reunión y sus participantes.', { variant: 'warning' });
     try {
-      const versions = [...(activeMeeting.minuteVersions || [])].sort((a, b) => Number(b.version) - Number(a.version));
+      const versions = [...(currentMeeting.minuteVersions || [])].sort((a, b) => Number(b.version) - Number(a.version));
       let minuteVersion = versions.find((version) => ['draft', 'review', 'signing'].includes(version.status));
       if (!minuteVersion) {
-        const created = await strategicPlanningService.createMinute(activeMeeting.id, { content: {
+        const created = await strategicPlanningService.createMinute(currentMeeting.id, { content: {
           ...actaData,
           objetivo: Array.isArray(actaData.objetivo) ? actaData.objetivo : [actaData.objetivo || ''],
           desarrollo: Array.isArray(actaData.desarrollo) ? actaData.desarrollo : [actaData.desarrollo || ''],
@@ -4640,8 +4646,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   gap: 2.5,
                   alignItems: 'stretch',
                   width: '100%',
-                  height: { lg: 'calc(100vh - 195px)' },
-                  maxHeight: { lg: 'calc(100vh - 190px)' }
+                  minHeight: { lg: 'calc(100vh - 195px)' },
+                  flex: 1
                 }}>
                 <Box sx={{
                   width: meetingLayoutMode === 'form' ? '100%' : meetingLayoutMode === 'split' ? { xs: '100%', lg: '47%' } : '100%',
@@ -5926,7 +5932,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                 fullWidth
                                 startIcon={<Email fontSize="small" />}
                                 onClick={() => enableQrSigning(false)}
-                                disabled={saving || !activeMeeting?.id}
+                                disabled={saving}
                                 variant="contained"
                                 sx={{ fontWeight: 850 }}
                               >

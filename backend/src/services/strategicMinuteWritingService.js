@@ -1,6 +1,6 @@
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 const DEFAULT_MODEL = process.env.OPENAI_TEXT_MODEL || process.env.OPENAI_MODEL || 'gpt-4.1-mini';
-const REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_TEXT_TIMEOUT_MS || 30000);
+const REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_TEXT_TIMEOUT_MS || 8000);
 
 const extractResponseText = (payload) => {
   if (payload?.output_text) return String(payload.output_text).trim();

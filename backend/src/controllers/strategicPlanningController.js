@@ -3138,6 +3138,19 @@ const storeSignature = ({ participant, minute, signatureData, signerUserId, meth
   });
 };
 
+
+const safeSyncMinuteWithTimeout = async (minuteId, timeoutMs = 6000) => {
+  let timeoutHandle;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(new Error(`Drive sync timeout after ${timeoutMs}ms`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([syncMinute(minuteId), timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+};
+
 const finalizeAndSyncMinuteInternal = async (minuteId, { req = null, userId = null, justification = null } = {}) => {
   const minute = await StrategicMinuteVersion.findByPk(minuteId);
   if (!minute) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
@@ -3167,7 +3180,7 @@ const finalizeAndSyncMinuteInternal = async (minuteId, { req = null, userId = nu
     let driveSync = null;
     let driveError = null;
     try {
-      driveSync = await syncMinute(minute.id);
+      driveSync = await safeSyncMinuteWithTimeout(minute.id, 6000);
     } catch (driveErr) {
       driveError = driveErr.message || String(driveErr);
       console.warn('PEI: Sincronización con Drive no completada, encolando tarea:', driveError);
@@ -3271,7 +3284,7 @@ const finalizeAndSyncMinuteInternal = async (minuteId, { req = null, userId = nu
   const originalAttachment = { filename: `${minuteCode}-ORIGINAL.pdf`, content: originalBuffer, contentType: 'application/pdf' };
   const copyAttachment = { filename: `${minuteCode}.pdf`, content: copyBuffer, contentType: 'application/pdf' };
 
-  for (const participant of required.filter((p) => p.email)) {
+  const emailJobs = required.filter((p) => p.email).map(async (participant) => {
     const safeEmail = String(participant.email).trim().toLowerCase();
     const isResponsibleRecipient = responsibleEmails.has(safeEmail);
     const attachment = isResponsibleRecipient ? originalAttachment : copyAttachment;
@@ -3313,7 +3326,7 @@ const finalizeAndSyncMinuteInternal = async (minuteId, { req = null, userId = nu
     });
 
     try {
-      await sendStrategicPlanningEmail({
+      return await sendStrategicPlanningEmail({
         to: participant.email,
         replyTo: 'planeacionestrategica@unicesmag.edu.co',
         subject: `Acta de Reunión Firmada · ${minuteCode}${isResponsibleRecipient ? ' (Original)' : ''}`,
@@ -3323,13 +3336,16 @@ const finalizeAndSyncMinuteInternal = async (minuteId, { req = null, userId = nu
       });
     } catch (mailErr) {
       console.warn('Error enviando correo de formalización a', participant.email, mailErr.message);
+      return { success: false, error: mailErr.message };
     }
-  }
+  });
+
+  await Promise.allSettled(emailJobs);
 
   let driveSync = null;
   let driveError = null;
   try {
-    driveSync = await syncMinute(minute.id);
+    driveSync = await safeSyncMinuteWithTimeout(minute.id, 6000);
   } catch (driveErr) {
     driveError = driveErr.message || String(driveErr);
     console.warn('PEI: Sincronización inmediata con Drive no completada, encolando tarea:', driveError);
