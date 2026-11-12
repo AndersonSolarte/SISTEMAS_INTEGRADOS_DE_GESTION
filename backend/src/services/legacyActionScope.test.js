@@ -18,7 +18,8 @@ test('official code wins over generic name, old catalog and disabled historical 
   ];
   assert.equal(chooseLegacyUnit(units, 'R2_Académica').id, 'official');
   assert.equal(chooseLegacyUnit([units[0]], 'R2_Académica'), null);
-  assert.throws(() => chooseLegacyUnit([{ code: 'DEP-A', name: 'Académica' }, { code: 'DEP-B', name: 'Académica' }], 'R2_Académica'), /ambigua/);
+  assert.equal(chooseLegacyUnit([{ code: 'DEP-A', name: 'Académica' }, { code: 'DEP-B', name: 'Académica' }], 'R2_Académica'), null);
+  assert.throws(() => chooseLegacyUnit([{ code: 'DEP-A', name: 'Académica' }, { code: 'DEP-B', name: 'Académica' }], 'Académica'), /ambigua/);
 });
 test('historical workbook cannot seed 2027 or subsequent years', () => {
   for (const year of [2022, 2023, 2024, 2025, 2026]) assert.equal(historicalYear(year), true);
@@ -36,4 +37,23 @@ test('a native activity copied from the application is protected from historical
   assert.equal(isLegacyItem({ code: 'ACT-006', custom_values: custom }), false);
   assert.deepEqual(stripLegacyProvenance(custom), { strategic_objective: 'OE1', indicator: 'Informe' });
   assert.equal(custom.legacy_plan_accion_id, 123);
+});
+
+test('R86 repeated names use explicit annual plan evidence or a new isolated coded identity', () => {
+  const units = [
+    { id: 'a', code: 'DEP-001', name: 'Coordinación de Semilleros de Investigación.' },
+    { id: 'b', code: 'DEP-002', name: 'Coordinación de Semilleros de Investigación.' }
+  ];
+  const source = 'R86_Coordinación de Semilleros de Investigación.';
+  assert.equal(chooseLegacyUnit(units, source), null);
+  assert.equal(chooseLegacyUnit(units, source, ['b']).id, 'b');
+  units[1].metadata = { legacy_dependency_code: 'R86' };
+  assert.equal(chooseLegacyUnit(units, source).id, 'b');
+  assert.equal(chooseLegacyUnit([...units, { id: 'canonical', code: 'LEG-R86', name: 'Semilleros' }], source, ['canonical']).id, 'canonical');
+});
+
+test('annual plan evidence cannot select another official responsible code', () => {
+  const units = [{ id: 'wrong', code: 'R87', name: 'Semilleros' }, { id: 'official', code: 'R86', name: 'Semilleros' }];
+  assert.equal(chooseLegacyUnit(units, 'R86_Semilleros', ['wrong']).id, 'official');
+  assert.equal(chooseLegacyUnit([units[0]], 'R86_Semilleros', ['wrong']), null);
 });

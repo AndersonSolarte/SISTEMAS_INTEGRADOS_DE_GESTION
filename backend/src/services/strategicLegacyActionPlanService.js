@@ -7,7 +7,7 @@ const {
 } = require('../models');
 const { captureActionPlanSchema } = require('./strategicActionPlanSchemaService');
 const { sameLegacyActivity, fillMissing, schemaLegacyValues } = require('./legacyActionIdentity');
-const { historicalYear, chooseLegacyUnit, sourceScope, scopeFromPlanCode } = require('./legacyActionScope');
+const { historicalYear, chooseLegacyUnit, sourceScope, scopeFromPlanCode, dependencyCode } = require('./legacyActionScope');
 
 const consolidateLegacyItem = async (item, duplicate, transaction) => {
   const custom = fillMissing(item.custom_values || {}, duplicate.custom_values || {});
@@ -64,14 +64,24 @@ const choosePlan = (plans, legacy) => {
   return matching[0];
 };
 
-const findOrCreateUnit = async ({ plan, dependency, transaction }) => {
+const findOrCreateUnit = async ({ plan, term, dependency, transaction }) => {
   const dependencyName = String(dependency || 'Dependencia histórica sin identificar').replace(/^([A-Z]\d+)\s*[_-]\s*/i, '').trim();
   const prefix = String(dependency || '').match(/^([A-Z]\d+)\s*[_-]/i)?.[1]?.toUpperCase();
   const units = await StrategicCatalogItem.findAll({
     where: { strategic_plan_id: plan.id, catalog_type: { [Op.in]: ['dependency', 'organizational_unit'] } }, transaction
   });
-  const existing = chooseLegacyUnit(units, dependency);
-  if (existing) return existing;
+  const scopedPlans = (await StrategicActionPlan.findAll({
+    where: { term_id: term.id, deleted_at: null }, attributes: ['code', 'catalog_item_id'], transaction
+  })).filter((item) => scopeFromPlanCode(item.code) === sourceScope({ anio: term.year, responsable: dependency }));
+  const officialPlans = scopedPlans.filter((item) => !/^LEGACY-/i.test(item.code));
+  const preferredIds = [...new Set((officialPlans.length ? officialPlans : scopedPlans).map((item) => item.catalog_item_id))];
+  const existing = chooseLegacyUnit(units, dependency, preferredIds);
+  if (existing) {
+    if (!dependencyCode(existing.code) && !existing.metadata?.legacy_dependency_code) {
+      await existing.update({ metadata: { ...(existing.metadata || {}), legacy_dependency_code: dependencyCode(dependency) } }, { transaction });
+    }
+    return existing;
+  }
   let unitCode = `LEG-${code(prefix || dependencyName, 'DEPENDENCIA')}`.slice(0, 60);
   let sequence = 2;
   while (units.some((unit) => unit.code === unitCode)) {
@@ -80,7 +90,7 @@ const findOrCreateUnit = async ({ plan, dependency, transaction }) => {
   }
   return StrategicCatalogItem.create({
     strategic_plan_id: plan.id, catalog_type: 'organizational_unit', code: unitCode,
-    name: dependencyName, metadata: { legacy_source: 'plan_accion' }, active: true
+    name: dependencyName, metadata: { legacy_source: 'plan_accion', legacy_dependency_code: dependencyCode(dependency) }, active: true
   }, { transaction });
 };
 
@@ -135,7 +145,7 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
       await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', {
         replacements: { key: `legacy-action-plan:${sourceScope(first)}` }, transaction
       });
-      const unit = await findOrCreateUnit({ plan: strategicPlan, dependency: first.responsable, transaction });
+      const unit = await findOrCreateUnit({ plan: strategicPlan, term, dependency: first.responsable, transaction });
 
       // Priorizar el plan oficial existente para esta unidad y vigencia (evita duplicar planes con Paso 3)
       let actionPlan = await StrategicActionPlan.findOne({
