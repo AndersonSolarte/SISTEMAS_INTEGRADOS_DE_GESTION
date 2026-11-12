@@ -27,10 +27,14 @@ const getAllowedOrigins = () => {
 
 const allowedOrigins = getAllowedOrigins();
 
+const deniedCorsOrigin = () => Object.assign(new Error('Origen no permitido por CORS'), {
+  status: 403, code: 'CORS_ORIGIN_DENIED'
+});
+
 const corsOptions = {
   origin(origin, callback) {
     if (!origin) return callback(null, true);
-    if (origin === 'null') return callback(new Error('Origen no permitido por CORS'));
+    if (origin === 'null') return callback(deniedCorsOrigin());
     const normalized = normalizeOrigin(origin);
     if (allowedOrigins.includes(normalized)) return callback(null, true);
     
@@ -40,12 +44,29 @@ const corsOptions = {
     }
     
     console.warn(`[CORS] Origen rechazado: ${origin}. Origenes permitidos:`, allowedOrigins);
-    return callback(new Error('Origen no permitido por CORS'));
+    return callback(deniedCorsOrigin());
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Authorization', 'Content-Type'],
   credentials: false,
   maxAge: 600
+};
+
+// Una navegación HTML desde un visor de correo puede tener Origin: null.
+// Estas páginas públicas se autorizan con su token AES-GCM, no con cookies.
+// La excepción no permite peticiones fetch/XHR ni se aplica a las API privadas.
+const corsOptionsForRequest = (req, callback) => {
+  const pathname = String(req.originalUrl || req.url || '').split('?')[0];
+  const route = pathname.length <= 4300 && pathname.match(/^\/api\/(?:reporte-salida|reportes-salida)\/(aprobar(?:-grupo)?|rechazar(?:-grupo)?|documento(?:-grupo)?|soporte(?:-grupo)?)\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\/?$/);
+  const headers = req.headers || {};
+  const navigation = headers['sec-fetch-mode'] === 'navigate'
+    && ['document', 'iframe'].includes(headers['sec-fetch-dest']);
+  const formPost = req.method === 'POST' && route && /^(aprobar|rechazar)/.test(route[1])
+    && String(headers['content-type'] || '').split(';')[0].trim().toLowerCase() === 'application/x-www-form-urlencoded';
+  if (route && navigation && (req.method === 'GET' || formPost)) {
+    return callback(null, { ...corsOptions, origin: true });
+  }
+  return callback(null, corsOptions);
 };
 
 const apiLimiter = rateLimit({
@@ -335,6 +356,7 @@ const uploadsStaticOptions = {
 
 module.exports = {
   corsOptions,
+  corsOptionsForRequest,
   apiLimiter,
   publicLimiter,
   authLimiter,

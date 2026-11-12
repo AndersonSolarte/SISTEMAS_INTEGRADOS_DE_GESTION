@@ -13,6 +13,7 @@ const { DataTypes } = require('sequelize');
 const { sequelize, testConnection } = require('./config/database');
 const {
   corsOptions,
+  corsOptionsForRequest,
   apiLimiter,
   authLimiter,
   methodGuard,
@@ -33,7 +34,7 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   referrerPolicy: { policy: 'no-referrer' }
 }));
-app.use(cors(corsOptions));
+app.use(cors(corsOptionsForRequest));
 app.options('*', cors(corsOptions));
 // Las firmas manuscritas viajan como una imagen Base64. El controlador conserva
 // un límite estricto de 2 MB para la imagen decodificada.

@@ -2,6 +2,36 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { sqlInjectionGuard } = require('./security');
 const { corsOptions, uploadsPathGuard, uploadsStaticOptions } = require('./security');
+const { corsOptionsForRequest } = require('./security');
+
+test('permite navegar desde el correo solo a las páginas públicas con enlace cifrado', () => {
+  const headers = { origin: 'null', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' };
+  for (const prefix of ['reporte-salida', 'reportes-salida']) {
+    for (const action of ['aprobar', 'rechazar', 'aprobar-grupo', 'rechazar-grupo', 'documento', 'soporte', 'documento-grupo', 'soporte-grupo']) {
+      corsOptionsForRequest({ method: 'GET', originalUrl: `/api/${prefix}/${action}/aaa.bbb.ccc`, headers }, (error, options) => {
+        assert.equal(error, null); assert.equal(options.origin, true, action);
+      });
+    }
+  }
+  corsOptionsForRequest({ method: 'POST', originalUrl: '/api/reporte-salida/aprobar/aaa.bbb.ccc?via=jefe', headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' } }, (_, options) => assert.equal(options.origin, true));
+});
+
+test('no abre CORS para API privadas, fetch, tokens mal formados o envíos que no son formularios', () => {
+  const base = { method: 'GET', originalUrl: '/api/reporte-salida/aprobar/aaa.bbb.ccc', headers: { origin: 'null', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' } };
+  for (const req of [
+    { ...base, originalUrl: '/api/users' },
+    { ...base, originalUrl: '/api/reporte-salida/solicitudes' },
+    { ...base, originalUrl: '/api/reporte-salida/aprobar/no-es-token' },
+    { ...base, headers: { ...base.headers, 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty' } },
+    { ...base, headers: { origin: 'null' } },
+    { ...base, method: 'POST', headers: { ...base.headers, 'content-type': 'application/json' } },
+    { ...base, method: 'DELETE' },
+    { ...base, method: 'POST', originalUrl: '/api/reporte-salida/documento/aaa.bbb.ccc', headers: { ...base.headers, 'content-type': 'application/x-www-form-urlencoded' } }
+  ]) corsOptionsForRequest(req, (_, options) => assert.equal(options, corsOptions));
+  corsOptions.origin('null', (error) => {
+    assert.equal(error.status, 403); assert.equal(error.code, 'CORS_ORIGIN_DENIED');
+  });
+});
 
 test('impide publicar temporales, restauraciones, claves y respaldos por uploads', () => {
   for (const requestPath of ['/temp/export.xlsx', '/%74emp/export.xlsx', '/tmp/datos.csv', '/.restore-stage-123/database.dump', '/folder/.backup-cache/file.pdf', '/folder/../secret.pdf', '/folder%5ctemp/file.pdf', '/copia.siacbackup', '/kit.enc', '/clave.key', '/archivo.sha256', '/%ZZ']) {
