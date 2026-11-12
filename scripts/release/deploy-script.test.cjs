@@ -26,10 +26,17 @@ exit 0
 printf 'docker %s\\n' "$*" >> "$FLOW_LOG"
 if [[ "$*" == 'compose images -q '* ]]; then echo sha256:fixture-image; fi
 if [[ "$*" == 'compose build --pull' && "$MOCK_BUILD_FAIL" == 1 ]]; then exit 17; fi
+if [[ "$*" == *'frontend nginx -t'* ]]; then
+  if [[ "$MOCK_NGINX_FAIL" == 1 ]]; then exit 19; fi
+  if [[ "$MOCK_BACKEND_RUNNING" == 0 && "$*" != *'--add-host backend:127.0.0.1'* ]]; then
+    echo 'nginx: host not found in upstream backend' >&2
+    exit 20
+  fi
+fi
 if [[ "$*" == 'compose up '* && "$MOCK_HEALTH_FAIL" == 1 ]]; then exit 18; fi
 exit 0
 `);
-    const env = { ...process.env, MOCK_DIRTY: '0', MOCK_BUILD_FAIL: '0', MOCK_HEALTH_FAIL: '0', ...flags, SIAC_PROJECT_DIR: work.replaceAll('\\', '/'), FLOW_LOG: log.replaceAll('\\', '/') };
+    const env = { ...process.env, MOCK_DIRTY: '0', MOCK_BUILD_FAIL: '0', MOCK_HEALTH_FAIL: '0', MOCK_BACKEND_RUNNING: '0', MOCK_NGINX_FAIL: '0', ...flags, SIAC_PROJECT_DIR: work.replaceAll('\\', '/'), FLOW_LOG: log.replaceAll('\\', '/') };
     const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') || 'PATH';
     env[pathKey] = `${bin};${env[pathKey] || ''}`;
     const unix = (value) => value.replace(/^([A-Za-z]):[\\/]/, (_, drive) => `/${drive.toLowerCase()}/`).replaceAll('\\', '/');
@@ -68,4 +75,19 @@ test('rechaza cambios locales antes de descargar codigo o construir', () => {
   const result = scenario({ MOCK_DIRTY: '1' });
   assert.notEqual(result.status, 0);
   assert.doesNotMatch(result.commands, /git fetch|compose build|compose up/);
+});
+
+test('valida Nginx con backend detenido y limita el alias al contenedor temporal', () => {
+  const result = scenario({ MOCK_BACKEND_RUNNING: '0' });
+  assert.equal(result.status, 0, result.output);
+  assert.match(result.commands, /compose run --rm --no-deps --add-host backend:127\.0\.0\.1 frontend nginx -t/);
+  assert.ok(result.commands.indexOf('frontend nginx -t') < result.commands.indexOf('compose up -d'));
+  assert.doesNotMatch(result.commands.split('\n').find((line) => line.includes('compose up -d')), /add-host/);
+  assert.match(result.commands, /compose exec -T backend npm run migrate/);
+});
+
+test('un error real de configuracion Nginx detiene el despliegue antes de arrancar o migrar', () => {
+  const result = scenario({ MOCK_NGINX_FAIL: '1' });
+  assert.notEqual(result.status, 0);
+  assert.doesNotMatch(result.commands, /compose up|run migrate/);
 });

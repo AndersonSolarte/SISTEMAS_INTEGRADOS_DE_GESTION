@@ -43,7 +43,10 @@ main() {
   echo 'Construyendo y comprobando las imagenes mientras siguen activos los servicios anteriores...'
   docker compose build --pull
   docker compose run --rm --no-deps backend node src/config/productionPreflight.js --database
-  docker compose run --rm --no-deps frontend nginx -t
+  # nginx -t valida configuracion y certificados, pero tambien resuelve los
+  # upstreams. El backend puede estar detenido en una recuperacion; este alias
+  # solo existe en el contenedor temporal y no modifica el proxy de produccion.
+  docker compose run --rm --no-deps --add-host backend:127.0.0.1 frontend nginx -t
   echo 'Iniciando las imagenes comprobadas y esperando sus verificaciones de salud...'
   if ! docker compose up -d --no-build --pull never --wait --wait-timeout 240; then
     echo 'Fallo el arranque. Intentando recuperar las imagenes anteriores, sin restaurar la base de datos...' >&2
