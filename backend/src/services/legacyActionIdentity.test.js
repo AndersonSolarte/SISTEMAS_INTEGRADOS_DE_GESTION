@@ -33,3 +33,15 @@ test('maps Excel schema keys for objectives and guidelines without inventing pol
   assert.equal(mapped.macroactividad, 'A18');
   assert.equal(mapped.seguimiento_politicas, undefined);
 });
+
+test('R75 old official prefixes match the current source only in the correct annual scope', () => {
+  const source = { anio: 2026, responsable: 'R75_Deporte y Cultura',
+    actividad: 'Evaluación integral del currículo', indicador: 'Porcentaje de microcurriculos actualizados', meta: '100%' };
+  const old = { code: 'LEGACY-6768', activity: `A-003 ${source.actividad}`, indicator: `2026-R75-001 ${source.indicador}`,
+    target: '100%', custom_values: { responsible: source.responsable } };
+  assert.equal(sameLegacyActivity(old, source), true);
+  assert.equal(sameLegacyActivity({ ...old, indicator: `2025-R75-001 ${source.indicador}` }, source), false);
+  assert.equal(sameLegacyActivity({ ...old, indicator: `2026-R74-001 ${source.indicador}` }, source), false);
+  assert.equal(sameLegacyActivity({ ...old, target: '50%' }, source), false);
+  assert.equal(sameLegacyActivity({ ...old, code: 'ACT-006', custom_values: {} }, source), false);
+});

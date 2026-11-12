@@ -13,11 +13,12 @@ test('three imports with changing IDs retain five activities, manual work, evide
   }, toJSON() { return Object.fromEntries(Object.entries(this).filter(([, value]) => typeof value !== 'function')); } });
   const source = Array.from({ length: 5 }, (_, i) => ({
     id: 300 + i, anio: 2026, responsable: 'R74_Acompañamiento', actividad: `Actividad ${i}`,
-    indicador: `2026-R74-${i} Indicador`, meta: '100%', objetivo_estrategico: 'OE1', lineamiento_estrategico: 'LE4'
+    indicador: `Informe ${i}`, meta: '100%', objetivo_estrategico: 'OE1', lineamiento_estrategico: 'LE4'
   }));
   const items = source.flatMap((row, i) => [100, 200, 300].map((base) => instance({
     id: `${base + i}`, action_plan_id: 'plan', code: `LEGACY-${base + i}`,
-    activity: row.actividad, indicator: row.indicador, target: row.meta,
+    activity: base === 100 ? `A-003 ${row.actividad}` : row.actividad,
+    indicator: base === 100 ? `2026-R74-${i} ${row.indicador}` : row.indicador, target: row.meta,
     starts_on: base === 100 ? '2026-02-16' : null, ends_on: null, deleted_at: null,
     custom_values: { legacy_plan_accion_id: base + i, progress_s1: 0, note: 'Conservar' }
   })));
@@ -70,6 +71,9 @@ test('three imports with changing IDs retain five activities, manual work, evide
       assert.equal(items[0].custom_values.lineamientos_estrategicos, 'LE4');
       assert.equal(items[0].custom_values.progress_s1, 0);
       assert.equal(items[0].starts_on, '2026-02-16');
+      assert.equal(items[0].activity, source[0].actividad);
+      assert.equal(items[0].indicator, source[0].indicador);
+      assert.equal(items[0].custom_values.legacy_text_before_normalization.activity, 'A-003 Actividad 0');
       assert.equal(items.at(-1).deleted_at, null);
     }
     assert.equal(locks, 3);

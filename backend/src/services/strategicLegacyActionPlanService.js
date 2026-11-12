@@ -264,6 +264,7 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
         const compatibleMatches = [];
         for (const candidate of matches) {
           if (compatibleMatches.every((previous) => sameLegacyActivity(candidate, {
+            anio: row.anio, responsable: row.responsable,
             actividad: previous.activity, indicador: previous.indicator,
             fecha_inicio: previous.starts_on, fecha_fin: previous.ends_on, meta: previous.target
           }))) compatibleMatches.push(candidate);
@@ -319,13 +320,23 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
         });
         const custom = fillMissing(item.custom_values || {}, sourceCustom);
         custom.legacy_plan_accion_id = row.id;
+        const sourceText = {};
+        if (sameLegacyActivity(item, row) && (item.activity !== row.actividad || item.indicator !== row.indicador)) {
+          custom.legacy_text_before_normalization = custom.legacy_text_before_normalization || {
+            activity: item.activity, indicator: item.indicator
+          };
+          sourceText.activity = row.actividad;
+          sourceText.indicator = row.indicador;
+          custom.activity = row.actividad;
+          custom.indicator = row.indicador;
+        }
         const repaired = fillMissing({ indicator_type: item.indicator_type, starts_on: item.starts_on,
           ends_on: item.ends_on, target: item.target }, {
           indicator_type: row.tipo_indicador, starts_on: row.fecha_inicio, ends_on: row.fecha_fin, target: row.meta
         });
         if (JSON.stringify(custom) !== JSON.stringify(item.custom_values)
           || Object.keys(repaired).some((key) => repaired[key] !== item[key])) {
-          await item.update({ ...repaired, custom_values: custom }, { transaction });
+          await item.update({ ...repaired, ...sourceText, custom_values: custom }, { transaction });
         }
 
         if (periods.length && item) {

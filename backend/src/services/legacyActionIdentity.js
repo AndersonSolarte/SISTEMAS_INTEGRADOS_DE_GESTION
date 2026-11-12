@@ -3,15 +3,23 @@ const present = (value) => value !== null && value !== undefined && value !== ''
 const isLegacyItem = (item) => !/^ACT-/i.test(item.code || '')
   && (/^LEGACY-\d+$/.test(item.code || '') || present(item.custom_values?.legacy_plan_accion_id));
 const stripLegacyProvenance = (values) => Object.fromEntries(Object.entries(values || {}).filter(([key]) => !/^legacy_/i.test(key)));
-const { sourceScope } = require('./legacyActionScope');
+const { sourceScope, dependencyCode, normalize } = require('./legacyActionScope');
+const activityText = (value) => normalize(String(value || '').trim().replace(/^A-\d+\s+/i, ''));
+const indicatorText = (value, row) => {
+  const original = String(value || '').trim();
+  const match = original.match(/^(20\d{2})-(R\d+)-\d+\s+(.+)$/i);
+  if (match && Number(match[1]) === Number(row.anio)
+    && dependencyCode(match[2]) === dependencyCode(row.responsable)) return normalize(match[3]);
+  return normalize(original);
+};
 
 // The source table is replaced on every Excel import. Its numeric IDs are not identities.
 const sameLegacyActivity = (item, row) => {
   if (!isLegacyItem(item) || !text(row.actividad) || !text(row.indicador)) return false;
   if (present(item.custom_values?.responsible) && present(row.responsable)
     && sourceScope({ anio: row.anio, responsable: item.custom_values.responsible }) !== sourceScope(row)) return false;
-  return text(item.activity) === text(row.actividad)
-    && text(item.indicator) === text(row.indicador)
+  return activityText(item.activity) === activityText(row.actividad)
+    && indicatorText(item.indicator, row) === indicatorText(row.indicador, row)
     && ['starts_on', 'ends_on', 'target'].every((key) => {
       const other = row[{ starts_on: 'fecha_inicio', ends_on: 'fecha_fin', target: 'meta' }[key]];
       return !present(item[key]) || !present(other) || text(item[key]) === text(other);
