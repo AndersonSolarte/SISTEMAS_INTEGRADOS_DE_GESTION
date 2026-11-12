@@ -1,15 +1,15 @@
 const text = (value) => String(value ?? '').normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
 const present = (value) => value !== null && value !== undefined && value !== '';
-const isLegacyItem = (item) => !/^ACT-/i.test(item.code || '')
+const isLegacyItem = (item) => item.custom_values?.application_created !== true && !/^ACT-/i.test(item.code || '')
   && (/^LEGACY-\d+$/.test(item.code || '') || present(item.custom_values?.legacy_plan_accion_id));
 const stripLegacyProvenance = (values) => Object.fromEntries(Object.entries(values || {}).filter(([key]) => !/^legacy_/i.test(key) && key !== 'official_observations'));
 const { sourceScope, dependencyCode, normalize } = require('./legacyActionScope');
 const activityText = (value) => normalize(String(value || '').trim().replace(/^A-\d+\s+/i, ''));
-const indicatorText = (value, row) => {
+const indicatorText = (value, row, source = false) => {
   const original = String(value || '').trim();
-  const match = original.match(/^(20\d{2})-(R\d+)-\d+\s+(.+)$/i);
-  if (match && Number(match[1]) === Number(row.anio)
-    && dependencyCode(match[2]) === dependencyCode(row.responsable)) return normalize(match[3]);
+  const match = original.match(/^(?:[RLI]-)?(20\d{2})-(R\d+)-\d+\s+([\s\S]+)$/i);
+  if (match && (source || (Number(match[1]) === Number(row.anio)
+    && dependencyCode(match[2]) === dependencyCode(row.responsable)))) return normalize(match[3]);
   return normalize(original);
 };
 
@@ -19,7 +19,8 @@ const sameLegacyActivity = (item, row) => {
   if (present(item.custom_values?.responsible) && present(row.responsable)
     && sourceScope({ anio: row.anio, responsable: item.custom_values.responsible }) !== sourceScope(row)) return false;
   return activityText(item.activity) === activityText(row.actividad)
-    && indicatorText(item.indicator, row) === indicatorText(row.indicador, row)
+    && (normalize(item.indicator) === normalize(row.indicador)
+      || indicatorText(item.indicator, row) === indicatorText(row.indicador, row, true))
     && ['starts_on', 'ends_on', 'target'].every((key) => {
       const other = row[{ starts_on: 'fecha_inicio', ends_on: 'fecha_fin', target: 'meta' }[key]];
       return !present(item[key]) || !present(other) || text(item[key]) === text(other);
@@ -51,4 +52,4 @@ const schemaLegacyValues = (fields, values) => {
   return result;
 };
 
-module.exports = { sameLegacyActivity, fillMissing, isLegacyItem, schemaLegacyValues, stripLegacyProvenance };
+module.exports = { sameLegacyActivity, fillMissing, isLegacyItem, schemaLegacyValues, stripLegacyProvenance, indicatorText };

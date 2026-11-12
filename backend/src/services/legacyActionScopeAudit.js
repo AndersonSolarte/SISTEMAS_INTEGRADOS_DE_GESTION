@@ -1,7 +1,7 @@
 const { PlanAccion, StrategicActionPlan, StrategicActionItem, StrategicTerm, StrategicCatalogItem } = require('../models');
 const { historicalYear, sourceScope, chooseLegacyUnit, normalize, preferredLegacyUnitIds } = require('./legacyActionScope');
-const { isLegacyItem } = require('./legacyActionIdentity');
-const identity = (row) => JSON.stringify([sourceScope(row), normalize(row.actividad), normalize(row.indicador), normalize(row.meta)]);
+const { isLegacyItem, indicatorText } = require('./legacyActionIdentity');
+const identity = (row) => JSON.stringify([sourceScope(row), normalize(row.actividad), indicatorText(row.indicador, row, true), normalize(row.meta)]);
 const counts = (rows) => {
   const result = new Map();
   for (const row of rows) { const key = identity(row); result.set(key, (result.get(key) || 0) + 1); }

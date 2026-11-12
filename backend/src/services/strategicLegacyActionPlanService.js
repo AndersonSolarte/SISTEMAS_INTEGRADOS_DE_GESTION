@@ -6,7 +6,7 @@ const {
   StrategicMonitoringPeriod, StrategicMonitoringResult, StrategicEvidence, StrategicBudgetMovement
 } = require('../models');
 const { captureActionPlanSchema } = require('./strategicActionPlanSchemaService');
-const { sameLegacyActivity, fillMissing, schemaLegacyValues } = require('./legacyActionIdentity');
+const { sameLegacyActivity, fillMissing, schemaLegacyValues, isLegacyItem } = require('./legacyActionIdentity');
 const { historicalYear, chooseLegacyUnit, sourceScope, scopeFromPlanCode, dependencyCode, preferredLegacyUnitIds } = require('./legacyActionScope');
 
 const consolidateLegacyItem = async (item, duplicate, transaction) => {
@@ -247,10 +247,11 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
         }, { transaction });
       }
 
-      const existingItems = await StrategicActionItem.findAll({
-        where: { action_plan_id: actionPlan.id, deleted_at: null },
+      const historicalItems = await StrategicActionItem.findAll({
+        where: { action_plan_id: actionPlan.id },
         order: [['created_at', 'ASC'], ['id', 'ASC']], transaction
       });
+      const existingItems = historicalItems.filter((item) => !item.deleted_at);
       const claimedItems = new Set();
       const schema = await captureActionPlanSchema(strategicPlan.id, transaction);
 
@@ -269,7 +270,11 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
             fecha_inicio: previous.starts_on, fecha_fin: previous.ends_on, meta: previous.target
           }))) compatibleMatches.push(candidate);
         }
-        let item = canonical || existingItems.find((candidate) => candidate.code === itemCode && !claimedItems.has(candidate.id));
+        let item = canonical || existingItems.find((candidate) => (candidate.code === itemCode
+          || (isLegacyItem(candidate) && Number(candidate.custom_values?.legacy_plan_accion_id) === Number(row.id))) && !claimedItems.has(candidate.id));
+        item = item || historicalItems.find((candidate) => candidate.deleted_at && candidate.status === 'deleted' && sameLegacyActivity(candidate, row))
+          || historicalItems.find((candidate) => candidate.deleted_at && isLegacyItem(candidate) && Number(candidate.custom_values?.legacy_plan_accion_id) === Number(row.id));
+        if (item?.deleted_at && item.status === 'deleted') { claimedItems.add(item.id); continue; }
         let created = false;
         if (!item) [item, created] = await StrategicActionItem.findOrCreate({
           where: { action_plan_id: actionPlan.id, code: itemCode },
@@ -321,14 +326,17 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
         const custom = fillMissing(item.custom_values || {}, sourceCustom);
         custom.legacy_plan_accion_id = row.id;
         const sourceText = {};
-        if (sameLegacyActivity(item, row) && (item.activity !== row.actividad || item.indicator !== row.indicador)) {
+        const { ACTIVITY_CODE, codedValues } = require('./actionItemCodingService');
+        const sourceIndicator = ACTIVITY_CODE.test(item.code || '')
+          ? codedValues({ indicator: row.indicador, indicator_type: item.indicator_type }, item.code).indicator : row.indicador;
+        if (sameLegacyActivity(item, row) && (item.activity !== row.actividad || item.indicator !== sourceIndicator)) {
           custom.legacy_text_before_normalization = custom.legacy_text_before_normalization || {
             activity: item.activity, indicator: item.indicator
           };
           sourceText.activity = row.actividad;
-          sourceText.indicator = row.indicador;
+          sourceText.indicator = sourceIndicator;
           custom.activity = row.actividad;
-          custom.indicator = row.indicador;
+          custom.indicator = sourceIndicator;
         }
         const repaired = fillMissing({ indicator_type: item.indicator_type, starts_on: item.starts_on,
           ends_on: item.ends_on, target: item.target }, {
@@ -375,7 +383,7 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
 
       // Desactivar actividades legacy huérfanas que ya no existen en la nueva plantilla importada
       for (const stale of existingItems) {
-        if (!stale.deleted_at && !claimedItems.has(stale.id) && /^LEGACY-\d+$/.test(stale.code || '')
+        if (!stale.deleted_at && !claimedItems.has(stale.id) && isLegacyItem(stale)
           && sourceScope({ anio: first.anio, responsable: stale.custom_values?.responsible }) === sourceScope(first)) {
           await stale.update({
             deleted_at: new Date(),

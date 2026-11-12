@@ -304,6 +304,10 @@ const reconcileLinkedActivities = async (plan, { persist = true, force = false }
           ]
         });
         if (!actionItem) continue;
+        if (act.linkedActionItemCode !== actionItem.code) {
+          act.linkedActionItemCode = actionItem.code;
+          modified = true;
+        }
 
         // 1. Reconciliar carpeta de evidencias en Drive
         if (!act.evidenceFolderUrl || act.evidenceFolderUrl.includes('Pendiente')) {

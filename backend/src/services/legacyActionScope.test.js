@@ -36,6 +36,7 @@ test('a native activity copied from the application is protected from historical
   const custom = { legacy_plan_accion_id: 123, legacy_duplicate_of: 'old', strategic_objective: 'OE1', indicator: 'Informe',
     official_observations: { s1: { text: 'No copiar a otra actividad' } } };
   assert.equal(isLegacyItem({ code: 'ACT-006', custom_values: custom }), false);
+  assert.equal(isLegacyItem({ code: '2026-R74-006', custom_values: { ...custom, application_created: true } }), false);
   assert.deepEqual(stripLegacyProvenance(custom), { strategic_objective: 'OE1', indicator: 'Informe' });
   assert.equal(custom.legacy_plan_accion_id, 123);
 });

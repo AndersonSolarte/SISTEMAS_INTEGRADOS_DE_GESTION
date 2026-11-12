@@ -980,6 +980,8 @@ const runMigrations = async () => {
     await repairGeorreferenciaFromDivipola();
     await repairDuplicatePesvRecords();
     await repairDuplicateActionPlansAndItems();
+    const coding = await require('../services/actionItemCodingService').backfillOfficialActivityCodes();
+    console.log('[migrate] Códigos oficiales de actividades e indicadores:', coding);
 
     console.log('[migrate] Migraciones completadas');
     await sequelize.close();

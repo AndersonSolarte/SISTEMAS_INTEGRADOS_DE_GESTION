@@ -172,6 +172,15 @@ const StrategicActionItem = sequelize.define('StrategicActionItem', {
   deleted_at: { type: DataTypes.DATE, allowNull: true }
 }, commonOptions('pei_action_items', [{ unique: true, fields: ['action_plan_id', 'code'] }, { fields: ['strategic_element_id'] }]));
 
+// All entry points (forms, imports, copies and improvement links) share the same
+// allocator. The parent plan row stays locked until the insert is committed.
+const createActionItem = StrategicActionItem.create.bind(StrategicActionItem);
+StrategicActionItem.create = (values, options = {}) => options.transaction
+  ? createActionItem(values, options)
+  : sequelize.transaction((transaction) => createActionItem(values, { ...options, transaction }));
+StrategicActionItem.addHook('beforeValidate', 'officialActivityCode', (item, options) =>
+  require('../services/actionItemCodingService').prepareItem(item, options));
+
 const StrategicActionItemVersion = sequelize.define('StrategicActionItemVersion', {
   id: uuidPk(),
   action_item_id: { type: DataTypes.UUID, allowNull: false },
