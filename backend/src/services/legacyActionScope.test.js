@@ -33,7 +33,8 @@ test('identical activity text never combines different responsible dependencies'
   assert.equal(sameLegacyActivity(item, row), true);
 });
 test('a native activity copied from the application is protected from historical reconciliation', () => {
-  const custom = { legacy_plan_accion_id: 123, legacy_duplicate_of: 'old', strategic_objective: 'OE1', indicator: 'Informe' };
+  const custom = { legacy_plan_accion_id: 123, legacy_duplicate_of: 'old', strategic_objective: 'OE1', indicator: 'Informe',
+    official_observations: { s1: { text: 'No copiar a otra actividad' } } };
   assert.equal(isLegacyItem({ code: 'ACT-006', custom_values: custom }), false);
   assert.deepEqual(stripLegacyProvenance(custom), { strategic_objective: 'OE1', indicator: 'Informe' });
   assert.equal(custom.legacy_plan_accion_id, 123);

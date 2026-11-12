@@ -81,6 +81,8 @@ export const getIndicatorProgress = (item, periodId, kind) => {
 
 export const getIndicatorObservations = (item, periodId, kind) => {
   const custom = item.custom_values || {};
+  if (custom.official_observations && Object.prototype.hasOwnProperty.call(custom.official_observations, periodId)
+    && getActiveIndicators(item).length === 1) return custom.official_observations[periodId]?.text || '';
   const monitoringIndicators = custom.monitoring_indicators?.[periodId];
   if (monitoringIndicators && monitoringIndicators[kind] !== undefined && typeof monitoringIndicators[kind] === 'object') {
     return monitoringIndicators[kind].observations || '';

@@ -420,6 +420,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const { enqueueSnackbar, closeSnackbar } = useSnackbar();
   const { user } = useAuth();
   const isPlanningAdmin = ['administrador', 'planeacion_efectividad', 'planeacion_estrategica'].includes(user?.role);
+  const canManageObservations = ['administrador', 'planeacion_efectividad'].includes(user?.role);
 
   // Estados para vigencia y prórrogas de Etapa 1
   const [timelineModalOpen, setTimelineModalOpen] = useState(false);
@@ -1378,7 +1379,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         }
         if (selectedSuggestion.custom_values && typeof selectedSuggestion.custom_values === 'object') {
           Object.entries(selectedSuggestion.custom_values).forEach(([k, v]) => {
-            if (/^(legacy_|progress_s\d|observations_s\d|total_progress|current_progress|avance_|observaciones(?:_|$)|total$)/i.test(k)) return;
+            if (/^(legacy_|official_observations$|progress_s\d|observations_s\d|total_progress|current_progress|avance_|observaciones(?:_|$)|total$)/i.test(k)) return;
             if (v && !nextCustom[k] && !['starts_on', 'ends_on', 'fecha_inicio', 'fecha_fin', 'responsible', 'co_responsibles'].includes(k)) {
               nextCustom[k] = v;
             }
@@ -3762,6 +3763,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       };
     }
 
+    if (!canManageObservations) delete finalPayload.observations;
     setSaving(true);
     try {
       await strategicPlanningService.saveMonitoring(evaluatingItem.id, evalForm.period_id, finalPayload);
@@ -7301,7 +7303,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                           </Tooltip>
                                         )}
                                         {isFirstSubrow && <PeriodObservationButton activity={it} period={p}
-                                          onEdit={isPlanningAdmin ? () => handleOpenEvalModal(it, ind.kind, p.id) : undefined} />}
+                                          onEdit={canManageObservations ? () => handleOpenEvalModal(it, ind.kind, p.id) : undefined}
+                                          onSave={canManageObservations ? async (observations) => {
+                                            await strategicPlanningService.saveMonitoring(it.id, p.id, { observations });
+                                            await load(false);
+                                          } : undefined} />}
                                       </TableCell>
                                     );
                                   })}
@@ -8089,6 +8095,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               InputLabelProps={{ shrink: true }}
               placeholder="Ingrese el concepto oficial, retroalimentación o justificación del avance..."
               value={evalForm.observations}
+              inputProps={{ readOnly: !canManageObservations }}
               helperText={`El concepto se guardará en ${periods.find((p) => p.id === evalForm.period_id)?.code || 'el corte seleccionado'} para esta actividad.`}
               onChange={(e) => setEvalForm({ ...evalForm, observations: e.target.value })}
               sx={{

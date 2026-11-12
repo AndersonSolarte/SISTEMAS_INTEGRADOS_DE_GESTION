@@ -2,7 +2,7 @@ const text = (value) => String(value ?? '').normalize('NFC').toLowerCase().repla
 const present = (value) => value !== null && value !== undefined && value !== '';
 const isLegacyItem = (item) => !/^ACT-/i.test(item.code || '')
   && (/^LEGACY-\d+$/.test(item.code || '') || present(item.custom_values?.legacy_plan_accion_id));
-const stripLegacyProvenance = (values) => Object.fromEntries(Object.entries(values || {}).filter(([key]) => !/^legacy_/i.test(key)));
+const stripLegacyProvenance = (values) => Object.fromEntries(Object.entries(values || {}).filter(([key]) => !/^legacy_/i.test(key) && key !== 'official_observations'));
 const { sourceScope, dependencyCode, normalize } = require('./legacyActionScope');
 const activityText = (value) => normalize(String(value || '').trim().replace(/^A-\d+\s+/i, ''));
 const indicatorText = (value, row) => {

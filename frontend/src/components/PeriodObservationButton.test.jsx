@@ -1,8 +1,9 @@
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import PeriodObservationButton from './PeriodObservationButton';
 import { periodObservation } from '../utils/periodObservation';
+import { getIndicatorObservations } from '../utils/actionPlanIndicators';
 
 const s1 = { id: 'p1', code: 'S1', name: 'Seguimiento 1', position: 1 };
 const s2 = { id: 'p2', code: 'S2', name: 'Seguimiento 2 / Cierre', position: 2 };
@@ -19,6 +20,8 @@ test('shows the official observation for the selected activity and cut, includin
   expect(dialog.queryByText('Soportes de S1 completos.')).not.toBeInTheDocument();
   expect(dialog.getByText('S2 · Seguimiento 2 / Cierre')).toBeInTheDocument();
   expect(dialog.queryByRole('button', { name: 'Editar valoración' })).not.toBeInTheDocument();
+  expect(dialog.queryByRole('button', { name: 'Editar observación' })).not.toBeInTheDocument();
+  expect(dialog.queryByRole('button', { name: 'Eliminar observación' })).not.toBeInTheDocument();
 });
 
 test('does not display the observations of another activity', () => {
@@ -66,4 +69,49 @@ test('does not confuse period IDs or show a deleted valuation', () => {
   ] };
   expect(periodObservation(item, { id: '42' })).toBe('Vigente');
   expect(periodObservation(item, s2)).toBe('');
+});
+
+test('authorized users edit only the concept text without changing scores or the other cut', async () => {
+  const save = jest.fn().mockResolvedValue(undefined);
+  const original = JSON.stringify(activity);
+  render(<PeriodObservationButton activity={activity} period={s2} onSave={save} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Observaciones S2 de ACT-001' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Editar observación' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Observación oficial' }), { target: { value: 'Concepto corregido S2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar observación' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith('Concepto corregido S2'));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(JSON.stringify(activity)).toBe(original);
+});
+
+test('deletion requires confirmation and can be cancelled', async () => {
+  const save = jest.fn().mockResolvedValue(undefined);
+  render(<PeriodObservationButton activity={activity} period={s1} onSave={save} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Observaciones S1 de ACT-001' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Eliminar observación' }));
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Eliminar observación' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith(''));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+});
+
+test('a failed deletion keeps the concept visible with its error', async () => {
+  const save = jest.fn().mockRejectedValue({ response: { data: { message: 'No se pudo eliminar' } } });
+  render(<PeriodObservationButton activity={activity} period={s1} onSave={save} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Observaciones S1 de ACT-001' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Eliminar observación' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' }));
+  expect(await screen.findByText('No se pudo eliminar')).toBeInTheDocument();
+  expect(screen.getByText('Soportes de S1 completos.')).toBeInTheDocument();
+});
+
+test('an official deletion stays deleted even if another integration sends an older concept', () => {
+  const item = { ...activity, indicator: 'Informe', custom_values: { official_observations: { p1: { text: '' } },
+    monitoring_indicators: { p1: { principal: { observations: 'Texto anterior', progress: 100 } } } } };
+  expect(periodObservation(item, s1)).toBe('');
+  expect(getIndicatorObservations(item, s1.id, 'principal')).toBe('');
+  expect(periodObservation(item, s2)).toBe('Corregir soportes de S2.');
 });

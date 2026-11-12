@@ -1,13 +1,23 @@
 import React, { useId, useState } from 'react';
-import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material';
 import { ChatBubbleOutline } from '@mui/icons-material';
 import { periodObservation } from '../utils/periodObservation';
 
-export default function PeriodObservationButton({ activity, period, onEdit }) {
+export default function PeriodObservationButton({ activity, period, onEdit, onSave }) {
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState('view');
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const titleId = useId();
   const observation = periodObservation(activity, period);
   const periodName = [period.code, period.name].filter(Boolean).join(' · ') || `Período ${period.position || ''}`;
+  const persist = async (value) => {
+    setBusy(true); setError('');
+    try { await onSave(value); setOpen(false); setMode('view'); }
+    catch (failure) { setError(failure?.response?.data?.message || 'No fue posible guardar la observación. Intente nuevamente.'); }
+    finally { setBusy(false); }
+  };
   return (
     <Box sx={{ mt: 0.75 }}>
       <Button size="small" variant={observation ? 'outlined' : 'text'}
@@ -15,6 +25,7 @@ export default function PeriodObservationButton({ activity, period, onEdit }) {
         aria-label={`Observaciones ${period.code || period.name} de ${activity.code || activity.activity}`}
         onClick={(event) => {
           event.stopPropagation();
+          setMode('view'); setError('');
           if (onEdit && !observation) onEdit();
           else setOpen(true);
         }}
@@ -23,7 +34,7 @@ export default function PeriodObservationButton({ activity, period, onEdit }) {
         Observaciones
       </Button>
       {open && (
-        <Dialog open onClose={() => setOpen(false)} maxWidth="sm" fullWidth aria-labelledby={titleId}
+        <Dialog open onClose={() => !busy && setOpen(false)} maxWidth="sm" fullWidth aria-labelledby={titleId}
           PaperProps={{ sx: { borderRadius: 3 } }} onClick={(event) => event.stopPropagation()}>
           <DialogTitle id={titleId} sx={{ fontSize: 17, fontWeight: 800 }}>Observaciones de Planeación y Efectividad</DialogTitle>
           <DialogContent>
@@ -38,14 +49,32 @@ export default function PeriodObservationButton({ activity, period, onEdit }) {
                   <Typography variant="caption" color="text.secondary">{period.starts_on || '—'} al {period.ends_on || '—'}</Typography>
                 )}
               </Box>
-              {observation ? (
+              {error && <Alert severity="error">{error}</Alert>}
+              {mode === 'delete' && <Alert severity="warning">
+                ¿Eliminar la observación de {period.code || period.name} para esta actividad? El avance y las evidencias se conservarán.
+              </Alert>}
+              {mode === 'edit' ? <TextField multiline minRows={4} fullWidth autoFocus
+                label="Observación oficial" value={draft} disabled={busy}
+                onChange={(event) => setDraft(event.target.value)} /> : observation ? (
                 <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 14 }}>{observation}</Typography>
               ) : <Alert severity="info">No hay observaciones registradas para esta actividad en este corte.</Alert>}
             </Stack>
           </DialogContent>
           <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button onClick={() => setOpen(false)}>Cerrar</Button>
-            {onEdit && <Button variant="contained" onClick={() => { setOpen(false); onEdit(); }}>
+            <Button disabled={busy} onClick={() => mode === 'view' ? setOpen(false) : setMode('view')}>
+              {mode === 'view' ? 'Cerrar' : 'Cancelar'}
+            </Button>
+            {onSave && mode === 'view' && <>
+              {observation && <Button color="error" onClick={() => setMode('delete')}>Eliminar observación</Button>}
+              <Button variant="contained" onClick={() => { setDraft(observation); setMode('edit'); }}>
+                {observation ? 'Editar observación' : 'Agregar observación'}
+              </Button>
+            </>}
+            {onSave && mode === 'edit' && <Button variant="contained" disabled={busy || !draft.trim()}
+              onClick={() => persist(draft.trim())}>{busy ? 'Guardando…' : 'Guardar observación'}</Button>}
+            {onSave && mode === 'delete' && <Button color="error" variant="contained" disabled={busy}
+              onClick={() => persist('')}>{busy ? 'Eliminando…' : 'Confirmar eliminación'}</Button>}
+            {!onSave && onEdit && <Button variant="contained" onClick={() => { setOpen(false); onEdit(); }}>
               {observation ? 'Editar valoración' : 'Registrar valoración'}
             </Button>}
           </DialogActions>

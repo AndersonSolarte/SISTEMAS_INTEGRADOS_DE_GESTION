@@ -202,6 +202,11 @@ const saveActionItem = async ({ req, actionPlan, payload, item = null }) => sequ
 });
 
 const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => sequelize.transaction(async (transaction) => {
+  const canManageObservations = ['administrador', 'planeacion_efectividad'].includes(req.user?.role);
+  const hasObservation = Object.prototype.hasOwnProperty.call(payload, 'observations');
+  if (hasObservation && !canManageObservations) {
+    throw Object.assign(new Error('Solo Administrador y Planeación y Efectividad pueden editar o eliminar el concepto oficial.'), { statusCode: 403 });
+  }
   const [result, created] = await StrategicMonitoringResult.findOrCreate({
     where: { action_item_id: actionItem.id, monitoring_period_id: periodId },
     defaults: { action_item_id: actionItem.id, monitoring_period_id: periodId, created_by: req.user.id },
@@ -209,6 +214,19 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
   });
   const previous = created ? null : result.toJSON();
   const custom = { ...(actionItem.custom_values || {}) };
+  if (hasObservation) {
+    custom.official_observations = { ...(custom.official_observations || {}), [periodId]: {
+      text: payload.observations || '', updated_by: req.user.id, updated_at: new Date().toISOString()
+    } };
+  }
+  if (!created && hasObservation && Object.keys(payload).length === 1) {
+    await result.update({ observations: payload.observations || null,
+      version: Number(result.version || 1) + 1, updated_by: req.user.id }, { transaction });
+    await actionItem.update({ custom_values: custom }, { transaction });
+    await audit(req, 'monitoring.observation.update', 'monitoring_result', result.id, previous,
+      result.toJSON(), payload.observations ? 'Corrección del concepto oficial' : 'Eliminación del concepto oficial', transaction);
+    return result;
+  }
   const isPlanningStaff = ['administrador', 'planeacion_estrategica', 'planeacion_efectividad'].includes(req.user?.role);
   let progress = isPlanningStaff && payload.physical_progress !== undefined && payload.physical_progress !== ''
     ? Math.max(0, Math.min(999, Number(payload.physical_progress || 0)))
@@ -245,7 +263,7 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
     physical_progress: progress,
     achieved_value: Object.prototype.hasOwnProperty.call(payload, 'achieved_value')
       ? (payload.achieved_value || null) : result.achieved_value,
-    observations: isPlanningStaff && Object.prototype.hasOwnProperty.call(payload, 'observations')
+    observations: canManageObservations && hasObservation
       ? (payload.observations || null) : result.observations,
     traffic_light: isPlanningStaff ? (payload.traffic_light || result.traffic_light) : result.traffic_light,
     status: isPlanningStaff && payload.status ? payload.status : (result.status === 'approved' ? 'approved' : 'submitted'),

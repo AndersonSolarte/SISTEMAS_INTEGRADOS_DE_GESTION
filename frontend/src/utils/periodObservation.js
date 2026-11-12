@@ -1,5 +1,7 @@
 export const periodObservation = (activity, period) => {
   if (!period?.id) return '';
+  const official = activity?.custom_values?.official_observations;
+  if (official && Object.prototype.hasOwnProperty.call(official, period.id)) return String(official[period.id]?.text ?? '').trim();
   const result = (activity?.monitoringResults || []).find((row) => !row.deleted_at
     && String(row.monitoring_period_id) === String(period.id));
   // A saved empty observation is authoritative: do not restore old imported text.

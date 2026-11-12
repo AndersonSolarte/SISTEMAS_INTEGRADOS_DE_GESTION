@@ -147,6 +147,7 @@ export default function PlanAccionConsulta({
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const { user: authUser } = useAuth();
+  const canManageObservations = !readOnly && ['administrador', 'planeacion_efectividad'].includes(authUser?.role);
   const userId = authUser?.id;
   // eslint-disable-next-line no-unused-vars
   const isPlanningStaff = Boolean(authUser && [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.PLANEACION_EFECTIVIDAD].includes(authUser.role));
@@ -2404,7 +2405,11 @@ export default function PlanAccionConsulta({
                                   />
                                 </Tooltip>
                               )}
-                              {isFirstSubrow && <PeriodObservationButton activity={it} period={p} />}
+                              {isFirstSubrow && <PeriodObservationButton activity={it} period={p}
+                                onSave={canManageObservations ? async (observations) => {
+                                  await strategicPlanningService.saveMonitoring(it.id, p.id, { observations });
+                                  await cargarPlanes();
+                                } : undefined} />}
                             </TableCell>
                           );
                         })}
@@ -2859,7 +2864,11 @@ export default function PlanAccionConsulta({
                                   />
                                 </Tooltip>
                               )}
-                              <PeriodObservationButton activity={it} period={p} />
+                              <PeriodObservationButton activity={it} period={p}
+                                onSave={canManageObservations ? async (observations) => {
+                                  await strategicPlanningService.saveMonitoring(it.id, p.id, { observations });
+                                  await cargarPlanes();
+                                } : undefined} />
                             </TableCell>
                           );
                         })}

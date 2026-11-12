@@ -1214,12 +1214,14 @@ const syncLinkedActionPlansTracking = async (plan, req) => {
           }
           custom.monitoring_indicators = { ...custom.monitoring_indicators, [period.id]: entries };
         }
-        await result.update({ physical_progress: contribution, observations: cut.observaciones || '', status: 'submitted', updated_by: req.user.id });
+        const officialConcept = custom.official_observations?.[period.id];
+        const concept = officialConcept ? officialConcept.text : (cut.observaciones || '');
+        await result.update({ physical_progress: contribution, observations: concept || null, status: 'submitted', updated_by: req.user.id });
         const existingIndex = currentResults.findIndex((r) => String(r.monitoring_period_id) === String(period.id));
         if (existingIndex >= 0) currentResults[existingIndex] = { monitoring_period_id: period.id, physical_progress: contribution };
         else currentResults.push({ monitoring_period_id: period.id, physical_progress: contribution });
         custom[`progress_s${position}`] = contribution;
-        custom[`observations_s${position}`] = cut.observaciones || '';
+        custom[`observations_s${position}`] = concept || '';
         const dates = { ...(custom.pm_monitoring_dates || {}) };
         dates[position] = cut.fecha;
         custom.pm_monitoring_dates = dates;

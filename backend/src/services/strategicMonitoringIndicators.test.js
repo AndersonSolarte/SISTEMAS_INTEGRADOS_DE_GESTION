@@ -56,9 +56,10 @@ test('official concepts stay in their activity and cut and survive subsequent ev
     assert.equal(s1.observations, 'Concepto oficial S1');
     assert.equal(s2.observations, 'Pendientes de S2');
     assert.equal(other.observations, 'Otra actividad');
-    await upsertMonitoring({ req: { user: { id: 2, role: 'usuario' }, headers: {} }, actionItem, periodId: 's1',
+    await assert.rejects(upsertMonitoring({ req: { user: { id: 2, role: 'usuario' }, headers: {} }, actionItem, periodId: 's1',
       payload: { status: 'submitted', observations: 'Intento de sustituir concepto', physical_progress: 0,
-        indicators_progress: { principal: { progress: 0, observations: 'Otro texto' } } } });
+        indicators_progress: { principal: { progress: 0, observations: 'Otro texto' } } } }), { statusCode: 403 });
+    await upsertMonitoring({ req: { user: { id: 2, role: 'usuario' }, headers: {} }, actionItem, periodId: 's1', payload: { status: 'submitted' } });
     assert.equal(s1.observations, 'Concepto oficial S1');
     assert.equal(s1.physical_progress, 100);
     assert.equal(s1.achieved_value, 'Soportes revisados');
@@ -71,4 +72,37 @@ test('official concepts stay in their activity and cut and survive subsequent ev
   } finally {
     [sequelize.transaction, StrategicMonitoringResult.findOrCreate, StrategicMonitoringResult.findAll, StrategicAuditEvent.create] = originals;
   }
+});
+
+test('only administrators and planning effectiveness may correct or delete an official concept', async () => {
+  const originals = [sequelize.transaction, StrategicMonitoringResult.findOrCreate, StrategicAuditEvent.create];
+  sequelize.transaction = async (fn) => fn({});
+  let touched = 0;
+  const result = { id: 'r', observations: 'Original', physical_progress: 80, status: 'approved', version: 2,
+    toJSON() { return { observations: this.observations, physical_progress: this.physical_progress }; },
+    async update(values) { Object.assign(this, values); } };
+  StrategicMonitoringResult.findOrCreate = async () => { touched++; return [result, false]; };
+  const events = [];
+  StrategicAuditEvent.create = async (values) => { events.push(values); return {}; };
+  const item = { id: 'a', current_progress: 80, custom_values: { official_observations: { s2: { text: 'Otro corte' } } },
+    async update(values) { Object.assign(this, values); } };
+  try {
+    for (const role of ['usuario', 'planeacion_estrategica', 'autoevaluacion', 'gestion_informacion']) {
+      for (const observations of ['', 'Cambiar']) await assert.rejects(upsertMonitoring({ req: { user: { id: 2, role }, headers: {} },
+        actionItem: item, periodId: 's1', payload: { observations } }), { statusCode: 403 });
+    }
+    assert.equal(touched, 0);
+    for (const role of ['administrador', 'planeacion_efectividad']) {
+      await upsertMonitoring({ req: { user: { id: 1, role }, headers: {} }, actionItem: item, periodId: 's1', payload: { observations: 'Corregido' } });
+      assert.equal(result.observations, 'Corregido');
+      await upsertMonitoring({ req: { user: { id: 1, role }, headers: {} }, actionItem: item, periodId: 's1', payload: { observations: '' } });
+      assert.equal(result.observations, null);
+      assert.equal(result.physical_progress, 80);
+      assert.equal(result.status, 'approved');
+      assert.equal(item.current_progress, 80);
+      assert.equal(item.custom_values.official_observations.s1.text, '');
+      assert.equal(item.custom_values.official_observations.s2.text, 'Otro corte');
+    }
+    assert.equal(events.length, 4);
+  } finally { [sequelize.transaction, StrategicMonitoringResult.findOrCreate, StrategicAuditEvent.create] = originals; }
 });
