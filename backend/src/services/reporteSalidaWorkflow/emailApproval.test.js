@@ -95,7 +95,7 @@ test('el formulario recibido por HTTP acepta POST con las protecciones reales de
   const { controller } = setup(t, [own, other]);
   const app = express();
   app.use(helmet());
-  app.use(cors(security.corsOptions));
+  app.use(cors(security.corsOptionsForRequest));
   app.use(express.urlencoded({ extended: false }));
   app.use('/api', security.methodGuard, security.sensitivePathGuard, security.noStore, security.payloadShapeGuard, security.sqlInjectionGuard);
   app.get('/api/reporte-salida/aprobar-grupo/:token', controller.aprobarGrupoDesdeCorreo);
@@ -142,7 +142,7 @@ test('los enlaces individuales abren y procesan por HTTP las seis etapas de apro
   const security = require('../../middlewares/security');
   const app = express();
   app.use(require('helmet')());
-  app.use(require('cors')(security.corsOptions));
+  app.use(require('cors')(security.corsOptionsForRequest));
   app.use(express.urlencoded({ extended: false }));
   app.use('/api', security.methodGuard, security.sensitivePathGuard, security.noStore, security.payloadShapeGuard, security.sqlInjectionGuard);
   app.get('/api/reporte-salida/aprobar/:token', controller.aprobarDesdeCorreo);
@@ -190,4 +190,43 @@ test('un token ilegible permanece bloqueado y no consulta la base de datos', asy
   assert.equal(res.code, 403);
   assert.match(res.html, /Enlace vencido o invalido/);
   assert.equal(query.mock.calls.length, 0);
+});
+
+test('desde un visor de correo con Origin null se puede abrir y aprobar; fetch a API privadas sigue bloqueado', async (t) => {
+  const row = solicitud(1, 'jefe.prueba@unicesmag.edu.co');
+  delete row.datos_formulario.grupo_id;
+  const { controller } = setup(t, [row]);
+  const token = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'jefe', consecutivo: row.consecutivo }, null);
+  row.aprobacion_jefe_token_hash = crypto.createHash('sha256').update(token).digest('hex');
+  const security = require('../../middlewares/security');
+  const app = require('express')();
+  app.use(require('helmet')());
+  app.use(require('cors')(security.corsOptionsForRequest));
+  app.use(require('express').urlencoded({ extended: false }));
+  app.use('/api', security.methodGuard, security.sensitivePathGuard, security.noStore, security.payloadShapeGuard, security.sqlInjectionGuard);
+  app.get('/api/reporte-salida/aprobar/:token', controller.aprobarDesdeCorreo);
+  app.post('/api/reporte-salida/aprobar/:token', controller.aprobarDesdeCorreo);
+  app.get('/api/users', (_req, res) => res.json({ protected: true }));
+  app.use((error, _req, res, _next) => res.status(error.status || 500).json({ success: false, status: error.status || 500, code: error.code || 'UNHANDLED_ERROR' }));
+  const server = await new Promise((resolve) => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
+  t.after(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
+  const request = (url, headers, body = '') => new Promise((resolve, reject) => {
+    const req = require('http').request({ hostname: '127.0.0.1', port: server.address().port, path: url, method: body ? 'POST' : 'GET', headers }, (res) => {
+      let text = ''; res.setEncoding('utf8'); res.on('data', (chunk) => { text += chunk; }); res.on('end', () => resolve({ status: res.statusCode, text, headers: res.headers }));
+    });
+    req.on('error', reject); req.end(body);
+  });
+  const navigation = { Origin: 'null', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' };
+  const page = await request(`/api/reporte-salida/aprobar/${token}`, navigation);
+  assert.equal(page.status, 200);
+  const action = page.text.match(/<form method="POST" action="([^"]+)"/)[1];
+  assert.equal(row.estado, 'pendiente_aprobacion_jefe');
+  const post = await request(action, { ...navigation, 'Content-Type': 'application/x-www-form-urlencoded' }, 'accion=aprobar');
+  assert.equal(post.status, 200);
+  assert.equal(row.estado, 'pendiente_aprobacion_gestion_humana');
+  const privateApi = await request('/api/users', navigation);
+  assert.equal(privateApi.status, 403);
+  assert.match(privateApi.text, /CORS_ORIGIN_DENIED/);
+  const ajax = await request(action, { Origin: 'null', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty' });
+  assert.equal(ajax.status, 403);
 });
