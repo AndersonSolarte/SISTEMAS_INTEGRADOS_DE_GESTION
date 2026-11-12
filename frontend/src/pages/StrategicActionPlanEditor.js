@@ -4019,7 +4019,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         </Box>
       </DialogTitle>
 
-      <DialogContent sx={{ p: { xs: 1.5, sm: 2.5, md: 3.5 }, pb: { xs: 2.5, sm: 3 }, bgcolor: '#f7f8fc' }}>
+      <DialogContent sx={{ ...minuteScrollStyles, p: { xs: 1.5, sm: 2.5, md: 3.5 }, pb: { xs: 2.5, sm: 3 }, bgcolor: '#f7f8fc' }}>
         {loading ? (
           <Stack alignItems="center" py={10}><CircularProgress /></Stack>
         ) : !detail ? (
@@ -4664,17 +4664,21 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   gap: 2.5,
                   alignItems: 'stretch',
                   width: '100%',
-                  height: { lg: 'calc(100dvh - 255px)' },
-                  minHeight: { lg: 320 },
-                  flex: 1
+                  height: { lg: 'max(320px, calc(100dvh - 255px))' },
+                  minHeight: 0,
+                  flex: '0 0 auto',
+                  overflow: { lg: 'hidden' }
                 }}>
                 <Box sx={{
                   width: meetingLayoutMode === 'form' ? '100%' : meetingLayoutMode === 'split' ? { xs: '100%', lg: '47%' } : '100%',
                   display: meetingLayoutMode === 'preview' ? 'none' : 'flex',
                   flexDirection: 'column',
                   gap: 3,
+                  borderRight: { lg: meetingLayoutMode === 'split' ? '2px solid #94a3b8' : 'none' },
+                  '& > *': { flexShrink: 0 },
                   height: { lg: '100%' },
-                  overflowY: { lg: 'auto' },
+                  overflowY: { lg: 'scroll' },
+                  minHeight: 0,
                   minWidth: 0,
                   ...minuteScrollStyles,
                   pr: { lg: 1.5 },
@@ -5461,7 +5465,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   width: meetingLayoutMode === 'preview' ? '100%' : meetingLayoutMode === 'split' ? { xs: '100%', lg: '53%' } : '100%',
                   display: meetingLayoutMode === 'form' ? 'none' : 'block',
                   height: { lg: '100%' },
-                  overflowY: { lg: 'auto' },
+                  overflowY: { lg: 'scroll' },
+                  minHeight: 0,
                   minWidth: 0,
                   ...minuteScrollStyles,
                   pr: { lg: 1.5 },
