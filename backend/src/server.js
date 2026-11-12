@@ -11,6 +11,7 @@ const multer = require('multer');
 const fs = require('fs');
 const { DataTypes } = require('sequelize');
 const { sequelize, testConnection } = require('./config/database');
+const { publicEmailErrorReference } = require('./middlewares/publicEmailError');
 const {
   corsOptions,
   corsOptionsForRequest,
@@ -158,11 +159,13 @@ app.use((err, req, res, next) => {
   const status = Number(err?.status || err?.statusCode) || 500;
   const safeStatus = HTTP_STATUS_MESSAGES[status] ? status : 500;
   const fallbackMessage = HTTP_STATUS_MESSAGES[safeStatus];
+  const reference = publicEmailErrorReference(req, err, safeStatus);
 
   return res.status(safeStatus).json({
     success: false,
     status: safeStatus,
     code: err?.code || 'UNHANDLED_ERROR',
+    reference,
     message: safeStatus === 500 ? fallbackMessage : (err?.message || fallbackMessage),
     details: process.env.NODE_ENV === 'production' ? undefined : String(err?.stack || err?.message || '')
   });
