@@ -9,7 +9,8 @@ const readLiveActionPlanSchema = async (actionPlan, transaction = null) => {
   const freshKeys = new Set(fresh.fields.map((field) => field.key));
   const previous = actionPlan.metadata?.form_schema?.fields || [];
   const legacy = previous.filter((field) => field.active !== false && !freshKeys.has(field.key) && !inactiveKeys.has(field.key));
-  const fields = [...fresh.fields, ...legacy].map((field) => {
+  const fields = [...fresh.fields, ...legacy].map((original) => {
+    const field = require('./optionalPolicyField').optionalPolicyField(original);
     if (['responsible', 'responsable_de_ejecucion', 'co_responsibles'].includes(field.key) && !field.validation_rules?.catalog_type) {
       return { ...field, validation_rules: { ...(field.validation_rules || {}), catalog_type: 'organizational_unit' } };
     }

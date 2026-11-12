@@ -57,7 +57,7 @@ const captureActionPlanSchema = async (strategicPlanId, transaction = null) => {
   const elements = elementRows.map(plain);
 
   const fields = uniqueFields.map((field) => {
-    const updated = { ...field };
+    const updated = require('./optionalPolicyField').optionalPolicyField(field);
     if (['responsible', 'responsable_de_ejecucion', 'co_responsibles'].includes(updated.key) && !updated.validation_rules?.catalog_type) {
       updated.validation_rules = { ...(updated.validation_rules || {}), catalog_type: 'organizational_unit' };
     }

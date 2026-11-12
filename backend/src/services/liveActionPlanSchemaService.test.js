@@ -38,3 +38,19 @@ test('does not silently use an obsolete schema when the current configuration ca
     await assert.rejects(() => readLiveActionPlanSchema({ term: { strategic_plan_id: 'ped' }, metadata: { form_schema: { fields: [{ key: 'old' }] } } }), /Current schema unavailable/);
   } finally { schemaService.captureActionPlanSchema = original; }
 });
+
+test('official and linking schemas make even legacy policy recommendations optional', async () => {
+  const originals = [schemaService.captureActionPlanSchema, StrategicFieldDefinition.findAll];
+  schemaService.captureActionPlanSchema = async () => ({ fields: [
+    { key: 'activity', required: true }, { key: 'institutional_policy', required: true }
+  ] });
+  StrategicFieldDefinition.findAll = async () => [];
+  try {
+    const schema = await readLiveActionPlanSchema({ term: { strategic_plan_id: 'ped' }, metadata: { form_schema: { fields: [
+      { key: 'seguimiento_politicas', required: true }
+    ] } } });
+    assert.equal(schema.fields.find((field) => field.key === 'activity').required, true);
+    assert.equal(schema.fields.find((field) => field.key === 'institutional_policy').required, false);
+    assert.equal(schema.fields.find((field) => field.key === 'seguimiento_politicas').required, false);
+  } finally { [schemaService.captureActionPlanSchema, StrategicFieldDefinition.findAll] = originals; }
+});

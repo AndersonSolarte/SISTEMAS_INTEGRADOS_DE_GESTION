@@ -1,6 +1,8 @@
 // PEI StrategicActionPlanEditor Module
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PeriodObservationButton from '../components/PeriodObservationButton';
+import ActivityTableText from '../components/ActivityTableText';
+import { activityColumnWidth } from '../utils/activityTableLayout';
 import { periodObservation } from '../utils/periodObservation';
 import {
   Alert, Autocomplete, Avatar, Badge, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Fab, FormControlLabel, Grid, IconButton, InputAdornment, ListItemIcon, ListItemText, Menu, MenuItem, Paper, Radio, RadioGroup, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tabs, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
@@ -453,6 +455,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [minuteSearch, setMinuteSearch] = useState('');
   // Paginación de tablas (5 por defecto, con opciones 5, 10, 20, 50)
   const [itemsPage, setItemsPage] = useState(0);
+  const [activityTableExpanded, setActivityTableExpanded] = useState(false);
   const [itemsRowsPerPage, setItemsRowsPerPage] = useState(5);
   const [activityOriginFilter, setActivityOriginFilter] = useState('all');
 
@@ -1185,6 +1188,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const activityFields = useMemo(() => actionPlanFormFields(schemaFields, pedFields, DEFAULT_ACTIVITY_FIELDS), [schemaFields, pedFields]);
 
   const recordColumns = activityFields;
+  const activityTableWidth = 248 + recordColumns.reduce((total, field) => total + activityColumnWidth(field), 0);
 
   const formElements = formSchema?.elements || structure;
   const formCatalogs = (formSchema?.catalogs && formSchema.catalogs.length > 0)
@@ -4225,7 +4229,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   </Alert>
                 )}
 
-                <Paper variant="outlined" sx={{ borderRadius: 3.5, overflow: 'hidden', borderColor: '#e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                {activityTableExpanded && <Box onClick={() => setActivityTableExpanded(false)}
+                  sx={{ position: 'fixed', inset: 0, zIndex: 1300, bgcolor: 'rgba(15,23,42,0.35)' }} />}
+                <Paper variant="outlined" onKeyDown={(event) => {
+                  if (activityTableExpanded && event.key === 'Escape') { event.stopPropagation(); setActivityTableExpanded(false); }
+                }} sx={{ borderRadius: 3.5, overflow: 'hidden', borderColor: '#e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
+                  ...(activityTableExpanded ? { position: 'fixed', inset: { xs: 8, md: 20 }, zIndex: 1301,
+                    display: 'flex', flexDirection: 'column', bgcolor: '#ffffff' } : {}) }}>
                   <Box sx={{ px: 3, py: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1.5}>
                       <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
@@ -4266,7 +4276,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                           </Stack>
                         )}
                       </Stack>
-                      <Chip label={`DIR-PE-FR-003 · Vigencia ${detail.term?.year}`} size="small" sx={{ fontWeight: 800, bgcolor: '#e2e8f0', color: '#334155' }} />
+                      <Stack direction="row" alignItems="center" spacing={1}>
+                        <Button size="small" variant="outlined" aria-expanded={activityTableExpanded} onClick={() => setActivityTableExpanded((value) => !value)}
+                          sx={{ textTransform: 'none', fontWeight: 750 }}>
+                          {activityTableExpanded ? 'Reducir tabla' : 'Ampliar tabla'}
+                        </Button>
+                        <Chip label={`DIR-PE-FR-003 · Vigencia ${detail.term?.year}`} size="small" sx={{ fontWeight: 800, bgcolor: '#e2e8f0', color: '#334155' }} />
+                      </Stack>
                     </Stack>
                   </Box>
                   {activityOriginFilter === 'plan_mejoramiento' && (
@@ -4277,19 +4293,25 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                       </Typography>
                     </Box>
                   )}
-                  <TableContainer sx={{ width: '100%', maxWidth: '100%', overflowX: 'auto', maxHeight: { xs: 450, sm: 520, md: '60vh' }, WebkitOverflowScrolling: 'touch' }}>
-                    <Table stickyHeader size="small" sx={{ minWidth: Math.max(850, (recordColumns.length + 2) * 150), tableLayout: 'auto' }}>
+                  <TableContainer sx={{ width: '100%', maxWidth: '100%', overflow: 'auto', maxHeight: activityTableExpanded ? 'none' : '76vh',
+                    ...(activityTableExpanded ? { flex: 1, minHeight: 0 } : {}), WebkitOverflowScrolling: 'touch' }}>
+                    <Table stickyHeader size="small" sx={{ width: activityTableWidth, minWidth: '100%', tableLayout: 'fixed' }}>
+                      <colgroup>
+                        <col style={{ width: 160 }} />
+                        {recordColumns.map((field) => <col key={field.key} style={{ width: activityColumnWidth(field) }} />)}
+                        <col style={{ width: 88 }} />
+                      </colgroup>
                       <TableHead>
                         <TableRow>
-                          <TableCell align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', width: 95, whiteSpace: 'nowrap' }}>
+                          <TableCell align="center" sx={{ position: 'sticky', left: 0, zIndex: 4, bgcolor: '#f1f5f9', fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', width: 160, whiteSpace: 'nowrap' }}>
                             Código
                           </TableCell>
                           {recordColumns.map((field) => (
-                            <TableCell key={field.key} sx={{ bgcolor: '#f1f5f9', fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', whiteSpace: 'nowrap' }}>
+                            <TableCell key={field.key} sx={{ width: activityColumnWidth(field), bgcolor: '#f1f5f9', fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', whiteSpace: 'normal' }}>
                               {field.label}
                             </TableCell>
                           ))}
-                          <TableCell align="center" sx={{ bgcolor: '#f1f5f9', fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', width: 75, whiteSpace: 'nowrap' }}>Acción</TableCell>
+                          <TableCell align="center" sx={{ position: 'sticky', right: 0, zIndex: 4, bgcolor: '#f1f5f9', fontWeight: 900, color: '#1e293b', borderBottom: '2px solid #cbd5e1', width: 88, whiteSpace: 'nowrap' }}>Acción</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -4332,7 +4354,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                         borderRight: '1.5px solid #cbd5e1',
                                         py: 1.2,
                                         px: 1,
-                                        width: 95
+                                        position: 'sticky', left: 0, zIndex: 2, width: 160
                                       }}
                                     >
                                       <Stack direction="row" spacing={0.7} alignItems="center" justifyContent="center">
@@ -4368,7 +4390,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                         <TableCell
                                           key={field.key}
                                           sx={{
-                                            maxWidth: 360,
+                                            width: activityColumnWidth(field),
                                             whiteSpace: 'normal',
                                             fontSize: 12.5,
                                             color: '#334155',
@@ -4399,13 +4421,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                                   />
                                                 </Box>
                                               )}
-                                              <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#1e293b', lineHeight: 1.35 }}>
-                                                {ind.indicator}
-                                              </Typography>
+                                              <ActivityTableText value={ind.indicator} label={`${row.code} · ${ind.shortLabel}`} sx={{ fontWeight: 600, color: '#1e293b' }} />
                                               {Boolean(ind.target) && (
-                                                <Typography sx={{ fontSize: 11.5, color: '#059669', fontWeight: 700, mt: 0.3 }}>
-                                                  Meta: {ind.target}
-                                                </Typography>
+                                                <ActivityTableText value={`Meta: ${ind.target}`} label={`${row.code} · Meta`} sx={{ color: '#059669', fontWeight: 700, mt: 0.5 }} />
                                               )}
                                             </Box>
                                           ) : isIndicatorField(field) ? (
@@ -4427,14 +4445,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                                   }}
                                                 />
                                               )}
-                                              <Typography component="span" sx={{ fontSize: 12, fontWeight: 500, color: '#1e293b' }}>
-                                                {ind.indicator}
-                                              </Typography>
+                                              <ActivityTableText value={ind.indicator} label={`${row.code} · ${ind.shortLabel}`} />
                                             </Box>
                                           ) : (field.key === 'target' || field.key === 'meta') ? (
-                                            <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#059669' }}>
-                                              {ind.target || '—'}
-                                            </Typography>
+                                            <ActivityTableText value={ind.target} label={`${row.code} · Meta`} sx={{ color: '#059669', fontWeight: 700 }} />
                                           ) : (
                                             <Chip
                                               size="small"
@@ -4466,8 +4480,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                         key={field.key}
                                         rowSpan={indCount}
                                         sx={{
-                                          maxWidth: isActivityCol ? 340 : 280,
-                                          minWidth: isActivityCol ? 200 : 120,
+                                          width: activityColumnWidth(field),
                                           whiteSpace: 'normal',
                                           fontSize: 12.5,
                                           color: '#334155',
@@ -4500,9 +4513,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                                 />
                                               </Tooltip>
                                             )}
-                                            <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a', lineHeight: 1.35 }}>
-                                              {recordValue(row, field)}
-                                            </Typography>
+                                            <ActivityTableText value={recordValue(row, field)} label={`${row.code} · ${field.label}`} sx={{ fontWeight: 700, color: '#0f172a' }} />
                                             {indCount > 1 && (
                                               <Chip
                                                 size="small"
@@ -4524,7 +4535,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                             {formatFecha(recordValue(row, field))}
                                           </Typography>
                                         ) : (
-                                          recordValue(row, field)
+                                          <ActivityTableText value={recordValue(row, field)} label={`${row.code} · ${field.label}`} />
                                         )}
                                       </TableCell>
                                     );
@@ -4537,7 +4548,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                       align="center"
                                       sx={{
                                         bgcolor: activityBg,
-                                        width: 75,
+                                        position: 'sticky', right: 0, zIndex: 2, width: 88,
                                         verticalAlign: 'middle',
                                         borderBottom: '2.5px solid #94a3b8',
                                         borderLeft: '1.5px solid #cbd5e1'
