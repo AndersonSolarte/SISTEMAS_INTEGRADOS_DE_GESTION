@@ -74,7 +74,7 @@ const findOrCreateUnit = async ({ plan, term, dependency, transaction }) => {
     where: { term_id: term.id, deleted_at: null }, attributes: ['code', 'catalog_item_id', 'term_id', 'metadata'], transaction
   });
   const preferredIds = preferredLegacyUnitIds(scopedPlans, term, dependency);
-  const existing = chooseLegacyUnit(units, dependency, preferredIds);
+  const existing = chooseLegacyUnit(units, dependency, preferredIds, preferredLegacyUnitIds(scopedPlans, term, dependency, { officialOnly: true }));
   if (existing) {
     if (!dependencyCode(existing.code) && !existing.metadata?.legacy_dependency_code) {
       await existing.update({ metadata: { ...(existing.metadata || {}), legacy_dependency_code: dependencyCode(dependency) } }, { transaction });
@@ -171,7 +171,7 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
       if (actionPlan && (actionPlan.term_id !== term.id || actionPlan.catalog_item_id !== unit.id)) {
         await actionPlan.update({ catalog_item_id: unit.id, term_id: term.id, responsible_user_id: null, responsibility_id: null,
           title: `Plan de Acción ${unit.name} ${term.year}`,
-          metadata: { ...(actionPlan.metadata || {}), legacy_scope_repaired_at: new Date().toISOString() }
+          metadata: { ...(actionPlan.metadata || {}), legacy_previous_responsible_user_id: actionPlan.responsible_user_id ?? actionPlan.metadata?.legacy_previous_responsible_user_id, legacy_previous_responsibility_id: actionPlan.responsibility_id ?? actionPlan.metadata?.legacy_previous_responsibility_id, legacy_scope_repaired_at: new Date().toISOString() }
         }, { transaction });
       }
       if (actionPlan?.deleted_at) {

@@ -514,6 +514,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const hasUnsavedChangesRef = useRef(false);
   const isApplyingLoadRef = useRef(false);
   const lastLoadedMeetingKeyRef = useRef(null);
+  const loadedMeetingVersionRef = useRef(null);
+  const meetingSaveBusyRef = useRef(false);
+  const latestMeetingInputRef = useRef(null);
+  const [draftConflict, setDraftConflict] = useState(false);
 
   // Minute preview state (COM-IF-FR-002)
   const [editingActa, setEditingActa] = useState(false);
@@ -909,6 +913,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         return;
       }
       lastLoadedMeetingKeyRef.current = meetingKey;
+      loadedMeetingVersionRef.current = currentMeeting.updatedAt || currentMeeting.updated_at;
+      setDraftConflict(false);
 
       isApplyingLoadRef.current = true;
       if (!selectedMeetingId && currentMeeting.id) setSelectedMeetingId(String(currentMeeting.id));
@@ -3280,7 +3286,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }, 400);
     enqueueSnackbar('Nueva acta preparada con el Responsable del Plan y Planeación y Efectividad cargados.', { variant: 'info' });
   };
+  latestMeetingInputRef.current = JSON.stringify({ meeting, meetingParticipants });
   const saveMeeting = async (silent = false) => {
+    if (meetingSaveBusyRef.current || draftConflict) return false;
+    const inputSnapshot = latestMeetingInputRef.current;
     if (!meeting.title?.trim() || !meeting.starts_at || !richTextPlain(meeting.objective)) {
       if (!silent) enqueueSnackbar('Título, fecha y objetivo son obligatorios.', { variant: 'warning' });
       return false;
@@ -3293,11 +3302,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       if (!silent) enqueueSnackbar('Seleccione un Responsable principal para el acta.', { variant: 'warning' });
       return false;
     }
+    meetingSaveBusyRef.current = true;
     if (!silent) setSaving(true);
     setSaveStatus('saving');
     try {
       const payload = {
         ...meeting,
+        expected_updated_at: loadedMeetingVersionRef.current,
         type: 'formulation',
         participants: meetingParticipants,
         commitments: richTextPlain(meeting.conclusions) ? [meeting.conclusions] : []
@@ -3312,7 +3323,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
         lastLoadedMeetingKeyRef.current = `${detail?.id || planId}-${newlyCreatedId}`;
         setSelectedMeetingId(newlyCreatedId);
       }
-      hasUnsavedChangesRef.current = false;
+      loadedMeetingVersionRef.current = savedMeeting?.data?.updatedAt || savedMeeting?.data?.updated_at;
+      hasUnsavedChangesRef.current = latestMeetingInputRef.current !== inputSnapshot;
       setSaveStatus('saved');
 
       // Actualizar silenciosamente en segundo plano: NUNCA activa spinner a pantalla completa
@@ -3332,15 +3344,37 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       return { success: true, signatures_reset: signaturesReset, minute_id: savedMeeting?.data?.minute_id || latestMinute?.id };
     } catch (error) {
       setSaveStatus('error');
-      if (!silent) {
+      if (error.response?.status === 409) setDraftConflict(true);
+      if (!silent || error.response?.status === 409) {
         enqueueSnackbar(error.response?.data?.message || 'No fue posible programar la reunión.', { variant: 'error' });
       }
       return false;
     }
     finally {
+      meetingSaveBusyRef.current = false;
       if (!silent) setSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!open || tab !== 'meeting' || !activeMeeting?.id || draftConflict) return undefined;
+    let disposed = false;
+    let pending = false;
+    const refresh = async () => {
+      if (document.hidden || pending || hasUnsavedChangesRef.current || isApplyingLoadRef.current || saveStatus === 'saving') return;
+      pending = true;
+      try {
+        const response = await strategicPlanningService.getActionPlan(planId);
+        if (disposed || hasUnsavedChangesRef.current || isApplyingLoadRef.current) return;
+        const remote = response.data?.meetings?.find(m => String(m.id) === String(activeMeeting.id));
+        if (remote && (remote.updatedAt || remote.updated_at) !== loadedMeetingVersionRef.current) lastLoadedMeetingKeyRef.current = null;
+        if (response.data) setDetail(response.data);
+      } catch (_) { /* Retry without discarding local content. */ }
+      finally { pending = false; }
+    };
+    const timer = window.setInterval(refresh, 3000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [open, tab, activeMeeting?.id, planId, draftConflict, saveStatus]);
 
   // Seguimiento de cambios y autoguardado de reunión / acta
   useEffect(() => {
@@ -3352,7 +3386,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   }, [meeting, meetingParticipants, editingActa, activeMeeting?.id, activeMeeting?.status, latestMinute?.status]);
 
   useEffect(() => {
-    if (!open || tab !== 'meeting' || !hasUnsavedChangesRef.current || isApplyingLoadRef.current) return undefined;
+    if (draftConflict || !open || tab !== 'meeting' || !hasUnsavedChangesRef.current || isApplyingLoadRef.current) return undefined;
     const isLockedNow = Boolean(activeMeeting?.id && (latestMinute?.status === 'signing' || activeMeeting?.status === 'formalized' || latestMinute?.status === 'finalized'));
     if (isLockedNow && !editingActa) return undefined;
     if (!meeting.title?.trim() || !meeting.starts_at || !richTextPlain(meeting.objective)) return undefined;
@@ -3363,7 +3397,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     }, 1200);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meeting, meetingParticipants, open, tab, editingActa, activeMeeting?.id, activeMeeting?.status, latestMinute?.status]);
+  }, [meeting, meetingParticipants, open, tab, editingActa, activeMeeting?.id, activeMeeting?.status, latestMinute?.status, draftConflict, saveStatus]);
   // eslint-disable-next-line no-unused-vars
   const generateMinute = async (meetingId) => {
     try {
@@ -4610,6 +4644,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             {/* TAB 2: CONCERTACIÓN Y ACTA IA (COM-IF-FR-002 PREVIEW) */}
             {tab === 'meeting' && (
               <Stack spacing={2}>
+                {draftConflict && <Alert severity="warning" action={<Button onClick={async () => {
+                  if (!window.confirm('Copie los cambios locales que desee conservar. Cargar la version reciente reemplazara el formulario. Continuar?')) return;
+                  lastLoadedMeetingKeyRef.current = null;
+                  await load(false);
+                }}>Cargar versión reciente</Button>}>Otra persona actualizó el borrador. Su texto se conserva y el autoguardado está detenido para evitar sobrescribir cambios.</Alert>}
                 <Paper
                   elevation={0}
                   sx={{

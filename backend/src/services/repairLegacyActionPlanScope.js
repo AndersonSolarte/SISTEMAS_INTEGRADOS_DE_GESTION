@@ -1,8 +1,8 @@
 const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 const { StrategicActionPlan, StrategicActionItem, StrategicTerm, StrategicCatalogItem,
-  StrategicResponsibility, StrategicMeeting, StrategicWorkflowEvent, StrategicNotification, PlanAccion } = require('../models');
-const { dependencyCode, historicalYear, chooseLegacyUnit, preferredLegacyUnitIds } = require('./legacyActionScope');
+  StrategicResponsibility, StrategicMeeting, StrategicWorkflowEvent, StrategicNotification, PlanAccion, User } = require('../models');
+const { dependencyCode, historicalYear, chooseLegacyUnit, preferredLegacyUnitIds, scopeFromPlanCode } = require('./legacyActionScope');
 const { reconcileLegacyActionPlans, syncMissingPlanLeaders } = require('./strategicLegacyActionPlanService');
 const { isLegacyItem } = require('./legacyActionIdentity');
 
@@ -31,12 +31,17 @@ const repairLegacyActionPlanScope = async () => {
     const ownerCode = dependencyCode(legacy.code.replace(/^LEGACY-\d{4}-/i, ''));
     const row = source.find((row) => Number(row.anio) === Number(legacy.term.year) && dependencyCode(row.responsable) === ownerCode);
     if (!row) continue;
+    const officialOwners = plans.filter(p => !p.deleted_at && !/^LEGACY-/i.test(p.code)
+      && p.term_id === legacy.term_id && scopeFromPlanCode(p.code) === scopeFromPlanCode(legacy.code));
+    if (legacy.responsible_user_id && officialOwners.some(p => p.responsible_user_id
+      && String(p.responsible_user_id) !== String(legacy.responsible_user_id))) continue;
     const unit = chooseLegacyUnit(units.filter((unit) => unit.strategic_plan_id === legacy.term.strategic_plan_id), row.responsable,
-      preferredLegacyUnitIds(plans, legacy.term, row.responsable));
+      preferredLegacyUnitIds(plans, legacy.term, row.responsable),
+      preferredLegacyUnitIds(plans, legacy.term, row.responsable, { officialOnly: true }));
     if (!unit) continue;
     if (legacy.catalog_item_id !== unit.id) await legacy.update({ catalog_item_id: unit.id,
       responsible_user_id: null, responsibility_id: null,
-      metadata: { ...(legacy.metadata || {}), legacy_scope_repaired_at: new Date().toISOString() }
+      metadata: { ...(legacy.metadata || {}), legacy_previous_responsible_user_id: legacy.responsible_user_id ?? legacy.metadata?.legacy_previous_responsible_user_id, legacy_previous_responsibility_id: legacy.responsibility_id ?? legacy.metadata?.legacy_previous_responsibility_id, legacy_scope_repaired_at: new Date().toISOString() }
     });
     const target = plans.filter((plan) => !plan.deleted_at
       && plan.term_id === legacy.term_id && plan.catalog_item_id === legacy.catalog_item_id
@@ -62,7 +67,21 @@ const repairLegacyActionPlanScope = async () => {
       const targetLeaders = await StrategicResponsibility.findAll({ where: { action_plan_id: target.id,
         term_id: target.term_id, catalog_item_id: target.catalog_item_id,
         responsibility_type: 'action_plan_leader', status: 'active' }, transaction });
-      let hasLeader = targetLeaders.length > 0;
+      // A leader explicitly saved on the official plan must survive the merge,
+      // even when the older UI never created its responsibility record.
+      if (target.responsible_user_id) {
+        const user = await User.findOne({ where: { id: target.responsible_user_id, estado: 'activo' }, transaction });
+        if (user) {
+          let selected = targetLeaders.find(r => String(r.user_id) === String(user.id));
+          if (!selected) selected = await StrategicResponsibility.create({ term_id: target.term_id, catalog_item_id: target.catalog_item_id,
+            action_plan_id: target.id, responsibility_type: 'action_plan_leader', user_id: user.id,
+            starts_on: new Date().toISOString().slice(0, 10), status: 'active', created_by: target.created_by || user.id }, { transaction });
+          for (const previous of targetLeaders) if (previous.id !== selected.id) await previous.update({ status: 'ended', ends_on: new Date().toISOString().slice(0, 10) }, { transaction });
+          await target.update({ responsibility_id: selected.id }, { transaction });
+          targetLeaders.splice(0, targetLeaders.length, selected);
+        }
+      }
+      let hasLeader = targetLeaders.length > 0 || Boolean(target.responsible_user_id);
       const history = await StrategicResponsibility.findAll({ where: { action_plan_id: legacy.id }, transaction });
       for (const assignment of history) {
         const validLeader = assignment.responsibility_type === 'action_plan_leader'

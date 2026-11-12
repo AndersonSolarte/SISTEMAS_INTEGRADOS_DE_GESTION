@@ -1,3 +1,4 @@
+import ActionPlanDraftDialog from './meetingMinute/ActionPlanDraftDialog';
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Box, Drawer, AppBar, Toolbar, List, Typography, IconButton, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Avatar, Chip, Divider, Tooltip, Collapse, Badge } from '@mui/material';
@@ -932,11 +933,12 @@ function DashboardLayout() {
           overflowY: 'auto',
           overflowX: 'hidden',
           bgcolor: '#0f1f3a',
-          scrollbarWidth: 'thin',
-          scrollbarColor: '#365783 #0f1f3a',
-          '&::-webkit-scrollbar': { width: 6 },
+          scrollbarWidth: 'auto',
+          scrollbarColor: 'auto',
+          '@supports not selector(::-webkit-scrollbar)': { scrollbarColor: '#94a3b8 #0f1f3a' },
+          '&::-webkit-scrollbar': { width: 14, height: 14 },
           '&::-webkit-scrollbar-track': { bgcolor: '#0f1f3a' },
-          '&::-webkit-scrollbar-thumb': { bgcolor: '#365783', borderRadius: 6 }
+          '&::-webkit-scrollbar-thumb': { bgcolor: '#94a3b8', borderRadius: 6, border: '2px solid #0f1f3a', '&:hover': { bgcolor: '#cbd5e1' } }
         }}
       >
         {menuItems.map((item) => {
@@ -1310,6 +1312,7 @@ function DashboardLayout() {
       >
         <Toolbar variant="dense" />
         <Outlet />
+        <ActionPlanDraftDialog />
       </Box>
     </Box>
   );

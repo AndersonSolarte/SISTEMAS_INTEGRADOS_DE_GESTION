@@ -81,3 +81,32 @@ test('all reconciliation stages use the same exact annual plan evidence for R86'
   assert.equal(scopeFromPlanCode('2026-LEG-R86'), '2026:R86');
   assert.equal(chooseLegacyUnit(units, source, preferredLegacyUnitIds(plans, term, source)).id, 'correct');
 });
+
+
+test('official 2026 plan on a generic catalog keeps precedence over the empty legacy duplicate', () => {
+  const term = { id: '2026-term', year: 2026 };
+  const plans = [
+    { code: '2026-R51', term_id: term.id, catalog_item_id: 'official-generic', responsible_user_id: 51 },
+    { code: 'LEGACY-2026-R51', term_id: term.id, catalog_item_id: 'legacy-empty' }
+  ];
+  const units = [{ id: 'legacy-empty', code: 'LEG-R51', name: 'Biblioteca' },
+    { id: 'official-generic', code: 'DEP-BIBLIOTECA', name: 'Biblioteca' }];
+  const owner = 'R51_Biblioteca';
+  const result = chooseLegacyUnit(units, owner, preferredLegacyUnitIds(plans, term, owner), preferredLegacyUnitIds(plans, term, owner, { officialOnly: true }));
+  assert.equal(result.id, 'official-generic');
+  assert.equal(chooseLegacyUnit(units, owner, ['legacy-empty']).id, 'legacy-empty');
+});
+test('an official annual plan for a conflicting R code cannot redirect the source', () => {
+  const units = [{ id: 'wrong', code: 'R75' }, { id: 'right', code: 'LEG-R51' }];
+  assert.equal(chooseLegacyUnit(units, 'R51_Biblioteca', ['wrong'], ['wrong']).id, 'right');
+  assert.throws(() => chooseLegacyUnit([{ id: 'a', code: 'DEP-A' }, { id: 'b', code: 'DEP-B' }], 'R51_Biblioteca', ['a', 'b'], ['a', 'b']), /Ambiguous/);
+});
+
+test('official-only preference never promotes a legacy plan to override a coded official catalog', () => {
+  const term = { id: 'term', year: 2026 };
+  const plans = [{ code: 'LEGACY-2026-R51', term_id: term.id, catalog_item_id: 'old' }];
+  const owner = 'R51_Biblioteca';
+  assert.deepEqual(preferredLegacyUnitIds(plans, term, owner, { officialOnly: true }), []);
+  const units = [{ id: 'old', code: 'LEG-R51' }, { id: 'canonical', code: 'R51' }];
+  assert.equal(chooseLegacyUnit(units, owner, preferredLegacyUnitIds(plans, term, owner), preferredLegacyUnitIds(plans, term, owner, { officialOnly: true })).id, 'canonical');
+});

@@ -117,6 +117,11 @@ const NotificationBell = () => {
     }
     handleClose();
 
+    if (notif.type === 'action_plan_minute_draft' && notif.metadata?.meeting_id) {
+      navigate(`/dashboard?planMinute=${encodeURIComponent(notif.metadata.meeting_id)}`);
+      return;
+    }
+
     const planId = notif.action_plan_id || notif.metadata?.action_plan_id || notif.metadata?.plan_id;
     const isChat = notif.type === 'action_plan_chat_message';
     const isAdj = notif.type === 'action_plan_adjustments';

@@ -405,7 +405,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   ), [enabledFormats]);
   const isFormatAvailable = (code) => availableFormats.some((fmt) => fmt.code === code);
   const visibleMyMinutes = useMemo(
-    () => myMinutes.filter((minute) => availableFormats.some((fmt) => fmt.code === resolveMeetingMinuteFormatCode(minute))),
+    () => myMinutes.filter((minute) => minute.source === 'action_plan' || availableFormats.some((fmt) => fmt.code === resolveMeetingMinuteFormatCode(minute))),
     [myMinutes, availableFormats]
   );
   const activeFormatMeta = useMemo(() => getMeetingMinuteFormatMeta(activeFormatCode), [activeFormatCode]);
@@ -500,7 +500,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const canSendFinal = Boolean(isCreator || isResponsible || isAdminUser);
 
   const canDeleteMinute = (target) => {
-    if (!target) return false;
+    if (!target || target.source === 'action_plan') return false;
     if (isAdminUser) return true;
 
     // Creator can delete
@@ -536,8 +536,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const loadMyMinutes = async ({ busy = false } = {}) => {
     if (busy) setLoadingMyMinutes(true);
     try {
-      const response = await meetingMinuteService.listMine();
-      setMyMinutes((response.data || []).filter((minute) => !minute.deleted_at));
+      const [response, shared] = await Promise.all([meetingMinuteService.listMine(), meetingMinuteService.listActionPlanDrafts()]);
+      setMyMinutes([...(response.data || []), ...(shared.data || [])].filter((minute) => !minute.deleted_at));
       setRetentionDays(Number(response.meta?.retention_days) || 30);
     } catch (_) {
       setMyMinutes([]);
@@ -705,7 +705,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   }, [open, enabledFormats, activeFormatCode, form.id]);
 
   useEffect(() => {
-    if (myMinutesFormatFilter !== 'ALL' && !isFormatAvailable(myMinutesFormatFilter)) {
+    if (myMinutesFormatFilter !== 'ALL' && myMinutesFormatFilter !== 'ACTION_PLAN' && !isFormatAvailable(myMinutesFormatFilter)) {
       setMyMinutesFormatFilter('ALL');
     }
     // isFormatAvailable deriva exclusivamente de availableFormats.
@@ -3531,8 +3531,9 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             onClick={() => setMyMinutesFormatFilter('ALL')}
             sx={{ fontWeight: 850 }}
           />
+          <Chip label={`Actas del Plan de Acción (${visibleMyMinutes.filter(m => m.source === 'action_plan').length})`} onClick={() => setMyMinutesFormatFilter('ACTION_PLAN')} variant={myMinutesFormatFilter === 'ACTION_PLAN' ? 'filled' : 'outlined'} color="primary" />
           {availableFormats.map((fmt) => {
-            const count = visibleMyMinutes.filter((m) => resolveMeetingMinuteFormatCode(m) === fmt.code).length;
+            const count = visibleMyMinutes.filter((m) => m.source !== 'action_plan' && resolveMeetingMinuteFormatCode(m) === fmt.code).length;
             return (
               <Chip
                 key={fmt.code}
@@ -3560,7 +3561,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             </TableHead>
             <TableBody>
               {visibleMyMinutes
-                .filter((minute) => myMinutesFormatFilter === 'ALL' || resolveMeetingMinuteFormatCode(minute) === myMinutesFormatFilter)
+                .filter((minute) => myMinutesFormatFilter === 'ALL' || (myMinutesFormatFilter === 'ACTION_PLAN' ? minute.source === 'action_plan' : minute.source !== 'action_plan' && resolveMeetingMinuteFormatCode(minute) === myMinutesFormatFilter))
                 .map((minute) => {
                   const status = minuteStatus(minute);
                   const signed = (minute.participants || []).filter((participant) => participant.status === 'signed').length;
@@ -3585,7 +3586,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                           sx={{ fontWeight: 900, height: 22, fontSize: 11, mb: 0.35 }}
                         />
                         <Typography variant="caption" color="text.secondary" display="block" sx={{ lineHeight: 1.2 }}>
-                          {minuteFmtMeta.shortLabel}
+                          {minute.source === 'action_plan' ? 'Acta del Plan de Acción' : minuteFmtMeta.shortLabel}
                         </Typography>
                       </TableCell>
                       <TableCell sx={{ minWidth: 230 }}>
@@ -3598,9 +3599,9 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                       <TableCell sx={{ minWidth: 150 }}>
                         <Box>
                           <Typography fontWeight={900} fontSize={13} color={Number(days) <= 7 ? 'error.main' : 'warning.dark'}>
-                            {Number(days) === 0 ? 'Se archiva hoy' : `${days} ${Number(days) === 1 ? 'día restante' : 'días restantes'}`}
+                            {minute.source === 'action_plan' ? 'Archivo del Plan de Acción' : Number(days) === 0 ? 'Se archiva hoy' : `${days} ${Number(days) === 1 ? 'día restante' : 'días restantes'}`}
                           </Typography>
-                          <Typography variant="caption" color="text.secondary">Se archiva: {formatDate(minute.retention?.expires_at)}</Typography>
+                          <Typography variant="caption" color="text.secondary">{minute.source === 'action_plan' ? 'Conservaci?n institucional' : `Se archiva: ${formatDate(minute.retention?.expires_at)}`}</Typography>
                         </Box>
                       </TableCell>
                       <TableCell align="right">
@@ -3610,6 +3611,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                             variant="contained"
                             startIcon={<FolderOpen />}
                             onClick={async () => {
+                              if (minute.source === 'action_plan') {
+                                window.dispatchEvent(new CustomEvent('open-action-plan-minute', { detail: { meetingId: minute.id } }));
+                                return;
+                              }
                               setMyMinutesOpen(false);
                               if (hasUnsavedChangesRef.current && hasSavableData() && canEdit) {
                                 await save({ quiet: true, automatic: true });
@@ -3639,7 +3644,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     </TableRow>
                   );
                 })}
-              {!loadingMyMinutes && visibleMyMinutes.filter((minute) => myMinutesFormatFilter === 'ALL' || resolveMeetingMinuteFormatCode(minute) === myMinutesFormatFilter).length === 0 && (
+              {!loadingMyMinutes && visibleMyMinutes.filter((minute) => myMinutesFormatFilter === 'ALL' || (myMinutesFormatFilter === 'ACTION_PLAN' ? minute.source === 'action_plan' : minute.source !== 'action_plan' && resolveMeetingMinuteFormatCode(minute) === myMinutesFormatFilter)).length === 0 && (
                 <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>Todavía no tienes actas registradas en este filtro.</TableCell></TableRow>
               )}
               {loadingMyMinutes && (

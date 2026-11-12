@@ -29,7 +29,8 @@ const auditLegacyActionScope = async ({ workbookPath = null } = {}) => {
         actividad: item.activity, indicador: item.indicator, meta: item.target };
       actual.push(row);
       const unit = chooseLegacyUnit(units.filter((u) => u.strategic_plan_id === plan.term.strategic_plan_id), row.responsable,
-        preferredLegacyUnitIds(plans, plan.term, row.responsable));
+        preferredLegacyUnitIds(plans, plan.term, row.responsable),
+        preferredLegacyUnitIds(plans, plan.term, row.responsable, { officialOnly: true }));
       if (!unit || unit.id !== plan.catalog_item_id) misplaced.push({ plan: plan.code, item: item.code, owner: row.responsable });
     }
   }

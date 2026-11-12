@@ -5,6 +5,10 @@ const { publicLimiter } = require('../middlewares/security');
 const { ROLES } = require('../constants/roles');
 
 const router = express.Router();
+const sharedDraft = require('../controllers/strategicDraftController');
+router.get('/action-plan-drafts', auth, sharedDraft.list);
+router.get('/action-plan-drafts/:id', auth, sharedDraft.get);
+router.patch('/action-plan-drafts/:id', auth, sharedDraft.update);
 
 router.get('/attendance/:token', publicLimiter, controller.getAttendanceInvitation);
 router.post('/attendance/:token/present', publicLimiter, controller.confirmAttendance);

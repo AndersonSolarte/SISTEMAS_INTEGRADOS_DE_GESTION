@@ -5,7 +5,7 @@ const dependencyCode = (value) => {
   return match ? `R${Number(match[1])}` : null;
 };
 const historicalYear = (value) => Number.isInteger(Number(value)) && Number(value) >= 2022 && Number(value) <= 2026;
-const chooseLegacyUnit = (units, responsible, preferredUnitIds = []) => {
+const chooseLegacyUnit = (units, responsible, preferredUnitIds = [], officialUnitIds = []) => {
   const prefix = dependencyCode(responsible);
   const name = normalize(String(responsible || '').replace(/^R\d+\s*[_-]?\s*/i, ''));
   // A retired official dependency still identifies its historical activities.
@@ -17,6 +17,12 @@ const chooseLegacyUnit = (units, responsible, preferredUnitIds = []) => {
     const matches = candidates.filter((unit) => preferredUnitIds.includes(unit.id));
     return matches.length === 1 ? matches[0] : null;
   };
+  // An existing official annual plan is stronger evidence than an isolated
+  // LEG catalog row. Keep the interface-assigned leader and its plan together.
+  const annual = available.filter(unit => officialUnitIds.includes(unit.id)
+    && (!unitCode(unit) || unitCode(unit) === prefix));
+  if (annual.length > 1) throw new Error(`Ambiguous official annual dependency: ${prefix}`);
+  if (annual.length === 1) return annual[0];
   // Official codes win over both old LEG codes and coincidentally equal names.
   const official = coded.filter((unit) => /^R\d+$/i.test(unit.code));
   if (official.length > 1) {
@@ -48,11 +54,11 @@ const scopeFromPlanCode = (value) => {
   const match = String(value || '').match(/^(?:LEGACY-)?(20\d{2})-(?:LEG-)?(R\d+)(?:$|-)/i);
   return match ? sourceScope({ anio: match[1], responsable: match[2] }) : null;
 };
-const preferredLegacyUnitIds = (plans, term, responsible) => {
+const preferredLegacyUnitIds = (plans, term, responsible, { officialOnly = false } = {}) => {
   const scope = sourceScope({ anio: term.year, responsable: responsible });
   const scoped = plans.filter((plan) => !plan.deleted_at && String(plan.term_id) === String(term.id)
     && (scopeFromPlanCode(plan.code) || plan.metadata?.legacy_dependency_scope) === scope);
   const official = scoped.filter((plan) => !/^LEGACY-/i.test(plan.code));
-  return [...new Set((official.length ? official : scoped).map((plan) => plan.catalog_item_id))];
+  return [...new Set((officialOnly ? official : official.length ? official : scoped).map((plan) => plan.catalog_item_id))];
 };
 module.exports = { dependencyCode, historicalYear, chooseLegacyUnit, sourceScope, scopeFromPlanCode, preferredLegacyUnitIds, normalize };

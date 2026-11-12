@@ -1070,20 +1070,10 @@ const createActionPlan = wrap(async (req, res) => {
 });
 
 const updateActionPlan = wrap(async (req, res) => {
-  const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
-  if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
-  const previous = actionPlan.toJSON();
-  const protectedMetadata = req.body.metadata
-    ? { ...actionPlan.metadata, ...req.body.metadata, form_schema: actionPlan.metadata?.form_schema }
-    : actionPlan.metadata;
-  await actionPlan.update({
-    code: req.body.code ? req.body.code.trim().toUpperCase() : actionPlan.code,
-    title: req.body.title ?? actionPlan.title,
-    responsible_user_id: req.body.responsible_user_id ?? actionPlan.responsible_user_id,
-    metadata: protectedMetadata,
-    updated_by: req.user.id
+  const { updateActionPlanMetadata } = require('../services/actionPlanMetadataService');
+  const actionPlan = await updateActionPlanMetadata({ id: req.params.id, body: req.body, actorId: req.user.id,
+    onAudit: (previous, saved, transaction) => audit(req, 'action_plan.update', 'action_plan', saved.id, previous, saved.toJSON(), req.body.justification, transaction)
   });
-  await audit(req, 'action_plan.update', 'action_plan', actionPlan.id, previous, actionPlan.toJSON(), req.body.justification);
   await refreshActionRepository(actionPlan.term_id, req, 'action_plan_updated');
   ok(res, actionPlan);
 });
@@ -2574,6 +2564,7 @@ const createMeeting = wrap(async (req, res) => {
     console.warn('Error inicializando borrador o syncMinute en createMeeting:', syncErr.message);
   }
 
+  await require('./strategicDraftController').notifyDraft(meeting.id, req.user.id);
   res.status(201); ok(res, meeting, 'Reunión creada.');
 });
 
@@ -2585,6 +2576,7 @@ const updateMeeting = wrap(async (req, res) => {
     const row = await StrategicMeeting.findByPk(req.params.meetingId, { transaction, lock: transaction.LOCK.UPDATE });
     if (!row) throw Object.assign(new Error('Reunión no encontrada.'), { statusCode: 404 });
     const before = row.toJSON();
+    if (req.body.expected_updated_at) require('../services/strategicDraftPolicy').assertVersion(row, req.body.expected_updated_at);
     await row.update({
       title: req.body.title ?? row.title,
       starts_at: req.body.starts_at, ends_at: req.body.ends_at || null,
@@ -2682,7 +2674,7 @@ const updateMeeting = wrap(async (req, res) => {
       if (row.status === 'formalized') {
         await row.update({ status: 'in_progress' }, { transaction });
       }
-      const updatedContent = await minutePayload(row);
+      const updatedContent = await minutePayload(row, transaction);
       await existingMinute.update({
         status: 'signing',
         content: {
@@ -2712,38 +2704,18 @@ const updateMeeting = wrap(async (req, res) => {
   // Auto-sincronización en tiempo real a Google Drive ante cualquier cambio (borrador, firmas o formalizada)
   // Actualiza el MISMO archivo en Google Drive sin crear duplicados
   try {
-    let existingMinute = await StrategicMinuteVersion.findOne({
-      where: { meeting_id: meeting.id },
-      order: [['version', 'DESC']]
+    const syncedMinuteId = await sequelize.transaction(async transaction => {
+      const current = await StrategicMeeting.findByPk(meeting.id, { transaction, lock: transaction.LOCK.UPDATE });
+      let version = await StrategicMinuteVersion.findOne({ where: { meeting_id: current.id }, order: [['version', 'DESC']], transaction, lock: transaction.LOCK.UPDATE });
+      const content = await minutePayload(current, transaction);
+      if (!version) version = await StrategicMinuteVersion.create({ meeting_id: current.id, version: 1, content, content_hash: hashObject(content), status: current.status === 'formalized' ? 'finalized' : 'draft', created_by: req.user.id }, { transaction });
+      else if (version.status !== 'finalized') await version.update({ content: { ...version.content, ...content }, content_hash: hashObject(content) }, { transaction });
+      return version.id;
     });
-    if (!existingMinute) {
-      const canonicalContent = await minutePayload(meeting);
-      existingMinute = await StrategicMinuteVersion.create({
-        meeting_id: meeting.id,
-        version: 1,
-        content: canonicalContent,
-        content_hash: hashObject(canonicalContent),
-        status: meeting.status === 'formalized' ? 'finalized' : 'draft',
-        created_by: req.user.id
-      });
-    } else if (existingMinute.status !== 'finalized') {
-      const updatedContent = await minutePayload(meeting);
-      await existingMinute.update({
-        content: {
-          ...(existingMinute.content || {}),
-          ...updatedContent,
-          meeting: updatedContent.meeting,
-          participants: updatedContent.participants,
-          responsables: updatedContent.responsables
-        },
-        content_hash: hashObject(updatedContent)
-      });
-    }
-    syncMinute(existingMinute.id, true).catch((e) => console.warn('Auto-sync Drive tras updateMeeting:', e.message));
-  } catch (syncErr) {
-    console.warn('Error verificando syncMinute en updateMeeting:', syncErr.message);
-  }
+    syncMinute(syncedMinuteId, true).catch(e => console.warn('Auto-sync Drive tras updateMeeting:', e.message));
+  } catch (syncErr) { console.warn('Error verificando syncMinute en updateMeeting:', syncErr.message); }
 
+  await require('./strategicDraftController').notifyDraft(meeting.id, req.user.id);
   const responsePayload = {
     ...meeting.toJSON(),
     signatures_reset: signaturesWereReset,
@@ -2816,8 +2788,8 @@ const generateMinuteSummary = wrap(async (req, res) => {
   ok(res, result, `Resumen generado a partir de ${result.activities_analyzed} actividades. Revíselo antes de guardar.`);
 });
 
-const minutePayload = async (meeting) => {
-  const participants = await StrategicMeetingParticipant.findAll({ where: { meeting_id: meeting.id }, order: [['created_at', 'ASC']] });
+const minutePayload = async (meeting, transaction) => {
+  const participants = await StrategicMeetingParticipant.findAll({ where: { meeting_id: meeting.id }, order: [['created_at', 'ASC']], transaction });
   const hasPrincipal = participants.some((participant) => participant.meeting_role === 'principal');
   const normalizedParticipants = participants.map((participant, index) => ({
     participant,
@@ -2912,11 +2884,11 @@ const publishMinute = wrap(async (req, res) => {
   }
 
   const token = randomToken();
-  await minute.update({
-    status: 'signing',
-    public_token_hash: sha256(token),
-    token_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000),
-    published_at: new Date()
+  await sequelize.transaction(async transaction => {
+    await StrategicMeeting.findByPk(minute.meeting_id, { transaction, lock: transaction.LOCK.UPDATE });
+    await minute.reload({ transaction, lock: transaction.LOCK.UPDATE });
+    if (!['draft', 'review'].includes(minute.status) && !canRegenerate) throw Object.assign(new Error('El acta ya fue enviada a firmas.'), { statusCode: 409 });
+    await minute.update({ status: 'signing', public_token_hash: sha256(token), token_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), published_at: new Date() }, { transaction });
   });
   // En producción PUBLIC_FRONTEND_URL debe ser el dominio público. El origen
   // enviado por la interfaz permite que el mismo flujo funcione en otros entornos.
@@ -3653,7 +3625,7 @@ const uploadEvidence = wrap(async (req, res) => {
 const downloadEvidence = wrap(async (req, res) => {
   const evidence = await StrategicEvidence.findByPk(req.params.evidenceId);
   if (!evidence || evidence.deleted_at) throw Object.assign(new Error('Evidencia no encontrada.'), { statusCode: 404 });
-  
+
   const driveUrl = evidence.drive_file_id ? `https://drive.google.com/file/d/${evidence.drive_file_id}/view` : null;
   if (req.query.drive === 'true' && driveUrl) {
     return res.redirect(driveUrl);
@@ -4445,13 +4417,10 @@ const listStrategicNotifications = wrap(async (req, res) => {
   });
 
   const myPlanIds = myPlans.map((p) => p.id);
-  if (!myPlanIds.length) {
-    return ok(res, { notifications: [], unreadCount: 0 });
-  }
 
   const whereClause = {
     user_id: userId,
-    action_plan_id: { [Op.in]: myPlanIds }
+    [Op.or]: [{ action_plan_id: { [Op.in]: myPlanIds } }, { type: 'action_plan_minute_draft' }]
   };
 
   const notifications = await StrategicNotification.findAll({
@@ -4486,6 +4455,7 @@ const markAllStrategicNotificationsRead = wrap(async (req, res) => {
 });
 
 module.exports = {
+  minutePayload,
   bootstrap, listPlans, createPlan, updatePlan, deletePlan, createLevel, updateLevel, deleteLevel,
   createElement, updateElement, deleteElement, listStructure, upsertCatalog, updateCatalog, deleteCatalog,
   applyInstitutionalTemplate, createInstitutionalPolicyFields, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, reorderFieldDefinitions, previewFieldSchema, confirmFieldSchema,

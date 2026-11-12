@@ -4,6 +4,9 @@ const root = '/meeting-minutes';
 const unwrap = (response) => response.data;
 
 const meetingMinuteService = {
+  listActionPlanDrafts: () => api.get(`${root}/action-plan-drafts`).then(unwrap),
+  getActionPlanDraft: (id) => api.get(`${root}/action-plan-drafts/${id}`).then(unwrap),
+  updateActionPlanDraft: (id, payload) => api.patch(`${root}/action-plan-drafts/${id}`, payload).then(unwrap),
   getConfig: () => api.get(`${root}/config`).then(unwrap),
   updateConfig: (enabled, formatCode) => api.patch(`${root}/config`, formatCode ? { enabled, format_code: formatCode } : { enabled }).then(unwrap),
   lookupParticipant: (document) => api.get(`${root}/participants/lookup`, { params: { document } }).then(unwrap),

@@ -991,7 +991,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
     setSaving(true);
     try {
       await strategicPlanningService.updateActionPlan(editActionPlanCandidate.id, {
-        code: editActionPlanCandidate.code,
+        ...(editActionPlanCandidate.code !== editActionPlanCandidate.original_code ? { code: editActionPlanCandidate.code } : {}),
         title: editActionPlanCandidate.title,
         responsible_user_id: editActionPlanCandidate.responsible_user_id
       });
@@ -2953,7 +2953,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                             <Tooltip title="Editar datos del plan">
                               <IconButton
                                 size="small"
-                                onClick={(e) => { e.stopPropagation(); setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year }); }}
+                                onClick={(e) => { e.stopPropagation(); setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, original_code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year }); }}
                                 sx={{ width: 28, height: 28, color: '#64748b', '&:hover': { bgcolor: '#eff6ff', color: '#2563eb' } }}
                               >
                                 <EditOutlined sx={{ fontSize: 17 }} />
@@ -3060,7 +3060,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                                     </IconButton>
                                   </Tooltip>
                                   <Tooltip title="Editar código o datos básicos">
-                                    <IconButton size="small" onClick={() => setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year })} sx={{ color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 1.25, '&:hover': { bgcolor: '#eff6ff', color: '#1e40af' } }}>
+                                    <IconButton size="small" onClick={() => setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, original_code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year })} sx={{ color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 1.25, '&:hover': { bgcolor: '#eff6ff', color: '#1e40af' } }}>
                                       <EditOutlined fontSize="small" />
                                     </IconButton>
                                   </Tooltip>
@@ -3768,7 +3768,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               value={editActionPlanCandidate?.code || ''}
               onChange={(e) => setEditActionPlanCandidate({ ...editActionPlanCandidate, code: e.target.value })}
               fullWidth
-              helperText="Código identificador institucional (ej. 2026-VICERREC)"
+              helperText="Conserve el código actual si solo desea asignar o cambiar el responsable."
             />
             <TextField
               label="Título o nombre del Plan"
@@ -3791,7 +3791,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
           </Button>
           <Button
             variant="contained"
-            disabled={saving || !editActionPlanCandidate?.title?.trim()}
+            disabled={saving || !editActionPlanCandidate?.title?.trim() || !editActionPlanCandidate?.code?.trim() || !editActionPlanCandidate?.responsible_user_id}
             onClick={confirmUpdateActionPlanMeta}
             sx={{ px: 3, borderRadius: 2.25, fontWeight: 900, textTransform: 'none' }}
           >
