@@ -24,11 +24,12 @@ exit 0
 `);
     fs.writeFileSync(path.join(bin, 'docker'), `#!/usr/bin/env bash
 printf 'docker %s\\n' "$*" >> "$FLOW_LOG"
+if [[ "$*" == *'--add-host'* ]]; then echo 'unknown flag: --add-host' >&2; exit 21; fi
 if [[ "$*" == 'compose images -q '* ]]; then echo sha256:fixture-image; fi
 if [[ "$*" == 'compose build --pull' && "$MOCK_BUILD_FAIL" == 1 ]]; then exit 17; fi
 if [[ "$*" == *'frontend nginx -t'* ]]; then
   if [[ "$MOCK_NGINX_FAIL" == 1 ]]; then exit 19; fi
-  if [[ "$MOCK_BACKEND_RUNNING" == 0 && "$*" != *'--add-host backend:127.0.0.1'* ]]; then
+  if [[ "$MOCK_BACKEND_RUNNING" == 0 && "$*" != *'nginx-preflight.yml'* ]]; then
     echo 'nginx: host not found in upstream backend' >&2
     exit 20
   fi
@@ -44,7 +45,10 @@ exit 0
     env.DEPLOY_SCRIPT = unix(path.join(root, 'deploy.sh'));
     const result = spawnSync(bash, ['--noprofile', '--norc', '-c', 'export PATH="$MOCK_BIN:$PATH"; exec /usr/bin/bash --noprofile --norc "$DEPLOY_SCRIPT"'], { env, windowsHide: true, encoding: 'utf8', timeout: 30000 });
     if (result.error) throw result.error;
-    return { status: result.status, commands: fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '', output: result.stdout + result.stderr };
+    const state = path.join(work, '.deployment-state');
+    const preflight = fs.existsSync(state) ? fs.readdirSync(state).map((folder) => path.join(state, folder, 'nginx-preflight.yml')).find((file) => fs.existsSync(file)) : null;
+    return { status: result.status, commands: fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '', output: result.stdout + result.stderr,
+      preflight: preflight ? fs.readFileSync(preflight, 'utf8') : '' };
   } finally {
     const target = path.resolve(work);
     if (!target.startsWith(`${path.resolve(temporaryRoot)}${path.sep}`) || !path.basename(target).startsWith('deploy-flow-test-')) throw new Error('Ruta temporal no permitida.');
@@ -80,9 +84,11 @@ test('rechaza cambios locales antes de descargar codigo o construir', () => {
 test('valida Nginx con backend detenido y limita el alias al contenedor temporal', () => {
   const result = scenario({ MOCK_BACKEND_RUNNING: '0' });
   assert.equal(result.status, 0, result.output);
-  assert.match(result.commands, /compose run --rm --no-deps --add-host backend:127\.0\.0\.1 frontend nginx -t/);
+  assert.match(result.commands, /compose --project-directory .* -f docker-compose.yml -f .*nginx-preflight.yml run --rm --no-deps frontend nginx -t/);
+  assert.match(result.preflight, /extra_hosts:\n      - "backend:127\.0\.0\.1"/);
+  assert.doesNotMatch(result.commands, /--add-host/);
   assert.ok(result.commands.indexOf('frontend nginx -t') < result.commands.indexOf('compose up -d'));
-  assert.doesNotMatch(result.commands.split('\n').find((line) => line.includes('compose up -d')), /add-host/);
+  assert.doesNotMatch(result.commands.split('\n').find((line) => line.includes('compose up -d')), /nginx-preflight|add-host/);
   assert.match(result.commands, /compose exec -T backend npm run migrate/);
 });
 

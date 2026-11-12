@@ -18,7 +18,7 @@ main() {
     return 1
   fi
   umask 077
-  local stamp state_dir rollback_file previous_id service
+  local stamp state_dir rollback_file nginx_preflight_file previous_id service
   stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
   state_dir="$project_dir/.deployment-state/$stamp"
   mkdir -p -- "$state_dir"
@@ -46,7 +46,10 @@ main() {
   # nginx -t valida configuracion y certificados, pero tambien resuelve los
   # upstreams. El backend puede estar detenido en una recuperacion; este alias
   # solo existe en el contenedor temporal y no modifica el proxy de produccion.
-  docker compose run --rm --no-deps --add-host backend:127.0.0.1 frontend nginx -t
+  nginx_preflight_file="$state_dir/nginx-preflight.yml"
+  printf 'services:\n  frontend:\n    extra_hosts:\n      - "backend:127.0.0.1"\n' > "$nginx_preflight_file"
+  docker compose --project-directory "$project_dir" -f docker-compose.yml -f "$nginx_preflight_file" config --quiet
+  docker compose --project-directory "$project_dir" -f docker-compose.yml -f "$nginx_preflight_file" run --rm --no-deps frontend nginx -t
   echo 'Iniciando las imagenes comprobadas y esperando sus verificaciones de salud...'
   if ! docker compose up -d --no-build --pull never --wait --wait-timeout 240; then
     echo 'Fallo el arranque. Intentando recuperar las imagenes anteriores, sin restaurar la base de datos...' >&2
