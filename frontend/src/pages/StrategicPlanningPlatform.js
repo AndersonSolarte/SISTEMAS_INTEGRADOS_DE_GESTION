@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { filterActionPlanUnits } from '../utils/actionPlanSearch';
 import { useSearchParams } from 'react-router-dom';
 import {
   Alert, Autocomplete, Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions,
@@ -399,7 +400,6 @@ export default function StrategicPlanningPlatform({ onBack }) {
     .sort((a, b) => a.year - b.year);
   const selectedActionTerm = actionTerms.find((term) => String(term.id) === String(selectedActionTermId)) || null;
   const selectedYearPlans = visiblePlans.filter((item) => String(item.term_id || item.term?.id) === String(selectedActionTerm?.id));
-  const normalizedDependencySearch = dependencySearch.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   const selectedTermAssignments = termDependencies.filter((item) => String(item.term_id) === String(selectedActionTerm?.id));
   const selectedActionUnitsById = new Map();
   selectedTermAssignments.forEach((item) => {
@@ -425,21 +425,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
     });
   });
   const selectedActionUnits = [...selectedActionUnitsById.values()].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
-  const visibleActionUnits = selectedActionUnits
-    .filter((unit) => {
-      if (!normalizedDependencySearch) return true;
-      const responsible = unit.annualAssignment?.responsible || {};
-      const actionPlan = selectedYearPlans.find((item) => String(item.catalog_item_id || item.organizationalUnit?.id) === String(unit.id));
-      const planResponsible = actionPlan?.responsibleUser || {};
-      const searchable = [
-        unit.code, unit.name, responsible.document, responsible.name, responsible.email,
-        responsible.dependency, responsible.position, actionPlan?.code, actionPlan?.title,
-        actionPlan?.status, planResponsible.nombre, planResponsible.email,
-        planResponsible.dependencia, planResponsible.cargo,
-        actionPlan ? 'plan creado abierto' : 'pendiente crear plan'
-      ].filter(Boolean).join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      return searchable.includes(normalizedDependencySearch);
-    });
+  const visibleActionUnits = filterActionPlanUnits(selectedActionUnits, selectedYearPlans, dependencySearch);
   const standardCatalogs = [
     ['organizational_unit','Dependencias'], ['position','Cargos'], ['actor','Actores'],
     ['macroactivity','Macroactividades'], ['meeting_location','Lugares de reunión'], ['reference_status','Estados de referencia']
