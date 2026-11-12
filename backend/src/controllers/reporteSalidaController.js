@@ -1504,7 +1504,7 @@ const getPendingGroupSolicitudesForPayload = (solicitudes, payload = {}) => {
       const dependenciaEmail = normalizeEmail(getDependencyEmail(
         solicitud.datos_formulario?.laboral?.dependencia || solicitud.solicitante_snapshot?.dependencia || ''
       ));
-      return jefeEmail === targetEmail || dependenciaEmail === targetEmail;
+      return sameEmail(jefeEmail, targetEmail) || sameEmail(dependenciaEmail, targetEmail);
     });
   }
 
@@ -10000,15 +10000,16 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
 
       // Si el token incluye un jefe_email específico, filtrar solicitudes del programa/jefe correspondiente
       const targetJefeEmail = payload.jefe_email ? normalizeEmail(payload.jefe_email) : null;
-      let toApprove = pendientes;
-
-      if (targetJefeEmail) {
-        toApprove = pendientes.filter(sol => {
-          const jefeEm = normalizeEmail(sol.jefe_snapshot?.email);
-          const depEm = normalizeEmail(getDependencyEmail(sol.datos_formulario?.laboral?.dependencia || sol.dependencia));
-          return jefeEm === targetJefeEmail || depEm === targetJefeEmail;
+      const toApprove = getPendingGroupSolicitudesForPayload(solicitudes, payload);
+      if (!toApprove.length) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'warning',
+          title: 'Enlace sin solicitudes pendientes asignadas',
+          message: 'No hay participantes pendientes que correspondan al jefe o dependencia de este enlace.',
+          nextStep: 'Use el correo recibido para su equipo. No se registró ninguna aprobación.'
         });
-        if (!toApprove.length) toApprove = pendientes;
       }
 
       const isNationalOrInternational = solicitudes.some(s => {
