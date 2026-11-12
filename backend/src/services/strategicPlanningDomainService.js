@@ -215,7 +215,7 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
     : Number(result.physical_progress || 0);
 
 
-  if (payload.indicators_progress && typeof payload.indicators_progress === 'object') {
+  if (isPlanningStaff && payload.indicators_progress && typeof payload.indicators_progress === 'object') {
     const { getActiveIndicators } = require('./actionPlanIndicators');
     let activeIndicators = getActiveIndicators(actionItem);
     const configured = ['Resultado', 'Logro', 'Impacto'].some((kind) => custom[`indicador${kind}Activo`] !== undefined || Boolean(custom[`indicador${kind}`]));
@@ -243,8 +243,10 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
   }
   await result.update({
     physical_progress: progress,
-    achieved_value: payload.achieved_value || null,
-    observations: payload.observations || null,
+    achieved_value: Object.prototype.hasOwnProperty.call(payload, 'achieved_value')
+      ? (payload.achieved_value || null) : result.achieved_value,
+    observations: isPlanningStaff && Object.prototype.hasOwnProperty.call(payload, 'observations')
+      ? (payload.observations || null) : result.observations,
     traffic_light: isPlanningStaff ? (payload.traffic_light || result.traffic_light) : result.traffic_light,
     status: isPlanningStaff && payload.status ? payload.status : (result.status === 'approved' ? 'approved' : 'submitted'),
     version: created ? 1 : Number(result.version || 1) + 1,
@@ -260,7 +262,7 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
     const period = periods.find((p) => String(p.id) === String(periodId));
     if (period) {
       custom[`progress_s${period.position}`] = clampProgress(progress);
-      custom[`observations_s${period.position}`] = payload.observations || '';
+      custom[`observations_s${period.position}`] = result.observations || '';
       const cutDate = payload.fechaSeguimiento || payload.cut_date || String(period.ends_on || '').slice(0, 10);
       custom.pm_monitoring_dates = { ...(custom.pm_monitoring_dates || {}), [period.position]: cutDate };
     }

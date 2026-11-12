@@ -1,4 +1,5 @@
 import { uploadEvidenceBatch } from '../utils/uploadEvidenceBatch';
+import PeriodObservationButton from '../components/PeriodObservationButton';
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   Box, Paper, Stack, Typography, Chip, Button, Alert,
@@ -2403,6 +2404,7 @@ export default function PlanAccionConsulta({
                                   />
                                 </Tooltip>
                               )}
+                              {isFirstSubrow && <PeriodObservationButton activity={it} period={p} />}
                             </TableCell>
                           );
                         })}
@@ -2857,6 +2859,7 @@ export default function PlanAccionConsulta({
                                   />
                                 </Tooltip>
                               )}
+                              <PeriodObservationButton activity={it} period={p} />
                             </TableCell>
                           );
                         })}

@@ -1,5 +1,7 @@
 // PEI StrategicActionPlanEditor Module
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import PeriodObservationButton from '../components/PeriodObservationButton';
+import { periodObservation } from '../utils/periodObservation';
 import {
   Alert, Autocomplete, Avatar, Badge, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Fab, FormControlLabel, Grid, IconButton, InputAdornment, ListItemIcon, ListItemText, Menu, MenuItem, Paper, Radio, RadioGroup, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tabs, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
@@ -3641,10 +3643,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     setEvidenceModalOpen(true);
   };
 
-  const handleOpenEvalModal = (it, targetKind = null) => {
+  const handleOpenEvalModal = (it, targetKind = null, selectedPeriodId = null) => {
     setEvaluatingItem(it);
     const applicablePeriods = periods.filter((p) => isPeriodApplicableToItem(it, p));
-    const targetPeriod = (applicablePeriods.length > 0 ? applicablePeriods[0] : null) || periods[0];
+    const targetPeriod = periods.find((p) => String(p.id) === String(selectedPeriodId))
+      || (applicablePeriods.length > 0 ? applicablePeriods[0] : null) || periods[0];
     const targetPeriodId = targetPeriod ? targetPeriod.id : (defaultPeriodId || '');
     const existingResult = (it.monitoringResults || []).find((r) => r.monitoring_period_id === targetPeriodId);
 
@@ -3668,7 +3671,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     setEvalForm({
       period_id: targetPeriodId,
       physical_progress: existingResult ? (existingResult.physical_progress ?? '') : '',
-      observations: existingResult ? (existingResult.observations ?? '') : '',
+      observations: periodObservation(it, targetPeriod),
       targetKind: targetKind || (indicators[0]?.kind || null),
       indicators_progress: initialIndProgress
     });
@@ -3698,7 +3701,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       ...prev,
       period_id: newPeriodId,
       physical_progress: existingResult ? (existingResult.physical_progress ?? '') : '',
-      observations: existingResult ? (existingResult.observations ?? '') : '',
+      observations: periodObservation(evaluatingItem, periods.find((p) => String(p.id) === String(newPeriodId))),
       indicators_progress: updatedIndProgress
     }));
   };
@@ -7297,6 +7300,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                                             />
                                           </Tooltip>
                                         )}
+                                        {isFirstSubrow && <PeriodObservationButton activity={it} period={p}
+                                          onEdit={isPlanningAdmin ? () => handleOpenEvalModal(it, ind.kind, p.id) : undefined} />}
                                       </TableCell>
                                     );
                                   })}
@@ -8084,6 +8089,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               InputLabelProps={{ shrink: true }}
               placeholder="Ingrese el concepto oficial, retroalimentación o justificación del avance..."
               value={evalForm.observations}
+              helperText={`El concepto se guardará en ${periods.find((p) => p.id === evalForm.period_id)?.code || 'el corte seleccionado'} para esta actividad.`}
               onChange={(e) => setEvalForm({ ...evalForm, observations: e.target.value })}
               sx={{
                 '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff' },
