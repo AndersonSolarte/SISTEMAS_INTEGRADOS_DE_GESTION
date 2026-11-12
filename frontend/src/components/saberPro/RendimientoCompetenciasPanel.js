@@ -390,7 +390,7 @@ function ProgramFilterPanel({ label, options, value, onChange, placeholder, them
       </div>
       <div
         onWheel={(event) => event.stopPropagation()}
-        style={{ maxHeight: 200, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin' }}
+        style={{ maxHeight: 200, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'auto' }}
       >
         {filtered.length === 0 ? (
           <div style={{ padding: '16px', textAlign: 'center', fontSize: 12.5, color: '#94a3b8' }}>Sin resultados</div>

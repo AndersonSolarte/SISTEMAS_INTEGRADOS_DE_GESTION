@@ -600,8 +600,8 @@ function Dashboard() {
                           overflowX: 'auto',
                           border: '1px solid #e2e8f0',
                           borderRadius: 2,
-                          scrollbarWidth: 'thin',
-                          '&::-webkit-scrollbar': { height: 8 },
+                          scrollbarWidth: 'auto',
+                          '&::-webkit-scrollbar': { width: 10, height: 10 },
                           '&::-webkit-scrollbar-track': { bgcolor: '#f8fafc' },
                           '&::-webkit-scrollbar-thumb': { bgcolor: '#cbd5e1', borderRadius: 8 }
                         }}

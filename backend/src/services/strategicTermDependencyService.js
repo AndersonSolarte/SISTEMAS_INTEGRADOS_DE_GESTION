@@ -50,7 +50,7 @@ const listTermDependencies = async ({ planId, termId, repair = false }) => {
     where,
     include: [
       { model: StrategicCatalogItem, as: 'organizationalUnit', required: true },
-      { model: User, as: 'responsibleUser', required: true, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] }
+      { model: User, as: 'responsibleUser', required: false, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] }
     ],
     order: [[{ model: StrategicCatalogItem, as: 'organizationalUnit' }, 'name', 'ASC']]
   });

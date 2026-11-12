@@ -2053,10 +2053,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           sx={{
             bgcolor: '#f6f8fb',
             p: { xs: 2, md: 3 },
-            '&::-webkit-scrollbar': {
-              width: '10px',
-              height: '10px'
-            },
+            '&::-webkit-scrollbar': { width: 10, height: 10 },
             '&::-webkit-scrollbar-track': {
               bgcolor: '#f1f5f9'
             },

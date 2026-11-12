@@ -21,3 +21,7 @@ node --test --experimental-test-isolation=none backend/src/services/actionPlanMe
 ```
 
 La prueba incluye colision de codigo, responsable vacio o inexistente, idempotencia, cambio de lider con historico, proteccion de esquema, conciliacion posterior y rollback ante un fallo de auditoria.
+
+## Retiro temporal del responsable
+
+El editor permite guardar con el responsable vacio y asignarlo mas adelante. Un valor null o una cadena vacia retira al lider; omitir el campo conserva la asignacion existente. El retiro cierra las responsabilidades anteriores, mantiene una referencia anual sin usuario para que la dependencia siga configurada y marca el plan como explicitamente sin responsable. La conciliacion y la unificacion historica respetan esa decision. Asignar un usuario activo desde el editor desactiva esa marca y reconstruye los vinculos correspondientes. Las actas y actividades existentes se conservan.

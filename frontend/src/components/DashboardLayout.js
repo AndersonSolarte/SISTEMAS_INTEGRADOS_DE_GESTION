@@ -935,8 +935,8 @@ function DashboardLayout() {
           bgcolor: '#0f1f3a',
           scrollbarWidth: 'auto',
           scrollbarColor: 'auto',
-          '@supports not selector(::-webkit-scrollbar)': { scrollbarColor: '#94a3b8 #0f1f3a' },
-          '&::-webkit-scrollbar': { width: 14, height: 14 },
+          '@supports not selector(::-webkit-scrollbar)': { scrollbarWidth: 'auto', scrollbarColor: '#94a3b8 #0f1f3a' },
+          '&::-webkit-scrollbar': { width: 10, height: 10 },
           '&::-webkit-scrollbar-track': { bgcolor: '#0f1f3a' },
           '&::-webkit-scrollbar-thumb': { bgcolor: '#94a3b8', borderRadius: 6, border: '2px solid #0f1f3a', '&:hover': { bgcolor: '#cbd5e1' } }
         }}

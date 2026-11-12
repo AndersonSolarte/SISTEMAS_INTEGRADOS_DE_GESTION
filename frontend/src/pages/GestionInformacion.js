@@ -359,7 +359,7 @@ function DocFilterPanel({
       )}
       <div
         onWheel={(event) => event.stopPropagation()}
-        style={{ maxHeight: 240, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin' }}
+        style={{ maxHeight: 240, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'auto' }}
       >
         {filtered.length === 0 ? (
           <div style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8', fontWeight: 500 }}>
@@ -6797,7 +6797,7 @@ function GestionInformacion() {
                 borderRadius: 2.2,
                 boxShadow: '0 10px 24px rgba(15,23,42,.05)',
                 overflowX: 'auto',
-                '&::-webkit-scrollbar': { height: 8 },
+                '&::-webkit-scrollbar': { width: 10, height: 10 },
                 '&::-webkit-scrollbar-thumb': { backgroundColor: '#cbd5e1', borderRadius: 8 }
               }}
             >
@@ -11831,7 +11831,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                   </IconButton>
                 </Tooltip>
               </Stack>
-              <Box sx={{ overflowY: 'auto', maxHeight: 560, mt: 1, '&::-webkit-scrollbar': { width: 6 }, '&::-webkit-scrollbar-track': { bgcolor: '#f1f5f9', borderRadius: 3 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#94a3b8', borderRadius: 3, '&:hover': { bgcolor: '#64748b' } } }}>
+              <Box sx={{ overflowY: 'auto', maxHeight: 560, mt: 1, '&::-webkit-scrollbar': { width: 10, height: 10 }, '&::-webkit-scrollbar-track': { bgcolor: '#f1f5f9', borderRadius: 3 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#94a3b8', borderRadius: 3, '&:hover': { bgcolor: '#64748b' } } }}>
                 <Box id="emp-ranking-chart" style={{ height: rankingHeight, width: '100%' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={rankingData} layout="vertical"
@@ -17895,7 +17895,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                   width: '100%',
                   overflowX: 'auto',
                   overflowY: 'hidden',
-                  '&::-webkit-scrollbar': { height: 8 },
+                  '&::-webkit-scrollbar': { width: 10, height: 10 },
                   '&::-webkit-scrollbar-thumb': { backgroundColor: '#cbd5e1', borderRadius: 8 }
                 }}
               >

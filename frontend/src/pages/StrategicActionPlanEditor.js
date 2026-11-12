@@ -1,3 +1,4 @@
+import { mergeActivityTemplateValues } from '../utils/activityTemplateValues';
 import { minuteScrollStyles } from '../components/meetingMinute/minuteScrollStyles';
 // PEI StrategicActionPlanEditor Module
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -536,6 +537,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [activitySuggestions, setActivitySuggestions] = useState([]);
   const [loadingActivitySuggestions, setLoadingActivitySuggestions] = useState(false);
   const activitySearchTimeoutRef = useRef(null);
+  const activitySuggestionRequestRef = useRef(0);
+  const [activitySuggestionError, setActivitySuggestionError] = useState('');
 
   // Menú contextual de 3 puntos por fila de actividad (Editar / Trasladar / Eliminar)
   const [rowMenuAnchor, setRowMenuAnchor] = useState(null);
@@ -1278,19 +1281,26 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   const searchActivities = useCallback(async (queryText = '') => {
     if (!detail?.id) return;
+    const request = ++activitySuggestionRequestRef.current;
     setLoadingActivitySuggestions(true);
+    setActivitySuggestionError('');
     try {
       const resp = await strategicPlanningService.searchActivitySuggestions(detail.id, queryText);
       const list = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []);
-      setActivitySuggestions(list);
+      if (request === activitySuggestionRequestRef.current) setActivitySuggestions(list);
     } catch (err) {
+      if (request === activitySuggestionRequestRef.current) {
+        setActivitySuggestions([]);
+        setActivitySuggestionError('No se pudo consultar el banco de actividades. Intente nuevamente.');
+      }
       console.warn('Error buscando sugerencias de actividades:', err);
     } finally {
-      setLoadingActivitySuggestions(false);
+      if (request === activitySuggestionRequestRef.current) setLoadingActivitySuggestions(false);
     }
   }, [detail?.id]);
 
   const handleActivityInputChange = useCallback((queryText) => {
+    activitySuggestionRequestRef.current++;
     if (activitySearchTimeoutRef.current) {
       clearTimeout(activitySearchTimeoutRef.current);
     }
@@ -1301,8 +1311,13 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
 
   useEffect(() => {
     if (detail?.id && open) {
+      setActivitySuggestions([]);
       searchActivities('');
     }
+    return () => {
+      activitySuggestionRequestRef.current++;
+      if (activitySearchTimeoutRef.current) clearTimeout(activitySearchTimeoutRef.current);
+    };
   }, [detail?.id, open, searchActivities]);
 
   const combinedActivitySuggestions = useMemo(() => {
@@ -1389,12 +1404,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
           if (macroField) nextCustom[macroField.key] = suggestionMacro;
         }
         if (selectedSuggestion.custom_values && typeof selectedSuggestion.custom_values === 'object') {
-          Object.entries(selectedSuggestion.custom_values).forEach(([k, v]) => {
-            if (/^(legacy_|official_observations$|progress_s\d|observations_s\d|total_progress|current_progress|avance_|observaciones(?:_|$)|total$)/i.test(k)) return;
-            if (v && !nextCustom[k] && !['starts_on', 'ends_on', 'fecha_inicio', 'fecha_fin', 'responsible', 'co_responsibles'].includes(k)) {
-              nextCustom[k] = v;
-            }
-          });
+          Object.assign(nextCustom, mergeActivityTemplateValues(nextCustom, selectedSuggestion.custom_values));
         }
 
         return nextItem;
@@ -2086,7 +2096,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                 minRows={2}
                 maxRows={5}
                 label={field.label || 'Actividades'}
-                placeholder="Escriba el nombre de la actividad..."
+                placeholder="Escriba una palabra clave para buscar actividades..."
+                helperText={activitySuggestionError || 'Busca en todas las dependencias y vigencias. La actividad seleccionada se registra en este plan.'}
+                error={Boolean(activitySuggestionError)}
                 
                 InputProps={{
                   ...params.InputProps,

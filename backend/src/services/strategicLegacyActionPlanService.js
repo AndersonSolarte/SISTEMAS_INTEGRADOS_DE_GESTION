@@ -213,7 +213,7 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
         await actionPlan.update({ metadata: { ...(actionPlan.metadata || {}), legacy_dependency_scope: sourceScope(first) } }, { transaction });
       }
 
-      if (owner) {
+      if (owner && !actionPlan.metadata?.leader_assignment_paused) {
         await StrategicResponsibility.findOrCreate({
           where: { term_id: term.id, catalog_item_id: unit.id, action_plan_id: null, responsibility_type: 'reference_leader', status: 'active' },
           defaults: { user_id: owner.id, starts_on: term.starts_on, ends_on: term.ends_on, created_by: creator?.id || fallbackUser.id },
@@ -405,6 +405,7 @@ const syncMissingPlanLeaders = async ({ transaction = null } = {}) => {
   const plans = await StrategicActionPlan.findAll({ where: { deleted_at: null }, transaction });
   let synced = 0;
   for (const plan of plans) {
+    if (plan.metadata?.leader_assignment_paused) continue;
     const assignments = await StrategicResponsibility.findAll({
       where: { term_id: plan.term_id, catalog_item_id: plan.catalog_item_id, status: 'active',
         [Op.or]: [

@@ -1,6 +1,6 @@
 import { uploadEvidenceBatch } from '../utils/uploadEvidenceBatch';
 import PeriodObservationButton from '../components/PeriodObservationButton';
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   Box, Paper, Stack, Typography, Chip, Button, Alert,
   Table, TableHead, TableRow, TableCell, TableBody, TableContainer, TablePagination,
@@ -44,7 +44,7 @@ import { ROLES } from '../constants/roles';
 import strategicPlanningService from '../services/strategicPlanningService';
 import { getActiveIndicators, getIndicatorProgress, getIndicatorObservations, calculateIndicatorFulfillment, calculateOverallFulfillment, filterEvidencesByIndicator } from '../utils/actionPlanIndicators';
 import planAccionWorkflowService, { ESTADOS_WORKFLOW } from '../services/planAccionWorkflowService';
-import { isPlanWithinActiveSchedule } from '../utils/strategicPlanSchedule';
+import { availableMyActionPlans, selectMyActionPlan } from '../utils/myActionPlanSelection';
 
 const STATUS_CONFIG = {
   convocation: { label: 'Convocatoria', color: 'default', bg: '#f1f5f9', fg: '#475569' },
@@ -201,9 +201,12 @@ export default function PlanAccionConsulta({
   }, [activitySearch, activityOriginFilter]);
 
   // Parámetros de URL para redirección directa desde notificaciones de campana
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const urlPlanId = searchParams.get('planId');
   const urlOpenChat = searchParams.get('openChat') === 'true';
+  const requestedPlanRef = useRef(urlPlanId);
+  requestedPlanRef.current = urlPlanId;
+  const preferPlanListRef = useRef(false);
 
   // Modal para solicitar ajustes a Planeación y Efectividad
   const [adjustmentsModalOpen, setAdjustmentsModalOpen] = useState(false);
@@ -271,40 +274,17 @@ export default function PlanAccionConsulta({
         // - 'active' (en ejecución oficial)
         // - 'monitoring' (en seguimiento)
         // Y siempre que la vigencia esté activa y dentro del plazo programado para ellos
-        visiblePei = allPei.filter((p) =>
-          ['owner_validation', 'active', 'monitoring'].includes(p.status) &&
-          (p.is_within_schedule !== undefined ? p.is_within_schedule : isPlanWithinActiveSchedule(p))
-        );
+        visiblePei = availableMyActionPlans(allPei);
       } catch (err) {
         console.error('Error cargando planes PEI:', err);
       }
       setPeiPlans(visiblePei);
 
-      // Si hay un planId en la URL (por redirección de notificación)
-      if (urlPlanId) {
-        // Los planes son estrictamente personales: solo se permite cargar si pertenece a visiblePei
-        const matchingPlan = visiblePei.find((p) => String(p.id) === String(urlPlanId));
-        if (matchingPlan) {
-          setSelectedPlan(matchingPlan);
-          if (urlOpenChat) {
-            setLeaderChatModalOpen(true);
-          }
-        } else if (visiblePei.length > 0 && !selectedPlan) {
-          setSelectedPlan(visiblePei[0]);
-        }
-      } else if (selectedPlan?.id) {
-        const refreshed = visiblePei.find((p) => p.id === selectedPlan.id);
-        if (refreshed) {
-          setSelectedPlan(refreshed);
-        } else {
-          // Si el plan ya no es visible (ej. pasó a ajustes o su plazo/vigencia venció), limpiar selección
-          setSelectedPlan(visiblePei.length > 0 ? visiblePei[0] : null);
-        }
-      } else if (visiblePei.length > 0) {
-        setSelectedPlan(visiblePei[0]);
-      } else {
-        setSelectedPlan(null);
-      }
+      setSelectedPlan(current => selectMyActionPlan(visiblePei, {
+        requestedId: requestedPlanRef.current,
+        currentId: current?.id,
+        preferList: preferPlanListRef.current
+      }));
 
       // 2. Fallback: Planes legacy (si no hay planes PEI)
       if (visiblePei.length === 0) {
@@ -325,7 +305,7 @@ export default function PlanAccionConsulta({
     } finally {
       setLoading(false);
     }
-  }, [userId, selectedPlan?.id, enqueueSnackbar]);
+  }, [userId, readOnly, enqueueSnackbar]);
 
   useEffect(() => {
     cargarPlanes();
@@ -345,7 +325,25 @@ export default function PlanAccionConsulta({
 
   // Selección de plan
   const handleSelectPlan = (plan) => {
+    if (!plan || !peiPlans.some(candidate => String(candidate.id) === String(plan.id))) return;
+    preferPlanListRef.current = false;
+    requestedPlanRef.current = String(plan.id);
     setSelectedPlan(plan);
+    setActivitySearch(''); setRespPage(0); setCoRespPage(0);
+    setLeaderChatModalOpen(false);
+    const next = new URLSearchParams(searchParams);
+    next.set('planId', plan.id); next.delete('openChat');
+    setSearchParams(next, { replace: true });
+  };
+
+  const handleBackToPlans = () => {
+    preferPlanListRef.current = true;
+    requestedPlanRef.current = null;
+    setSelectedPlan(null);
+    setLeaderChatModalOpen(false);
+    const next = new URLSearchParams(searchParams);
+    next.delete('planId'); next.delete('openChat');
+    setSearchParams(next, { replace: true });
   };
 
   // Abrir modal para ver evidencias cargadas de una actividad
@@ -575,7 +573,15 @@ export default function PlanAccionConsulta({
       pending = true;
       try {
         const response = await strategicPlanningService.getActionPlan(planId);
-        if (!disposed && response?.data) setSelectedPlan((previous) => previous?.id === planId ? { ...previous, ...response.data } : previous);
+        if (!disposed && response?.data) {
+          if (!readOnly && !availableMyActionPlans([response.data]).length) {
+            preferPlanListRef.current = true;
+            setPeiPlans(plans => plans.filter(plan => String(plan.id) !== String(planId)));
+            setSelectedPlan(previous => previous?.id === planId ? null : previous);
+          } else {
+            setSelectedPlan(previous => previous?.id === planId ? { ...previous, ...response.data } : previous);
+          }
+        }
       } catch { /* Preserve the current view while the connection recovers. */ }
       finally { pending = false; }
     };
@@ -583,7 +589,7 @@ export default function PlanAccionConsulta({
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => { disposed = true; window.clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
-  }, [selectedPlan?.id, monitoringModalOpen, savingMonitoring]);
+  }, [selectedPlan?.id, monitoringModalOpen, savingMonitoring, readOnly]);
 
   const handleRefreshActas = async () => {
     if (!selectedPlan?.id) return;
@@ -1012,6 +1018,7 @@ export default function PlanAccionConsulta({
           </Paper>
         ) : (
           <Stack spacing={2.5}>
+            {peiPlans.length > 1 && <Alert severity="info">Tienes {peiPlans.length} planes de acción disponibles. Selecciona el que deseas abrir para registrar su cumplimiento.</Alert>}
             {/* 1. SECCIÓN: PLANES EN REVISIÓN Y FIRMAS */}
             {pendingReviewPlans.length > 0 && (
               <Box>
@@ -1206,12 +1213,19 @@ export default function PlanAccionConsulta({
         >
           <Stack spacing={1} sx={{ minWidth: 0, flex: 1, pr: readOnly ? { xs: 5, md: 0 } : 0 }}>
             <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap sx={{ pr: readOnly ? 5 : 0 }}>
+              {!readOnly && peiPlans.length > 1 && (
+                <TextField select size="small" label="Cambiar de plan" value={selectedPlan.id}
+                  onChange={event => handleSelectPlan(peiPlans.find(plan => String(plan.id) === event.target.value))}
+                  sx={{ minWidth: 250, maxWidth: '100%', bgcolor: '#fff', borderRadius: 2 }}>
+                  {peiPlans.map(plan => <MenuItem key={plan.id} value={plan.id}>{plan.code} - {plan.organizationalUnit?.name || plan.title}</MenuItem>)}
+                </TextField>
+              )}
               {!readOnly && (
                 <Button
                   variant="contained"
                   size="small"
                   startIcon={<ArrowBackIcon sx={{ fontSize: 17 }} />}
-                  onClick={() => setSelectedPlan(null)}
+                  onClick={handleBackToPlans}
                   sx={{
                     textTransform: 'none',
                     fontWeight: 850,

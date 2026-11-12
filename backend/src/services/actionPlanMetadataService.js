@@ -18,20 +18,29 @@ async function updateActionPlanMetadata({ id, body, actorId, onAudit }) {
         if (collision) throw failure(`El código ${code} ya pertenece a otro plan. Para asignar el responsable, conserve el código actual (${plan.code}) o elija un código diferente.`, 409);
       }
       let user = null;
-      if (Object.hasOwn(body, 'responsible_user_id')) {
+      const changeLeader = Object.hasOwn(body, 'responsible_user_id');
+      const clearLeader = changeLeader && (body.responsible_user_id === null || (typeof body.responsible_user_id === 'string' && !body.responsible_user_id.trim()));
+      if (changeLeader && !clearLeader) {
         const userId = Number(body.responsible_user_id);
         if (!Number.isSafeInteger(userId) || userId <= 0) throw failure('Seleccione un líder responsable activo de la lista.');
         user = await User.findOne({ where: { id: userId, estado: 'activo' }, transaction });
         if (!user) throw failure('El responsable seleccionado no existe o no está activo. Seleccione otro usuario.');
       }
       let leader = null;
-      if (user) {
+      if (user || clearLeader) {
         // Keep the annual reference and the plan-specific assignment coherent.
         // Closing previous assignments preserves who was responsible before.
         await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', { replacements: { key: `action-plan-leader:${plan.term_id}:${plan.catalog_item_id}` }, transaction });
         const today = new Date().toISOString().slice(0, 10);
         for (const [type, planId] of [['reference_leader', null], ['action_plan_leader', plan.id]]) {
           const active = await StrategicResponsibility.findAll({ where: { term_id: plan.term_id, catalog_item_id: plan.catalog_item_id, action_plan_id: planId, responsibility_type: type, status: 'active' }, order: [['created_at', 'DESC']], transaction, lock: transaction.LOCK.UPDATE });
+          if (clearLeader) {
+            const emptyReference = type === 'reference_leader' ? active.find(row => !row.user_id) : null;
+            for (const row of active) if (row.id !== emptyReference?.id) await row.update({ status: 'ended', ends_on: today, ended_by: actorId, transfer_reason: 'Retiro temporal del responsable desde el plan' }, { transaction });
+            if (type === 'reference_leader' && !emptyReference) await StrategicResponsibility.create({ term_id: plan.term_id, catalog_item_id: plan.catalog_item_id,
+              action_plan_id: null, responsibility_type: type, user_id: null, starts_on: today, status: 'active', created_by: actorId, predecessor_id: active[0]?.id || null }, { transaction });
+            continue;
+          }
           let selected = active.find(row => Number(row.user_id) === user.id);
           const predecessor = active.find(row => String(row.id) === String(plan.responsibility_id)) || active[0];
           for (const row of active) if (!selected || row.id !== selected.id) await row.update({ status: 'transferred', ends_on: today, transferred_at: new Date(), ended_by: actorId, transfer_reason: 'Actualización de responsable desde el plan de acción' }, { transaction });
@@ -39,8 +48,12 @@ async function updateActionPlanMetadata({ id, body, actorId, onAudit }) {
           if (type === 'action_plan_leader') leader = selected;
         }
       }
-      const metadata = body.metadata ? { ...plan.metadata, ...body.metadata, form_schema: plan.metadata?.form_schema } : plan.metadata;
-      await plan.update({ code, title, ...(user ? { responsible_user_id: user.id, responsibility_id: leader.id } : {}), metadata, updated_by: actorId }, { transaction });
+      const metadata = body.metadata ? { ...plan.metadata, ...body.metadata, form_schema: plan.metadata?.form_schema } : { ...(plan.metadata || {}) };
+      if (changeLeader) {
+        metadata.leader_assignment_paused = clearLeader;
+        if (clearLeader) { metadata.leader_unassigned_at = new Date().toISOString(); metadata.leader_unassigned_by = actorId; }
+      }
+      await plan.update({ code, title, ...(clearLeader ? { responsible_user_id: null, responsibility_id: null } : user ? { responsible_user_id: user.id, responsibility_id: leader.id } : {}), metadata, updated_by: actorId }, { transaction });
       if (onAudit) await onAudit(previous, plan, transaction);
       return plan;
     });

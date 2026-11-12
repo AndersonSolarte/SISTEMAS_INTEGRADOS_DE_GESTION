@@ -2117,7 +2117,7 @@ export default function JuridicaWorkflowPanel() {
                 maxHeight: 620,
                 borderRadius: '0 0 8px 8px',
                 borderTop: '1px solid #e2e8f0',
-                '&::-webkit-scrollbar': { width: 7, height: 7 },
+                '&::-webkit-scrollbar': { width: 10, height: 10 },
                 '&::-webkit-scrollbar-thumb': { bgcolor: '#cbd5e1', borderRadius: 4 },
                 '&::-webkit-scrollbar-thumb:hover': { bgcolor: '#94a3b8' }
               }}

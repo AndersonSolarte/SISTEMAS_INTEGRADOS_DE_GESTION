@@ -1589,7 +1589,7 @@ export function PopulationChartSwitcher({ data, groupIndex, selection, onSelecti
     <Stack spacing={1.5}>
       <Paper elevation={0} sx={{ p: 0.9, border: '1px solid #cbd9ea', borderRadius: 3, bgcolor: '#fff', boxShadow: '0 5px 18px rgba(15,43,86,.05)' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ xs: 'stretch', md: 'center' }} spacing={1}>
-          <Stack direction="row" sx={{ flex: 1, minWidth: 0, p: 0.4, gap: 0.45, overflowX: 'auto', flexWrap: 'nowrap', bgcolor: '#eef3f9', borderRadius: 2.2, scrollbarWidth: 'thin', '&::-webkit-scrollbar': { height: 4 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#bfd0e5', borderRadius: 4 } }}>
+          <Stack direction="row" sx={{ flex: 1, minWidth: 0, p: 0.4, gap: 0.45, overflowX: 'auto', flexWrap: 'nowrap', bgcolor: '#eef3f9', borderRadius: 2.2, scrollbarWidth: 'auto', '&::-webkit-scrollbar': { width: 10, height: 10 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#bfd0e5', borderRadius: 4 } }}>
             {chartOptions.map(([value, label]) => (
               <Button
                 key={value}

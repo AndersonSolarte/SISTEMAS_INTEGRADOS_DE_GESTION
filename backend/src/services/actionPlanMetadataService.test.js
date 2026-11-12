@@ -41,7 +41,36 @@ test('local PostgreSQL: assign leader to historical 2026 plan, keep annual refer
     await plan.reload(); assert.equal(plan.responsible_user_id, users[0].id);
     assert.equal(plan.responsibility_id, next.responsibility_id);
 
-    await assert.rejects(updateActionPlanMetadata({ id: plan.id, body: { responsible_user_id: '' }, actorId: users[0].id }), { statusCode: 422 });
+    const cleared = await updateActionPlanMetadata({ id: plan.id, body: { responsible_user_id: '' }, actorId: users[0].id });
+    assert.equal(cleared.responsible_user_id, null); assert.equal(cleared.responsibility_id, null);
+    assert.equal(cleared.metadata.leader_assignment_paused, true);
+    let afterClear = await active();
+    assert.equal(afterClear.length, 1); assert.equal(afterClear[0].user_id, null); assert.equal(afterClear[0].responsibility_type, 'reference_leader');
+    const { listTermDependencies } = require('./strategicTermDependencyService');
+    const dependencies = await listTermDependencies({ termId: term.id });
+    assert.ok(dependencies.some(d => d.dependency?.id === unit.id && d.responsible === null));
+    const clearedAgain = await updateActionPlanMetadata({ id: plan.id, body: { responsible_user_id: null }, actorId: users[0].id });
+    assert.equal((await active()).length, 1);
+    assert.equal(clearedAgain.responsible_user_id, null);
+    await updateActionPlanMetadata({ id: plan.id, body: { title: 'Still unassigned' }, actorId: users[0].id });
+    await plan.reload(); assert.equal(plan.responsible_user_id, null); assert.equal(plan.metadata.leader_assignment_paused, true);
+    // Even a stale active annual assignment cannot override the explicit unassignment.
+    await StrategicResponsibility.create({ term_id: term.id, catalog_item_id: unit.id, action_plan_id: null, responsibility_type: 'reference_leader', status: 'active', user_id: users[0].id, created_by: users[0].id });
+    const savedList = StrategicActionPlan.findAll;
+    StrategicActionPlan.findAll = async () => [plan];
+    try { await require('./strategicLegacyActionPlanService').syncMissingPlanLeaders(); }
+    finally { StrategicActionPlan.findAll = savedList; }
+    await plan.reload(); assert.equal(plan.responsible_user_id, null);
+    const reassigned = await updateActionPlanMetadata({ id: plan.id, body: { responsible_user_id: users[0].id }, actorId: users[0].id });
+    assert.equal(reassigned.metadata.leader_assignment_paused, false);
+    assert.ok(reassigned.responsibility_id);
+    assert.equal(reassigned.responsible_user_id, users[0].id);
+    assert.equal((await active()).length, 2);
+    assert.ok((await active()).every(a => a.user_id === users[0].id));
+    await assert.rejects(updateActionPlanMetadata({ id: plan.id, body: { responsible_user_id: null }, actorId: users[0].id, onAudit: async () => { throw new Error('clear rollback'); } }), /clear rollback/);
+    await plan.reload(); assert.equal(plan.responsible_user_id, users[0].id);
+    assert.equal((await active()).length, 2);
+
     await assert.rejects(updateActionPlanMetadata({ id: plan.id, body: { responsible_user_id: 2147483646 }, actorId: users[0].id }), { statusCode: 422 });
     await assert.rejects(updateActionPlanMetadata({ id: plan.id, body: { responsible_user_id: users[1].id }, actorId: users[0].id, onAudit: async () => { throw new Error('rollback check'); } }), /rollback check/);
     await plan.reload(); assert.equal(plan.responsible_user_id, users[0].id);

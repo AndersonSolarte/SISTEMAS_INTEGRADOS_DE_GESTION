@@ -191,7 +191,7 @@ const theme = createTheme({
         @supports not selector(::-webkit-scrollbar) {
           * { scrollbar-color: #475569 #e2e8f0; }
         }
-        ::-webkit-scrollbar { width: 14px; height: 14px; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
         ::-webkit-scrollbar-track { background: #e2e8f0; }
         ::-webkit-scrollbar-thumb { background: #475569; border: 2px solid #e2e8f0; border-radius: 8px; min-height: 36px; min-width: 36px; }
         ::-webkit-scrollbar-thumb:hover { background: #1e293b; }

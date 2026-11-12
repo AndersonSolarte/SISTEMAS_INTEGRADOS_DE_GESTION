@@ -487,7 +487,7 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
       </div>
       <div
         onWheel={(event) => event.stopPropagation()}
-        style={{ maxHeight: 220, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin' }}
+        style={{ maxHeight: 220, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'auto' }}
       >
         {filtered.length === 0
           ? <div style={{ padding: '12px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>Sin resultados</div>
@@ -1963,8 +1963,8 @@ const hasDocumentalManagementPermission = useMemo(() => {
                     width: '100%',
                     maxWidth: '100%',
                     overflowX: 'auto',
-                    scrollbarWidth: 'thin',
-                    '&::-webkit-scrollbar': { height: 8 },
+                    scrollbarWidth: 'auto',
+                    '&::-webkit-scrollbar': { width: 10, height: 10 },
                     '&::-webkit-scrollbar-track': { bgcolor: '#f8fafc' },
                     '&::-webkit-scrollbar-thumb': { bgcolor: '#cbd5e1', borderRadius: 8 }
                   }}

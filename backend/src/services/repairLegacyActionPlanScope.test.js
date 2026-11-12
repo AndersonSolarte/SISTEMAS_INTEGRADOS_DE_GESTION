@@ -4,14 +4,14 @@ const models = require('../models');
 const { sequelize } = require('../config/database');
 const bridge = require('./strategicLegacyActionPlanService');
 
-async function runRepair({ officialLeader = false, conflictingLeader = false } = {}) {
+async function runRepair({ officialLeader = false, conflictingLeader = false, pausedLeader = false } = {}) {
   const restores = [];
   const stub = (obj, key, fn) => { restores.push([obj, key, obj[key]]); obj[key] = fn; };
   const record = (data) => ({ ...data, async update(values) { Object.assign(this, values); return this; } });
   const term = { id: 'term', year: 2026, strategic_plan_id: 'ped' };
   const unit = { id: 'unit', code: 'R74', strategic_plan_id: 'ped' };
   const legacy = record({ ...(conflictingLeader ? { responsible_user_id: 11 } : {}), id: 'old', code: 'LEGACY-2026-R74', term_id: 'term', catalog_item_id: 'older-unit', term, organizationalUnit: unit, created_at: '2026-01-01' });
-  const official = record({ ...(officialLeader ? { responsible_user_id: 9 } : {}), id: 'official', code: '2026-R74', term_id: 'term', catalog_item_id: 'unit', term, organizationalUnit: unit, created_at: '2026-02-01' });
+  const official = record({ ...(pausedLeader ? { responsible_user_id: null, responsibility_id: null, metadata: { leader_assignment_paused: true } } : {}), ...(officialLeader ? { responsible_user_id: 9 } : {}), id: 'official', code: '2026-R74', term_id: 'term', catalog_item_id: 'unit', term, organizationalUnit: unit, created_at: '2026-02-01' });
   const futurePlan = record({ id: 'future', code: '2027-R74', term_id: 'future-term', catalog_item_id: 'unit', term: { year: 2027 }, organizationalUnit: unit });
   const otherPlan = record({ id: 'other', code: '2026-R75', term_id: 'term', catalog_item_id: 'other-unit', term, organizationalUnit: { code: 'R75' } });
   const importedFuture = record({ id: 'future-import', code: 'LEGACY-10', custom_values: { legacy_plan_accion_id: 10 }, actionPlan: futurePlan });
@@ -65,7 +65,12 @@ async function runRepair({ officialLeader = false, conflictingLeader = false } =
     assert.equal(futurePlan.deleted_at, undefined);
     assert.equal(otherPlan.deleted_at, undefined);
     assert.equal(assignment.action_plan_id, 'official');
-    assert.equal(assignment.status, officialLeader ? 'ended' : 'active');
+    assert.equal(assignment.status, officialLeader || pausedLeader ? 'ended' : 'active');
+    if (pausedLeader) {
+      assert.equal(official.responsible_user_id, null);
+      assert.equal(official.responsibility_id, null);
+      assert.equal(official.metadata.leader_assignment_paused, true);
+    }
     if (officialLeader) {
       assert.equal(official.responsible_user_id, 9);
       assert.equal(official.responsibility_id, 'saved-interface-leader');
@@ -84,3 +89,5 @@ test('repair merges only the same annual dependency and preserves native activit
 test('repair keeps the interface-assigned leader and recreates its missing responsibility instead of reviving an old owner', () => runRepair({ officialLeader: true }));
 
 test('conflicting interface-assigned leaders require review rather than automatic replacement', () => runRepair({ officialLeader: true, conflictingLeader: true }));
+
+test('merging historical plans respects an explicitly unassigned leader', () => runRepair({ pausedLeader: true }));

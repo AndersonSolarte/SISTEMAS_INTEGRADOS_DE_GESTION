@@ -403,7 +403,7 @@ function ChecklistFilter({ label, options = [], value = [], onChange, placeholde
         </div>
         <span style={{ fontSize: 11, fontWeight: 800, color: brand }}>SELECCIONAR TODOS ({normalizedOptions.length})</span>
       </div>
-      <div onWheel={(event) => event.stopPropagation()} style={{ maxHeight: 238, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin' }}>
+      <div onWheel={(event) => event.stopPropagation()} style={{ maxHeight: 238, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'auto' }}>
         {filtered.length === 0 ? (
           <div style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>Sin resultados</div>
         ) : filtered.map((option) => (

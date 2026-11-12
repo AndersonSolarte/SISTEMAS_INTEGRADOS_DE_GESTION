@@ -81,7 +81,7 @@ const repairLegacyActionPlanScope = async () => {
           targetLeaders.splice(0, targetLeaders.length, selected);
         }
       }
-      let hasLeader = targetLeaders.length > 0 || Boolean(target.responsible_user_id);
+      let hasLeader = targetLeaders.length > 0 || Boolean(target.responsible_user_id) || Boolean(target.metadata?.leader_assignment_paused);
       const history = await StrategicResponsibility.findAll({ where: { action_plan_id: legacy.id }, transaction });
       for (const assignment of history) {
         const validLeader = assignment.responsibility_type === 'action_plan_leader'

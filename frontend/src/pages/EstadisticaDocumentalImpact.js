@@ -185,7 +185,7 @@ function DocFilterPanel({ label, options = [], value = [], onChange, disabled, p
         </div>
         <span style={{ fontSize: 11, fontWeight: 700, color: C }}>SELECCIONAR TODOS ({effectiveOptions.length})</span>
       </div>
-      <div onWheel={(e) => e.stopPropagation()} style={{ maxHeight: 220, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin' }}>
+      <div onWheel={(e) => e.stopPropagation()} style={{ maxHeight: 220, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'auto' }}>
         {filtered.length === 0
           ? <div style={{ padding: '12px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>Sin resultados</div>
           : filtered.map((opt) => (

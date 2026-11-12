@@ -1,3 +1,5 @@
+import ActionPlanLeaderSelect from '../components/ActionPlanLeaderSelect';
+import { actionPlanLeader, applySavedPlanLeader } from '../utils/actionPlanLeader';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { filterActionPlanUnits } from '../utils/actionPlanSearch';
 import { useSearchParams } from 'react-router-dom';
@@ -990,16 +992,29 @@ export default function StrategicPlanningPlatform({ onBack }) {
     if (!editActionPlanCandidate) return;
     setSaving(true);
     try {
-      await strategicPlanningService.updateActionPlan(editActionPlanCandidate.id, {
+      const response = await strategicPlanningService.updateActionPlan(editActionPlanCandidate.id, {
         ...(editActionPlanCandidate.code !== editActionPlanCandidate.original_code ? { code: editActionPlanCandidate.code } : {}),
         title: editActionPlanCandidate.title,
-        responsible_user_id: editActionPlanCandidate.responsible_user_id
+        responsible_user_id: editActionPlanCandidate.responsible_user_id || null
       });
+      const saved = response.data;
+      if (!saved || String(saved.responsible_user_id || '') !== String(editActionPlanCandidate.responsible_user_id || '')) {
+        throw new Error('El servidor no confirmo el cambio de responsable. Revise que el backend este actualizado.');
+      }
+      const options = [editActionPlanCandidate.current_leader, ...leaders].filter(Boolean);
+      setPlans(current => current.map(item => item.id === saved.id ? applySavedPlanLeader(item, saved, options) : item));
+      setTermDependencies(current => current.map(assignment =>
+        String(assignment.term_id) === String(editActionPlanCandidate.term_id) && String(assignment.dependency?.id) === String(editActionPlanCandidate.catalog_item_id)
+          ? { ...assignment, responsible: actionPlanLeader(saved, null, options) } : assignment));
       enqueueSnackbar('Plan de Acción actualizado correctamente.', { variant: 'success' });
       setEditActionPlanCandidate(null);
-      await load();
+      await Promise.all([
+        load({ silent: true }),
+        strategicPlanningService.termDependencies(editActionPlanCandidate.strategic_plan_id || plan.id).then(result => setTermDependencies(result.data || []))
+          .catch(() => enqueueSnackbar('El plan se guardó. Actualice la pantalla para refrescar las dependencias.', { variant: 'warning' }))
+      ]);
     } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'No fue posible actualizar el plan.', { variant: 'error' });
+      enqueueSnackbar(error.response?.data?.message || error.message || 'No fue posible actualizar el plan.', { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -2953,7 +2968,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                             <Tooltip title="Editar datos del plan">
                               <IconButton
                                 size="small"
-                                onClick={(e) => { e.stopPropagation(); setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, original_code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year }); }}
+                                onClick={(e) => { e.stopPropagation(); setEditActionPlanCandidate({ id: actionPlan.id, term_id: actionPlan.term_id || actionPlan.term?.id, catalog_item_id: actionPlan.catalog_item_id, strategic_plan_id: actionPlan.term?.strategic_plan_id || plan?.id, current_leader: actionPlanLeader(actionPlan, unit.annualAssignment, leaders), code: actionPlan.code, original_code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year }); }}
                                 sx={{ width: 28, height: 28, color: '#64748b', '&:hover': { bgcolor: '#eff6ff', color: '#2563eb' } }}
                               >
                                 <EditOutlined sx={{ fontSize: 17 }} />
@@ -2974,7 +2989,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                       </Stack>
                     </Stack>
                     <Typography fontWeight={950} mt={1.2} lineHeight={1.3}>{unit.name}</Typography><Typography variant="caption" color="text.secondary">{unit.code}</Typography>
-                    <Box sx={{ flex: 1, mt: 1 }}>{actionPlan ? <><Typography variant="caption" color="text.secondary">{actionPlan.code} · {actionPlan.items?.length || 0} registros</Typography><Typography variant="caption" display="block" color="text.secondary" noWrap>{actionPlan.responsibleUser?.nombre || 'Sin líder asignado'}</Typography></> : <Typography variant="caption" color="text.secondary">{suggestedLeader ? `Responsable: ${suggestedLeader.name}` : 'Configure primero el responsable de esta vigencia.'}</Typography>}</Box>
+                    <Box sx={{ flex: 1, mt: 1 }}>{actionPlan ? <><Typography variant="caption" color="text.secondary">{actionPlan.code} · {actionPlan.items?.length || 0} registros</Typography><Typography variant="caption" display="block" color="text.secondary" noWrap>{actionPlanLeader(actionPlan, unit.annualAssignment, leaders)?.name || 'Sin líder asignado'}</Typography></> : <Typography variant="caption" color="text.secondary">{suggestedLeader ? `Responsable: ${suggestedLeader.name}` : 'Configure primero el responsable de esta vigencia.'}</Typography>}</Box>
                     {actionPlan ? (
                       <Stack direction="row" gap={0.75} mt={1.25}>
                         <Button fullWidth size="small" variant="contained" onClick={(e) => { e.stopPropagation(); setEditorPlanId(actionPlan.id); }} sx={{ borderRadius: 1.25, textTransform: 'none', fontWeight: 900 }}>Abrir plan</Button>
@@ -3004,8 +3019,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
                   <TableBody>
                     {visibleActionUnits.map((unit) => {
                       const actionPlan = selectedYearPlans.find((item) => String(item.catalog_item_id || item.organizationalUnit?.id) === String(unit.id));
-                      const responsible = unit.annualAssignment?.responsible || {};
-                      const responsibleName = responsible.name || actionPlan?.responsibleUser?.nombre || 'Sin responsable';
+                      const responsible = actionPlanLeader(actionPlan, unit.annualAssignment, leaders) || {};
+                      const responsibleName = responsible.name || 'Sin responsable';
                       const initials = responsibleName === 'Sin responsable' ? '—' : responsibleName.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
                       const statusMeta = actionPlan ? (ACTION_PLAN_STATUS_INFO[actionPlan.status] || { label: actionPlan.status, color: 'default' }) : { label: 'Sin formular', color: 'default' };
 
@@ -3060,7 +3075,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
                                     </IconButton>
                                   </Tooltip>
                                   <Tooltip title="Editar código o datos básicos">
-                                    <IconButton size="small" onClick={() => setEditActionPlanCandidate({ id: actionPlan.id, code: actionPlan.code, original_code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year })} sx={{ color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 1.25, '&:hover': { bgcolor: '#eff6ff', color: '#1e40af' } }}>
+                                    <IconButton size="small" onClick={() => setEditActionPlanCandidate({ id: actionPlan.id, term_id: actionPlan.term_id || actionPlan.term?.id, catalog_item_id: actionPlan.catalog_item_id, strategic_plan_id: actionPlan.term?.strategic_plan_id || plan?.id, current_leader: actionPlanLeader(actionPlan, unit.annualAssignment, leaders), code: actionPlan.code, original_code: actionPlan.code, title: actionPlan.title, responsible_user_id: actionPlan.responsible_user_id, unit_name: unit.name, year: selectedActionTerm.year })} sx={{ color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 1.25, '&:hover': { bgcolor: '#eff6ff', color: '#1e40af' } }}>
                                       <EditOutlined fontSize="small" />
                                     </IconButton>
                                   </Tooltip>
@@ -3776,13 +3791,14 @@ export default function StrategicPlanningPlatform({ onBack }) {
               onChange={(e) => setEditActionPlanCandidate({ ...editActionPlanCandidate, title: e.target.value })}
               fullWidth
             />
-            <Autocomplete
-              options={leaders}
-              value={leaders.find((l) => String(l.id) === String(editActionPlanCandidate?.responsible_user_id)) || null}
-              onChange={(_, leader) => setEditActionPlanCandidate({ ...editActionPlanCandidate, responsible_user_id: leader?.id || '' })}
-              getOptionLabel={(leader) => `${leader.document || 'Sin documento'} · ${leader.name} · ${leader.position || 'Sin cargo'}`}
-              renderInput={(params) => <TextField {...params} label="Líder responsable" />}
-            />
+            {editActionPlanCandidate && <ActionPlanLeaderSelect
+              planId={editActionPlanCandidate.strategic_plan_id || plan?.id}
+              value={editActionPlanCandidate.responsible_user_id}
+              currentLeader={editActionPlanCandidate.current_leader}
+              disabled={saving}
+              onOptionsLoaded={setLeaders}
+              onChange={leader => setEditActionPlanCandidate(current => ({ ...current, responsible_user_id: leader?.id || null, current_leader: leader }))}
+            />}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e2e8f0', gap: 1 }}>
@@ -3791,7 +3807,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
           </Button>
           <Button
             variant="contained"
-            disabled={saving || !editActionPlanCandidate?.title?.trim() || !editActionPlanCandidate?.code?.trim() || !editActionPlanCandidate?.responsible_user_id}
+            disabled={saving || !editActionPlanCandidate?.title?.trim() || !editActionPlanCandidate?.code?.trim()}
             onClick={confirmUpdateActionPlanMeta}
             sx={{ px: 3, borderRadius: 2.25, fontWeight: 900, textTransform: 'none' }}
           >
