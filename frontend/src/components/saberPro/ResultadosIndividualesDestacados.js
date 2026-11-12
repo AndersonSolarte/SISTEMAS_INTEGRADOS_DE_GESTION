@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
+  Button,
   Chip,
   CircularProgress,
   FormControl,
@@ -22,6 +23,8 @@ import EmojiEventsRoundedIcon from '@mui/icons-material/EmojiEventsRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
 import WorkspacePremiumRoundedIcon from '@mui/icons-material/WorkspacePremiumRounded';
+import FileDownloadRoundedIcon from '@mui/icons-material/FileDownloadRounded';
+import XLSXStyle from 'xlsx-js-style';
 import saberProAnalyticsService from '../../services/saberProAnalyticsService';
 
 /* ── Helpers ── */
@@ -226,6 +229,193 @@ export default function ResultadosIndividualesDestacados() {
     ? 'Un estudiante por programa: mayor promedio con 5 genéricas + al menos 1 específica.'
     : 'Top 50 ordenado por promedio general descendente.';
 
+  const handleExportExcel = useCallback(() => {
+    if (!displayRows.length) return;
+
+    const moduleMapAll = new Map();
+    displayRows.forEach((r) => {
+      const detalle = Array.isArray(r.detalle) ? r.detalle : [];
+      detalle.forEach((d) => {
+        if (d.modulo && !moduleMapAll.has(d.modulo)) {
+          moduleMapAll.set(d.modulo, true);
+        }
+      });
+    });
+    const moduleNames = Array.from(moduleMapAll.keys());
+
+    const baseHeaders = [
+      '#',
+      'Estudiante',
+      'Documento',
+      'N° Registro',
+      'Programa Académico',
+      'Año',
+      'Periodo',
+      'Resultado Global',
+      'Promedio General',
+      'Total Competencias',
+      'Media Nacional',
+      'Percentil Nacional'
+    ];
+
+    const allHeaders = [...baseHeaders, ...moduleNames];
+    if (topPerProgram) {
+      allHeaders.push('Cumple Criterio (5 Genéricas + 1 Específica)');
+    }
+
+    const now = new Date();
+    const fechaHora = now.toLocaleString('es-CO');
+    const pruebaLabel = tipoPrueba === 'saber_pro' ? 'Saber Pro' : 'Saber TyT';
+    const modalidadLabel = topPerProgram ? 'Mejor resultado por programa' : 'Ranking general institucional';
+    const programasLabel = programas.length ? programas.join(', ') : 'Todos';
+    const aniosLabel = anios.length ? anios.join(', ') : 'Todos';
+    const periodosLabel = periodos.length ? periodos.join(', ') : 'Todos';
+
+    const aoa = [
+      ['UNIVERSIDAD CESMAG - SISTEMA INTEGRADO DE GESTIÓN (SIAC)'],
+      [`REPORTE DE MEJORES RESULTADOS - ${pruebaLabel.toUpperCase()}`],
+      [`Modalidad: ${modalidadLabel} | Generado el: ${fechaHora}`],
+      [`Filtros: Años: ${aniosLabel} | Periodos: ${periodosLabel} | Programas: ${programasLabel}`],
+      [],
+      allHeaders
+    ];
+
+    displayRows.forEach((row, idx) => {
+      const detalle = Array.isArray(row.detalle) ? row.detalle : [];
+      const studentModules = {};
+      detalle.forEach((d) => {
+        if (d.modulo) studentModules[d.modulo] = d.puntaje;
+      });
+
+      const rowData = [
+        idx + 1,
+        row.nombre || '—',
+        row.documento || '—',
+        row.numero_registro || '—',
+        row.programa || '—',
+        row.anio != null ? Number(row.anio) : '—',
+        row.periodo || '—',
+        row.resultado_global != null ? Number(row.resultado_global) : '—',
+        row.promedio_general != null ? Number(row.promedio_general) : '—',
+        row.total_competencias != null ? Number(row.total_competencias) : '—',
+        row.media_nacional != null ? Number(row.media_nacional) : '—',
+        row.percentil_nacional_global != null ? `P${Math.round(Number(row.percentil_nacional_global))}` : '—'
+      ];
+
+      moduleNames.forEach((mod) => {
+        const val = studentModules[mod];
+        rowData.push(val != null ? Number(val) : '—');
+      });
+
+      if (topPerProgram) {
+        rowData.push(row.cumple_ambas ? 'SÍ' : 'NO');
+      }
+
+      aoa.push(rowData);
+    });
+
+    const worksheet = XLSXStyle.utils.aoa_to_sheet(aoa);
+    const lastColIdx = allHeaders.length - 1;
+    const lastColLetter = XLSXStyle.utils.encode_col(lastColIdx);
+
+    worksheet['!merges'] = [0, 1, 2, 3].map((rIdx) => ({
+      s: { r: rIdx, c: 0 },
+      e: { r: rIdx, c: lastColIdx }
+    }));
+
+    worksheet['!autofilter'] = { ref: `A6:${lastColLetter}${aoa.length}` };
+
+    worksheet['!cols'] = allHeaders.map((hdr, colIdx) => {
+      let maxLen = String(hdr).length;
+      displayRows.forEach((r) => {
+        if (colIdx === 1) maxLen = Math.max(maxLen, String(r.nombre || '').length);
+        if (colIdx === 4) maxLen = Math.max(maxLen, String(r.programa || '').length);
+      });
+      return { wch: Math.min(Math.max(maxLen + 4, 12), 48) };
+    });
+
+    const borderThin = {
+      top: { style: 'thin', color: { rgb: 'CBD5E1' } },
+      bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
+      left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+      right: { style: 'thin', color: { rgb: 'CBD5E1' } }
+    };
+
+    const titleStyle = {
+      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 14, name: 'Calibri' },
+      fill: { fgColor: { rgb: '1E3A5F' } },
+      alignment: { horizontal: 'left', vertical: 'center' }
+    };
+
+    const subtitleStyle = {
+      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11, name: 'Calibri' },
+      fill: { fgColor: { rgb: '2563EB' } },
+      alignment: { horizontal: 'left', vertical: 'center' }
+    };
+
+    const metaStyle = {
+      font: { italic: true, color: { rgb: '475569' }, sz: 9.5, name: 'Calibri' },
+      fill: { fgColor: { rgb: 'F1F5F9' } },
+      alignment: { horizontal: 'left', vertical: 'center' }
+    };
+
+    const headerStyle = {
+      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10, name: 'Calibri' },
+      fill: { fgColor: { rgb: '1D4ED8' } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: borderThin
+    };
+
+    const dataStyleEven = {
+      font: { sz: 10, name: 'Calibri' },
+      fill: { fgColor: { rgb: 'FFFFFF' } },
+      border: borderThin
+    };
+
+    const dataStyleOdd = {
+      font: { sz: 10, name: 'Calibri' },
+      fill: { fgColor: { rgb: 'F8FAFC' } },
+      border: borderThin
+    };
+
+    const range = XLSXStyle.utils.decode_range(worksheet['!ref']);
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = XLSXStyle.utils.encode_cell({ r, c });
+        const cell = worksheet[addr];
+        if (!cell) continue;
+
+        if (r === 0) cell.s = titleStyle;
+        else if (r === 1) cell.s = subtitleStyle;
+        else if (r === 2 || r === 3) cell.s = metaStyle;
+        else if (r === 5) cell.s = headerStyle;
+        else if (r >= 6) {
+          const isEven = (r - 6) % 2 === 0;
+          const baseStyle = isEven ? dataStyleEven : dataStyleOdd;
+          const isNumeric = typeof cell.v === 'number';
+          cell.s = {
+            ...baseStyle,
+            alignment: {
+              horizontal: isNumeric ? 'right' : (c === 0 || c === 2 || c === 3 || c === 5 || c === 6 ? 'center' : 'left'),
+              vertical: 'center'
+            }
+          };
+          if (isNumeric) {
+            cell.z = Number.isInteger(cell.v) ? '#,##0' : '#,##0.00';
+          }
+        }
+      }
+    }
+
+    const workbook = XLSXStyle.utils.book_new();
+    const sheetName = (topPerProgram ? 'Mejor por Programa' : 'Ranking General').slice(0, 31);
+    XLSXStyle.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+    const safeDate = now.toISOString().slice(0, 10);
+    const fileName = `plantilla_mejores_resultados_${tipoPrueba}_${topPerProgram ? 'por_programa' : 'general'}_${safeDate}.xlsx`;
+    XLSXStyle.writeFile(workbook, fileName);
+  }, [displayRows, tipoPrueba, topPerProgram, programas, anios, periodos]);
+
   return (
     <Stack spacing={2} sx={{ bgcolor: '#f1f5f9', minHeight: '100%', p: { xs: 1.5, md: 2 } }}>
 
@@ -337,7 +527,49 @@ export default function ResultadosIndividualesDestacados() {
               <Typography sx={{ fontSize: 11.5, color: '#94a3b8', mt: 0.2 }}>{rankingDesc}</Typography>
             </Box>
           </Stack>
-          <Chip label={topPerProgram ? `${displayRows.length} programas` : `Top ${displayRows.length}`} size="small" sx={{ height: 24, fontSize: 11, fontWeight: 800, bgcolor: '#fffbeb', color: '#b45309', border: '1.5px solid #fde68a' }} />
+          <Stack direction="row" alignItems="center" spacing={1.5}>
+            <Tooltip title="Descargar plantilla de resultados en formato Excel (.xlsx)" arrow>
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleExportExcel}
+                  disabled={loading || displayRows.length === 0}
+                  startIcon={<FileDownloadRoundedIcon sx={{ fontSize: 18 }} />}
+                  sx={{
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    borderColor: '#10b981',
+                    color: '#047857',
+                    bgcolor: '#ecfdf5',
+                    px: 1.8,
+                    py: 0.45,
+                    boxShadow: 'none',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      bgcolor: '#d1fae5',
+                      borderColor: '#059669',
+                      color: '#065f46'
+                    },
+                    '&.Mui-disabled': {
+                      borderColor: '#e2e8f0',
+                      color: '#94a3b8',
+                      bgcolor: '#f8fafc'
+                    }
+                  }}
+                >
+                  Exportar plantilla Excel
+                </Button>
+              </span>
+            </Tooltip>
+            <Chip
+              label={topPerProgram ? `${displayRows.length} programas` : `Top ${displayRows.length}`}
+              size="small"
+              sx={{ height: 28, fontSize: 11, fontWeight: 800, bgcolor: '#fffbeb', color: '#b45309', border: '1.5px solid #fde68a' }}
+            />
+          </Stack>
         </Stack>
 
         {loading && (
