@@ -1,3 +1,4 @@
+import { minuteScrollStyles } from '../components/meetingMinute/minuteScrollStyles';
 // PEI StrategicActionPlanEditor Module
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PeriodObservationButton from '../components/PeriodObservationButton';
@@ -4663,7 +4664,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   gap: 2.5,
                   alignItems: 'stretch',
                   width: '100%',
-                  minHeight: { lg: 'calc(100vh - 195px)' },
+                  height: { lg: 'calc(100dvh - 255px)' },
+                  minHeight: { lg: 320 },
                   flex: 1
                 }}>
                 <Box sx={{
@@ -4673,6 +4675,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   gap: 3,
                   height: { lg: '100%' },
                   overflowY: { lg: 'auto' },
+                  minWidth: 0,
+                  ...minuteScrollStyles,
                   pr: { lg: 1.5 },
                   pb: { xs: 4, lg: 6 }
                 }}>
@@ -5458,6 +5462,8 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   display: meetingLayoutMode === 'form' ? 'none' : 'block',
                   height: { lg: '100%' },
                   overflowY: { lg: 'auto' },
+                  minWidth: 0,
+                  ...minuteScrollStyles,
                   pr: { lg: 1.5 },
                   pb: { xs: 4, lg: 6 }
                 }}>
@@ -5982,7 +5988,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     </Menu>
 
                     <Box sx={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch', pb: 0.5 }}>
-                      <Box sx={{ minWidth: { xs: 580, sm: '100%' }, border: '1px solid #000000', fontFamily: 'Arial, sans-serif', fontSize: 11.5, color: '#000000', bgcolor: '#ffffff', overflow: 'hidden' }}>
+                      <Box sx={{ minWidth: { xs: 580, sm: '100%' }, border: '1px solid #000000', fontFamily: 'Arial, sans-serif', fontSize: 11, lineHeight: 1.3, color: '#000000', bgcolor: '#ffffff', overflow: 'hidden' }}>
                       <Box sx={{ display: 'grid', gridTemplateColumns: '22% 56% 22%', borderBottom: '1px solid #000000', minHeight: 80 }}>
                         <Box sx={{ borderRight: '1px solid #000000', p: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <Box component="img" src={logoFormatos} alt="Universidad CESMAG" sx={{ width: '94%', maxHeight: 64, objectFit: 'contain' }} />
@@ -6047,7 +6053,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                         <Box sx={{ p: 0.5 }}>Firma</Box>
                       </Box>
                       {(previewParticipants || []).map((p, i) => (
-                        <Box key={i} sx={{ display: 'grid', gridTemplateColumns: '8% 44% 28% 20%', borderBottom: '1px solid #000000', minHeight: p.status === 'signed' ? 54 : 32, alignItems: 'center' }}>
+                        <Box key={i} sx={{ display: 'grid', gridTemplateColumns: '8% 44% 28% 20%', borderBottom: '1px solid #000000', minHeight: p.status === 'signed' ? 54 : 32, alignItems: 'stretch', '& > div': { display: 'flex', alignItems: 'center' }, '& > div:last-child': { justifyContent: 'center' } }}>
                           <Box sx={{ p: 0.5, textAlign: 'center', borderRight: '1px solid #000000', fontWeight: 800 }}>{i + 1}</Box>
                           <Box sx={{ p: 0.5, borderRight: '1px solid #000000' }}>
                             <span>{p.nombre || '—'}</span>

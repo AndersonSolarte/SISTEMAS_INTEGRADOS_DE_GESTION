@@ -1,3 +1,4 @@
+import { minuteScrollStyles } from './minuteScrollStyles';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Autocomplete, Badge, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
@@ -237,7 +238,7 @@ const MeetingPreview = ({ document, form, signatures = [], previewType = 'origin
       : []);
 
   return (
-    <Box sx={{ border: '1px solid #111', bgcolor: '#fff', color: '#111', fontFamily: 'Arial, sans-serif', minWidth: 650 }}>
+    <Box sx={{ border: '1px solid #111', bgcolor: '#fff', color: '#111', fontFamily: 'Arial, sans-serif', fontSize: 11.5, lineHeight: 1.35, minWidth: 650 }}>
       <Box sx={{ display: 'grid', gridTemplateColumns: '22% 56% 22%', minHeight: 82, borderBottom: '1px solid #111' }}>
         <Box sx={{ borderRight: '1px solid #111', p: 0.75, display: 'grid', placeItems: 'center' }}><Box component="img" src={logoFormatos} alt="Universidad CESMAG" sx={{ maxWidth: '95%', maxHeight: 65 }} /></Box>
         <Box sx={{ borderRight: '1px solid #111', display: 'grid', placeItems: 'center', textAlign: 'center', fontWeight: 900 }}>REGISTRO DE ASISTENCIA Y REUNIÓN</Box>
@@ -341,7 +342,7 @@ const MeetingPreview = ({ document, form, signatures = [], previewType = 'origin
       })}
       {['Objetivo', 'Desarrollo', 'Conclusiones / Compromisos'].map((title) => {
         const key = title === 'Objetivo' ? 'objetivo' : title === 'Desarrollo' ? 'desarrollo' : 'conclusiones';
-        return <React.Fragment key={title}><Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>{title}</Box><Box sx={{ p: 1, minHeight: key === 'objetivo' ? 62 : 90, fontSize: 11.5, '& p': { my: 0.3 }, '& h2, & h3': { my: 0.4 }, '& a': { color: '#1d5fd1', textDecoration: 'underline' }, '& blockquote': { my: 0.5, mx: 0, pl: 1, borderLeft: '3px solid #94a3b8' }, '& hr': { border: 0, borderTop: '1px solid #777' }, '& ul, & ol': { my: 0.4, pl: 2.5 }, '& table': { width: '100%', maxWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', my: 0.5, boxSizing: 'border-box' }, '& th, & td': { border: '1px solid #555', p: 0.6, whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top', boxSizing: 'border-box' }, '& th': { bgcolor: '#f2f2f2' } }} dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(form[key]) }} /></React.Fragment>;
+        return <React.Fragment key={title}><Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>{title}</Box><Box sx={{ p: 0.8, borderBottom: '1px solid #111', minHeight: key === 'objetivo' ? 50 : 70, fontSize: 11.5, '& p': { my: 0.3 }, '& h2, & h3': { my: 0.4 }, '& a': { color: '#1d5fd1', textDecoration: 'underline' }, '& blockquote': { my: 0.5, mx: 0, pl: 1, borderLeft: '3px solid #94a3b8' }, '& hr': { border: 0, borderTop: '1px solid #777' }, '& ul, & ol': { my: 0.4, pl: 2.5 }, '& table': { width: '100%', maxWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', my: 0.5, boxSizing: 'border-box' }, '& th, & td': { border: '1px solid #555', p: 0.6, whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top', boxSizing: 'border-box' }, '& th': { bgcolor: '#f2f2f2' } }} dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(form[key]) }} /></React.Fragment>;
       })}
     </Box>
   );
@@ -2155,25 +2156,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               display: layoutMode === 'preview' ? 'none' : 'flex',
               overflowY: { lg: 'auto' },
               pr: { lg: 1.5 },
-              // Barra de scroll ubicada al medio, ampliada y de fácil agarre
-              '&::-webkit-scrollbar': {
-                width: '14px'
-              },
-              '&::-webkit-scrollbar-track': {
-                bgcolor: '#e2e8f0',
-                borderRadius: '8px',
-                border: '1px solid #cbd5e1'
-              },
-              '&::-webkit-scrollbar-thumb': {
-                bgcolor: '#475569',
-                borderRadius: '8px',
-                border: '2.5px solid #e2e8f0',
-                '&:hover': {
-                  bgcolor: '#1e293b'
-                }
-              },
-              scrollbarWidth: 'auto',
-              scrollbarColor: '#475569 #e2e8f0'
+              ...minuteScrollStyles
             }}
           >
             <Paper variant="outlined" sx={{
@@ -3472,26 +3455,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 overflowX: 'auto',
                 minHeight: 0,
                 pr: 1,
-                // Barra de scroll de la vista previa ampliada y de fácil agarre
-                '&::-webkit-scrollbar': {
-                  width: '14px',
-                  height: '14px'
-                },
-                '&::-webkit-scrollbar-track': {
-                  bgcolor: '#e2e8f0',
-                  borderRadius: '8px',
-                  border: '1px solid #cbd5e1'
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  bgcolor: '#475569',
-                  borderRadius: '8px',
-                  border: '2.5px solid #e2e8f0',
-                  '&:hover': {
-                    bgcolor: '#1e293b'
-                  }
-                },
-                scrollbarWidth: 'auto',
-                scrollbarColor: '#475569 #e2e8f0'
+              ...minuteScrollStyles
               }}
             >
               {isCouncilFormat ? (
