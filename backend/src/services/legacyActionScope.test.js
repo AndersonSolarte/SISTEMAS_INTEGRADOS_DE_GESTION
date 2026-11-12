@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { dependencyCode, historicalYear, chooseLegacyUnit, sourceScope } = require('./legacyActionScope');
+const { dependencyCode, historicalYear, chooseLegacyUnit, sourceScope, scopeFromPlanCode, preferredLegacyUnitIds } = require('./legacyActionScope');
 const { sameLegacyActivity, isLegacyItem, stripLegacyProvenance } = require('./legacyActionIdentity');
 
 test('normalizes leading zeros without confusing R2, R21 or R200', () => {
@@ -56,4 +56,26 @@ test('annual plan evidence cannot select another official responsible code', () 
   const units = [{ id: 'wrong', code: 'R87', name: 'Semilleros' }, { id: 'official', code: 'R86', name: 'Semilleros' }];
   assert.equal(chooseLegacyUnit(units, 'R86_Semilleros', ['wrong']).id, 'official');
   assert.equal(chooseLegacyUnit([units[0]], 'R86_Semilleros', ['wrong']), null);
+});
+
+test('all reconciliation stages use the same exact annual plan evidence for R86', () => {
+  const term = { id: 'term-2026', year: 2026 };
+  const plans = [
+    { code: '2026-R86', term_id: term.id, catalog_item_id: 'correct' },
+    { code: '2026-DEP-001', term_id: term.id, catalog_item_id: 'correct', metadata: { legacy_dependency_scope: '2026:R86' } },
+    { code: '2026-LEG-R86', term_id: term.id, catalog_item_id: 'correct' },
+    { code: 'LEGACY-2026-R86', term_id: term.id, catalog_item_id: 'older' },
+    { code: '2025-R86', term_id: 'term-2025', catalog_item_id: 'past' },
+    { code: '2026-R86', term_id: 'another-ped-term', catalog_item_id: 'other-ped' },
+    { code: '2026-R86', term_id: term.id, catalog_item_id: 'deleted', deleted_at: new Date() },
+    { code: '2026-R87', term_id: term.id, catalog_item_id: 'other-responsible', metadata: { legacy_dependency_scope: '2026:R86' } }
+  ];
+  const source = 'R86_Semilleros';
+  const units = [
+    { id: 'older', code: 'DEP-086', metadata: { legacy_dependency_code: 'R86' } },
+    { id: 'correct', code: 'LEG-R86' }
+  ];
+  assert.deepEqual(preferredLegacyUnitIds(plans, term, source), ['correct']);
+  assert.equal(scopeFromPlanCode('2026-LEG-R86'), '2026:R86');
+  assert.equal(chooseLegacyUnit(units, source, preferredLegacyUnitIds(plans, term, source)).id, 'correct');
 });

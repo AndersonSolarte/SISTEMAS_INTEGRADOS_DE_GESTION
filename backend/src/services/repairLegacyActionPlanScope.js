@@ -2,7 +2,7 @@ const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 const { StrategicActionPlan, StrategicActionItem, StrategicTerm, StrategicCatalogItem,
   StrategicResponsibility, StrategicMeeting, StrategicWorkflowEvent, StrategicNotification, PlanAccion } = require('../models');
-const { dependencyCode, historicalYear, chooseLegacyUnit } = require('./legacyActionScope');
+const { dependencyCode, historicalYear, chooseLegacyUnit, preferredLegacyUnitIds } = require('./legacyActionScope');
 const { reconcileLegacyActionPlans, syncMissingPlanLeaders } = require('./strategicLegacyActionPlanService');
 const { isLegacyItem } = require('./legacyActionIdentity');
 
@@ -31,7 +31,8 @@ const repairLegacyActionPlanScope = async () => {
     const ownerCode = dependencyCode(legacy.code.replace(/^LEGACY-\d{4}-/i, ''));
     const row = source.find((row) => Number(row.anio) === Number(legacy.term.year) && dependencyCode(row.responsable) === ownerCode);
     if (!row) continue;
-    const unit = chooseLegacyUnit(units.filter((unit) => unit.strategic_plan_id === legacy.term.strategic_plan_id), row.responsable);
+    const unit = chooseLegacyUnit(units.filter((unit) => unit.strategic_plan_id === legacy.term.strategic_plan_id), row.responsable,
+      preferredLegacyUnitIds(plans, legacy.term, row.responsable));
     if (!unit) continue;
     if (legacy.catalog_item_id !== unit.id) await legacy.update({ catalog_item_id: unit.id,
       responsible_user_id: null, responsibility_id: null,

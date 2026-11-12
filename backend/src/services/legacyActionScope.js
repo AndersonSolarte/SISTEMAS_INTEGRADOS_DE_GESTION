@@ -45,7 +45,14 @@ const chooseLegacyUnit = (units, responsible, preferredUnitIds = []) => {
 };
 const sourceScope = (row) => `${Number(row.anio)}:${dependencyCode(row.responsable) || normalize(row.responsable)}`;
 const scopeFromPlanCode = (value) => {
-  const match = String(value || '').match(/^(?:LEGACY-)?(20\d{2})-(R\d+)(?:$|-)/i);
+  const match = String(value || '').match(/^(?:LEGACY-)?(20\d{2})-(?:LEG-)?(R\d+)(?:$|-)/i);
   return match ? sourceScope({ anio: match[1], responsable: match[2] }) : null;
 };
-module.exports = { dependencyCode, historicalYear, chooseLegacyUnit, sourceScope, scopeFromPlanCode, normalize };
+const preferredLegacyUnitIds = (plans, term, responsible) => {
+  const scope = sourceScope({ anio: term.year, responsable: responsible });
+  const scoped = plans.filter((plan) => !plan.deleted_at && String(plan.term_id) === String(term.id)
+    && (scopeFromPlanCode(plan.code) || plan.metadata?.legacy_dependency_scope) === scope);
+  const official = scoped.filter((plan) => !/^LEGACY-/i.test(plan.code));
+  return [...new Set((official.length ? official : scoped).map((plan) => plan.catalog_item_id))];
+};
+module.exports = { dependencyCode, historicalYear, chooseLegacyUnit, sourceScope, scopeFromPlanCode, preferredLegacyUnitIds, normalize };

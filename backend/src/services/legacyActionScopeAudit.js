@@ -1,5 +1,5 @@
 const { PlanAccion, StrategicActionPlan, StrategicActionItem, StrategicTerm, StrategicCatalogItem } = require('../models');
-const { historicalYear, sourceScope, chooseLegacyUnit, normalize } = require('./legacyActionScope');
+const { historicalYear, sourceScope, chooseLegacyUnit, normalize, preferredLegacyUnitIds } = require('./legacyActionScope');
 const { isLegacyItem } = require('./legacyActionIdentity');
 const identity = (row) => JSON.stringify([sourceScope(row), normalize(row.actividad), normalize(row.indicador), normalize(row.meta)]);
 const counts = (rows) => {
@@ -28,7 +28,8 @@ const auditLegacyActionScope = async ({ workbookPath = null } = {}) => {
       const row = { anio: plan.term.year, responsable: item.custom_values?.responsible,
         actividad: item.activity, indicador: item.indicator, meta: item.target };
       actual.push(row);
-      const unit = chooseLegacyUnit(units.filter((u) => u.strategic_plan_id === plan.term.strategic_plan_id), row.responsable);
+      const unit = chooseLegacyUnit(units.filter((u) => u.strategic_plan_id === plan.term.strategic_plan_id), row.responsable,
+        preferredLegacyUnitIds(plans, plan.term, row.responsable));
       if (!unit || unit.id !== plan.catalog_item_id) misplaced.push({ plan: plan.code, item: item.code, owner: row.responsable });
     }
   }

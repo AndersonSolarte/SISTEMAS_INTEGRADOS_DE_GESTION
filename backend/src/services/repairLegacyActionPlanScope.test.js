@@ -27,7 +27,12 @@ test('repair merges only the same annual dependency and preserves native activit
   stub(sequelize, 'transaction', async (fn) => fn({}));
   stub(sequelize, 'query', async () => {});
   stub(models.PlanAccion, 'findAll', async () => [{ anio: 2026, responsable: 'R74_Acompañamiento' }]);
-  stub(models.StrategicCatalogItem, 'findAll', async () => [unit]);
+  // Two catalog rows resolve to the same historical code. The repair must use
+  // the same annual plan evidence as reconciliation instead of throwing again.
+  stub(models.StrategicCatalogItem, 'findAll', async () => [
+    { id: 'older-unit', code: 'DEP-074', strategic_plan_id: 'ped', metadata: { legacy_dependency_code: 'R74' } },
+    { ...unit, code: 'LEG-R74' }
+  ]);
   stub(models.StrategicActionPlan, 'findAll', async () => [legacy, official, futurePlan, otherPlan]);
   stub(models.StrategicActionItem, 'findAll', async ({ where }) => where.action_plan_id ? [manual, imported] : [importedFuture, nativeFuture]);
   stub(models.StrategicActionItem, 'findOne', async () => null);

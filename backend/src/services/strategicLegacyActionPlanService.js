@@ -7,7 +7,7 @@ const {
 } = require('../models');
 const { captureActionPlanSchema } = require('./strategicActionPlanSchemaService');
 const { sameLegacyActivity, fillMissing, schemaLegacyValues } = require('./legacyActionIdentity');
-const { historicalYear, chooseLegacyUnit, sourceScope, scopeFromPlanCode, dependencyCode } = require('./legacyActionScope');
+const { historicalYear, chooseLegacyUnit, sourceScope, scopeFromPlanCode, dependencyCode, preferredLegacyUnitIds } = require('./legacyActionScope');
 
 const consolidateLegacyItem = async (item, duplicate, transaction) => {
   const custom = fillMissing(item.custom_values || {}, duplicate.custom_values || {});
@@ -70,11 +70,10 @@ const findOrCreateUnit = async ({ plan, term, dependency, transaction }) => {
   const units = await StrategicCatalogItem.findAll({
     where: { strategic_plan_id: plan.id, catalog_type: { [Op.in]: ['dependency', 'organizational_unit'] } }, transaction
   });
-  const scopedPlans = (await StrategicActionPlan.findAll({
-    where: { term_id: term.id, deleted_at: null }, attributes: ['code', 'catalog_item_id'], transaction
-  })).filter((item) => scopeFromPlanCode(item.code) === sourceScope({ anio: term.year, responsable: dependency }));
-  const officialPlans = scopedPlans.filter((item) => !/^LEGACY-/i.test(item.code));
-  const preferredIds = [...new Set((officialPlans.length ? officialPlans : scopedPlans).map((item) => item.catalog_item_id))];
+  const scopedPlans = await StrategicActionPlan.findAll({
+    where: { term_id: term.id, deleted_at: null }, attributes: ['code', 'catalog_item_id', 'term_id', 'metadata'], transaction
+  });
+  const preferredIds = preferredLegacyUnitIds(scopedPlans, term, dependency);
   const existing = chooseLegacyUnit(units, dependency, preferredIds);
   if (existing) {
     if (!dependencyCode(existing.code) && !existing.metadata?.legacy_dependency_code) {
@@ -208,6 +207,10 @@ const performLegacyReconciliation = async ({ planCode = null } = {}) => {
           updated_by: first.actualizado_por || creator?.id || owner?.id || fallbackUser.id
         }, { transaction });
         migratedPlans += 1;
+      }
+
+      if (actionPlan.metadata?.legacy_dependency_scope !== sourceScope(first)) {
+        await actionPlan.update({ metadata: { ...(actionPlan.metadata || {}), legacy_dependency_scope: sourceScope(first) } }, { transaction });
       }
 
       if (owner) {
