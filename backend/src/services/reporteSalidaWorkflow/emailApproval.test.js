@@ -116,3 +116,78 @@ test('el formulario recibido por HTTP acepta POST con las protecciones reales de
   assert.equal(own.estado, 'pendiente_aprobacion_gestion_humana');
   assert.equal(other.estado, 'pendiente_aprobacion_jefe');
 });
+
+test('los enlaces individuales abren y procesan por HTTP las seis etapas de aprobación', async (t) => {
+  const stages = [
+    ['jefe', 'aprobacion_jefe_token_hash'],
+    ['vicerrectoria_academica', 'aprobacion_vicerrectoria_token_hash'],
+    ['rectoria', 'aprobacion_rectoria_token_hash'],
+    ['proyeccion_social', 'aprobacion_proyeccion_social_token_hash'],
+    ['gestion_humana', 'aprobacion_gh_token_hash'],
+    ['sst', 'aprobacion_sst_token_hash']
+  ];
+  const rows = stages.map(([stage, column], i) => {
+    const row = solicitud(i + 1, 'jefe.prueba@unicesmag.edu.co');
+    delete row.datos_formulario.grupo_id;
+    row.estado = `pendiente_aprobacion_${stage}`;
+    row.trazabilidad = [{ event: 'aprobada_jefe', at: new Date().toISOString() }];
+    row.datos_formulario.salida.categoria = 'propias_cargo';
+    if (stage === 'proyeccion_social') row.datos_formulario.salida.tipo = 'proyeccion_social';
+    const token = encryptPayload({ purpose: 'reporte_salida_approve', stage, consecutivo: row.consecutivo }, null);
+    row[column] = crypto.createHash('sha256').update(token).digest('hex');
+    return Object.assign(row, { testToken: token });
+  });
+  const { controller } = setup(t, rows);
+  const express = require('express');
+  const security = require('../../middlewares/security');
+  const app = express();
+  app.use(require('helmet')());
+  app.use(require('cors')(security.corsOptions));
+  app.use(express.urlencoded({ extended: false }));
+  app.use('/api', security.methodGuard, security.sensitivePathGuard, security.noStore, security.payloadShapeGuard, security.sqlInjectionGuard);
+  app.get('/api/reporte-salida/aprobar/:token', controller.aprobarDesdeCorreo);
+  app.post('/api/reporte-salida/aprobar/:token', controller.aprobarDesdeCorreo);
+  const server = await new Promise((resolve) => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
+  t.after(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  for (const [i, [stage]] of stages.entries()) {
+    const row = rows[i];
+    const initialState = row.estado;
+    const page = await fetch(`${base}/api/reporte-salida/aprobar/${row.testToken}`);
+    assert.equal(page.status, 200, stage);
+    const html = await page.text();
+    const action = html.match(/<form method="POST" action="([^"]+)"/);
+    assert.ok(action, stage);
+    assert.equal(row.estado, initialState);
+    const result = await fetch(`${base}${action[1]}`, { method: 'POST', headers: { Origin: base }, body: new URLSearchParams({ accion: 'aprobar', observacion: 'Aprobación de prueba' }) });
+    assert.equal(result.status, 200, `${stage}: ${await result.text()}`);
+    assert.notEqual(row.estado, initialState, stage);
+  }
+});
+
+test('un fallo interno al abrir el enlace no se presenta como un token vencido', async (t) => {
+  const { controller } = setup(t, []);
+  const log = t.mock.method(console, 'error', () => {});
+  t.mock.method(require('../../models').ReporteSalidaSolicitud, 'findOne', async () => {
+    const error = new Error('Conexión de prueba no disponible'); error.code = 'ECONNREFUSED'; throw error;
+  });
+  const token = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'jefe', consecutivo: 'RS-TEST' }, null);
+  const res = response();
+  await controller.aprobarDesdeCorreo({ params: { token }, method: 'GET', query: {}, body: {} }, res);
+  assert.equal(res.code, 500);
+  assert.match(res.html, /error interno/);
+  assert.match(res.html, /referencia:/);
+  assert.doesNotMatch(res.html, /Conexión de prueba no disponible/);
+  assert.equal(log.mock.calls[0].arguments[1].code, 'ECONNREFUSED');
+  assert.ok(!JSON.stringify(log.mock.calls).includes(token), 'el diagnóstico no guarda el enlace de aprobación');
+});
+
+test('un token ilegible permanece bloqueado y no consulta la base de datos', async (t) => {
+  const { controller } = setup(t, []);
+  const query = t.mock.method(require('../../models').ReporteSalidaSolicitud, 'findOne', async () => { throw new Error('No debería ejecutarse'); });
+  const res = response();
+  await controller.aprobarDesdeCorreo({ params: { token: 'enlace-alterado' }, method: 'GET', query: {}, body: {} }, res);
+  assert.equal(res.code, 403);
+  assert.match(res.html, /Enlace vencido o invalido/);
+  assert.equal(query.mock.calls.length, 0);
+});

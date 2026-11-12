@@ -5798,8 +5798,17 @@ const aprobarDesdeCorreo = async (req, res) => {
       nextStep: 'La solicitud no fue procesada. Cuando el administrador habilite nuevamente el formulario, podra usar el enlace correspondiente.'
     });
   }
+  let payload;
   try {
-    const payload = decryptPayload(req.params.token);
+    payload = decryptPayload(req.params.token);
+  } catch (_) {
+    return renderApprovalPage({
+      res, status: 403, tone: 'error', title: 'Enlace vencido o invalido',
+      message: 'No fue posible validar el enlace de aprobacion.',
+      nextStep: 'Use el botón original del correo. Si persiste, solicite la revisión del enlace.'
+    });
+  }
+  try {
     if (payload?.purpose !== 'reporte_salida_approve' || !payload?.consecutivo || !payload?.stage) {
       return renderApprovalPage({
         res,
@@ -6636,13 +6645,23 @@ const aprobarDesdeCorreo = async (req, res) => {
       nextStep: 'Use el boton original enviado desde el correo institucional.'
     });
   } catch (error) {
+    const reference = crypto.randomUUID();
+    console.error('[reporte-salida] Error procesando aprobación individual:', {
+      reference,
+      consecutivo: payload?.consecutivo,
+      stage: payload?.stage,
+      method: req.method,
+      name: error?.name,
+      code: error?.original?.code || error?.code || '',
+      message: String(error?.message || '').split(String(req.params.token || '\u0000')).join('[enlace protegido]').slice(0, 500)
+    });
     return renderApprovalPage({
       res,
-      status: 403,
+      status: 500,
       tone: 'error',
-      title: 'Enlace vencido o invalido',
-      message: 'No fue posible validar el enlace de aprobacion.',
-      nextStep: 'Solicite un nuevo enlace si requiere procesar esta aprobacion.'
+      title: 'No fue posible completar el trámite',
+      message: 'Ocurrió un error interno al consultar o procesar la solicitud. Esto no significa que el enlace esté vencido.',
+      nextStep: `Consulte el estado en Seguimiento antes de repetir la acción. Comunique a soporte esta referencia: ${reference}.`
     });
   }
 };
