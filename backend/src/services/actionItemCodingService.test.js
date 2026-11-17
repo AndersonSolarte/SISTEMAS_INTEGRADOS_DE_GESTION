@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { ACTIVITY_CODE, codedValues, indicatorCode, nextCode, description } = require('./actionItemCodingService');
+const { ACTIVITY_CODE, codedValues, indicatorCode, nextCode, description, planPrefix } = require('./actionItemCodingService');
 
 test('the activity owns the sequence and all three indicators share its base code', () => {
   const values = codedValues({ indicator: '2026-R76-001 Política aprobada', indicator_type: 'Logro', custom_values: {
@@ -40,4 +40,38 @@ test('empty or disabled indicator descriptions are never invented', () => {
   assert.equal(values.custom_values.indicadorLogro, '');
   assert.equal(values.custom_values.indicadorLogroActivo, false);
   assert.deepEqual(values.custom_values.indicator_codes, {});
+});
+
+test('dependency-created DEP-Rxx plans resolve their official activity prefix without legacy metadata', async () => {
+  const { StrategicActionPlan, StrategicTerm, StrategicCatalogItem } = require('../models');
+  const originals = [StrategicActionPlan.findByPk, StrategicTerm.findByPk, StrategicCatalogItem.findByPk];
+  let plan; let unit;
+  StrategicActionPlan.findByPk = async () => plan;
+  StrategicTerm.findByPk = async () => ({ year: 2027 });
+  StrategicCatalogItem.findByPk = async () => unit;
+  try {
+    for (const [unitCode, planCode, expected] of [
+      ['DEP-R02-VICERRECTORIA-ACADEMICA', '2027-DEP-R02-VICERRECTORIA-ACADEMICA', '2027-R02'],
+      ['DEP-GENERIC', '2027-DEP-R02-VICERRECTORIA-ACADEMICA', '2027-R02'],
+      ['dep-r76-salud', '2027-DEP-R76-SALUD', '2027-R76'],
+      ['R02', '2027-R02', '2027-R02'],
+      ['LEG-R74', 'LEGACY-2027-R74', '2027-R74'],
+      ['R02_Academica', '2027-R02', '2027-R02'],
+      ['R02 Academica', '2027-R02', '2027-R02'],
+      ['R03', '2027-DEP-R02-ACADEMICA', '2027-R03']
+    ]) {
+      plan = { code: planCode, term_id: 'term', catalog_item_id: 'unit', metadata: {} };
+      unit = { code: unitCode, metadata: { source: 'DEPENDENCIAS_POR_VIGENCIA' } };
+      assert.equal(await planPrefix('plan'), expected, planCode);
+    }
+    // The year is always that of the destination term, not text in an old plan code.
+    plan.code = '2025-DEP-R02-ACADEMICA'; unit.code = 'DEP-GENERIC';
+    assert.equal(await planPrefix('plan'), '2027-R02');
+    for (const invalid of ['DEP-002', 'DEP-R02X', 'DEP-AREA-R02', 'DEP-VICERRECTORIA']) {
+      plan.code = '2027-' + invalid; unit.code = invalid;
+      await assert.rejects(planPrefix('plan', null, { custom_values: { responsible: 'SANDRA LUCIA' } }), { statusCode: 422 });
+    }
+  } finally {
+    [StrategicActionPlan.findByPk, StrategicTerm.findByPk, StrategicCatalogItem.findByPk] = originals;
+  }
 });

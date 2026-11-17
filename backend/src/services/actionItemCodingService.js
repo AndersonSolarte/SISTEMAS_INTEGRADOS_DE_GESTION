@@ -37,8 +37,8 @@ const planPrefix = async (planId, transaction, values = {}) => {
   if (!plan) throw new Error('No se encontró el Plan de Acción para generar el código.');
   const term = await StrategicTerm.findByPk(plan.term_id, { transaction });
   const unit = await StrategicCatalogItem.findByPk(plan.catalog_item_id, { transaction });
-  const unitCode = plain(unit?.code).match(/^(?:LEG-)?(R\d+)(?:$|[_-])/i)?.[1]
-    || plain(plan.code).match(/^(?:LEGACY-)?20\d{2}-(?:LEG-)?(R\d+)(?:$|-)/i)?.[1]
+  const unitCode = plain(unit?.code).match(/^(?:(?:LEG|DEP)-)?(R\d+)(?:$|[\s_-])/i)?.[1]
+    || plain(plan.code).match(/^(?:LEGACY-)?20\d{2}-(?:(?:LEG|DEP)-)?(R\d+)(?:$|[\s_-])/i)?.[1]
     || plain(plan.metadata?.legacy_dependency_scope).match(/:(R\d+)$/i)?.[1]
     || plain(values.custom_values?.responsible).match(/^(R\d+)(?:$|[\s_-])/i)?.[1]
     || plain(unit?.metadata?.legacy_dependency_code).match(/^(R\d+)$/i)?.[1];

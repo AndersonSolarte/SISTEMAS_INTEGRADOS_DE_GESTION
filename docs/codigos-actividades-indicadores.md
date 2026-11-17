@@ -23,6 +23,10 @@ La conciliación reconoce el origen histórico por sus metadatos, aunque el cód
 
 ## Comprobación local
 
+Los códigos generados desde Dependencias por vigencia, como `DEP-R02-VICERRECTORIA-ACADEMICA` y `2027-DEP-R02-VICERRECTORIA-ACADEMICA`, también identifican la dependencia oficial `R02`. Sus actividades usan `2027-R02-001`, `002`, etc., conservando los ceros iniciales. El año se toma de la vigencia vinculada, sin renombrar el plan ni el catálogo. Los códigos genéricos sin un Rxx explícito continúan requiriendo configuración.
+
+La prueba `backend/src/services/actionItemCodingDependencyLocal.test.js`, habilitada con `SIAC_TEST_LOCAL_DB=1`, verifica este caso con PostgreSQL local, incluyendo los tres tipos de indicadores y la numeración después de retirar una actividad. Sus datos temporales se revierten al finalizar.
+
 Se verificaron la conversión de R76 a `2026-R76-001`, `002` y `003`, la repetición de la migración sin cambios y la conservación de 1816 actividades importadas, sin diferencias ni cruces frente al Excel de origen.
 
 También se simuló una reimportación con IDs de origen distintos: no creó actividades ni cambió sus UUID o códigos. La prueba del modelo real comprueba ediciones, conservación de seguimientos y dos altas simultáneas; sus datos temporales se revierten o eliminan al finalizar.
