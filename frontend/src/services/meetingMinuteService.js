@@ -18,6 +18,8 @@ const meetingMinuteService = {
   getNextCouncilNumber: (year) => api.get(`${root}/next-number`, { params: { year } }).then(unwrap),
   getStatistics: (year = '') => api.get(`${root}/statistics`, { params: year ? { year } : {} }).then(unwrap),
   downloadArchivedPdf: (id) => api.get(`${root}/statistics/${id}/pdf`, { responseType: 'blob' }).then((response) => response.data),
+  resendArchivedPendingInvitations: (id, payload = {}) => api.post(`${root}/statistics/${id}/resend-pending`, payload).then(unwrap),
+  deleteArchivedMinutePermanently: (id) => api.delete(`${root}/statistics/${id}`).then(unwrap),
   get: (id) => api.get(`${root}/${id}`).then(unwrap),
   save: (payload) => api.post(root, payload).then(unwrap),
   publish: (id, payload = {}) => api.post(`${root}/${id}/publish`, payload).then(unwrap),

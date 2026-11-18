@@ -1129,11 +1129,97 @@ const getStatisticsLegacy = wrap(async (_req, res) => {
 });
 
 */
+const normalizePersonMatchKey = (value = '') => clean(value, 240)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ')
+  .toLowerCase();
+
+const stripResponsibleDecoration = (value = '') => String(value || '')
+  .split(/\r?\n/)[0]
+  .replace(/^[\s•*-]+/, '')
+  .replace(/\s*\([^)]*\)\s*$/, '')
+  .trim();
+
+const resolveArchiveResponsibleInfo = (row = {}) => {
+  const content = row.content || {};
+  const creatorName = formatPersonName(clean(row.creator?.nombre, 240));
+  const creatorDocument = clean(row.creator?.username, 100);
+  const creatorKey = normalizePersonMatchKey(creatorName);
+
+  const rawResponsables = Array.isArray(content.responsables_data) ? content.responsables_data : [];
+  let responsables = rawResponsables
+    .filter((item) => item && (item.name || item.nombre || item.document || item.username))
+    .map((item, index) => {
+      const name = formatPersonName(clean(item.name || item.nombre, 240));
+      let document = clean(item.document || item.username, 100);
+      if (!document && creatorDocument && name && normalizePersonMatchKey(name) === creatorKey) {
+        document = creatorDocument;
+      }
+      return {
+        name,
+        document,
+        role_title: clean(item.role_title || item.cargo, 220),
+        organization: clean(item.organization || item.dependencia, 220),
+        is_primary: index === 0 ? Boolean(item.is_primary !== false) : Boolean(item.is_primary)
+      };
+    });
+
+  if (!responsables.length && (content.responsable_document || content.responsables)) {
+    const fallbackName = formatPersonName(stripResponsibleDecoration(content.responsables));
+    let fallbackDocument = clean(content.responsable_document, 100);
+    if (!fallbackDocument && creatorDocument && fallbackName && normalizePersonMatchKey(fallbackName) === creatorKey) {
+      fallbackDocument = creatorDocument;
+    }
+    if (fallbackName || fallbackDocument) {
+      responsables = [{
+        name: fallbackName || creatorName,
+        document: fallbackDocument,
+        role_title: clean(content.responsable_role, 220),
+        organization: clean(content.dependencia, 220),
+        is_primary: true
+      }];
+    }
+  } else {
+    responsables = responsables.map((item) => {
+      if (!item.document && creatorDocument && item.name && normalizePersonMatchKey(item.name) === creatorKey) {
+        return { ...item, document: creatorDocument };
+      }
+      return item;
+    });
+  }
+
+  if (!responsables.length && (creatorName || creatorDocument)) {
+    responsables = [{
+      name: creatorName,
+      document: creatorDocument,
+      role_title: '',
+      organization: clean(row.creator?.dependencia, 220),
+      is_primary: true
+    }];
+  }
+
+  const primary = responsables.find((item) => item.is_primary) || responsables[0] || null;
+  const responsibleName = primary?.name || creatorName || '';
+  const responsibleDocument = primary?.document || clean(content.responsable_document, 100) || creatorDocument || '';
+  const dependency = clean(content.dependencia || primary?.organization || row.creator?.dependencia, 220) || 'Sin dependencia';
+
+  return {
+    creator: responsibleName,
+    creator_name: creatorName,
+    creator_document: creatorDocument,
+    responsible_name: responsibleName,
+    responsible_document: responsibleDocument,
+    responsables,
+    dependency
+  };
+};
+
 const getStatistics = wrap(async (req, res) => {
   const rows = await DigitalMeetingMinute.findAll({
     include: [
       participantInclude,
-      { model: User, as: 'creator', attributes: ['id', 'nombre'] }
+      { model: User, as: 'creator', attributes: ['id', 'nombre', 'username', 'dependencia'] }
     ],
     order: [['created_at', 'DESC']]
   });
@@ -1189,8 +1275,11 @@ const getStatistics = wrap(async (req, res) => {
     .slice(0, 8);
 
   const toArchiveRow = (row) => {
-    const year = localDateKey(row.created_at).slice(0, 4);
     const isExpired = new Date(row.created_at).getTime() <= operationalLimit;
+    const responsibleInfo = resolveArchiveResponsibleInfo(row);
+    const signingParticipants = (row.participants || []).filter((participant) => participantRequiresSignature(participant, row));
+    const signedCount = signingParticipants.filter((participant) => participant.status === 'signed').length;
+    const pendingCount = Math.max(0, signingParticipants.length - signedCount);
     return {
       id: row.id,
       code: row.code,
@@ -1199,10 +1288,16 @@ const getStatistics = wrap(async (req, res) => {
       created_at: row.created_at,
       status: row.status,
       lifecycle: row.deleted_at ? 'deleted' : (isExpired ? 'archived' : 'operational'),
-      creator: formatPersonName(row.creator?.nombre || ''),
-      dependency: clean(row.content?.dependencia, 220) || 'Sin dependencia',
-      participants: (row.participants || []).length,
-      signed_participants: (row.participants || []).filter((participant) => participant.status === 'signed').length,
+      creator: responsibleInfo.creator,
+      creator_name: responsibleInfo.creator_name,
+      creator_document: responsibleInfo.creator_document,
+      responsible_name: responsibleInfo.responsible_name,
+      responsible_document: responsibleInfo.responsible_document,
+      responsables: responsibleInfo.responsables,
+      dependency: responsibleInfo.dependency,
+      participants: signingParticipants.length,
+      signed_participants: signedCount,
+      pending_participants: pendingCount,
       archive_location: 'Base de datos SIAC · Plantilla COM-IF-FR-002'
     };
   };
@@ -1259,6 +1354,105 @@ const downloadArchivedPdf = wrap(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.setHeader('Pragma', 'no-cache');
   res.send(buffer);
+});
+
+const resendArchivedPendingInvitations = wrap(async (req, res) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, {
+    include: [
+      { model: DigitalMeetingParticipant, as: 'participants' },
+      { model: DigitalMeetingSignature, as: 'signatures' },
+      { model: Documento, as: 'documento', required: false }
+    ]
+  });
+  if (!minute) throw Object.assign(new Error('El acta no existe en el archivo histórico.'), { statusCode: 404 });
+
+  await reconcileMinuteStatus(minute);
+  const signingParticipants = (minute.participants || []).filter((item) => participantRequiresSignature(item, minute));
+  const pendingParticipants = signingParticipants.filter((item) => item.status !== 'signed');
+  if (!pendingParticipants.length) {
+    throw Object.assign(new Error('No hay participantes pendientes de firma en esta acta.'), { statusCode: 409 });
+  }
+
+  for (const participant of pendingParticipants) {
+    if (!clean(participant.email, 254)) {
+      const matchedUser = participant.user_id
+        ? await User.findByPk(participant.user_id, { attributes: ['email'] })
+        : (participant.document
+          ? await User.findOne({ where: { username: clean(participant.document, 100) }, attributes: ['email'] })
+          : null);
+      if (matchedUser?.email) {
+        await participant.update({ email: clean(matchedUser.email, 254).toLowerCase() });
+      }
+    }
+  }
+
+  const currentContent = { ...(minute.content || {}) };
+  const token = clean(currentContent._public_token, 200) || crypto.randomBytes(32).toString('base64url');
+  const updatedContent = { ...currentContent, _public_token: token };
+  const expiresAt = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
+
+  await minute.update({
+    status: 'signing',
+    deleted_at: null,
+    published_at: minute.published_at || new Date(),
+    public_token_hash: minute.public_token_hash || hash(token),
+    token_expires_at: expiresAt,
+    content: updatedContent,
+    updated_by: req.user.id
+  });
+
+  if (new Date(minute.created_at).getTime() <= Date.now() - MINUTE_RETENTION_MS) {
+    await sequelize.query('UPDATE digital_meeting_minutes SET created_at = NOW() WHERE id = :id', {
+      replacements: { id: minute.id }
+    });
+    minute.setDataValue('created_at', new Date());
+  }
+
+  const invitations = await sendParticipantInvitations({ minute, baseUrl: publicFrontend(req) });
+  if (!invitations.sent && invitations.failed) {
+    throw Object.assign(new Error('No fue posible enviar las invitaciones. Verifique el servicio de correo.'), { statusCode: 503 });
+  }
+
+  const signedNotice = invitations.skipped_signed
+    ? ` ${invitations.skipped_signed} participante(s) que ya firmaron no recibieron otro correo.`
+    : '';
+  const message = invitations.failed
+    ? `Se enviaron ${invitations.sent} invitación(es) a pendientes; ${invitations.failed} no pudieron enviarse.${signedNotice}`
+    : `Se enviaron ${invitations.sent} invitación(es) únicamente a los participantes pendientes de firma.${signedNotice}`;
+
+  res.json({ success: true, message, data: invitations });
+});
+
+const permanentlyDeleteArchivedMinute = wrap(async (req, res) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, {
+    include: [{ model: DigitalMeetingSignature, as: 'signatures', attributes: ['signature_storage_key'] }]
+  });
+  if (!minute) throw Object.assign(new Error('El acta no existe en el archivo histórico.'), { statusCode: 404 });
+
+  const signatureFiles = (minute.signatures || [])
+    .map((signature) => signature.signature_storage_key)
+    .filter(Boolean);
+
+  await sequelize.transaction(async (transaction) => {
+    await DigitalMeetingSignature.destroy({ where: { minute_id: minute.id }, transaction });
+    await DigitalMeetingSchedule.destroy({ where: { minute_id: minute.id }, transaction });
+    await DigitalMeetingParticipant.destroy({ where: { minute_id: minute.id }, transaction });
+    await DigitalMeetingMinute.destroy({ where: { id: minute.id }, transaction });
+  });
+
+  signatureFiles.forEach((file) => {
+    try {
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    } catch (error) {
+      console.warn('[meeting-minute] No fue posible eliminar archivo de firma:', error.message);
+    }
+  });
+
+  res.json({
+    success: true,
+    message: `Acta ${minute.code} eliminada definitivamente de la base de datos.`,
+    data: { id: minute.id, code: minute.code }
+  });
 });
 
 const getMinute = wrap(async (req, res) => {
@@ -3063,9 +3257,11 @@ module.exports = {
   lookupEnrolledStudent,
   lookupParticipant,
   searchParticipants,
+  permanentlyDeleteArchivedMinute,
   publicMinute,
   publish,
   reopenForEditing,
+  resendArchivedPendingInvitations,
   resendInvitations,
   restoreAllMinutes,
   restoreMinute,
@@ -3096,6 +3292,7 @@ module.exports = {
     participantRequiresSignature,
     placeResponsibleFirst,
     reconcileMinuteStatus,
+    resolveArchiveResponsibleInfo,
     resolveSigningAccess,
     resolveCouncilMinuteYear,
     sanitizeRichText

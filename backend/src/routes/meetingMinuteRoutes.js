@@ -33,6 +33,14 @@ router.get('/statistics/:id/pdf', auth, hasAnyRoleOrModulePermission({
   roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_INFORMACION, ROLES.GESTION_PROCESOS],
   moduleKeys: ['gestion_procesos', 'estadisticas_formatos', 'estadistica_documental']
 }), controller.downloadArchivedPdf);
+router.post('/statistics/:id/resend-pending', auth, hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_INFORMACION, ROLES.GESTION_PROCESOS],
+  moduleKeys: ['gestion_procesos', 'estadisticas_formatos', 'estadistica_documental']
+}), controller.resendArchivedPendingInvitations);
+router.delete('/statistics/:id', auth, hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_INFORMACION, ROLES.GESTION_PROCESOS],
+  moduleKeys: ['gestion_procesos', 'estadisticas_formatos', 'estadistica_documental']
+}), controller.permanentlyDeleteArchivedMinute);
 router.get('/mine', auth, controller.listMyMinutes);
 router.get('/', auth, controller.listMinutes);
 router.post('/restore-all', auth, controller.restoreAllMinutes);
