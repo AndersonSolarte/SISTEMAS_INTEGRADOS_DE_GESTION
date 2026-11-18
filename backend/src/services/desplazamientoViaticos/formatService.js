@@ -1,4 +1,5 @@
 const ExcelJS = require('exceljs');
+const { getObservationHistory, formatObservationDate } = require('./observationHistory');
 
 const AUTHORIZATION_TEXT = 'Autorizo a la Universidad CESMAG para que descuente de mi salario, prestaciones sociales a la fecha consignadas en los fondos de cesantías y/o cualquier otra acreencia relacionada con honorarios o servicios, el valor recibido o al que mi cargo diera lugar la no oportuna legalización de este anticipo.';
 const LEGALIZATION_NOTICE = 'IMPORTANTE: El Acuerdo 001 de 2013 exige la legalización de este anticipo dentro de los tres días hábiles siguientes al regreso de la comisión.';
@@ -73,7 +74,7 @@ const addTraceabilitySheet = (workbook, solicitud) => {
     const approved = [...traces].reverse().find((entry) => entry.event === `aprobado_${step.key}` || entry.event === `completado_${step.key}`);
     const rejected = [...traces].reverse().find((entry) => entry.event === `no_aprobado_${step.key}`);
     const trace = rejected || approved;
-    let obsText = trace?.detail?.observacion || '';
+    let obsText = trace?.detail?.observacion || trace?.detail?.observaciones || '';
     if (step.key === 'tesoreria' && trace?.detail?.liquidacionModificada) {
       const prev = trace.detail.totalAnticipoAnterior ? `$${Number(trace.detail.totalAnticipoAnterior).toLocaleString('es-CO')}` : 'N/A';
       const fin = trace.detail.totalAnticipoFinal ? `$${Number(trace.detail.totalAnticipoFinal).toLocaleString('es-CO')}` : 'N/A';
@@ -100,10 +101,30 @@ const addTraceabilitySheet = (workbook, solicitud) => {
   sheet.eachRow((row) => { row.eachCell((cell) => { cell.border = border; cell.alignment = { ...cell.alignment, vertical: 'middle', wrapText: true }; }); });
 };
 
+const appendObservationRows = (sheet, solicitud, startRow, options = {}) => {
+  let row = startRow;
+  mergeAndSet(sheet, `A${row}:R${row}`, 'OBSERVACIONES DEL FLUJO EN ORDEN CRONOLÓGICO', labelStyle);
+  const history = getObservationHistory(solicitud, options);
+  if (!history.length) {
+    row += 1;
+    mergeAndSet(sheet, `A${row}:R${row}`, 'Sin observaciones registradas.', valueStyle);
+  }
+  history.forEach((obs, index) => {
+    row += 1;
+    mergeAndSet(sheet, `A${row}:R${row}`, `${index + 1}. ${obs.stepLabel} · ${formatObservationDate(obs.date)}\nUsuario responsable: ${obs.actorName}\nCargo: ${obs.actorCargo || 'Cargo no registrado'}\nCorreo: ${obs.actorEmail || 'Correo no registrado'}`, labelStyle);
+    sheet.getRow(row).height = 64;
+    row += 1;
+    mergeAndSet(sheet, `A${row}:R${row}`, `Observación:\n${obs.text}`, valueStyle);
+    const lines = obs.text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 125)), 0);
+    sheet.getRow(row).height = Math.min(409, Math.max(42, (lines + 1) * 14));
+  });
+  return row;
+};
+
 const buildWorkbook = async (solicitud, { includeFinancial = true } = {}) => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'SIAC UNICESMAG';
-  const sheet = workbook.addWorksheet('FR-004', { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1 } });
+  const sheet = workbook.addWorksheet('FR-004', { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
   sheet.columns = Array.from({ length: 18 }, () => ({ width: 9 }));
   sheet.getColumn(1).width = 17;
   sheet.getColumn(4).width = 14;
@@ -158,8 +179,9 @@ const buildWorkbook = async (solicitud, { includeFinancial = true } = {}) => {
   addTraceabilitySheet(workbook, solicitud);
   if (!includeFinancial) {
     sheet.getRow(15).height = 68; sheet.getRow(16).height = 56; sheet.getRow(17).height = 28;
-    applyBorders(sheet, 1, 17);
-    sheet.pageSetup.printArea = 'A1:R17';
+    const lastRow = appendObservationRows(sheet, solicitud, 18, { includeFinancial: false });
+    applyBorders(sheet, 1, lastRow);
+    sheet.pageSetup.printArea = `A1:R${lastRow}`;
     return workbook;
   }
   mergeAndSet(sheet, 'A18:R18', 'LIQUIDACIÓN DE VIÁTICOS Y GASTOS DE VIAJE', { font: { bold: true, size: 12 }, fill: labelStyle.fill, alignment: { horizontal: 'center', vertical: 'middle' } });
@@ -175,9 +197,8 @@ const buildWorkbook = async (solicitud, { includeFinancial = true } = {}) => {
   });
   const totalRow = 20 + outputDetails.length;
   const observationsStartRow = totalRow + 1;
-  const observationsEndRow = observationsStartRow + 2;
+  const observationsEndRow = appendObservationRows(sheet, solicitud, observationsStartRow);
   mergeAndSet(sheet, `A${totalRow}:M${totalRow}`, 'TOTAL ANTICIPO', labelStyle); mergeAndSet(sheet, `N${totalRow}:R${totalRow}`, currency(liquidacion.totalAnticipo), valueStyle).numFmt = '$#,##0';
-  mergeAndSet(sheet, `A${observationsStartRow}:R${observationsEndRow}`, `Observaciones a la liquidación:\n${liquidacion.observaciones || ''}\n\nTécnico contable: ${traceActor(solicitud, 'tecnico_contable')}`, valueStyle);
 
   [1, 2, 3, 4, 17, 18, 19, totalRow].forEach((row) => { sheet.getRow(row).height = 22; });
   sheet.getRow(15).height = 68; sheet.getRow(16).height = 56; sheet.getRow(observationsStartRow).height = 70;

@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { _internals } = require('../../controllers/desplazamientoViaticosController');
 const { buildLiquidationDefinition } = require('./pdfService');
@@ -258,7 +260,7 @@ test('todos los botones de visto bueno envían las acciones que acepta el backen
   assert.doesNotMatch(html, /Signatures\(solicitud, currentStepKey\)/);
 });
 
-test('el rechazo delegado conserva obligatoria la observación', () => {
+test('el acceso delegado permite aprobar sin observación y mantiene el aviso de motivo obligatorio al rechazar', () => {
   const step = {
     key: 'jefe',
     label: 'Jefe inmediato',
@@ -267,8 +269,10 @@ test('el rechazo delegado conserva obligatoria la observación', () => {
   };
   const html = _internals.approvalForm(actionFormSolicitud, step, 'token-delegado', { accessSource: 'programa_alterno' });
 
-  assert.match(html, /textarea name="observacion"[^>]+ required/);
-  assert.match(html, /name="accion" value="rechazar" type="submit">No aprobar<\/button>/);
+  assert.doesNotMatch(html, /textarea name="observacion"[^>]*\brequired\b/);
+  assert.match(html, /opcional al dar visto bueno y obligatoria si no aprueba/);
+  assert.match(html, /name="accion" value="aprobar" type="submit">Dar visto bueno<\/button>/);
+  assert.match(html, /name="accion" value="rechazar" type="submit" formnovalidate>No aprobar<\/button>/);
 });
 
 test('liquidación usa valores nativos de botón y permite rechazar sin bloquearse por campos requeridos', () => {
@@ -280,9 +284,12 @@ test('liquidación usa valores nativos de botón y permite rechazar sin bloquear
   assert.doesNotMatch(html, /onclick="document\.getElementById\('form-accion'\)/);
   assert.doesNotMatch(html, /suggestRequestedDays|daysInput\.value = '2'|se propondrán/);
   assert.match(html, /Los días inician en 0/);
-  assert.match(html, /function validateRows\(\)/);
-  assert.match(html, /invalid\.scrollIntoView/);
-  assert.match(html, /input\.setAttribute\('aria-invalid'/);
+  assert.match(html, /script src="\/api\/desplazamientos-viaticos\/assets\/liquidacion.js\?v=\d+" defer/);
+  assert.doesNotMatch(html, /<script>|\soninput=/);
+  const calculator = fs.readFileSync(path.join(__dirname, '../../assets/viaticos-liquidacion.js'), 'utf8');
+  assert.match(calculator, /function validateRows\(\)/);
+  assert.match(calculator, /invalid\.scrollIntoView/);
+  assert.match(calculator, /input\.setAttribute\('aria-invalid'/);
 });
 
 test('rechaza conceptos base y nuevos con valor sin días o días sin valor', () => {
@@ -330,6 +337,14 @@ test('Tesorería puede autorizar o rechazar aunque existan campos editables requ
   assert.match(html, /name="accion" value="autorizar_pago" type="submit">Procesar liquidación para pago<\/button>/);
   assert.match(html, /name="accion" value="rechazar_pago" type="submit" formnovalidate>No autorizar pago<\/button>/);
   assert.match(html, /name="numeroCuenta"[^>]+required/);
+  assert.match(html, /assets\/tesoreria.js\?v=\d+" defer/);
+  assert.doesNotMatch(html, /<script>|\soninput=/);
+});
+
+test('la liquidación previa no duplica el identificador del detalle editable del Técnico', () => {
+  const html = _internals.liquidacionForm(actionFormSolicitud, 'token', 'nonce');
+  assert.equal((html.match(/id="liquidacion-detalles"/g) || []).length, 1);
+  assert.match(html, /id="liquidacion-resumen-detalles"/);
 });
 
 test('el flujo anterior de Tesorería conserva su acción tramitar', () => {

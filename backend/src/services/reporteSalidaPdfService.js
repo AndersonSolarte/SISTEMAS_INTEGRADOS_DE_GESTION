@@ -7,6 +7,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const JSZip = require('jszip');
 const { getReporteSalidaTemplatePath } = require('../config/reporteSalidaConfig');
+const { buildViaticosOficioDefinition } = require('./desplazamientoViaticos/oficioSalidaDefinition');
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD = 'Declaro que al momento de radicar esta solicitud no cuento con archivos adjuntos o soportes para cargar en el sistema. Entiendo que la Oficina de Gestión del Talento Humano y/o Seguridad y Salud en el Trabajo podran requerir en cualquier momento los soportes correspondientes; por tanto, me comprometo a conservarlos despues de la atencion o tramite y a suministrarlos oportunamente cuando sean solicitados.';
@@ -965,6 +966,11 @@ const getDuracionLabelFR002 = (salida = {}, solicitud = {}) => {
 
 
 const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) => {
+  const form = solicitud?.datos_formulario || {};
+  if (form.origen_flujo === 'desplazamiento_viaticos' || form.viaticos?.requiereViaticos === true) {
+    return buildViaticosOficioDefinition(solicitud, { font: PDF_FONT_FAMILY,
+      annexLabel: getReporteSalidaAnnexLabel(solicitud), createdAt: getSolicitudCreatedAt(solicitud) });
+  }
   const data = solicitud?.datos_formulario || {};
   const solicitante = solicitud?.solicitante_snapshot || {};
   const jefe = solicitud?.jefe_snapshot || {};

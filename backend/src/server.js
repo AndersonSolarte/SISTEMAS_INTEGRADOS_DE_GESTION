@@ -11,7 +11,7 @@ const multer = require('multer');
 const fs = require('fs');
 const { DataTypes } = require('sequelize');
 const { sequelize, testConnection } = require('./config/database');
-const { publicEmailErrorReference } = require('./middlewares/publicEmailError');
+const { publicEmailErrorReference, handlePublicEmailCorsError } = require('./middlewares/publicEmailError');
 const {
   corsOptions,
   corsOptionsForRequest,
@@ -128,6 +128,7 @@ app.use('/api', (req, res, next) => {
 
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
+  if (handlePublicEmailCorsError(err, req, res)) return;
 
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
@@ -167,7 +168,7 @@ app.use((err, req, res, next) => {
     code: err?.code || 'UNHANDLED_ERROR',
     reference,
     message: safeStatus === 500 ? fallbackMessage : (err?.message || fallbackMessage),
-    details: process.env.NODE_ENV === 'production' ? undefined : String(err?.stack || err?.message || '')
+    details: process.env.NODE_ENV === 'production' || err?.code === 'CORS_ORIGIN_DENIED' ? undefined : String(err?.stack || err?.message || '')
   });
 });
 

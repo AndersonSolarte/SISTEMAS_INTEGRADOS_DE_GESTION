@@ -61,3 +61,16 @@ test('el correo final responde al mensaje real de la etapa para conservar el hil
   assert.match(headers.references, /DEV-ADF-PP-FR-004-2026-0015/);
   assert.match(headers.references, /tesoreria-0015/);
 });
+
+test('los formatos finales de viáticos llegan una sola vez a Javier y nunca al buzón de Investigación', () => {
+  const recipients = _internals.collectFinalRecipientEmails({ plan_aprobacion: [
+    { key: 'jefe', email: 'viceinvestiga@unicesmag.edu.co', alternateApprovalEmail: 'jajimenez@unicesmag.edu.co' },
+    { key: 'tesoreria', email: 'pagador@unicesmag.edu.co', infoEmails: ['viceadfin@unicesmag.edu.co'] }
+  ] }, { tecnicoContable: 'tecnico.viceadfin@unicesmag.edu.co', sst: 'seguridadysalud@unicesmag.edu.co' }, {
+    dependenciaEmail: 'viceinvestiga@unicesmag.edu.co', jefeEmail: 'jajimenez@unicesmag.edu.co',
+    authorityEmail: 'viceinvestiga@unicesmag.edu.co', researchVicerrectorEmail: 'jajimenez@unicesmag.edu.co'
+  });
+  assert.equal(recipients.filter(email => email === 'jajimenez@unicesmag.edu.co').length, 1);
+  assert.ok(!recipients.includes('viceinvestiga@unicesmag.edu.co'));
+  for (const email of ['pagador@unicesmag.edu.co', 'viceadfin@unicesmag.edu.co', 'tecnico.viceadfin@unicesmag.edu.co', 'seguridadysalud@unicesmag.edu.co']) assert.ok(recipients.includes(email), email);
+});

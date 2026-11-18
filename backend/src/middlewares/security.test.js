@@ -33,6 +33,48 @@ test('no abre CORS para API privadas, fetch, tokens mal formados o envíos que n
   });
 });
 
+test('viáticos admite navegación y formularios con origen opaco en desarrollo y producción', () => {
+  const previous = process.env.NODE_ENV;
+  try {
+    for (const environment of ['development', 'production']) {
+      process.env.NODE_ENV = environment;
+      for (const route of ['accion', 'prueba/liquidacion', 'prueba/tesoreria', 'prueba/financiera']) {
+        for (const method of ['GET', 'POST']) {
+          const req = { method, originalUrl: `/api/desplazamientos-viaticos/${route}/aaa.bbb.ccc`,
+            headers: { origin: 'null', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document', 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' } };
+          corsOptionsForRequest(req, (error, options) => {
+            assert.equal(error, null); assert.equal(options.origin, false, `${environment} ${method} ${route}`);
+          });
+          // La misma decisión aplica al despliegue detrás del proxy HTTPS.
+          req.headers.host = 'backend:5000';
+          req.headers['x-forwarded-proto'] = 'https';
+          req.headers['x-forwarded-host'] = 'planeaciongp.unicesmag.edu.co';
+          corsOptionsForRequest(req, (_, options) => assert.equal(options.origin, false));
+        }
+      }
+    }
+  } finally {
+    if (previous === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous;
+  }
+});
+
+test('la excepción de viáticos no permite API privadas, fetch, JSON ni dominios ajenos', () => {
+  const base = { method: 'POST', originalUrl: '/api/desplazamientos-viaticos/accion/aaa.bbb.ccc',
+    headers: { origin: 'null', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document', 'content-type': 'application/x-www-form-urlencoded' } };
+  for (const req of [
+    { ...base, originalUrl: '/api/desplazamientos-viaticos/solicitudes' },
+    { ...base, originalUrl: '/api/desplazamientos-viaticos/solicitudes/42/accion-admin' },
+    { ...base, originalUrl: '/api/users' },
+    { ...base, originalUrl: '/api/desplazamientos-viaticos/accion/no-es-token' },
+    { ...base, originalUrl: `/api/desplazamientos-viaticos/accion/${'a'.repeat(4301)}.b.c` },
+    { ...base, headers: { ...base.headers, origin: 'https://untrusted.invalid' } },
+    { ...base, headers: { ...base.headers, 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty' } },
+    { ...base, headers: { ...base.headers, 'content-type': 'application/json' } },
+    { ...base, headers: { origin: 'null' } },
+    { ...base, method: 'OPTIONS' }, { ...base, method: 'DELETE' }
+  ]) corsOptionsForRequest(req, (_, options) => assert.equal(options, corsOptions, JSON.stringify(req)));
+});
+
 test('impide publicar temporales, restauraciones, claves y respaldos por uploads', () => {
   for (const requestPath of ['/temp/export.xlsx', '/%74emp/export.xlsx', '/tmp/datos.csv', '/.restore-stage-123/database.dump', '/folder/.backup-cache/file.pdf', '/folder/../secret.pdf', '/folder%5ctemp/file.pdf', '/copia.siacbackup', '/kit.enc', '/clave.key', '/archivo.sha256', '/%ZZ']) {
     let continued = false;

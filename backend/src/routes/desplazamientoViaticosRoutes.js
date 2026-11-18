@@ -22,7 +22,9 @@ const {
   radicarSolicitud,
   reenviarAprobacion,
   reenviarDocumentosFinales,
-  verSoporteSolicitud
+  verSoporteSolicitud,
+  listarAdjuntosAccion,
+  verAdjuntoAccion
 } = require('../controllers/desplazamientoViaticosController');
 
 const router = express.Router();
@@ -43,6 +45,13 @@ const upload = multer({
 router.get('/assets/escudo.png', (_req, res) => res.sendFile(path.join(__dirname, '../assets/logo-cesmag.png')));
 router.get('/assets/encabezado-correos.png', (_req, res) => res.sendFile(path.join(__dirname, '../assets/Encabezado_correos.png')));
 router.get('/assets/logo-formatos.jpg', (_req, res) => res.sendFile(path.join(__dirname, '../assets/logo_formatos.jpg')));
+// Scripts públicos sin datos de solicitudes; compatibles con script-src 'self'.
+router.get('/assets/liquidacion.js', (_req, res) => res.sendFile(path.join(__dirname, '../assets/viaticos-liquidacion.js')));
+router.get('/assets/tesoreria.js', (_req, res) => res.sendFile(path.join(__dirname, '../assets/viaticos-tesoreria.js')));
+router.get('/assets/logistica.js', (_req, res) => res.sendFile(path.join(__dirname, '../assets/viaticos-logistica.js')));
+router.get('/assets/adjuntos.js', (_req, res) => res.sendFile(path.join(__dirname, '../assets/viaticos-adjuntos.js')));
+router.get('/accion/:token/adjuntos', publicLimiter, listarAdjuntosAccion);
+router.get('/accion/:token/adjuntos/:adjuntoId', publicLimiter, verAdjuntoAccion);
 router.get('/accion/:token', publicLimiter, mostrarAccion);
 router.post('/accion/:token', publicLimiter, procesarAccion);
 router.post('/solicitudes/:id/accion-admin', auth, abrirAccionAdmin);

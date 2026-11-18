@@ -1,6 +1,7 @@
 const PdfPrinter = require('pdfmake');
 const path = require('path');
 const { AUTHORIZATION_TEXT, LEGALIZATION_NOTICE, calculateDays, getVisibleLiquidationDetails } = require('./formatService');
+const { getObservationHistory, formatObservationDate } = require('./observationHistory');
 
 const fonts = {
   ReportFont: {
@@ -84,9 +85,8 @@ const buildApprovalTable = (solicitud) => {
       ...(solicitud.plan_aprobacion || []).map((step) => {
         const trace = findTrace(solicitud, step.key);
         const rejected = trace?.event === `no_aprobado_${step.key}`;
-        const obs = trace?.detail?.observacion || trace?.detail?.observation || trace?.observacion || '';
         return [
-          cell(step.label + (obs ? `\nObs: ${obs}` : '')),
+          cell(step.label),
           cell(rejected ? 'No aprobado' : trace ? 'Aprobado / completado' : 'Pendiente'),
           cell(trace?.actor?.nombre || trace?.actor?.email || ''),
           cell(trace?.at ? new Date(trace.at).toLocaleString('es-CO') : '')
@@ -102,6 +102,31 @@ const FINANCIAL_SIGNATURE_STAGES = [
   { key: 'tecnico_contable', label: 'Técnico contable' },
   { key: 'tesoreria', label: 'Tesorería / Pagaduría – autorización de pago' }
 ];
+
+const buildObservationSections = (solicitud, options = {}) => {
+  const history = getObservationHistory(solicitud, options);
+  return [
+    { text: 'OBSERVACIONES DEL FLUJO EN ORDEN CRONOLÓGICO', bold: true, fontSize: 11, color: '#0b3a6f', margin: [0, 14, 0, 6] },
+    ...(history.length ? history.map((obs, index) => ({
+      margin: [0, 0, 0, 9],
+      table: {
+        headerRows: 1, widths: ['*'],
+        body: [
+          [{ fillColor: '#eef5fd', margin: [8, 6, 8, 6], stack: [
+            { text: `${index + 1}. ${obs.stepLabel} · ${formatObservationDate(obs.date)}`, bold: true, color: '#0b3a6f', margin: [0, 0, 0, 4] },
+            { text: [{ text: 'Usuario responsable: ', bold: true }, obs.actorName] },
+            { text: [{ text: 'Cargo: ', bold: true }, obs.actorCargo || 'Cargo no registrado'] },
+            { text: [{ text: 'Correo: ', bold: true }, obs.actorEmail || 'Correo no registrado'] }
+          ] }],
+          [{ margin: [8, 6, 8, 8], stack: [
+            { text: 'Observación:', bold: true, color: '#0b3a6f', margin: [0, 0, 0, 4] },
+            { text: obs.text }
+          ] }]
+        ]
+      }, layout: 'lightHorizontalLines'
+    })) : [{ text: 'Sin observaciones registradas.', color: '#64748b', fontSize: 9 }])
+  ];
+};
 
 const buildFinancialSteps = (solicitud) => FINANCIAL_SIGNATURE_STAGES.map((stage) => {
   const configured = (solicitud.plan_aprobacion || []).find((step) => step.key === stage.key);
@@ -229,10 +254,11 @@ const buildDefinition = (solicitud, { includeFinancial = true } = {}) => {
         },
         layout: 'lightHorizontalLines'
       },
-      { text: 'OBSERVACIONES A LA LIQUIDACIÓN', bold: true, fontSize: 12, color: '#0b3a6f', margin: [0, 18, 0, 6] },
-      { text: text(liquidacion.observaciones) || 'Sin observaciones', fontSize: 11, margin: [8, 8, 8, 8], fillColor: '#f8fafc' }
+      ...buildObservationSections(solicitud)
     );
   }
+
+  if (!includeFinancial) content.push(...buildObservationSections(solicitud, { includeFinancial: false }));
 
   return {
     pageSize: 'LETTER',
@@ -351,8 +377,7 @@ const buildLiquidationDefinition = (solicitud) => {
       },
       layout: 'lightHorizontalLines'
     },
-    { text: 'OBSERVACIONES A LA LIQUIDACIÓN', bold: true, fontSize: 12, color: '#0b3a6f', margin: [0, 18, 0, 6] },
-    { text: text(liquidacion.observaciones) || 'Sin observaciones', fontSize: 11, margin: [8, 8, 8, 8], fillColor: '#f8fafc' },
+    ...buildObservationSections(solicitud),
     { text: 'FIRMAS ELECTRÓNICAS DEL FLUJO FINANCIERO', style: 'sectionTitle', margin: [0, 16, 0, 6] },
     {
       unbreakable: true,

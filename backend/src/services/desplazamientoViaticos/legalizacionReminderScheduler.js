@@ -4,7 +4,8 @@ const {
   DesplazamientoViaticosSolicitud,
   User
 } = require('../../models');
-const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../emailService');
+const { renderInstitutionalTemplate, escapeHtml } = require('../emailService');
+const { sendInstitutionalEmail } = require('../reporteSalidaEmail');
 const { addColombiaBusinessDays } = require('../../utils/colombiaBusinessDays');
 const { normalizeEmail } = require('../../config/desplazamientoViaticosConfig');
 

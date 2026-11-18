@@ -1,4 +1,5 @@
 const { getDependencyEmail } = require('./dependencyEmails');
+const { routeSalidaRecipients } = require('../services/reporteSalidaEmail');
 
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 
@@ -8,10 +9,10 @@ const getDesplazamientoViaticosRecipients = () => ({
       || getDependencyEmail('Vicerrectoria Academica')
       || 'viceacad@unicesmag.edu.co'
   ),
-  investigacion: normalizeEmail(
+  investigacion: routeSalidaRecipients(
     process.env.VIATICOS_VICERRECTORIA_INVESTIGACION_EMAIL
       || 'jajimenez@unicesmag.edu.co'
-  ),
+  )[0],
   evangelizacion: normalizeEmail(
     process.env.VIATICOS_VICERRECTORIA_EVANGELIZACION_EMAIL
       || getDependencyEmail('Vicerrectoria para la Evangelizacion de las Culturas')

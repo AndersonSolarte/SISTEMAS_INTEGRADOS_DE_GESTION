@@ -6,7 +6,8 @@ const { ViaticosLegalizacion, ViaticosLegalizacionAdjunto, DesplazamientoViatico
 const { getDesplazamientoViaticosRecipients, normalizeEmail } = require('../../config/desplazamientoViaticosConfig');
 const { canValidateLegalizacion, canReviewAccounting, canAccessSolicitud } = require('./accessScope');
 const { enqueueWorkflowEmail, kickSubmissionEmails } = require('./legalizacionSubmissionQueue');
-const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../emailService');
+const { renderInstitutionalTemplate, escapeHtml } = require('../emailService');
+const { sendInstitutionalEmail } = require('../reporteSalidaEmail');
 const { buildLegalizacionPdfBuffer } = require('./legalizacionPdfService');
 
 const include = [{ model: DesplazamientoViaticosSolicitud, as: 'solicitud', required: true }];

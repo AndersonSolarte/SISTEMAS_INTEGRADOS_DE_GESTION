@@ -16,6 +16,8 @@ const { buildLiquidationPdfAttachment, buildPdfAttachment } = require('../servic
 const { ensureReporteSalidaPdf } = require('../services/reporteSalidaPdfService');
 const { addColombiaBusinessDays } = require('../utils/colombiaBusinessDays');
 const { canActOnSolicitud } = require('../services/desplazamientoViaticos/accessScope');
+const { getObservationHistory, formatObservationDate } = require('../services/desplazamientoViaticos/observationHistory');
+const { resolveApprovalSupport, approvalAttachmentViewerHtml } = require('../services/desplazamientoViaticos/approvalAttachments');
 const { isRectorUser, requiresRectorSst } = require('../services/reporteSalidaWorkflow/rectorPolicy');
 
 const publicBackendUrl = process.env.BACKEND_PUBLIC_URL || process.env.API_PUBLIC_URL || process.env.FRONTEND_URL || 'http://localhost:5000';
@@ -378,7 +380,7 @@ const buildSupportAttachment = (solicitud) => {
   return { filename: path.basename(clean(support.originalName, 240)) || filename, path: filepath };
 };
 
-const buildActor = (key, name, email) => ({ key, nombre: name, email: normalizeEmail(email) });
+const buildActor = (key, name, email, cargo = '') => ({ key, nombre: name, cargo, email: normalizeEmail(email) });
 
 const isRectoriaAssignment = (laboral = {}) => {
   const vice = normalize(laboral.vicerrectoria);
@@ -1128,7 +1130,7 @@ const collectFinalRecipientEmails = (solicitud, configuredRecipients = {}, extra
     extras.authorityEmail,
     extras.researchVicerrectorEmail,
     ...workflowEmails
-  ].filter(Boolean).map(normalizeEmail))];
+  ].filter(Boolean).flatMap(routeSalidaRecipients))];
 };
 
 const sendFinalizedCopies = async (solicitud) => {
@@ -1518,7 +1520,7 @@ const findProcessedAction = async (token) => {
   }
 };
 
-const page = (title, body) => `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/png" href="/api/desplazamientos-viaticos/assets/escudo.png"><link rel="apple-touch-icon" href="/api/desplazamientos-viaticos/assets/escudo.png"><title>${escapeHtml(title)}</title><style>body{margin:0;padding:28px 16px;background:#f1f5f9;font-family:Arial,sans-serif;color:#334155}button,input,textarea,select,table{font-family:inherit}.card{max-width:900px;margin:0 auto;background:#fff;border:1px solid #dbeafe;border-radius:14px;box-shadow:0 12px 35px #0f172a1f;overflow:hidden}.institutional-image{display:block;width:100%;height:auto;max-height:175px;object-fit:contain;background:#fff}.brand-bar{background:#0b3a6f;color:#fff;padding:14px 26px}.brand-name{font-size:15px;font-weight:800;letter-spacing:.4px}.brand-subtitle{font-size:11px;margin-top:4px;opacity:.95}.body{padding:26px 30px 30px}.page-title{margin:0 0 20px;padding:0 0 12px;border-bottom:2px solid #e5eef9;color:#0b3a6f;font-size:22px;line-height:1.25}.content{font-size:15px;line-height:1.55}.institutional-signature{margin-top:30px;padding-top:18px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px}.institutional-signature strong{display:block;margin-top:5px;color:#0b3a6f;font-size:13px}button{border:0;border-radius:8px;padding:12px 26px;font-size:14px;font-weight:700;cursor:pointer;transition:all .15s ease;min-width:160px;text-align:center}button:hover{opacity:.92;transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,0,0,.15)}.ok{background:#166534;color:#fff;box-shadow:0 4px 12px rgba(22,101,52,.2)}.bad{background:#b91c1c;color:#fff;box-shadow:0 4px 12px rgba(185,28,28,.2)}.primary{background:#0b3a6f;color:#fff;box-shadow:0 4px 12px rgba(11,58,111,.2)}.remove-row{min-width:auto;background:#dc2626;color:#fff;border:1px solid #b91c1c;padding:8px 14px;font-size:12px}.remove-row:hover{background:#b91c1c}.currency-input{display:flex;align-items:center;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:7px;background:#fff;margin:5px 0 12px;overflow:hidden}.currency-input span{padding:0 0 0 10px;font-weight:700;color:#334155}.currency-input input{border:0;outline:0;margin:0;padding-left:6px;background:transparent}input,textarea{box-sizing:border-box;width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:7px;margin:5px 0 12px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dbe3ee;text-align:left}th{background:#e8eef6}.actions{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;align-items:center;margin:28px auto 10px;width:100%;text-align:center}.notice{padding:12px;background:#fffbeb;border-left:4px solid #d97706;margin:15px 0}.add-concept{display:inline-block;min-width:auto;margin:0}.observations-label{display:block;margin-top:28px;margin-bottom:5px;font-weight:600}@media(max-width:640px){body{padding:0}.card{border-radius:0;border-left:0;border-right:0}.body{padding:20px 16px}.page-title{font-size:19px}.institutional-image{max-height:120px}table{font-size:12px}th,td{padding:6px}.actions{flex-direction:column;width:100%}.actions button{width:100%}}</style></head><body><main class="card"><img class="institutional-image" src="/api/desplazamientos-viaticos/assets/encabezado-correos.png" alt="Universidad CESMAG"><div class="brand-bar"><div class="brand-name">SIAC UNICESMAG</div><div class="brand-subtitle">Sistema Interno de Aseguramiento de la Calidad</div></div><section class="body"><h1 class="page-title">${escapeHtml(title)}</h1><div class="content">${body}</div><footer class="institutional-signature"><em>Fraternalmente,</em><strong>SIAC UNICESMAG</strong><span>Hombres nuevos para tiempos nuevos</span></footer></section></main></body></html>`;
+const page = (title, body, { attachmentToken } = {}) => `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/png" href="/api/desplazamientos-viaticos/assets/escudo.png"><link rel="apple-touch-icon" href="/api/desplazamientos-viaticos/assets/escudo.png"><title>${escapeHtml(title)}</title><style>body{margin:0;padding:28px 16px;background:#f1f5f9;font-family:Arial,sans-serif;color:#334155}button,input,textarea,select,table{font-family:inherit}.card{max-width:900px;margin:0 auto;background:#fff;border:1px solid #dbeafe;border-radius:14px;box-shadow:0 12px 35px #0f172a1f;overflow:hidden}.institutional-image{display:block;width:100%;height:auto;max-height:175px;object-fit:contain;background:#fff}.brand-bar{background:#0b3a6f;color:#fff;padding:14px 26px}.brand-name{font-size:15px;font-weight:800;letter-spacing:.4px}.brand-subtitle{font-size:11px;margin-top:4px;opacity:.95}.body{padding:26px 30px 30px}.page-title{margin:0 0 20px;padding:0 0 12px;border-bottom:2px solid #e5eef9;color:#0b3a6f;font-size:22px;line-height:1.25}.content{font-size:15px;line-height:1.55}.institutional-signature{margin-top:30px;padding-top:18px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px}.institutional-signature strong{display:block;margin-top:5px;color:#0b3a6f;font-size:13px}button{border:0;border-radius:8px;padding:12px 26px;font-size:14px;font-weight:700;cursor:pointer;transition:all .15s ease;min-width:160px;text-align:center}button:hover{opacity:.92;transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,0,0,.15)}.ok{background:#166534;color:#fff;box-shadow:0 4px 12px rgba(22,101,52,.2)}.bad{background:#b91c1c;color:#fff;box-shadow:0 4px 12px rgba(185,28,28,.2)}.primary{background:#0b3a6f;color:#fff;box-shadow:0 4px 12px rgba(11,58,111,.2)}.remove-row{min-width:auto;background:#dc2626;color:#fff;border:1px solid #b91c1c;padding:8px 14px;font-size:12px}.remove-row:hover{background:#b91c1c}.currency-input{display:flex;align-items:center;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:7px;background:#fff;margin:5px 0 12px;overflow:hidden}.currency-input span{padding:0 0 0 10px;font-weight:700;color:#334155}.currency-input input{border:0;outline:0;margin:0;padding-left:6px;background:transparent}input,textarea{box-sizing:border-box;width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:7px;margin:5px 0 12px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dbe3ee;text-align:left}th{background:#e8eef6}.actions{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;align-items:center;margin:28px auto 10px;width:100%;text-align:center}.notice{padding:12px;background:#fffbeb;border-left:4px solid #d97706;margin:15px 0}.add-concept{display:inline-block;min-width:auto;margin:0}.observations-label{display:block;margin-top:28px;margin-bottom:5px;font-weight:600}@media(max-width:640px){body{padding:0}.card{border-radius:0;border-left:0;border-right:0}.body{padding:20px 16px}.page-title{font-size:19px}.institutional-image{max-height:120px}table{font-size:12px}th,td{padding:6px}.actions{flex-direction:column;width:100%}.actions button{width:100%}}</style></head><body><main class="card"><img class="institutional-image" src="/api/desplazamientos-viaticos/assets/encabezado-correos.png" alt="Universidad CESMAG"><div class="brand-bar" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap"><div><div class="brand-name">SIAC UNICESMAG</div><div class="brand-subtitle">Sistema Interno de Aseguramiento de la Calidad</div></div>${approvalAttachmentViewerHtml(attachmentToken)}</div><section class="body"><h1 class="page-title">${escapeHtml(title)}</h1><div class="content">${body}</div><footer class="institutional-signature"><em>Fraternalmente,</em><strong>SIAC UNICESMAG</strong><span>Hombres nuevos para tiempos nuevos</span></footer></section></main></body></html>`;
 
 const formatDocumentDate = (value) => {
   if (!value) return 'No registrado';
@@ -1691,11 +1693,11 @@ const renderLiquidationSectionHtml = (solicitud, currentStepKey, { isTreasury = 
           <td style="padding: 6px 12px; vertical-align: middle;">
             <div class="currency-input" style="margin: 0; display: flex; align-items: center; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #fff;">
               <span style="padding-left: 8px; font-weight: 700; color: #64748b;">$</span>
-              <input class="valor-diario" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="valorDiario${index}" value="${valorDiario}" style="width: 100%; border: 0; outline: none; padding: 6px; font-weight: 700; color: #0b3a6f;" oninput="window.calcLiquidation && window.calcLiquidation()">
+              <input class="valor-diario" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="valorDiario${index}" value="${valorDiario}" style="width: 100%; border: 0; outline: none; padding: 6px; font-weight: 700; color: #0b3a6f;">
             </div>
           </td>
           <td style="padding: 6px 12px; vertical-align: middle;">
-            <input class="dias" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="dias${index}" value="${dias}" style="width: 70px; text-align: center; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px; font-weight: 700; color: #1e293b;" oninput="window.calcLiquidation && window.calcLiquidation()">
+            <input class="dias" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="dias${index}" value="${dias}" style="width: 70px; text-align: center; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px; font-weight: 700; color: #1e293b;">
           </td>
           <td class="row-total" style="padding: 8px 12px; text-align: right; font-weight: 800; color: #0b3a6f; font-size: 12.5px; vertical-align: middle;">
             $${rowTotal.toLocaleString('es-CO')}
@@ -1717,11 +1719,11 @@ const renderLiquidationSectionHtml = (solicitud, currentStepKey, { isTreasury = 
         <td style="padding: 6px 12px; vertical-align: middle;">
           <div class="currency-input" style="margin: 0; display: flex; align-items: center; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #fff;">
             <span style="padding-left: 8px; font-weight: 700; color: #64748b;">$</span>
-            <input class="valor-diario" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="extraValorDiario${i}" value="${item.valorDiario}" style="width: 100%; border: 0; outline: none; padding: 6px; font-weight: 700; color: #0b3a6f;" oninput="window.calcLiquidation && window.calcLiquidation()">
+            <input class="valor-diario" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="extraValorDiario${i}" value="${item.valorDiario}" style="width: 100%; border: 0; outline: none; padding: 6px; font-weight: 700; color: #0b3a6f;">
           </div>
         </td>
         <td style="padding: 6px 12px; vertical-align: middle;">
-          <input class="dias" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="extraDias${i}" value="${item.dias}" style="width: 70px; text-align: center; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px; font-weight: 700; color: #1e293b;" oninput="window.calcLiquidation && window.calcLiquidation()">
+          <input class="dias" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="extraDias${i}" value="${item.dias}" style="width: 70px; text-align: center; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px; font-weight: 700; color: #1e293b;">
         </td>
         <td class="row-total" style="padding: 8px 12px; text-align: right; font-weight: 800; color: #0b3a6f; font-size: 12.5px; vertical-align: middle;">
           $${Number(item.valorTotal || 0).toLocaleString('es-CO')}
@@ -1739,105 +1741,7 @@ const renderLiquidationSectionHtml = (solicitud, currentStepKey, { isTreasury = 
       </div>
     `;
 
-    calculatorScript = `
-      <script>
-      (function() {
-        function formatMoney(num) {
-          return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num || 0);
-        }
-        function parseVal(val) {
-          if (typeof val === 'number') return isNaN(val) ? 0 : val;
-          var cleanStr = String(val || '').replace(/[^0-9.-]/g, '');
-          var n = parseFloat(cleanStr);
-          return isNaN(n) ? 0 : n;
-        }
-        function recalculate() {
-          var body = document.getElementById('liquidacion-detalles');
-          if (!body) return;
-          var rows = body.querySelectorAll('tr[data-liquidation-row]');
-          var grandTotal = 0;
-          rows.forEach(function(row) {
-            var vInput = row.querySelector('.valor-diario');
-            var dInput = row.querySelector('.dias');
-            var tCell = row.querySelector('.row-total');
-            var v = vInput ? parseVal(vInput.value) : 0;
-            var d = dInput ? Math.max(0, Math.floor(parseVal(dInput.value))) : 0;
-            var rowTotal = v * d;
-            grandTotal += rowTotal;
-            if (tCell) {
-              tCell.textContent = formatMoney(rowTotal);
-            }
-          });
-          var totalEl = document.getElementById('total-anticipo-val');
-          if (totalEl) {
-            totalEl.textContent = formatMoney(grandTotal);
-          }
-        }
-        window.calcLiquidation = recalculate;
-
-        function init() {
-          var body = document.getElementById('liquidacion-detalles');
-          var addBtn = document.getElementById('agregar-concepto');
-          var countInput = document.getElementById('extra-count');
-
-          if (body) {
-            body.addEventListener('input', recalculate);
-            body.addEventListener('change', recalculate);
-            body.addEventListener('keyup', recalculate);
-            body.addEventListener('click', function(e) {
-              var btn = e.target.closest('.remove-row');
-              if (btn) {
-                var tr = btn.closest('tr');
-                if (tr) {
-                  var baseInc = tr.querySelector('input[name^="baseIncluded"]');
-                  if (baseInc) {
-                    baseInc.value = '0';
-                    var v = tr.querySelector('.valor-diario');
-                    var d = tr.querySelector('.dias');
-                    if (v) v.value = '0';
-                    if (d) d.value = '0';
-                    tr.style.opacity = '0.4';
-                  } else {
-                    tr.remove();
-                  }
-                  recalculate();
-                }
-              }
-            });
-          }
-
-          if (addBtn && countInput && body) {
-            addBtn.addEventListener('click', function(e) {
-              e.preventDefault();
-              var i = parseInt(countInput.value, 10) || 0;
-              if (i >= 30) return;
-              var tr = document.createElement('tr');
-              tr.setAttribute('data-liquidation-row', '');
-              tr.style.borderBottom = '1px solid #e2e8f0';
-              tr.innerHTML = '<td style="padding: 6px 12px; vertical-align: middle;"><input class="detalle-extra" form="${formId}" name="extraDetalle' + i + '" maxlength="120" placeholder="Nombre del concepto" style="width: 100%; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px; font-weight: 700; color: #1e293b;" required></td>' +
-                '<td style="padding: 6px 12px; vertical-align: middle;"><div class="currency-input" style="margin: 0; display: flex; align-items: center; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #fff;"><span style="padding-left: 8px; font-weight: 700; color: #64748b;">$</span><input class="valor-diario" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="extraValorDiario' + i + '" value="0" style="width: 100%; border: 0; outline: none; padding: 6px; font-weight: 700; color: #0b3a6f;" required oninput="window.calcLiquidation && window.calcLiquidation()"></div></td>' +
-                '<td style="padding: 6px 12px; vertical-align: middle;"><input class="dias" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="extraDias' + i + '" value="0" style="width: 70px; text-align: center; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px; font-weight: 700; color: #1e293b;" required oninput="window.calcLiquidation && window.calcLiquidation()"></td>' +
-                '<td class="row-total" style="padding: 8px 12px; text-align: right; font-weight: 800; color: #0b3a6f; font-size: 12.5px; vertical-align: middle;">$0</td>' +
-                '<td style="padding: 6px 12px; text-align: center; vertical-align: middle;"><button class="remove-row" type="button" style="min-width: auto; background: #ef4444; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer;">Eliminar</button></td>';
-              body.appendChild(tr);
-              countInput.value = String(i + 1);
-              recalculate();
-            });
-          }
-
-          recalculate();
-        }
-
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', init);
-        } else {
-          init();
-        }
-        window.addEventListener('load', recalculate);
-        setTimeout(recalculate, 200);
-      })();
-      </script>
-    `;
+    calculatorScript = '<script src="/api/desplazamientos-viaticos/assets/tesoreria.js?v=20261118" defer></script>';
   } else {
     // Modo solo lectura para otros roles
     rowsHtml = visibleDetails.map((item) => `
@@ -1922,7 +1826,7 @@ const renderLiquidationSectionHtml = (solicitud, currentStepKey, { isTreasury = 
               ${isTreasury ? '<th style="background-color: #0b3a6f !important; color: #ffffff !important; padding: 11px 12px; text-align: center; font-size: 11px; font-weight: 800; text-transform: uppercase; width: 80px;">Acción</th>' : ''}
             </tr>
           </thead>
-          <tbody id="liquidacion-detalles">
+          <tbody id="${isTreasury ? 'liquidacion-detalles' : 'liquidacion-resumen-detalles'}">
             ${rowsHtml}
           </tbody>
           <tfoot>
@@ -2001,66 +1905,22 @@ const renderTraceabilitySection = (solicitud) => {
   `;
 };
 
-const renderApprovalObservationsHtml = (solicitud) => {
-  const formatTraceDate = (d) => {
-    if (!d) return 'No registrado';
-    const date = new Date(d);
-    return Number.isNaN(date.getTime()) ? String(d) : date.toLocaleString('es-CO');
-  };
-
-  const observations = [];
-  const seenKeys = new Set();
-
-  const plan = solicitud.plan_aprobacion || [];
-  plan.forEach((step) => {
-    const trace = findTrace(solicitud, step.key);
-    if (trace) {
-      const obsText = trace.detail?.observacion || trace.detail?.observation || trace.observacion || trace.motivo || trace.justificacion || '';
-      if (obsText && obsText.trim() && !obsText.includes('Se registró la solicitud') && !obsText.includes('Procesado exitosamente.')) {
-        const key = `${step.key}_${obsText.trim()}`;
-        if (!seenKeys.has(key)) {
-          seenKeys.add(key);
-          observations.push({
-            stepLabel: step.label || 'Aprobador',
-            actorName: trace.actor?.nombre || trace.actor?.email || step.label,
-            actorCargo: trace.actor?.cargo || step.label,
-            date: trace.at,
-            text: obsText.trim()
-          });
-        }
-      }
-    }
-  });
-
-  const traces = solicitud.trazabilidad || [];
-  traces.forEach((t) => {
-    const obsText = t.detail?.observacion || t.detail?.observation || t.observacion || t.motivo || t.justificacion || '';
-    if (obsText && obsText.trim() && !obsText.includes('Se registró la solicitud') && !obsText.includes('Procesado exitosamente.')) {
-      const key = `${t.event}_${obsText.trim()}`;
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        observations.push({
-          stepLabel: t.event ? String(t.event).replace(/^aprobada?_/, '').replace(/_/g, ' ') : 'Anotación',
-          actorName: t.actor?.nombre || t.actor?.email || 'Aprobador',
-          actorCargo: t.actor?.cargo || '',
-          date: t.at,
-          text: obsText.trim()
-        });
-      }
-    }
-  });
+const renderApprovalObservationsHtml = (solicitud, options = {}) => {
+  const formatTraceDate = formatObservationDate;
+  const observations = getObservationHistory(solicitud, options);
 
   let contentHtml = '';
   if (observations.length > 0) {
-    contentHtml = observations.map((obs) => `
+    contentHtml = observations.map((obs, index) => `
       <div style="padding: 8px 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-left: 4px solid #0284c7; border-radius: 6px; margin-bottom: 6px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; flex-wrap: wrap; gap: 4px;">
           <span style="color: #0369a1; font-size: 10.5px; font-weight: 800; text-transform: uppercase;">
-            ${escapeHtml(obs.stepLabel)} &mdash; ${escapeHtml(obs.actorName)} ${obs.actorCargo ? `(${escapeHtml(obs.actorCargo)})` : ''}
+            ${index + 1}. ${escapeHtml(obs.stepLabel)}
           </span>
           <span style="color: #64748b; font-size: 9.5px; font-weight: 600;">${formatTraceDate(obs.date)}</span>
         </div>
-        <div style="color: #0f172a; font-size: 11.5px; font-weight: 600; line-height: 1.35; white-space: pre-wrap;">${escapeHtml(obs.text)}</div>
+        <div style="color:#334155;font-size:11px;line-height:1.5;margin:6px 0;overflow-wrap:anywhere"><div><strong>Usuario responsable:</strong> ${escapeHtml(obs.actorName)}</div><div><strong>Cargo:</strong> ${escapeHtml(obs.actorCargo || 'Cargo no registrado')}</div><div><strong>Correo:</strong> ${escapeHtml(obs.actorEmail || 'Correo no registrado')}</div></div>
+        <div style="border-top:1px solid #bae6fd;padding-top:6px;color:#0f172a;font-size:11.5px;line-height:1.5"><strong>Observación:</strong><div style="white-space:pre-wrap">${escapeHtml(obs.text)}</div></div>
       </div>
     `).join('');
   } else {
@@ -2115,7 +1975,7 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
     const isChecked = selectedTransports.some(st => st.toLowerCase() === opt.toLowerCase()) || (selectedTransports.length === 0 && opt === 'Terrestre Intermunicipal');
     return `
       <label style="display:inline-flex;align-items:center;gap:6px;background:${isChecked ? '#eff6ff' : '#f8fafc'};color:${isChecked ? '#1d4ed8' : '#64748b'};border:1.5px solid ${isChecked ? '#3b82f6' : '#cbd5e1'};border-radius:6px;padding:3px 9px;font-size:11px;font-weight:800;cursor:pointer;user-select:none;margin:2px 4px 2px 0;">
-        <input type="checkbox" name="transporte_check_${safeFormId}" value="${escapeHtml(opt)}"${isChecked ? ' checked' : ''} form="${formId}" onchange="updateTransporteValue_${safeFormId}()" style="margin:0;cursor:pointer;">
+        <input type="checkbox" name="transporte_check_${safeFormId}" value="${escapeHtml(opt)}"${isChecked ? ' checked' : ''} form="${formId}" style="margin:0;cursor:pointer;">
         ${escapeHtml(opt)}
       </label>
     `;
@@ -2127,19 +1987,11 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
 
   const transporteField = canEditLogistics
     ? `
-    <div class="fr004-field fr004-span-2">
+    <div class="fr004-field fr004-span-2" data-viaticos-transport>
       <label>Transporte autorizado (desmarque los no autorizados) <span class="fr004-required">*</span></label>
       <div style="margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;">${transportCheckboxesHtml}</div>
       <input type="hidden" id="transporte-hidden-${safeFormId}" form="${formId}" name="transporte" value="${escapeHtml(selectedTransports.join(', '))}">
-      <script>
-        function updateTransporteValue_${safeFormId}() {
-          const form = document.getElementById('${formId}');
-          if (!form) return;
-          const checked = Array.from(form.querySelectorAll('input[name="transporte_check_${safeFormId}"]:checked')).map(cb => cb.value);
-          const hidden = document.getElementById('transporte-hidden-${safeFormId}');
-          if (hidden) hidden.value = checked.join(', ');
-        }
-      </script>
+      <script src="/api/desplazamientos-viaticos/assets/logistica.js?v=20261118" defer></script>
     </div>
   `
     : `<div class="fr004-field fr004-span-2"><span>Transporte autorizado</span><div style="margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;">${transportBadgesHtml}</div></div>`;
@@ -2220,7 +2072,7 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
       <div class="fr004-authorization"><strong>Autorización aceptada electrónicamente por el colaborador.</strong><br>${escapeHtml(viaticos.autorizacionTexto || AUTHORIZATION_TEXT)}</div>
       
       <!-- Observaciones y Anotaciones de Aprobadores -->
-      ${renderApprovalObservationsHtml(solicitud)}
+      ${renderApprovalObservationsHtml(solicitud, { includeFinancial: !['sst', 'gestion_humana'].includes(currentStepKey) })}
 
       <!-- Firmas de Salida y Permiso -->
       ${renderDepartureSignatures(solicitud, currentStepKey)}
@@ -2238,161 +2090,8 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
 
 const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit = false, demoTechnicianOnly = false } = {}) => {
   const liquidationInstructions = 'Los días inician en 0. Digite el valor diario y los días de cada concepto utilizado; ambos deben ser mayores que 0. Deje ambos en 0 o elimine los conceptos que no apliquen.';
-  const rows = `<tr hidden><td colspan="5"><input type="hidden" name="liquidationRowsVersion" value="2"></td></tr>${BASE_DETAIL_NAMES.map((name, index) => `<tr data-liquidation-row><td><input type="hidden" name="baseIncluded${index}" value="1">${escapeHtml(name)}</td><td><div class="currency-input"><span aria-hidden="true">$</span><input class="valor-diario" inputmode="numeric" type="number" min="0" step="1" name="valorDiario${index}" value="0" aria-label="Valor diario en pesos para ${escapeHtml(name)}" oninput="window.calcLiquidation && window.calcLiquidation()"></div></td><td><input class="dias" inputmode="numeric" type="number" min="0" step="1" name="dias${index}" value="0" oninput="window.calcLiquidation && window.calcLiquidation()"></td><td class="row-total">$0</td><td><button class="remove-row" type="button" aria-label="Eliminar ${escapeHtml(name)}">Eliminar</button></td></tr>`).join('')}`;
-  const calculator = `<script>
-(function() {
-  function formatMoney(num) {
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num || 0);
-  }
-  function parseVal(val) {
-    if (typeof val === 'number') return isNaN(val) ? 0 : val;
-    var cleanStr = String(val || '').replace(/[^0-9.-]/g, '');
-    var n = parseFloat(cleanStr);
-    return isNaN(n) ? 0 : n;
-  }
-  function recalculate() {
-    var body = document.getElementById('liquidacion-detalles');
-    if (!body) return;
-    var rows = body.querySelectorAll('tr[data-liquidation-row]');
-    var grandTotal = 0;
-    rows.forEach(function(row) {
-      var vInput = row.querySelector('.valor-diario');
-      var dInput = row.querySelector('.dias');
-      var tCell = row.querySelector('.row-total');
-      var v = vInput ? parseVal(vInput.value) : 0;
-      var d = dInput ? Math.max(0, Math.floor(parseVal(dInput.value))) : 0;
-      var rowTotal = v * d;
-      grandTotal += rowTotal;
-      if (tCell) {
-        tCell.textContent = formatMoney(rowTotal);
-      }
-    });
-    var totalEl = document.getElementById('total-anticipo');
-    if (totalEl) {
-      totalEl.textContent = formatMoney(grandTotal);
-    }
-  }
-  window.calcLiquidation = recalculate;
-
-  function validateRows() {
-    var body = document.getElementById('liquidacion-detalles');
-    var firstInvalid = null;
-    var usedRows = 0;
-    function validateField(input, message) {
-      if (!input) return;
-      input.setCustomValidity(message);
-      var invalid = !input.validity.valid;
-      input.setAttribute('aria-invalid', String(invalid));
-      var container = input.closest('td') || input.parentNode;
-      var error = container.querySelector('[data-field-error="' + input.name + '"]');
-      if (!error) {
-        error = document.createElement('div');
-        error.id = 'error-' + input.name;
-        error.setAttribute('data-field-error', input.name);
-        error.style.cssText = 'color:#b91c1c;font-size:13px;margin-top:5px';
-        container.appendChild(error);
-        input.setAttribute('aria-describedby', error.id);
-      }
-      error.textContent = invalid ? input.validationMessage : '';
-      input.style.borderColor = invalid ? '#dc2626' : '';
-      var currency = input.closest('.currency-input');
-      if (currency) currency.style.borderColor = invalid ? '#dc2626' : '';
-      if (invalid && !firstInvalid) firstInvalid = input;
-    }
-    body.querySelectorAll('tr[data-liquidation-row]').forEach(function(row) {
-      var value = row.querySelector('.valor-diario');
-      var days = row.querySelector('.dias');
-      var name = row.querySelector('.detalle-extra');
-      var used = parseVal(value.value) !== 0 || parseVal(days.value) !== 0 || Boolean(name);
-      if (used) usedRows += 1;
-      validateField(name, name && !name.value.trim() ? 'Escriba el nombre del concepto.' : '');
-      validateField(value, used && !(Number(value.value) > 0) ? 'Ingrese un valor diario en pesos mayor que 0.' : '');
-      validateField(days, used && !(Number.isInteger(Number(days.value)) && Number(days.value) > 0) ? 'Ingrese una cantidad de días entera mayor que 0.' : '');
-    });
-    if (!usedRows && !firstInvalid) {
-      var firstValue = body.querySelector('.valor-diario');
-      validateField(firstValue, 'Ingrese al menos un concepto con valor y días mayores que 0.');
-      if (!firstValue) firstInvalid = document.getElementById('agregar-concepto');
-    }
-    return firstInvalid;
-  }
-
-  function init() {
-    var body = document.getElementById('liquidacion-detalles');
-    var addBtn = document.getElementById('agregar-concepto');
-    var countInput = document.getElementById('extra-count');
-    var form = document.getElementById('liquidacion-form');
-    var attempted = false;
-    var summary = document.createElement('div');
-    summary.setAttribute('role', 'alert');
-    summary.style.cssText = 'color:#b91c1c;margin:12px 0;font-weight:700';
-    form.querySelector('.liquidation-panel').prepend(summary);
-    form.noValidate = true;
-    form.addEventListener('submit', function(event) {
-      if (event.submitter && event.submitter.value === 'rechazar') return;
-      attempted = true;
-      var invalid = validateRows() || form.querySelector(':invalid');
-      summary.textContent = invalid ? 'No se envió la liquidación. Corrija los campos señalados: cada concepto utilizado requiere nombre, valor y días mayores que 0.' : '';
-      if (invalid) {
-        event.preventDefault();
-        invalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        invalid.focus({ preventScroll: true });
-        invalid.reportValidity();
-      }
-    });
-
-    if (body) {
-      body.addEventListener('input', function() {
-        recalculate();
-        if (attempted && !validateRows()) summary.textContent = '';
-      });
-      body.addEventListener('change', recalculate);
-      body.addEventListener('keyup', recalculate);
-      body.addEventListener('paste', function() { setTimeout(recalculate, 50); });
-      body.addEventListener('click', function(e) {
-        var btn = e.target.closest('.remove-row');
-        if (btn) {
-          var tr = btn.closest('tr');
-          if (tr) {
-            tr.remove();
-            recalculate();
-          }
-        }
-      });
-    }
-
-    if (addBtn && countInput && body) {
-      addBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        var i = parseInt(countInput.value, 10) || 0;
-        if (i >= 30) return;
-        var tr = document.createElement('tr');
-        tr.setAttribute('data-liquidation-row', '');
-        tr.innerHTML = '<td><input class="detalle-extra" name="extraDetalle' + i + '" maxlength="120" placeholder="Nombre del concepto" required></td>' +
-          '<td><div class="currency-input"><span aria-hidden="true">$</span><input class="valor-diario" inputmode="numeric" type="number" min="0" step="1" name="extraValorDiario' + i + '" value="0" aria-label="Valor diario en pesos" required oninput="window.calcLiquidation && window.calcLiquidation()"></div></td>' +
-          '<td><input class="dias" inputmode="numeric" type="number" min="0" step="1" name="extraDias' + i + '" value="0" required oninput="window.calcLiquidation && window.calcLiquidation()"></td>' +
-          '<td class="row-total">$0</td>' +
-          '<td><button class="remove-row" type="button" aria-label="Eliminar concepto">Eliminar</button></td>';
-        body.appendChild(tr);
-        countInput.value = String(i + 1);
-        var inputFirst = tr.querySelector('.detalle-extra');
-        if (inputFirst) inputFirst.focus();
-        recalculate();
-      });
-    }
-
-    recalculate();
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-  window.addEventListener('load', recalculate);
-  setTimeout(recalculate, 200);
-})();
-</script>`;
+  const rows = `<tr hidden><td colspan="5"><input type="hidden" name="liquidationRowsVersion" value="2"></td></tr>${BASE_DETAIL_NAMES.map((name, index) => `<tr data-liquidation-row><td><input type="hidden" name="baseIncluded${index}" value="1">${escapeHtml(name)}</td><td><div class="currency-input"><span aria-hidden="true">$</span><input class="valor-diario" inputmode="numeric" type="number" min="0" step="1" name="valorDiario${index}" value="0" aria-label="Valor diario en pesos para ${escapeHtml(name)}"></div></td><td><input class="dias" inputmode="numeric" type="number" min="0" step="1" name="dias${index}" value="0"></td><td class="row-total">$0</td><td><button class="remove-row" type="button" aria-label="Eliminar ${escapeHtml(name)}">Eliminar</button></td></tr>`).join('')}`;
+  const calculator = '<script src="/api/desplazamientos-viaticos/assets/liquidacion.js?v=20261118" defer></script>';
   const demoNotice = demoTechnicianOnly
     ? '<div class="notice"><strong>PRUEBA EXCLUSIVA DEL TÉCNICO:</strong> puede diligenciar y procesar la liquidación. No se enviará a Tesorería, no se notificará a otros correos y no se modificará una solicitud real.</div>'
     : demoCanSubmit
@@ -2408,28 +2107,27 @@ const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit 
   const formAction = demoCanSubmit
     ? `/api/desplazamientos-viaticos/prueba/liquidacion/${token}`
     : demo ? '#' : `/api/desplazamientos-viaticos/accion/${token}`;
-return page('Generar liquidación de viáticos y gastos de viaje', `<form id="liquidacion-form" method="post" action="${formAction}"><input id="extra-count" type="hidden" name="extraCount" value="0">${demoNotice}${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true })}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados. ${liquidationInstructions}</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</section></form>${calculator}`);
+return page('Generar liquidación de viáticos y gastos de viaje', `<form id="liquidacion-form" method="post" action="${formAction}"><input id="extra-count" type="hidden" name="extraCount" value="0">${demoNotice}${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true })}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados. ${liquidationInstructions}</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</section></form>${calculator}`, { attachmentToken: demo ? null : token });
 };
 
 const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {}) => {
   const isAlternateAccess = accessSource === step.alternateAccessSource;
   const isParallelEquivalent = isAlternateAccess && Boolean(step.parallelEquivalentAccess);
-  const alternateObservationRequired = isAlternateAccess && step.alternateObservationRequired !== false;
   const privacyNotice = ['sst', 'gestion_humana'].includes(step.key)
     ? '<div class="notice">Esta vista contiene únicamente la información del permiso. La liquidación financiera se gestiona posteriormente y con acceso restringido.</div>'
     : '';
   const delegatedNotice = isParallelEquivalent
     ? '<div class="notice"><strong>Acceso institucional equivalente.</strong> Este enlace fue enviado al buzón de la Vicerrectoría Financiera y tiene la misma validez que el remitido al Vicerrector. La primera decisión registrada cerrará ambos enlaces.</div>'
     : isAlternateAccess
-    ? `<div class="notice"><strong>Acceso alterno de ${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}.</strong> Utilice este enlace únicamente cuando ${escapeHtml(step.alternateAbsenceRole || step.label)} no esté disponible. La observación es obligatoria y este acceso quedará identificado en la trazabilidad a nombre de ${escapeHtml(step.alternateAuthorityLabel || step.alternateApprovalLabel || 'la autoridad correspondiente')}.</div>`
+    ? `<div class="notice"><strong>Acceso alterno de ${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}.</strong> Utilice este enlace únicamente cuando ${escapeHtml(step.alternateAbsenceRole || step.label)} no esté disponible. La observación es opcional al dar visto bueno y obligatoria si no aprueba. Este acceso quedará identificado en la trazabilidad a nombre de ${escapeHtml(step.alternateAuthorityLabel || step.alternateApprovalLabel || 'la autoridad correspondiente')}.</div>`
     : '';
-  const observationLabel = alternateObservationRequired ? 'Observación obligatoria de la actuación delegada' : 'Observación (obligatoria si no aprueba)';
-  return page(`Revisión pendiente: ${step.label}`, `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: step.key, formId: 'action-form', isTechnician: false })}${privacyNotice}${delegatedNotice}<label class="observations-label" style="display:block;margin-top:24px;font-weight:700;color:#0b3a6f;">${observationLabel}</label><textarea name="observacion" maxlength="1200" rows="4"${alternateObservationRequired ? ' required' : ''} placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="aprobar" type="submit">Dar visto bueno</button><button class="bad" name="accion" value="rechazar" type="submit"${alternateObservationRequired ? '' : ' formnovalidate'}>No aprobar</button></div></form>`);
+  const observationLabel = 'Observación (opcional al aprobar; obligatoria si no aprueba)';
+  return page(`Revisión pendiente: ${step.label}`, `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: step.key, formId: 'action-form', isTechnician: false })}${privacyNotice}${delegatedNotice}<label class="observations-label" style="display:block;margin-top:24px;font-weight:700;color:#0b3a6f;">${observationLabel}</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="aprobar" type="submit">Dar visto bueno</button><button class="bad" name="accion" value="rechazar" type="submit" formnovalidate>No aprobar</button></div></form>`, { attachmentToken: token });
 };
 
-const treasuryForm = (solicitud, token) => page('Procesar liquidación para pago en Tesorería / Pagaduría', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false, isTreasury: true })}<p style="margin:16px 0 12px;color:#475569">Revise o corrija los valores de la liquidación y la logística si es necesario, y decida si autoriza el pago.</p><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="autorizar_pago" type="submit">Procesar liquidación para pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit" formnovalidate>No autorizar pago</button></div></form>`);
+const treasuryForm = (solicitud, token) => page('Procesar liquidación para pago en Tesorería / Pagaduría', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false, isTreasury: true })}<p style="margin:16px 0 12px;color:#475569">Revise o corrija los valores de la liquidación y la logística si es necesario, y decida si autoriza el pago.</p><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="autorizar_pago" type="submit">Procesar liquidación para pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit" formnovalidate>No autorizar pago</button></div></form>`, { attachmentToken: token });
 
-const legacyTreasuryForm = (solicitud, token) => page('Tramitar solicitud en Tesorería', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<div class="notice"><strong>Solicitud iniciada con el flujo anterior.</strong> Esta actuación se conserva únicamente para finalizar correctamente solicitudes que ya estaban en curso.</div><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="primary" name="accion" value="tramitar" type="submit">Tramitar solicitud</button></div></form>`);
+const legacyTreasuryForm = (solicitud, token) => page('Tramitar solicitud en Tesorería', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<div class="notice"><strong>Solicitud iniciada con el flujo anterior.</strong> Esta actuación se conserva únicamente para finalizar correctamente solicitudes que ya estaban en curso.</div><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="primary" name="accion" value="tramitar" type="submit">Tramitar solicitud</button></div></form>`, { attachmentToken: token });
 
 const mostrarAccion = async (req, res) => {
   try {
@@ -2442,7 +2140,7 @@ const mostrarAccion = async (req, res) => {
     const { solicitud, payload, step } = actionContext;
     if (!step || step.key !== solicitud.token_etapa) return res.status(200).send(page('Solicitud procesada', '<p>Esta etapa ya no está activa. La solicitud avanzó a la siguiente instancia del flujo.</p>'));
     const nonce = crypto.randomBytes(18).toString('base64');
-    res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action *;");
+    res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self';");
     if (step.action === 'liquidacion') return res.send(liquidacionForm(solicitud, req.params.token, nonce));
     if (step.action === 'pago') return res.send(treasuryForm(solicitud, req.params.token));
     if (step.action === 'tramite') return res.send(legacyTreasuryForm(solicitud, req.params.token));
@@ -2468,7 +2166,7 @@ const mostrarDemoLiquidacion = async (req, res) => {
       return res.status(409).send(page('Solicitud procesada', '<p>La liquidación de prueba ya fue enviada. Este enlace es de un solo uso.</p>'));
     }
     const nonce = crypto.randomBytes(18).toString('base64');
-    res.setHeader("Content-Security-Policy", `default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action ${demoCanSubmit ? '*' : "'none'"};`);
+    res.setHeader("Content-Security-Policy", `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action ${demoCanSubmit ? "'self'" : "'none'"};`);
     const solicitudDemo = buildDemoSolicitud();
     solicitudDemo.solicitante_snapshot.email = payload.email || '';
     return res.send(liquidacionForm(solicitudDemo, req.params.token, nonce, { demo: true, demoCanSubmit, demoTechnicianOnly }));
@@ -2534,7 +2232,7 @@ const mostrarDemoTesoreria = async (req, res) => {
     const tokenHash = hashToken(req.params.token);
     if (await isDemoTokenProcessed(tokenHash, usedDemoTreasuryTokens)) return res.status(409).send(page('Pago ya autorizado', '<p>Esta autorización de pago de prueba ya fue registrada.</p>'));
     const solicitudDemo = buildDemoSolicitud(payload.liquidacion || {});
-    res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action *;");
+    res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self';");
     return res.send(page('Autorizar pago de prueba en Tesorería', `${summaryHtml(solicitudDemo)}<p>La liquidación fue registrada por el Técnico Contable y remitida directamente a Tesorería/Pagaduría. Al confirmar se autorizará el pago y finalizará la prueba.</p><form method="post" action="/api/desplazamientos-viaticos/prueba/tesoreria/${req.params.token}"><label>Observación de Tesorería / Pagaduría</label><textarea name="observacion" maxlength="1200" rows="4"></textarea><button class="primary" type="submit">Procesar liquidación para pago</button></form>`));
   } catch (_) {
     return res.status(404).send(page('Vista de prueba no disponible', '<p>El enlace no es válido o ya expiró.</p>'));
@@ -2581,7 +2279,7 @@ const mostrarDemoFinanciera = async (req, res) => {
     const tokenHash = hashToken(req.params.token);
     if (await isDemoTokenProcessed(tokenHash, usedDemoFinancialTokens)) return res.status(409).send(page('Prueba ya aprobada', '<p>La aprobación financiera de prueba ya fue registrada.</p>'));
     const solicitudDemo = buildDemoSolicitud(payload.liquidacion || {});
-    res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action *;");
+    res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self';");
     return res.send(approvalForm(solicitudDemo, { key: 'financiera_final', label: 'Vicerrectoría Financiera y de Desarrollo Institucional' }, req.params.token).replace(`/api/desplazamientos-viaticos/accion/${req.params.token}`, `/api/desplazamientos-viaticos/prueba/financiera/${req.params.token}`));
   } catch (_) {
     return res.status(404).send(page('Vista de prueba no disponible', '<p>El enlace no es válido o ya expiró.</p>'));
@@ -2640,6 +2338,7 @@ const procesarAccion = async (req, res) => {
         id: payload.actor.id,
         key: step.key,
         nombre: clean(payload.actor.nombre, 180),
+        cargo: clean(payload.actor.cargo, 220),
         email: normalizeEmail(payload.actor.email),
         origen: 'gestion_viaticos'
       }
@@ -2649,14 +2348,12 @@ const procesarAccion = async (req, res) => {
         step.parallelEquivalentAccess
           ? `${step.alternateApprovalLabel || step.label} – buzón institucional`
           : `${step.alternateApprovalLabel || 'Programa académico'} – acceso alterno`,
-        step.alternateApprovalEmail
+        step.alternateApprovalEmail,
+        step.alternateAuthorityLabel || step.alternateApprovalLabel || ''
         )
-        : buildActor(step.key, step.label, step.email);
+        : buildActor(step.key, step.label, step.email, step.label);
     const accion = clean(req.body.accion, 30);
     const actionObservation = clean(req.body.observacion, 1200);
-    if (isAlternateAccess && step.alternateObservationRequired !== false && !actionObservation) {
-      return res.status(400).send(page('Observación obligatoria', `<p>Debe explicar la ausencia de ${escapeHtml(step.alternateAbsenceRole || step.label)} y el motivo de utilización del acceso alterno de ${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}.</p>`));
-    }
 
     if (req.body.transporte !== undefined) {
       const rawTrans = req.body.transporte;
@@ -2766,7 +2463,7 @@ const procesarAccion = async (req, res) => {
         linkedReport.trazabilidad = [...(linkedReport.trazabilidad || []), {
           event: 'liquidada_tecnico_contable',
           actor,
-          detail: { totalAnticipo, centroCosto },
+          detail: { totalAnticipo, centroCosto, observaciones },
           at: new Date().toISOString()
         }];
         linkedReport.changed('datos_formulario', true);
@@ -2816,6 +2513,7 @@ const procesarAccion = async (req, res) => {
 
       const prevTotal = Number(solicitud.liquidacion?.totalAnticipo) || 0;
       const prevDetalles = solicitud.liquidacion?.detalles || [];
+      const previousObservations = solicitud.liquidacion?.observaciones || '';
       let wasModified = false;
 
       if (req.body.liquidationRowsVersion) {
@@ -2834,6 +2532,8 @@ const procesarAccion = async (req, res) => {
 
       const trace = appendTrace(solicitud, 'completado_tesoreria', actor, {
         observacion: actionObservation,
+        observacionesLiquidacion: solicitud.liquidacion?.observaciones !== previousObservations ? solicitud.liquidacion?.observaciones : undefined,
+        observacionesLiquidacionAnterior: previousObservations,
         pagoAutorizado: true,
         liquidacionModificada: wasModified,
         totalAnticipoAnterior: wasModified ? prevTotal : undefined,
@@ -2919,6 +2619,28 @@ const descargarPdf = async (req, res) => {
   res.setHeader('Content-Type', attachment.contentType);
   res.setHeader('Content-Disposition', `attachment; filename="${attachment.filename}"`);
   return res.send(attachment.content || await fs.promises.readFile(attachment.path));
+};
+
+const listarAdjuntosAccion = async (req, res) => {
+  const context = await findActiveActionByToken(req.params.token);
+  res.setHeader('Cache-Control', 'no-store');
+  if (!context) return res.status(410).json({ success: false, message: 'El enlace no está activo para consultar documentos.' });
+  const file = resolveApprovalSupport(context.solicitud);
+  return res.json({ success: true, files: file ? [{ id: file.id, name: file.name, type: file.type,
+    url: `/api/desplazamientos-viaticos/accion/${encodeURIComponent(req.params.token)}/adjuntos/soporte` }] : [] });
+};
+
+const verAdjuntoAccion = async (req, res) => {
+  const context = await findActiveActionByToken(req.params.token);
+  res.setHeader('Cache-Control', 'no-store');
+  if (!context) return res.status(410).json({ success: false, message: 'El enlace no está activo para consultar documentos.' });
+  const file = req.params.adjuntoId === 'soporte' ? resolveApprovalSupport(context.solicitud) : null;
+  if (!file) return res.status(404).json({ success: false, message: 'Documento no disponible.' });
+  res.setHeader('Content-Type', file.type);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'; frame-ancestors 'self'");
+  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`);
+  return res.sendFile(file.filepath);
 };
 
 const verSoporteSolicitud = async (req, res) => {
@@ -3013,6 +2735,7 @@ const respondWithAdminAction = async (req, res, solicitud) => {
   const adminToken = createStageToken(solicitud, currentStep, 'admin_dashboard', {
     id: req.user.id,
     nombre: req.user.nombre || req.user.name || req.user.email,
+    cargo: req.user.cargo || '',
     email: req.user.email
   });
   const plan = [...currentPlan];
@@ -3176,6 +2899,8 @@ module.exports = {
   reenviarAprobacion,
   reenviarDocumentosFinales,
   verSoporteSolicitud,
+  listarAdjuntosAccion,
+  verAdjuntoAccion,
   syncAdminViaticosApproval,
   syncAdminViaticosRejection
 };

@@ -66,6 +66,18 @@ const corsOptionsForRequest = (req, callback) => {
   if (route && navigation && (req.method === 'GET' || formPost)) {
     return callback(null, { ...corsOptions, origin: true });
   }
+  // Igual que los reportes de salida, los enlaces cifrados de viáticos pueden
+  // enviarse con Origin: null (correo, redirección o política de referencia).
+  // Solo navegación HTML con token: nunca API privada, preflight, fetch ni JSON.
+  const viaticosRoute = pathname.length <= 4300
+    && /^\/api\/desplazamientos-viaticos\/(?:accion|prueba\/(?:liquidacion|tesoreria|financiera))\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\/?$/.test(pathname);
+  const viaticosFormPost = req.method === 'POST'
+    && String(headers['content-type'] || '').split(';')[0].trim().toLowerCase() === 'application/x-www-form-urlencoded';
+  if (viaticosRoute && navigation && headers.origin === 'null' && (req.method === 'GET' || viaticosFormPost)) {
+    // La navegación no necesita permisos CORS. No reflejar ACAO: null ni
+    // habilitar lectura de respuestas desde otros orígenes.
+    return callback(null, { ...corsOptions, origin: false });
+  }
   return callback(null, corsOptions);
 };
 

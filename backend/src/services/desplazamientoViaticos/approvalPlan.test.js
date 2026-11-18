@@ -8,6 +8,28 @@ const evangelizationLabor = {
   cargo: 'Instructora de Danzas'
 };
 
+test('Investigación usa solo Javier en viáticos incluso con la configuración antigua del servidor', () => {
+  const previous = process.env.VIATICOS_VICERRECTORIA_INVESTIGACION_EMAIL;
+  try {
+    process.env.VIATICOS_VICERRECTORIA_INVESTIGACION_EMAIL = 'viceinvestiga@unicesmag.edu.co';
+    const { getDesplazamientoViaticosRecipients } = require('../../config/desplazamientoViaticosConfig');
+    assert.equal(getDesplazamientoViaticosRecipients().investigacion, 'jajimenez@unicesmag.edu.co');
+    for (const dependencia of ['Vicerrectoría de Investigación y Extensión', 'Oficina de Investigaciones', 'Oficina de Proyección Social y Extensión']) {
+      const { steps } = _internals.buildApprovalPlan({ personal: { nombre: 'COLABORADOR DE PRUEBA' },
+        laboral: { dependencia, vicerrectoria: 'Vicerrectoría de Investigación y Extensión', cargo: 'Profesional universitario' },
+        jefe: { nombre: 'Javier Jiménez', email: 'viceinvestiga@unicesmag.edu.co', cargo: 'Vicerrector de Investigación y Extensión' } });
+      const boss = steps.find(step => step.key === 'jefe');
+      assert.equal(boss.email, 'jajimenez@unicesmag.edu.co');
+      assert.ok(!boss.alternateApprovalEmail);
+      assert.ok(steps.some(step => step.key === 'financiera_previa'));
+      assert.ok(steps.some(step => step.key === 'tesoreria'));
+    }
+  } finally {
+    if (previous === undefined) delete process.env.VIATICOS_VICERRECTORIA_INVESTIGACION_EMAIL;
+    else process.env.VIATICOS_VICERRECTORIA_INVESTIGACION_EMAIL = previous;
+  }
+});
+
 test('Las distintas adscripciones usan las seis etapas y mantienen al Rector como jefe cuando corresponde', () => {
   for (const vicerrectoria of ['Rectoría', 'Vicerrectoría Académica', 'Vicerrectoría Financiera y de Desarrollo Institucional', 'Vicerrectoría de Investigación y Extensión']) {
     const { steps } = _internals.buildApprovalPlan({

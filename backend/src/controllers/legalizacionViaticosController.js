@@ -12,7 +12,8 @@ const {
 } = require('../models');
 const { ROLES } = require('../constants/roles');
 const { getDesplazamientoViaticosRecipients, normalizeEmail } = require('../config/desplazamientoViaticosConfig');
-const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
+const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
+const { sendInstitutionalEmail } = require('../services/reporteSalidaEmail');
 const { buildLegalizacionPdfBuffer } = require('../services/desplazamientoViaticos/legalizacionPdfService');
 const { canAccessSolicitud, canActOnSolicitud, canValidateLegalizacion, canReviewAccounting, filterSolicitudesForUser } = require('../services/desplazamientoViaticos/accessScope');
 
