@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { createSigningToken, signingTokenParticipantId, verifySigningToken } = require('../services/meetingMinuteSigningToken');
 const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
@@ -420,7 +421,10 @@ const sendParticipantInvitations = async ({ minute, baseUrl }) => {
   const responsible = await resolveMinutePrimaryResponsible(minute);
 
   for (const participant of pendingParticipants) {
-    const invitationToken = crypto.randomBytes(32).toString('base64url');
+    const signingKey = participant.signing_token_hash || hash(crypto.randomBytes(32));
+    const invitationToken = createSigningToken({
+      id: participant.id, minute_id: participant.minute_id, email: participant.email, signing_token_hash: signingKey
+    }, expiresAt);
     const signingUrl = `${baseUrl}/firmar-acta-reunion/${invitationToken}`;
     const email = buildSigningInvitationEmail({ participant, minute, signingUrl, responsible });
     const recipientEmail = clean(participant.email, 254).toLowerCase();
@@ -434,7 +438,7 @@ const sendParticipantInvitations = async ({ minute, baseUrl }) => {
       signing_token_expires_at: participant.signing_token_expires_at
     };
     try {
-      await participant.update({ signing_token_hash: hash(invitationToken), signing_token_expires_at: expiresAt });
+      await participant.update({ signing_token_hash: signingKey, signing_token_expires_at: expiresAt });
       const result = await sendInstitutionalEmail({
         to: participant.email,
         ...email,
@@ -470,6 +474,20 @@ const resolveSigningAccess = async (token) => {
   const now = new Date();
 
   for (const t of tokensToTry) {
+    const personalId = signingTokenParticipantId(t);
+    if (personalId) {
+      const participant = await DigitalMeetingParticipant.findByPk(personalId);
+      if (!verifySigningToken(participant, t)) continue;
+      const personalMinute = await DigitalMeetingMinute.findOne({
+        where: { id: participant.minute_id, deleted_at: null, status: { [Op.in]: ['signing', 'signed', 'distributed'] } },
+        include: [
+          { model: DigitalMeetingParticipant, as: 'participants' },
+          { model: Documento, as: 'documento', required: false }
+        ]
+      });
+      if (personalMinute) return { minute: personalMinute, invitedParticipant: participant, invitationVerified: true };
+      continue;
+    }
     const tokenHash = hash(t);
     const minute = await DigitalMeetingMinute.findOne({
       where: {
@@ -2366,12 +2384,11 @@ const googleSigningAccess = wrap(async (req, res) => {
   }
   if (participant.status === 'signed') throw Object.assign(new Error('Usted ya firmó este documento anteriormente.'), { statusCode: 409 });
 
-  const personalToken = crypto.randomBytes(32).toString('base64url');
-  await participant.update({
-    signing_token_hash: hash(personalToken),
-    signing_token_expires_at: new Date(Date.now() + 30 * 60 * 1000),
-    email_verified_at: new Date()
-  });
+  if (!participant.signing_token_hash) {
+    await participant.update({ signing_token_hash: hash(crypto.randomBytes(32)) });
+  }
+  const personalToken = createSigningToken(participant, new Date(Date.now() + 30 * 60 * 1000));
+  await participant.update({ email_verified_at: new Date() });
   const signingUrl = `${publicFrontend(req)}/firmar-acta-reunion/${personalToken}`;
   res.json({
     success: true,
@@ -3079,6 +3096,7 @@ module.exports = {
     participantRequiresSignature,
     placeResponsibleFirst,
     reconcileMinuteStatus,
+    resolveSigningAccess,
     resolveCouncilMinuteYear,
     sanitizeRichText
   }
