@@ -2543,15 +2543,15 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                           startIcon={<AddIcon />}
                           onClick={() => setOpenCronogramaModal(true)}
                           sx={{
-                            bgcolor: '#22c55e',
-                            color: '#064e3b',
+                            bgcolor: 'success.main',
+                            color: 'success.contrastText',
                             fontWeight: 900,
                             fontSize: '0.95rem',
                             py: 1.4,
                             borderRadius: 2.5,
                             textTransform: 'none',
                             boxShadow: '0 4px 14px rgba(34, 197, 94, 0.4)',
-                            '&:hover': { bgcolor: '#16a34a', color: '#fff' }
+                            '&:hover': { bgcolor: 'success.dark', color: 'success.contrastText' }
                           }}
                         >
                           CRONOGRAMA DE PRÁCTICA INTEGRAL DE MOVILIDAD

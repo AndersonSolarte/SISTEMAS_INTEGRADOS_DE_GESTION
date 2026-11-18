@@ -34,6 +34,8 @@ export const tokens = {
     400: '#34d399',
     500: '#10b981',
     600: '#059669',
+    700: '#047857',
+    800: '#065f46',
   },
   amber: {
     400: '#fbbf24',
@@ -120,8 +122,9 @@ const theme = createTheme({
     },
     success: {
       light: tokens.emerald[400],
-      main:  tokens.emerald[500],
-      dark:  tokens.emerald[600],
+      main:  tokens.emerald[700],
+      dark:  tokens.emerald[800],
+      contrastText: '#fff',
     },
     warning: {
       light: tokens.amber[400],

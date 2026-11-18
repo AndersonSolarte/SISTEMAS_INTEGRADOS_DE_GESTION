@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Alert,
@@ -40,7 +40,8 @@ import {
   Security as SecurityIcon,
   Favorite as FavoriteIcon,
   VisibilityOutlined as VisibilityOutlinedIcon,
-  FileDownloadOutlined as FileDownloadOutlinedIcon
+  FileDownloadOutlined as FileDownloadOutlinedIcon,
+  PostAdd as PostAddIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { FaFileWord, FaFileExcel, FaFilePowerpoint, FaFilePdf } from 'react-icons/fa';
@@ -48,6 +49,13 @@ import { BsFileEarmarkText } from 'react-icons/bs';
 import { useAuth } from '../context/AuthContext';
 import favoritoService from '../services/favoritoService';
 import { ROLES, ROLE_LABELS } from '../constants/roles';
+import { isReporteSalidaDocument } from '../config/reporteSalida';
+import { isMeetingMinuteDocument, resolveMeetingMinuteFormatCode } from '../config/meetingMinute';
+import reporteSalidaService from '../services/reporteSalidaService';
+import meetingMinuteService from '../services/meetingMinuteService';
+
+const ReporteSalidaFormDialog = lazy(() => import('../components/reporteSalida/ReporteSalidaFormDialog'));
+const MeetingMinuteFormDialog = lazy(() => import('../components/meetingMinute/MeetingMinuteFormDialog'));
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -68,6 +76,23 @@ function Dashboard() {
   const [previewDownloadName, setPreviewDownloadName] = useState('');
   const [previewKind, setPreviewKind] = useState('default');
   const [previewDoc, setPreviewDoc] = useState(null);
+  const [reporteSalidaDoc, setReporteSalidaDoc] = useState(null);
+  const [meetingMinuteDoc, setMeetingMinuteDoc] = useState(null);
+  const [digitalFormats, setDigitalFormats] = useState({ reporteSalida: false, meetings: {} });
+
+  useEffect(() => {
+    let active = true;
+    setDigitalFormats({ reporteSalida: false, meetings: {} });
+    Promise.allSettled([reporteSalidaService.getConfig(), meetingMinuteService.getConfig()]).then(([salida, meetings]) => {
+      if (!active) return;
+      const meetingConfig = meetings.status === 'fulfilled' ? meetings.value?.data : null;
+      setDigitalFormats({
+        reporteSalida: salida.status === 'fulfilled' && Boolean(salida.value?.data?.enabled),
+        meetings: meetingConfig?.formats_enabled || { 'COM-ID-FR-002': Boolean(meetingConfig?.enabled) }
+      });
+    });
+    return () => { active = false; };
+  }, [user?.id]);
 
   const fetchFavorites = () => {
     setLoadingFavorites(true);
@@ -438,6 +463,14 @@ function Dashboard() {
   };
 
 
+  const digitalFormatDialogs = (reporteSalidaDoc || meetingMinuteDoc) && (
+    <Suspense fallback={<Dialog open><DialogContent><Stack direction="row" spacing={2} alignItems="center"><CircularProgress size={24} /><Typography>Cargando formulario digitalizado...</Typography></Stack></DialogContent></Dialog>}>
+      {reporteSalidaDoc && <ReporteSalidaFormDialog open documento={reporteSalidaDoc} user={user} onClose={() => setReporteSalidaDoc(null)}
+        onSubmitted={(response) => enqueueSnackbar(response?.message || 'Solicitud radicada correctamente', { variant: 'success' })} />}
+      {meetingMinuteDoc && <MeetingMinuteFormDialog open document={meetingMinuteDoc} user={user} onClose={() => setMeetingMinuteDoc(null)} />}
+    </Suspense>
+  );
+
   if (isConsultaLikeRole) {
     return (
       <Container maxWidth="xl" sx={{ px: { xs: 0, sm: 1, md: 2, lg: 3 } }}>
@@ -593,13 +626,12 @@ function Dashboard() {
                         </Alert>
                       </Box>
                     ) : (
+                      <Box sx={{ width: '100%', minWidth: 0, border: '1px solid #e2e8f0', borderRadius: 2, overflow: 'hidden' }}>
                       <TableContainer
                         sx={{
                           width: '100%',
                           maxWidth: '100%',
                           overflowX: 'auto',
-                          border: '1px solid #e2e8f0',
-                          borderRadius: 2,
                           scrollbarWidth: 'auto',
                           '&::-webkit-scrollbar': { width: 10, height: 10 },
                           '&::-webkit-scrollbar-track': { bgcolor: '#f8fafc' },
@@ -608,27 +640,29 @@ function Dashboard() {
                       >
                         <Table
                           size="small"
+                          aria-label="Documentos favoritos"
                           sx={{
                             width: '100%',
-                            minWidth: 950,
-                            tableLayout: 'auto'
+                            minWidth: { xs: 820, sm: 900, lg: 1020 },
+                            tableLayout: 'fixed',
+                            '& .MuiTableCell-root': { borderRight: '1px solid #eef2f7' },
+                            '& .MuiTableCell-root:last-of-type': { borderRight: 0 }
                           }}
                         >
+                          <colgroup>
+                            {['10%', '10%', '24%', '16%', '10%', '5%', '7%', '18%'].map((width, index) => <col key={index} style={{ width }} />)}
+                          </colgroup>
                           <TableHead>
-                            <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                              <TableCell sx={{ width: 130, minWidth: 120, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Código</TableCell>
-                              <TableCell sx={{ width: 130, minWidth: 120, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Tipo</TableCell>
-                              <TableCell sx={{ minWidth: 220, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Nombre Documento</TableCell>
-                              <TableCell sx={{ width: 200, minWidth: 170, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Autor</TableCell>
-                              <TableCell sx={{ width: 135, minWidth: 125, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Fecha Creación</TableCell>
-                              <TableCell sx={{ width: 110, minWidth: 100, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Estado</TableCell>
-                              <TableCell align="center" sx={{ width: 170, minWidth: 160, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Acciones</TableCell>
+                            <TableRow sx={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%)' }}>
+                              {['Código', 'Tipo', 'Nombre Documento', 'Autor', 'Fecha Creación', 'Versión', 'Estado', 'Acciones'].map((label, index) => (
+                                <TableCell key={label} align={index >= 5 ? 'center' : 'left'} sx={{ fontWeight: 800, color: '#fff', fontSize: { xs: 9.5, sm: 10, md: 10.5 }, borderBottom: 'none', borderRight: '1px solid rgba(255,255,255,0.18)', textTransform: 'uppercase', letterSpacing: 0, py: { xs: 0.65, md: 0.85 }, px: { xs: 0.35, sm: 0.5, md: 0.65 }, whiteSpace: 'normal', lineHeight: 1.12 }}>{label}</TableCell>
+                              ))}
                             </TableRow>
                           </TableHead>
                           <TableBody>
                             {favoritePageData.map((doc) => (
-                              <TableRow key={doc.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, transition: 'all 0.2s', cursor: 'pointer' }}>
-                                <TableCell sx={{ fontWeight: 700, color: '#2563eb', fontSize: 14, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{doc.codigo}</TableCell>
+                              <TableRow key={doc.id} hover sx={{ height: { xs: 46, sm: 50, md: 54 }, '&:hover': { bgcolor: '#f8fafc' }, transition: 'all 0.2s', '& .MuiTableCell-root': { borderBottom: '1px solid #e6edf5', verticalAlign: 'middle', px: { xs: 0.35, sm: 0.5, md: 0.65 }, py: 0.45 } }}>
+                                <TableCell sx={{ fontWeight: 700, color: '#2563eb', fontSize: { xs: 10.25, sm: 11, md: 11.5 }, fontFamily: 'monospace', overflowWrap: 'anywhere', lineHeight: 1.15 }}>{doc.codigo}</TableCell>
                                 <TableCell>
                                   <Chip
                                     icon={getFormatoIcon(doc)}
@@ -637,28 +671,53 @@ function Dashboard() {
                                     sx={{
                                       maxWidth: '100%',
                                       fontWeight: 700,
-                                      fontSize: 12,
-                                      borderRadius: 2,
-                                      px: 1,
+                                      fontSize: { xs: 9, sm: 9.75, md: 10.5 },
+                                      height: { xs: 19, sm: 20, md: 22 },
+                                      borderRadius: 1,
+                                      px: 0.3,
                                       bgcolor: getTipoColor(doc?.tipoDocumentacion?.nombre).bg,
                                       color: getTipoColor(doc?.tipoDocumentacion?.nombre).color,
-                                      '& .MuiChip-icon': { color: `${getFormatoColor(doc)} !important` },
+                                      '& .MuiChip-icon': { color: `${getFormatoColor(doc)} !important`, fontSize: { xs: 15, sm: 16, md: 18 }, ml: 0.2 },
                                       '& .MuiChip-label': {
-                                        display: 'block',
+                                        px: 0.6,
+                                        whiteSpace: 'nowrap',
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis'
                                       }
                                     }}
                                   />
                                 </TableCell>
-                                <TableCell sx={{ color: '#1e293b', fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.titulo}</TableCell>
-                                <TableCell sx={{ color: '#475569', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.autor || '-'}</TableCell>
-                                <TableCell sx={{ color: '#475569', fontSize: 13, whiteSpace: 'nowrap' }}>{formatDate(doc.fecha_creacion)}</TableCell>
-                                <TableCell>
-                                  <Chip label={doc.estado || 'vigente'} color={getEstadoColor(doc.estado)} size="small" sx={{ maxWidth: '100%', fontWeight: 700, textTransform: 'uppercase', fontSize: 11, borderRadius: 1.5 }} />
+                                <TableCell sx={{ color: '#111827', fontWeight: 700, fontSize: { xs: 10.75, sm: 11.25, md: 12 }, lineHeight: 1.2, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                  <Box component="span" title={doc.titulo} sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{doc.titulo}</Box>
+                                </TableCell>
+                                <TableCell sx={{ color: '#475569', fontSize: { xs: 10.5, sm: 11.25, md: 12 }, lineHeight: 1.2, overflowWrap: 'anywhere' }}>
+                                  <Box component="span" title={doc.autor || ''} sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{doc.autor || '-'}</Box>
+                                </TableCell>
+                                <TableCell sx={{ color: '#475569', fontSize: { xs: 10.5, sm: 11.25, md: 12 }, whiteSpace: 'nowrap' }}>{formatDate(doc.fecha_creacion)}</TableCell>
+                                <TableCell align="center">
+                                  <Chip label={`v${doc.version || '1.0'}`} size="small" sx={{ height: { xs: 18, md: 20 }, bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontSize: { xs: 9, md: 10 }, fontFamily: 'monospace', borderRadius: 1 }} />
                                 </TableCell>
                                 <TableCell align="center">
-                                  <Stack direction="row" spacing={0.75} justifyContent="center" sx={{ width: '100%', minWidth: 0 }}>
+                                  <Chip label={doc.estado || 'vigente'} color={getEstadoColor(doc.estado)} size="small" sx={{ maxWidth: '100%', height: { xs: 18, md: 21 }, fontWeight: 700, textTransform: 'uppercase', fontSize: { xs: 8.5, sm: 9.25, md: 10 }, borderRadius: 1, '& .MuiChip-label': { px: { xs: 0.45, md: 0.8 } } }} />
+                                </TableCell>
+                                <TableCell align="center">
+                                  <Stack direction="row" spacing={{ xs: 0.25, sm: 0.35, md: 0.45 }} justifyContent="center" flexWrap="nowrap" sx={{ width: '100%', minWidth: 0, '& .MuiIconButton-root': { width: { xs: 24, sm: 26, md: 28 }, height: { xs: 24, sm: 26, md: 28 }, flexShrink: 0 }, '& .MuiSvgIcon-root': { fontSize: { xs: 15, md: 17 } } }}>
+                                    {digitalFormats.reporteSalida && isReporteSalidaDocument(doc) && (
+                                      <Tooltip title="Diligenciar reporte de salida" arrow>
+                                        <IconButton size="small" aria-label="Diligenciar reporte de salida" onClick={() => setReporteSalidaDoc(doc)}
+                                          sx={{ color: '#0f766e', bgcolor: '#ccfbf1', '&:hover': { bgcolor: '#99f6e4' } }}>
+                                          <PostAddIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
+                                    {isMeetingMinuteDocument(doc) && digitalFormats.meetings[resolveMeetingMinuteFormatCode(doc)] && (
+                                      <Tooltip title={resolveMeetingMinuteFormatCode(doc) === 'COM-GD-FR-012' ? 'Redactar acta de Consejo o Comité' : 'Redactar acta de reunión'} arrow>
+                                        <IconButton size="small" aria-label={resolveMeetingMinuteFormatCode(doc) === 'COM-GD-FR-012' ? 'Redactar acta de Consejo o Comité' : 'Redactar acta de reunión'}
+                                          onClick={() => setMeetingMinuteDoc(doc)} sx={{ color: '#2458a6', bgcolor: '#dbeafe', '&:hover': { bgcolor: '#bfdbfe' } }}>
+                                          <PostAddIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
                                     <Tooltip title="Ver documento" arrow>
                                       <span>
                                         <IconButton
@@ -711,6 +770,7 @@ function Dashboard() {
                             ))}
                           </TableBody>
                         </Table>
+                      </TableContainer>
                         <TablePagination
                           component="div"
                           count={filteredFavorites.length}
@@ -726,15 +786,17 @@ function Dashboard() {
                           sx={{
                             borderTop: '1px solid #e2e8f0',
                             bgcolor: '#f8fafc',
-                            minWidth: { xs: 900, lg: 1080 },
+                            width: '100%',
+                            '& .MuiTablePagination-root': { fontSize: 12 },
+                            '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': { fontSize: { xs: 11, md: 12 } },
                             '& .MuiTablePagination-toolbar': {
-                              px: { xs: 1.5, sm: 2 },
+                              px: { xs: 1, sm: 1.5 },
                               flexWrap: 'wrap',
                               rowGap: 1
                             }
                           }}
                         />
-                      </TableContainer>
+                      </Box>
                     )}
                   </Paper>
 
@@ -818,6 +880,7 @@ function Dashboard() {
             <Button onClick={closeDocumentPreview}>Cerrar</Button>
           </DialogActions>
         </Dialog>
+        {digitalFormatDialogs}
       </Container>
     );
   }
@@ -1076,6 +1139,7 @@ function Dashboard() {
           </Box>
         </Box>
       </Fade>
+      {digitalFormatDialogs}
     </Container>
   );
 }
