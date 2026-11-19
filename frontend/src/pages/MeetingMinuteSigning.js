@@ -201,6 +201,9 @@ export default function MeetingMinuteSigning() {
   const [signed, setSigned] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [message, setMessage] = useState(null);
+  const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  const [recoveryChoices, setRecoveryChoices] = useState([]);
+  const recoveryCredential = useRef('');
   const selectedParticipant = minute?.participants?.find((participant) => String(participant.id) === String(participantId));
   const invitedParticipant = minute?.participant;
   const requiresPrivacyConsent = Boolean(selectedParticipant?.external || (invitedParticipant?.external && String(invitedParticipant?.id) === String(participantId)));
@@ -222,6 +225,7 @@ export default function MeetingMinuteSigning() {
       }
       setExpandedPreview(!isMobile);
     }).catch((error) => {
+      setRecoveryAvailable(error.response?.data?.data?.recovery_available === true);
       setMessage({ severity: 'error', text: error.response?.data?.message || 'El enlace no es válido o venció.' });
     }).finally(() => setLoading(false));
   }, [token, isMobile]);
@@ -288,14 +292,21 @@ export default function MeetingMinuteSigning() {
     };
   }, [participantId, loading, identityVerified, signed]);
 
-  const useGoogleAccount = async (credential) => {
+  const handleGoogleAccount = async (credential, minuteId) => {
     setWorking(true);
     setMessage(null);
     try {
       const response = await meetingMinuteService.googleSigningAccess(token, {
         credential,
+        ...(minuteId ? { minute_id: minuteId } : {}),
         public_base_url: window.location.origin
       });
+      if (response.data?.recovery_choices?.length) {
+        recoveryCredential.current = credential;
+        setRecoveryChoices(response.data.recovery_choices);
+        setWorking(false);
+        return;
+      }
       const signingUrl = response.data?.signing_url;
       if (!signingUrl) throw new Error('Google validó la cuenta, pero no se generó el acceso personal.');
       window.location.replace(signingUrl);
@@ -381,6 +392,30 @@ export default function MeetingMinuteSigning() {
                   {message?.text || 'El enlace o código QR de firma no es válido, ya fue utilizado o ha vencido.'}
                 </Typography>
               </Box>
+
+              {recoveryAvailable && (
+                <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, width: '100%', maxWidth: 580 }}>
+                  <Typography fontWeight={900} mb={1}>Recuperar acceso con el enlace anterior</Typography>
+                  <Typography variant="body2" color="text.secondary" mb={2}>
+                    Continúe con Google usando el mismo correo registrado en el acta. Podrá abrir sus actas pendientes sin solicitar otro enlace.
+                  </Typography>
+                  {recoveryChoices.length ? (
+                    <Stack gap={1}>
+                      <Typography variant="body2">Seleccione el acta que necesita firmar:</Typography>
+                      {recoveryChoices.map((choice) => (
+                        <Button key={choice.id} variant="outlined" disabled={working}
+                          onClick={() => handleGoogleAccount(recoveryCredential.current, choice.id)}>
+                          {[choice.code, choice.title, displayDate(choice.fecha)].filter(Boolean).join(' · ')}
+                        </Button>
+                      ))}
+                    </Stack>
+                  ) : (
+                    <GoogleIdentityVerification active={!working} onVerify={handleGoogleAccount}
+                      onError={(text) => setMessage({ severity: 'error', text })} />
+                  )}
+                  {working && <CircularProgress size={22} sx={{ mt: 1 }} />}
+                </Paper>
+              )}
 
               <Paper
                 variant="outlined"
@@ -608,7 +643,7 @@ export default function MeetingMinuteSigning() {
                 <GoogleIdentityVerification
                   active={!working}
                   autoSelect
-                  onVerify={useGoogleAccount}
+                  onVerify={handleGoogleAccount}
                   onError={(text) => setMessage({ severity: 'error', text })}
                 />
                 {working && <CircularProgress size={22} sx={{ mt: 1 }} />}

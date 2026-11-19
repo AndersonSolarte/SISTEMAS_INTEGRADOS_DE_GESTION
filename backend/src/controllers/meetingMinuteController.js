@@ -2496,7 +2496,7 @@ const resendInvitations = wrap(async (req, res) => {
 
 const publicMinute = wrap(async (req, res) => {
   const access = await resolveSigningAccess(req.params.token);
-  if (!access) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
+  if (!access) throw Object.assign(new Error('El enlace de firma no es válido o venció. Puede recuperar sus actas pendientes verificando su correo.'), { statusCode: 404, data: { recovery_available: true } });
   const { minute, invitedParticipant, invitationVerified } = access;
   await reconcileMinuteStatus(minute);
   const alreadySigned = Boolean(invitationVerified && invitedParticipant?.status === 'signed');
@@ -2578,8 +2578,8 @@ const publicMinute = wrap(async (req, res) => {
 
 const googleSigningAccess = wrap(async (req, res) => {
   const access = await resolveSigningAccess(req.params.token);
-  const minute = access?.minute;
-  if (!minute || access.invitationVerified) throw Object.assign(new Error('El acceso de firma no es válido.'), { statusCode: 404 });
+  let minute = access?.minute;
+  if (access?.invitationVerified) throw Object.assign(new Error('El acceso de firma no es válido.'), { statusCode: 404 });
 
   const googleClientId = String(process.env.GOOGLE_CLIENT_ID || '').trim();
   const credential = clean(req.body.credential, 8192);
@@ -2597,6 +2597,36 @@ const googleSigningAccess = wrap(async (req, res) => {
   const googleEmail = clean(googlePayload.email, 254).toLowerCase();
   if (!googleEmail || googlePayload.email_verified !== true) {
     throw Object.assign(new Error('Google no confirmó el correo de la cuenta.'), { statusCode: 401 });
+  }
+
+  // Un enlace antiguo puede haber perdido su hash por un reenvio previo.
+  // Google acredita el correo; el token desconocido no concede acceso alguno.
+  if (!minute) {
+    const candidates = await DigitalMeetingMinute.findAll({
+      where: { status: 'signing', deleted_at: null },
+      include: [{
+        model: DigitalMeetingParticipant, as: 'participants', required: true,
+        where: {
+          [Op.and]: [sequelize.where(sequelize.fn('lower', sequelize.fn('trim', sequelize.col('participants.email'))), googleEmail)],
+          status: { [Op.ne]: 'signed' }
+        }
+      }],
+      order: [['published_at', 'DESC']]
+    });
+    const pending = candidates.filter((candidate) => candidate.status === 'signing' && !candidate.deleted_at && candidate.participants.some((person) =>
+      clean(person.email, 254).toLowerCase() === googleEmail
+      && person.status !== 'signed' && participantRequiresSignature(person, candidate)
+    ));
+    const requestedId = clean(req.body.minute_id, 80);
+    if (requestedId) minute = pending.find((candidate) => candidate.id === requestedId);
+    else if (pending.length === 1) [minute] = pending;
+    else if (pending.length > 1) {
+      return res.json({ success: true, data: { recovery_choices: pending.map((candidate) => ({
+        id: candidate.id, code: candidate.code, fecha: candidate.content?.fecha || null,
+        title: clean(candidate.content?.titulo || candidate.content?.nombre_consejo, 250)
+      })) } });
+    }
+    if (!minute) throw Object.assign(new Error('No hay actas pendientes de firma disponibles para este correo. Use el mismo correo registrado por el responsable.'), { statusCode: 403 });
   }
 
   const participant = minute.participants.find((item) => clean(item.email, 254).toLowerCase() === googleEmail);

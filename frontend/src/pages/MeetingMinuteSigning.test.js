@@ -5,11 +5,13 @@ import meetingMinuteService from '../services/meetingMinuteService';
 
 jest.mock('react-router-dom', () => ({ useParams: () => ({ token: 'personal-token' }) }));
 jest.mock('../services/meetingMinuteService', () => ({
-  publicMinute: jest.fn(), sign: jest.fn()
+  publicMinute: jest.fn(), sign: jest.fn(), googleSigningAccess: jest.fn()
 }));
 jest.mock('../components/meetingMinute/RichTextEditor', () => ({ sanitizeRichHtml: () => '' }));
 jest.mock('../components/meetingMinute/CouncilMinutePreview', () => () => null);
-jest.mock('../components/security/GoogleIdentityVerification', () => () => null);
+jest.mock('../components/security/GoogleIdentityVerification', () => ({ onVerify }) => (
+  <button onClick={() => onVerify('google-credential')}>Validar correo de prueba</button>
+));
 
 afterEach(() => jest.restoreAllMocks());
 
@@ -56,3 +58,26 @@ test.each(['estudiante', 'egresado', 'externo', 'funcionario'])(
     meetingMinuteService.sign.mockClear();
   }
 );
+
+test('un enlace antiguo permite validar el correo y elegir un acta pendiente desde la misma pagina', async () => {
+  meetingMinuteService.publicMinute.mockRejectedValue({ response: { status: 404, data: {
+    message: 'El enlace no es valido', data: { recovery_available: true }
+  } } });
+  meetingMinuteService.googleSigningAccess.mockResolvedValueOnce({ data: { recovery_choices: [
+    { id: 'm1', code: 'ACTA-001', title: 'Primera acta' },
+    { id: 'm2', code: 'ACTA-002', title: 'Segunda acta' }
+  ] } }).mockRejectedValueOnce({ response: { data: { message: 'Error temporal de prueba' } } });
+  render(<MeetingMinuteSigning />);
+  await screen.findByText('Recuperar acceso con el enlace anterior');
+  expect(screen.queryByText('Primera acta')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Validar correo de prueba' }));
+  const choice = await screen.findByRole('button', { name: /ACTA-002/ });
+  expect(meetingMinuteService.googleSigningAccess).toHaveBeenCalledWith('personal-token', {
+    credential: 'google-credential', public_base_url: window.location.origin
+  });
+  fireEvent.click(choice);
+  await waitFor(() => expect(meetingMinuteService.googleSigningAccess).toHaveBeenCalledWith('personal-token', {
+    credential: 'google-credential', minute_id: 'm2', public_base_url: window.location.origin
+  }));
+  await screen.findByText('Error temporal de prueba');
+});
