@@ -14,6 +14,7 @@ import HistoryIcon from '@mui/icons-material/History';
 import DownloadIcon from '@mui/icons-material/Download';
 import CloseIcon from '@mui/icons-material/Close';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, LabelList } from 'recharts';
+import { filterRowsByCardFilter, isPendingRequest, matchesSegmentoFilter } from './reporteSalidaStatsUtils';
 
 const formatElapsed = (minutes) => {
   const total = Number(minutes);
@@ -461,14 +462,14 @@ const exportToExcel = (title, summaryData, isTime, rawData, nameHeader = 'Colabo
   XLSX.writeFile(workbook, `${title.replace(/[^a-z0-9]/gi, '_')}.xlsx`);
 };
 
-const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = '#eff6ff', rawData = null, nameHeader = 'Colaborador(a)') => (
+const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = '#eff6ff', rawData = null, nameHeader = 'Colaborador(a)', allowExport = true) => (
   <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden', height: '100%' }}>
     <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <Stack direction="row" alignItems="center" spacing={1.5}>
         {icon}
         <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 16 }}>{title}</Typography>
       </Stack>
-      {rawData && (
+      {allowExport && rawData && (
         <IconButton size="small" onClick={() => exportToExcel(title, data, isTime, rawData, nameHeader)} sx={{ color: color, bgcolor: bg, '&:hover': { bgcolor: color, color: '#fff' } }}>
           <DownloadIcon fontSize="small" />
         </IconButton>
@@ -563,7 +564,13 @@ const renderRequestsTable = (requests) => (
   </Paper>
 );
 
-export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'todas', onVisibleRowsChange = null }) {
+export default function ReporteSalidaEstadisticas({
+  rows = [],
+  cardFilter = 'todas',
+  onVisibleRowsChange = null,
+  allowExport = true,
+  selectedYear = ''
+}) {
   const [estadoFiltro, setEstadoFiltro] = useState('');
   const [segmentoFiltro, setSegmentoFiltro] = useState('');
   const [chartTimeFilter, setChartTimeFilter] = useState('all');
@@ -572,16 +579,14 @@ export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'tod
   const filteredRowsBase = useMemo(() => {
     let result = rows;
     if (estadoFiltro) {
-      result = result.filter(r => r.estado === estadoFiltro);
+      if (estadoFiltro === 'pendientes') {
+        result = result.filter(isPendingRequest);
+      } else {
+        result = result.filter(r => r.estado === estadoFiltro);
+      }
     }
     if (segmentoFiltro) {
-      result = result.filter(r => {
-        const tipo = r.datos_formulario?.salida?.tipo;
-        if (segmentoFiltro === 'salud') return ['cita_eps', 'cita_particular', 'cita_medica_laboral', 'terapias', 'urgencia_medica'].includes(tipo);
-        if (segmentoFiltro === 'personales') return ['diligencia_personal', 'calamidad'].includes(tipo);
-        if (segmentoFiltro === 'institucionales') return ['reunion_institucional', 'evento_institucional', 'ponencia'].includes(tipo);
-        return tipo === segmentoFiltro;
-      });
+      result = result.filter((r) => matchesSegmentoFilter(r, segmentoFiltro));
     }
     return result;
   }, [rows, estadoFiltro, segmentoFiltro]);
@@ -596,19 +601,10 @@ export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'tod
   }, [rangeRowsBase, selectedDate]);
 
   // Apply cardFilter only for charts/visualizations inside the stats component
-  const filteredRows = useMemo(() => {
-    let result = filteredRowsBase;
-    if (cardFilter === 'pendientes') {
-      result = result.filter((r) => ['pendiente_aprobacion_jefe', 'pendiente_aprobacion_gestion_humana'].includes(r.estado));
-    } else if (cardFilter === 'personales') {
-      result = result.filter((r) => r.reposicion_aplica && r.reposicion_estado !== 'cumplida');
-    } else if (cardFilter === 'reposicionesValidadas') {
-      result = result.filter((r) => r.reposicion_aplica && r.reposicion_estado === 'cumplida');
-    } else if (cardFilter === 'finalizadas') {
-      result = result.filter((r) => r.estado === 'finalizada');
-    }
-    return result;
-  }, [filteredRowsBase, cardFilter]);
+  const filteredRows = useMemo(
+    () => filterRowsByCardFilter(filteredRowsBase, cardFilter),
+    [filteredRowsBase, cardFilter]
+  );
 
   const rangeRows = useMemo(() => (
     filteredRows.filter((row) => isDateInsideRange(getRadicacionDateKey(row), chartTimeFilter))
@@ -716,8 +712,19 @@ export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'tod
       }
     });
     const dailyDates = Object.keys(dailyMap).sort();
-    const firstDate = dailyDates[0] || todayKey;
-    const dailyChart = buildContinuousDailyChart(dailyMap, firstDate, todayKey);
+    const currentYear = Number(String(todayKey || '').slice(0, 4));
+    const numericSelectedYear = Number(selectedYear);
+    const chartEndKey = (
+      selectedYear
+      && Number.isFinite(numericSelectedYear)
+      && Number.isFinite(currentYear)
+      && numericSelectedYear < currentYear
+      && dailyDates.length > 0
+    )
+      ? dailyDates[dailyDates.length - 1]
+      : todayKey;
+    const firstDate = dailyDates[0] || chartEndKey;
+    const dailyChart = buildContinuousDailyChart(dailyMap, firstDate, chartEndKey);
 
     return {
       topCount: sortMap(countsMap),
@@ -725,7 +732,7 @@ export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'tod
       dynamicTables: [...dynamicTables, ...dimensionTables].sort((a, b) => b.total - a.total),
       dailyChart
     };
-  }, [filteredRows, analysisRows]);
+  }, [filteredRows, analysisRows, selectedYear]);
 
   const filteredDailyChart = useMemo(() => {
     if (chartTimeFilter === 'all' || indicators.dailyChart.length === 0) return indicators.dailyChart;
@@ -774,6 +781,7 @@ export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'tod
 
         <TextField select size="small" label="Filtrar por Estado de Solicitud" value={estadoFiltro} onChange={(e) => setEstadoFiltro(e.target.value)} sx={{ minWidth: 300, bgcolor: '#fff' }}>
           <MenuItem value="">Mostrar Todos los Estados</MenuItem>
+          <MenuItem value="pendientes">Solo Pendientes</MenuItem>
           <MenuItem value="finalizada">Solo Aprobadas / Finalizadas</MenuItem>
           <MenuItem value="no_aprobada">Solo Rechazadas</MenuItem>
         </TextField>
@@ -907,11 +915,11 @@ export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'tod
       </Box>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 3 }}>
-        {indicators.topTime.length > 0 && renderTable('Tiempo Total Fuera (Horas Acumuladas)', <AccessTimeIcon sx={{ color: '#b45309' }} />, indicators.topTime, true, '#b45309', '#fef3c7', analysisRows)}
-        {indicators.topCount.length > 0 && renderTable('Total de Permisos Solicitados (Cantidad)', <BarChartIcon sx={{ color: '#1d4ed8' }} />, indicators.topCount, false, '#1d4ed8', '#eff6ff', analysisRows)}
+        {indicators.topTime.length > 0 && renderTable('Tiempo Total Fuera (Horas Acumuladas)', <AccessTimeIcon sx={{ color: '#b45309' }} />, indicators.topTime, true, '#b45309', '#fef3c7', allowExport ? analysisRows : null, 'Colaborador(a)', allowExport)}
+        {indicators.topCount.length > 0 && renderTable('Total de Permisos Solicitados (Cantidad)', <BarChartIcon sx={{ color: '#1d4ed8' }} />, indicators.topCount, false, '#1d4ed8', '#eff6ff', allowExport ? analysisRows : null, 'Colaborador(a)', allowExport)}
         {indicators.dynamicTables.filter(tbl => tbl.data.length > 0).map(tbl => (
           <React.Fragment key={tbl.id}>
-            {renderTable(tbl.label, tbl.icon, tbl.data, false, tbl.color, tbl.bg, tbl.rawRows, tbl.nameHeader)}
+            {renderTable(tbl.label, tbl.icon, tbl.data, false, tbl.color, tbl.bg, allowExport ? tbl.rawRows : null, tbl.nameHeader, allowExport)}
           </React.Fragment>
         ))}
       </Box>

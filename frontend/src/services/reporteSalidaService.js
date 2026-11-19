@@ -61,6 +61,14 @@ const reporteSalidaService = {
     return response.data;
   },
 
+  getEstadisticasFormatos: async (year = '') => {
+    const response = await api.get('/reporte-salida/estadisticas-formatos', {
+      params: year ? { year } : {},
+      timeout: 60000
+    });
+    return response.data;
+  },
+
   actualizarReposicion: async (id, payload) => {
     const response = await api.patch(`/reporte-salida/solicitudes/${id}/reposicion`, payload);
     return response.data;

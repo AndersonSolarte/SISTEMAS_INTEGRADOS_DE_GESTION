@@ -147,7 +147,7 @@ import ContextoExternoGestionPanel from '../components/contextoExterno/ContextoE
 import { ROLES } from '../constants/roles';
 import { ACADEMIC_PROGRAMS, ACADEMIC_PROGRAM_LEVELS, getAcademicProgramPermissionKey } from '../constants/academicPrograms';
 import { EstadisticaDocumentalPanel } from './EstadisticaDocumentalImpact';
-import MeetingMinuteStatisticsDashboard from '../components/meetingMinute/MeetingMinuteStatisticsDashboard';
+import EstadisticasFormatosHub from '../components/estadisticasFormatos/EstadisticasFormatosHub';
 import ActivityDashboard from './ActivityDashboard';
 import SecurityApplicationDashboard from './SecurityApplicationDashboard';
 import PlaneacionEfectividad from './PlaneacionEfectividad';
@@ -8564,7 +8564,7 @@ const renderCategoryBars = (items = [], options = {}) => {
           </Stack>
         </Paper>
         {gestionProcesosPanel === 'estadisticas_formatos'
-          ? <MeetingMinuteStatisticsDashboard />
+          ? <EstadisticasFormatosHub />
           : <EstadisticaDocumentalPanel embedded />}
       </Stack>
     );

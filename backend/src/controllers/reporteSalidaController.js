@@ -6815,6 +6815,118 @@ const getSeguimientoBadge = async (req, res) => {
   }
 };
 
+const formatBogotaYear = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric'
+  }).formatToParts(date);
+  return parts.find((part) => part.type === 'year')?.value || '';
+};
+
+const extractRadicacionTimestamp = (row = {}) => {
+  if (row.created_at || row.createdAt) {
+    return row.created_at || row.createdAt;
+  }
+  const traceRadicacion = Array.isArray(row.trazabilidad)
+    ? row.trazabilidad.find((trace) => String(trace?.event || '').toLowerCase().includes('radicacion'))
+    : null;
+  return traceRadicacion?.at || traceRadicacion?.fecha || traceRadicacion?.createdAt || null;
+};
+
+const sanitizeSalidaForStats = (salida = {}) => {
+  const safeSalida = salida && typeof salida === 'object' ? salida : {};
+  return {
+    categoria: safeSalida.categoria || safeSalida.category || '',
+    tipo: safeSalida.tipo || '',
+    fecha: safeSalida.fecha || ''
+  };
+};
+
+const serializeSolicitudForFormatStats = (row = {}) => {
+  const plain = typeof row?.toJSON === 'function' ? row.toJSON() : (row || {});
+  const datos = plain.datos_formulario && typeof plain.datos_formulario === 'object' ? plain.datos_formulario : {};
+  const radicacionAt = extractRadicacionTimestamp(plain);
+  const paidMinutes = Number(
+    plain.reposicion_minutos_pagados
+    ?? datos.reposicion_minutos_pagados
+    ?? 0
+  );
+  return {
+    id: plain.id,
+    estado: plain.estado || '',
+    created_at: radicacionAt,
+    tiempo_solicitado_minutos: Number(plain.tiempo_solicitado_minutos || 0),
+    reposicion_aplica: Boolean(plain.reposicion_aplica),
+    reposicion_minutos: Number(plain.reposicion_minutos || 0),
+    reposicion_minutos_pagados: paidMinutes,
+    reposicion_estado: plain.reposicion_estado || 'no_aplica',
+    datos_formulario: {
+      tipo: datos.tipo || '',
+      reposicion_minutos_pagados: paidMinutes,
+      salida: sanitizeSalidaForStats(datos.salida || {})
+    }
+  };
+};
+
+const getEstadisticasFormatos = async (req, res) => {
+  try {
+    const rawYear = String(req.query?.year || '').trim();
+    const selectedYear = /^\d{4}$/.test(rawYear) ? rawYear : '';
+    const rows = await ReporteSalidaSolicitud.findAll({
+      attributes: [
+        'id',
+        'estado',
+        'datos_formulario',
+        'tiempo_solicitado_minutos',
+        'reposicion_aplica',
+        'reposicion_minutos',
+        'reposicion_minutos_pagados',
+        'reposicion_estado',
+        'created_at',
+        'trazabilidad'
+      ],
+      order: [['created_at', 'DESC']],
+      raw: true
+    });
+
+    const serializedRows = rows.map(serializeSolicitudForFormatStats);
+    const availableYears = Array.from(
+      new Set(
+        serializedRows
+          .map((item) => formatBogotaYear(item.created_at))
+          .filter((year) => /^\d{4}$/.test(year))
+      )
+    )
+      .map((year) => Number(year))
+      .sort((a, b) => b - a);
+
+    const filteredRows = selectedYear
+      ? serializedRows.filter((item) => formatBogotaYear(item.created_at) === selectedYear)
+      : serializedRows;
+
+    return res.json({
+      success: true,
+      data: {
+        format_code: 'THM-DP-FR-002',
+        read_only: true,
+        allow_export: false,
+        available_years: availableYears,
+        selected_year: selectedYear ? Number(selectedYear) : null,
+        solicitudes: filteredRows
+      }
+    });
+  } catch (error) {
+    console.error('[getEstadisticasFormatos] Error al consultar estadísticas de formatos:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'No fue posible consultar las estadísticas de reportes de salida.'
+    });
+  }
+};
+
 const actualizarReposicion = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
@@ -10968,6 +11080,7 @@ module.exports = {
   procesarRechazoGrupo,
   actualizarReposicion,
   getCatalogoLaboral,
+  getEstadisticasFormatos,
   getFeatureConfig,
   getSeguimientoBadge,
   getSeguimientoPersonal,
@@ -11025,6 +11138,7 @@ module.exports = {
   buildReposicionModuleWhere,
   resolveSeguimientoModuleVisibility,
   getStoredReposicionLaboralProfile,
+  serializeSolicitudForFormatStats,
   REPOSICION_LABORAL_PROFILES,
   REPOSICION_WORKDAY_MINUTES
 };

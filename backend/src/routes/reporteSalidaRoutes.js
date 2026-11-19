@@ -41,6 +41,7 @@ const {
   procesarRechazoGrupo,
   actualizarReposicion,
   getCatalogoLaboral,
+  getEstadisticasFormatos,
   getFeatureConfig,
   getSeguimientoBadge,
   getSeguimientoPersonal,
@@ -131,6 +132,15 @@ router.post('/upload-adjunto', auth, upload.single('adjunto'), async (req, res) 
 router.post('/solicitudes', auth, radicarSolicitud);
 router.get('/seguimiento/badge', auth, getSeguimientoBadge);
 router.get('/seguimiento', auth, getSeguimientoPersonal);
+router.get(
+  '/estadisticas-formatos',
+  auth,
+  hasAnyRoleOrModulePermission({
+    roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_INFORMACION, ROLES.GESTION_PROCESOS],
+    moduleKeys: ['gestion_procesos', 'estadisticas_formatos', 'estadistica_documental']
+  }),
+  getEstadisticasFormatos
+);
 router.get('/solicitudes/:id/documento-temporal', auth, verDocumentoTemporalAutenticado);
 router.get('/solicitudes/:id/soporte-temporal', auth, verSoporteTemporalAutenticado);
 router.get(
