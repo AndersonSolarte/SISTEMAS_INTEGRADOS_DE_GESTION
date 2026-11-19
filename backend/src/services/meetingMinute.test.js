@@ -161,8 +161,10 @@ test('registra rutas y acciones definitivas de estadísticas de actas antes de /
     return null;
   });
 
+  const generalAdminUser = { id: 10, email: 'sgc@unicesmag.edu.co', role: 'administrador' };
+
   const resConflict = mockRes();
-  await controller.resendArchivedPendingInvitations({ params: { id: 'no-pending' }, user: { id: 1 } }, resConflict);
+  await controller.resendArchivedPendingInvitations({ params: { id: 'no-pending' }, user: generalAdminUser }, resConflict);
   assert.equal(resConflict.statusCode, 409);
   assert.equal(resConflict.body.success, false);
 
@@ -174,7 +176,7 @@ test('registra rutas y acciones definitivas de estadísticas de actas antes de /
   t.mock.method(DigitalMeetingMinute, 'destroy', async ({ where }) => { destroyed.push(['minute', where.id]); });
 
   const resDelete = mockRes();
-  await controller.permanentlyDeleteArchivedMinute({ params: { id: 'to-delete' }, user: { id: 1 } }, resDelete);
+  await controller.permanentlyDeleteArchivedMinute({ params: { id: 'to-delete' }, user: generalAdminUser }, resDelete);
   assert.equal(resDelete.statusCode, 200);
   assert.equal(resDelete.body.success, true);
   assert.deepEqual(destroyed, [
@@ -183,4 +185,118 @@ test('registra rutas y acciones definitivas de estadísticas de actas antes de /
     ['participant', 'to-delete'],
     ['minute', 'to-delete']
   ]);
+});
+
+test('restringe acciones de estadísticas según rol y correo y bloquea borradores/retiradas al enviar firmas', async (t) => {
+  const controller = require('../controllers/meetingMinuteController');
+  const { DigitalMeetingMinute } = require('../models');
+  const {
+    isGeneralAdmin,
+    isGestionProcesosRole,
+    resolveStatisticsActionPermissions
+  } = controller._internals;
+
+  const generalAdmin = { id: 10, email: '  SGC@UNICESMAG.EDU.CO ', role: 'administrador' };
+  const otherAdmin = { id: 11, email: 'otro.admin@unicesmag.edu.co', role: 'administrador' };
+  const gestionProcesos = { id: 231, email: 'acvaldes@unicesmag.edu.co', role: 'gestion_por_procesos' };
+  const planeacion = { id: 15, email: 'planeacion@unicesmag.edu.co', role: 'planeacion_estrategica' };
+
+  assert.equal(isGeneralAdmin(generalAdmin), true);
+  assert.equal(isGeneralAdmin(otherAdmin), false);
+  assert.equal(isGeneralAdmin(gestionProcesos), false);
+  assert.equal(isGestionProcesosRole(gestionProcesos), true);
+  assert.equal(isGestionProcesosRole(otherAdmin), false);
+
+  assert.deepEqual(resolveStatisticsActionPermissions(generalAdmin), {
+    can_view_pdf: true,
+    can_download_pdf: true,
+    can_resend_pending: true,
+    can_delete_permanently: true
+  });
+  assert.deepEqual(resolveStatisticsActionPermissions(gestionProcesos), {
+    can_view_pdf: false,
+    can_download_pdf: false,
+    can_resend_pending: true,
+    can_delete_permanently: false
+  });
+  assert.deepEqual(resolveStatisticsActionPermissions(otherAdmin), {
+    can_view_pdf: false,
+    can_download_pdf: false,
+    can_resend_pending: false,
+    can_delete_permanently: false
+  });
+  assert.deepEqual(resolveStatisticsActionPermissions(planeacion), {
+    can_view_pdf: false,
+    can_download_pdf: false,
+    can_resend_pending: false,
+    can_delete_permanently: false
+  });
+
+  const mockRes = () => ({
+    statusCode: 200,
+    body: null,
+    status(code) { this.statusCode = code; return this; },
+    json(payload) { this.body = payload; return this; }
+  });
+
+  t.mock.method(DigitalMeetingMinute, 'findAll', async () => []);
+  const resStatsProcesos = mockRes();
+  await controller.getStatistics({ query: {}, user: gestionProcesos }, resStatsProcesos);
+  assert.equal(resStatsProcesos.statusCode, 200);
+  assert.deepEqual(resStatsProcesos.body.data.permissions, {
+    can_view_pdf: false,
+    can_download_pdf: false,
+    can_resend_pending: true,
+    can_delete_permanently: false
+  });
+
+  for (const deniedUser of [otherAdmin, gestionProcesos, planeacion]) {
+    const resPdf = mockRes();
+    await controller.downloadArchivedPdf({ params: { id: 'm-1' }, user: deniedUser }, resPdf);
+    assert.equal(resPdf.statusCode, 403);
+
+    const resDel = mockRes();
+    await controller.permanentlyDeleteArchivedMinute({ params: { id: 'm-1' }, user: deniedUser }, resDel);
+    assert.equal(resDel.statusCode, 403);
+  }
+
+  for (const deniedResendUser of [otherAdmin, planeacion]) {
+    const resResend = mockRes();
+    await controller.resendArchivedPendingInvitations({ params: { id: 'm-1' }, user: deniedResendUser }, resResend);
+    assert.equal(resResend.statusCode, 403);
+  }
+
+  t.mock.method(DigitalMeetingMinute, 'findByPk', async (id) => {
+    if (id === 'draft-pending') {
+      return {
+        id: 'draft-pending',
+        code: 'ACTA-2026-DRAFT',
+        status: 'draft',
+        deleted_at: null,
+        content: {},
+        participants: [{ id: 'p-1', status: 'invited' }]
+      };
+    }
+    if (id === 'deleted-signing') {
+      return {
+        id: 'deleted-signing',
+        code: 'ACTA-2026-DEL',
+        status: 'signing',
+        deleted_at: new Date('2026-11-18T10:00:00Z'),
+        content: {},
+        participants: [{ id: 'p-1', status: 'invited' }]
+      };
+    }
+    return null;
+  });
+
+  for (const allowedUser of [gestionProcesos, generalAdmin]) {
+    const resDraft = mockRes();
+    await controller.resendArchivedPendingInvitations({ params: { id: 'draft-pending' }, user: allowedUser }, resDraft);
+    assert.equal(resDraft.statusCode, 409);
+
+    const resDeleted = mockRes();
+    await controller.resendArchivedPendingInvitations({ params: { id: 'deleted-signing' }, user: allowedUser }, resDeleted);
+    assert.equal(resDeleted.statusCode, 409);
+  }
 });

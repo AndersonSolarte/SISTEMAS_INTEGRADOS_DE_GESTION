@@ -30,6 +30,7 @@ const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = requ
 const {
   PRIVACY_POLICY_NOTICE, PRIVACY_POLICY_URL, PRIVACY_POLICY_VERSION
 } = require('../constants/privacyPolicy');
+const { ROLES } = require('../constants/roles');
 const { formatPersonName } = require('../utils/formatPersonName');
 const {
   getCalendarConfiguration, normalizeAttendees, checkAvailability, findAvailableSlots, saveCalendarEvent, cancelCalendarEvent
@@ -47,6 +48,19 @@ const ensureDir = (dir) => fs.mkdirSync(dir, { recursive: true });
 const hash = (value) => crypto.createHash('sha256').update(Buffer.isBuffer(value) ? value : String(value || '')).digest('hex');
 const contentHash = (value) => hash(JSON.stringify(value));
 const isAdmin = (user) => String(user?.role || '') === 'administrador';
+const GENERAL_ADMIN_EMAIL = 'sgc@unicesmag.edu.co';
+const isGeneralAdmin = (user) => String(user?.email || '').trim().toLowerCase() === GENERAL_ADMIN_EMAIL;
+const isGestionProcesosRole = (user) => String(user?.role || '').trim().toLowerCase() === ROLES.GESTION_PROCESOS;
+const resolveStatisticsActionPermissions = (user) => {
+  const generalAdmin = isGeneralAdmin(user);
+  const gestionProcesos = isGestionProcesosRole(user);
+  return {
+    can_view_pdf: generalAdmin,
+    can_download_pdf: generalAdmin,
+    can_resend_pending: generalAdmin || gestionProcesos,
+    can_delete_permanently: generalAdmin
+  };
+};
 const clean = (value, max = 8000) => String(value || '').replace(/\u0000/g, '').trim().slice(0, max);
 const formatDependencyOfficeLocation = (value) => {
   const dependency = clean(value, 220).replace(/\s+/g, ' ');
@@ -1308,6 +1322,7 @@ const getStatistics = wrap(async (req, res) => {
       retention_days: MINUTE_RETENTION_DAYS,
       available_years: availableYears,
       selected_year: selectedYear,
+      permissions: resolveStatisticsActionPermissions(req.user),
       summary: {
         total: filteredRows.length,
         active: operationalRows.length,
@@ -1339,6 +1354,9 @@ const getStatistics = wrap(async (req, res) => {
 });
 
 const downloadArchivedPdf = wrap(async (req, res) => {
+  if (!isGeneralAdmin(req.user)) {
+    throw Object.assign(new Error('Solo el administrador general puede visualizar o descargar actas desde este módulo.'), { statusCode: 403 });
+  }
   const minute = await DigitalMeetingMinute.findByPk(req.params.id, {
     include: [
       { model: DigitalMeetingParticipant, as: 'participants' },
@@ -1357,6 +1375,9 @@ const downloadArchivedPdf = wrap(async (req, res) => {
 });
 
 const resendArchivedPendingInvitations = wrap(async (req, res) => {
+  if (!isGeneralAdmin(req.user) && !isGestionProcesosRole(req.user)) {
+    throw Object.assign(new Error('Solo el administrador general o el rol Gestión por Procesos pueden enviar firmas a pendientes desde este módulo.'), { statusCode: 403 });
+  }
   const minute = await DigitalMeetingMinute.findByPk(req.params.id, {
     include: [
       { model: DigitalMeetingParticipant, as: 'participants' },
@@ -1367,6 +1388,13 @@ const resendArchivedPendingInvitations = wrap(async (req, res) => {
   if (!minute) throw Object.assign(new Error('El acta no existe en el archivo histórico.'), { statusCode: 404 });
 
   await reconcileMinuteStatus(minute);
+  if (minute.deleted_at) {
+    throw Object.assign(new Error('No se pueden enviar firmas a pendientes de un acta retirada.'), { statusCode: 409 });
+  }
+  if (minute.status !== 'signing') {
+    throw Object.assign(new Error('Solo se pueden enviar firmas a pendientes en actas que se encuentren en estado «En firmas».'), { statusCode: 409 });
+  }
+
   const signingParticipants = (minute.participants || []).filter((item) => participantRequiresSignature(item, minute));
   const pendingParticipants = signingParticipants.filter((item) => item.status !== 'signed');
   if (!pendingParticipants.length) {
@@ -1393,7 +1421,6 @@ const resendArchivedPendingInvitations = wrap(async (req, res) => {
 
   await minute.update({
     status: 'signing',
-    deleted_at: null,
     published_at: minute.published_at || new Date(),
     public_token_hash: minute.public_token_hash || hash(token),
     token_expires_at: expiresAt,
@@ -1424,6 +1451,9 @@ const resendArchivedPendingInvitations = wrap(async (req, res) => {
 });
 
 const permanentlyDeleteArchivedMinute = wrap(async (req, res) => {
+  if (!isGeneralAdmin(req.user)) {
+    throw Object.assign(new Error('Solo el administrador general puede eliminar registros definitivamente.'), { statusCode: 403 });
+  }
   const minute = await DigitalMeetingMinute.findByPk(req.params.id, {
     include: [{ model: DigitalMeetingSignature, as: 'signatures', attributes: ['signature_storage_key'] }]
   });
@@ -3276,12 +3306,15 @@ module.exports = {
   updateComments,
   updateConfig,
   _internals: {
+    GENERAL_ADMIN_EMAIL,
     buildPrivacyPolicyEmailSection,
     buildSigningInvitationEmail,
     calculateNextCouncilMinuteNumber,
     canManageMinuteCalendar,
     formatDependencyOfficeLocation,
     hasSameParticipantMembership,
+    isGeneralAdmin,
+    isGestionProcesosRole,
     isMinutePrimaryResponsible,
     isMinuteResponsible,
     minuteThreadSubject,
@@ -3293,6 +3326,7 @@ module.exports = {
     placeResponsibleFirst,
     reconcileMinuteStatus,
     resolveArchiveResponsibleInfo,
+    resolveStatisticsActionPermissions,
     resolveSigningAccess,
     resolveCouncilMinuteYear,
     sanitizeRichText

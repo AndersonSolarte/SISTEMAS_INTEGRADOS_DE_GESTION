@@ -18,10 +18,33 @@ import {
   ResponsiveContainer, Sector, Tooltip as ChartTooltip, XAxis, YAxis
 } from 'recharts';
 import { useSnackbar } from 'notistack';
+import { useAuth } from '../../context/AuthContext';
 import meetingMinuteService from '../../services/meetingMinuteService';
 
 const MEETING_MINUTES_FORMAT = 'meeting_minutes';
+const GENERAL_ADMIN_EMAIL = 'sgc@unicesmag.edu.co';
 const ROWS_PER_PAGE = 25;
+
+export const resolveStatisticsPermissions = (user, serverPermissions = null) => {
+  if (serverPermissions && typeof serverPermissions === 'object') {
+    return {
+      can_view_pdf: Boolean(serverPermissions.can_view_pdf),
+      can_download_pdf: Boolean(serverPermissions.can_download_pdf),
+      can_resend_pending: Boolean(serverPermissions.can_resend_pending),
+      can_delete_permanently: Boolean(serverPermissions.can_delete_permanently)
+    };
+  }
+  const email = String(user?.email || '').trim().toLowerCase();
+  const role = String(user?.role || '').trim().toLowerCase();
+  const isGeneralAdmin = email === GENERAL_ADMIN_EMAIL;
+  const isGestionProcesos = role === 'gestion_por_procesos';
+  return {
+    can_view_pdf: isGeneralAdmin,
+    can_download_pdf: isGeneralAdmin,
+    can_resend_pending: isGeneralAdmin || isGestionProcesos,
+    can_delete_permanently: isGeneralAdmin
+  };
+};
 
 const STATUS = {
   draft: { label: 'Borrador', color: '#64748b', soft: '#f1f5f9' },
@@ -41,6 +64,7 @@ const emptyData = {
   retention_days: 30,
   available_years: [],
   selected_year: null,
+  permissions: null,
   summary: {
     total: 0, active: 0, archived: 0, deleted: 0, draft: 0, signing: 0, signed: 0,
     distributed: 0, completed: 0, participants: 0, signed_participants: 0,
@@ -259,14 +283,24 @@ const WatermarkMetricCard = React.memo(({ index, label, value, Icon, color, soft
   </motion.div>
 ));
 
-const hasPendingSignatures = (row = {}) => {
-  const pendingCount = Number(
-    row.pending_participants ?? Math.max(0, Number(row.participants || 0) - Number(row.signed_participants || 0))
-  );
-  return pendingCount > 0 && row.status !== 'signed' && row.status !== 'distributed';
-};
+export const getPendingSignatureCount = (row = {}) => Math.max(
+  0,
+  Number(row.pending_participants ?? (Number(row.participants || 0) - Number(row.signed_participants || 0)))
+);
 
-const ArchiveRow = React.memo(({ row, isBusy, isSelected, disableActions, onOpenMenu }) => {
+export const hasPendingSignatures = (row = {}) => (
+  row.status === 'signing' && row.lifecycle !== 'deleted' && getPendingSignatureCount(row) > 0
+);
+
+const ArchiveRow = React.memo(({
+  row,
+  isBusy,
+  isSelected,
+  disableActions,
+  showActionsColumn,
+  hasRowActions,
+  onOpenMenu
+}) => {
   const status = STATUS[row.status] || STATUS.draft;
   const lifecycle = LIFECYCLE[row.lifecycle] || LIFECYCLE.operational;
   const responsibleName = row.responsible_name || row.creator || 'Sin información';
@@ -277,6 +311,9 @@ const ArchiveRow = React.memo(({ row, isBusy, isSelected, disableActions, onOpen
   const signatureTotal = Number(row.participants || 0);
   const signatureSigned = Number(row.signed_participants || 0);
   const signaturePct = signatureTotal > 0 ? Math.round((signatureSigned / signatureTotal) * 100) : 0;
+  const progressBarColor = hasPendingSignatures(row)
+    ? '#d97706'
+    : (signatureTotal > 0 && signatureSigned >= signatureTotal ? '#16a34a' : '#0284c7');
 
   return (
     <TableRow
@@ -350,7 +387,13 @@ const ArchiveRow = React.memo(({ row, isBusy, isSelected, disableActions, onOpen
         <LinearProgress
           variant="determinate"
           value={signaturePct}
-          sx={{ mt: 0.5, height: 5, borderRadius: 99, bgcolor: '#e2e8f0' }}
+          sx={{
+            mt: 0.5,
+            height: 5,
+            borderRadius: 99,
+            bgcolor: '#e2e8f0',
+            '& .MuiLinearProgress-bar': { bgcolor: progressBarColor, borderRadius: 99 }
+          }}
         />
       </TableCell>
       <TableCell>
@@ -360,29 +403,39 @@ const ArchiveRow = React.memo(({ row, isBusy, isSelected, disableActions, onOpen
           sx={{ fontWeight: 700, fontSize: 11, bgcolor: '#f1f5f9', color: '#334155' }}
         />
       </TableCell>
-      <TableCell align="right">
-        <Tooltip title="Acciones del acta">
-          <span>
-            <IconButton
-              size="small"
-              aria-label="Acciones del acta"
-              onClick={(event) => onOpenMenu(event.currentTarget, row)}
-              disabled={disableActions}
-              sx={{
-                width: 34,
-                height: 34,
-                color: isSelected ? '#0284c7' : '#475569',
-                bgcolor: isSelected ? '#ffffff' : 'transparent',
-                border: isSelected ? '1px solid #bae6fd' : '1px solid transparent',
-                borderRadius: '10px',
-                '&:hover': { bgcolor: '#f1f5f9', color: '#0284c7' }
-              }}
-            >
-              {isBusy ? <CircularProgress size={15} /> : <FaEllipsisVertical size={15} />}
-            </IconButton>
-          </span>
-        </Tooltip>
-      </TableCell>
+      {showActionsColumn && (
+        <TableCell align="right">
+          {hasRowActions ? (
+            <Tooltip title="Acciones del acta">
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label="Acciones del acta"
+                  onClick={(event) => onOpenMenu(event.currentTarget, row)}
+                  disabled={disableActions}
+                  sx={{
+                    width: 34,
+                    height: 34,
+                    color: isSelected ? '#0284c7' : '#475569',
+                    bgcolor: isSelected ? '#ffffff' : 'transparent',
+                    border: isSelected ? '1px solid #bae6fd' : '1px solid transparent',
+                    borderRadius: '10px',
+                    '&:hover': { bgcolor: '#f1f5f9', color: '#0284c7' }
+                  }}
+                >
+                  {isBusy ? <CircularProgress size={15} /> : <FaEllipsisVertical size={15} />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          ) : (
+            <Tooltip title="Sin firmas pendientes">
+              <Typography component="span" variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, px: 1 }}>
+                —
+              </Typography>
+            </Tooltip>
+          )}
+        </TableCell>
+      )}
     </TableRow>
   );
 });
@@ -390,16 +443,28 @@ const ArchiveRow = React.memo(({ row, isBusy, isSelected, disableActions, onOpen
 const ArchiveTableSection = React.memo(({
   archiveRows,
   busyMinuteId,
+  permissions,
   onVisualizeMinute,
   onDownloadMinute,
   onResendPending,
   onDeleteMinutePermanently
 }) => {
   const [responsibleFilter, setResponsibleFilter] = useState('');
+  const [onlyPendingFilter, setOnlyPendingFilter] = useState(false);
   const [page, setPage] = useState(0);
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [menuState, setMenuState] = useState({ anchorEl: null, row: null });
   const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const canViewPdf = Boolean(permissions?.can_view_pdf);
+  const canDownloadPdf = Boolean(permissions?.can_download_pdf);
+  const canResendPending = Boolean(permissions?.can_resend_pending);
+  const canDeleteMinute = Boolean(permissions?.can_delete_permanently);
+  const showActionsColumn = canViewPdf || canDownloadPdf || canResendPending || canDeleteMinute;
+
+  useEffect(() => {
+    if (!canResendPending) setOnlyPendingFilter(false);
+  }, [canResendPending]);
 
   const handleOpenMenu = useCallback((anchorEl, row) => {
     if (row?.id) setSelectedRowId(row.id);
@@ -424,28 +489,37 @@ const ArchiveTableSection = React.memo(({
     })
   ), [archiveRows]);
 
+  const pendingRowsCount = useMemo(
+    () => archiveRows.filter(hasPendingSignatures).length,
+    [archiveRows]
+  );
+
   const filteredArchive = useMemo(() => {
     const target = extractResponsibleSearchTarget(responsibleFilter);
-    if (!target.raw) return archiveRows;
-
     const normName = normalizeExactName(target.namePart);
     const normDoc = normalizeExactDocument(target.docPart);
 
-    return indexedArchive
-      .filter((entry) => {
-        if (target.hasExplicitSplit) {
-          return matchesExactResponsible(entry.row, responsibleFilter);
-        }
-        return (normDoc && entry.exactDocs.has(normDoc)) || (normName && entry.exactNames.has(normName));
-      })
-      .map((entry) => entry.row);
-  }, [archiveRows, indexedArchive, responsibleFilter]);
+    const matchingResponsible = target.raw
+      ? indexedArchive
+        .filter((entry) => {
+          if (target.hasExplicitSplit) {
+            return matchesExactResponsible(entry.row, responsibleFilter);
+          }
+          return (normDoc && entry.exactDocs.has(normDoc)) || (normName && entry.exactNames.has(normName));
+        })
+        .map((entry) => entry.row)
+      : archiveRows;
+
+    if (!onlyPendingFilter) return matchingResponsible;
+    return matchingResponsible.filter(hasPendingSignatures);
+  }, [archiveRows, indexedArchive, onlyPendingFilter, responsibleFilter]);
 
   useEffect(() => {
     setPage(0);
-  }, [responsibleFilter, archiveRows]);
+  }, [responsibleFilter, onlyPendingFilter, archiveRows]);
 
   const hasResponsibleFilter = Boolean(String(responsibleFilter || '').trim());
+  const hasActiveFilter = hasResponsibleFilter || onlyPendingFilter;
   const totalPages = Math.max(1, Math.ceil(filteredArchive.length / ROWS_PER_PAGE));
   const safePage = Math.min(page, totalPages - 1);
   const pageStart = safePage * ROWS_PER_PAGE;
@@ -453,6 +527,8 @@ const ArchiveTableSection = React.memo(({
     () => filteredArchive.slice(pageStart, pageStart + ROWS_PER_PAGE),
     [filteredArchive, pageStart]
   );
+  const menuRowCanResend = Boolean(canResendPending && menuState.row && hasPendingSignatures(menuState.row));
+  const menuPendingCount = menuState.row ? getPendingSignatureCount(menuState.row) : 0;
 
   return (
     <Paper
@@ -471,16 +547,16 @@ const ArchiveTableSection = React.memo(({
         </Typography>
         <Chip
           label={
-            hasResponsibleFilter
+            hasActiveFilter
               ? `${formatNumber(filteredArchive.length)} de ${formatNumber(archiveRows.length)} documento(s)`
               : `${formatNumber(archiveRows.length)} documento(s)`
           }
           sx={{
             alignSelf: { xs: 'flex-start', sm: 'center' },
             fontWeight: 800,
-            bgcolor: hasResponsibleFilter ? '#e0f2fe' : '#f1f5f9',
-            color: hasResponsibleFilter ? '#0284c7' : '#1e3a8a',
-            border: hasResponsibleFilter ? '1px solid #bae6fd' : '1px solid #e2e8f0'
+            bgcolor: hasActiveFilter ? '#e0f2fe' : '#f1f5f9',
+            color: hasActiveFilter ? '#0284c7' : '#1e3a8a',
+            border: hasActiveFilter ? '1px solid #bae6fd' : '1px solid #e2e8f0'
           }}
         />
       </Stack>
@@ -553,12 +629,41 @@ const ArchiveTableSection = React.memo(({
             />
           </Tooltip>
 
+          {canResendPending && pendingRowsCount > 0 && (
+            <Tooltip
+              describeChild
+              title="Mostrar únicamente actas en estado «En firmas» con participantes pendientes."
+            >
+              <Chip
+                icon={<FaPaperPlane size={12} />}
+                label={`Pendientes de firma (${formatNumber(pendingRowsCount)})`}
+                size="small"
+                clickable
+                onClick={() => setOnlyPendingFilter((prev) => !prev)}
+                aria-pressed={onlyPendingFilter}
+                sx={{
+                  alignSelf: { xs: 'flex-start', md: 'center' },
+                  bgcolor: onlyPendingFilter ? '#fef3c7' : '#ffffff',
+                  color: onlyPendingFilter ? '#b45309' : '#475569',
+                  border: onlyPendingFilter ? '1px solid #f59e0b' : '1px solid #cbd5e1',
+                  fontWeight: 800,
+                  height: 34,
+                  px: 0.4,
+                  '& .MuiChip-icon': { color: onlyPendingFilter ? '#d97706' : '#64748b' }
+                }}
+              />
+            </Tooltip>
+          )}
+
           <Button
             variant="outlined"
             size="small"
             startIcon={<FaXmark size={14} />}
-            disabled={!hasResponsibleFilter}
-            onClick={() => setResponsibleFilter('')}
+            disabled={!hasActiveFilter}
+            onClick={() => {
+              setResponsibleFilter('');
+              setOnlyPendingFilter(false);
+            }}
             sx={{
               height: 40,
               px: 2,
@@ -591,7 +696,9 @@ const ArchiveTableSection = React.memo(({
               <TableCell sx={{ fontWeight: 800, color: '#ffffff', bgcolor: 'transparent', fontSize: 12, letterSpacing: '0.04em', textTransform: 'uppercase', py: 1.5, borderBottom: 'none' }}>Responsable / dependencia</TableCell>
               <TableCell sx={{ fontWeight: 800, color: '#ffffff', bgcolor: 'transparent', fontSize: 12, letterSpacing: '0.04em', textTransform: 'uppercase', py: 1.5, borderBottom: 'none' }}>Firmas</TableCell>
               <TableCell sx={{ fontWeight: 800, color: '#ffffff', bgcolor: 'transparent', fontSize: 12, letterSpacing: '0.04em', textTransform: 'uppercase', py: 1.5, borderBottom: 'none' }}>Registro en BD</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 800, color: '#ffffff', bgcolor: 'transparent', fontSize: 12, letterSpacing: '0.04em', textTransform: 'uppercase', py: 1.5, borderBottom: 'none' }}>Acciones</TableCell>
+              {showActionsColumn && (
+                <TableCell align="right" sx={{ fontWeight: 800, color: '#ffffff', bgcolor: 'transparent', fontSize: 12, letterSpacing: '0.04em', textTransform: 'uppercase', py: 1.5, borderBottom: 'none' }}>Acciones</TableCell>
+              )}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -602,22 +709,31 @@ const ArchiveTableSection = React.memo(({
                 isBusy={busyMinuteId === row.id}
                 isSelected={selectedRowId === row.id}
                 disableActions={Boolean(busyMinuteId)}
+                showActionsColumn={showActionsColumn}
+                hasRowActions={Boolean(
+                  canViewPdf || canDownloadPdf || canDeleteMinute || (canResendPending && hasPendingSignatures(row))
+                )}
                 onOpenMenu={handleOpenMenu}
               />
             ))}
             {filteredArchive.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>
-                  {hasResponsibleFilter ? (
+                <TableCell colSpan={showActionsColumn ? 7 : 6} align="center" sx={{ py: 5, color: 'text.secondary' }}>
+                  {hasActiveFilter ? (
                     <Stack spacing={1.2} alignItems="center">
                       <Typography variant="body2" fontWeight={700} color="#334155">
-                        No se encontraron actas cuya cédula o nombre completo del responsable coincida exactamente con «{responsibleFilter}».
+                        {hasResponsibleFilter
+                          ? `No se encontraron actas cuya cédula o nombre completo del responsable coincida exactamente con «${responsibleFilter}».`
+                          : 'No hay actas con firmas pendientes para el filtro seleccionado.'}
                       </Typography>
                       <Button
                         size="small"
                         variant="outlined"
                         startIcon={<FaXmark size={13} />}
-                        onClick={() => setResponsibleFilter('')}
+                        onClick={() => {
+                          setResponsibleFilter('');
+                          setOnlyPendingFilter(false);
+                        }}
                         sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px' }}
                       >
                         Limpiar filtro
@@ -672,135 +788,153 @@ const ArchiveTableSection = React.memo(({
         </Stack>
       )}
 
-      <Menu
-        anchorEl={menuState.anchorEl}
-        open={Boolean(menuState.anchorEl && menuState.row)}
-        onClose={handleCloseMenu}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        slotProps={{
-          paper: {
-            elevation: 0,
-            sx: {
-              mt: 0.6,
-              minWidth: 230,
-              borderRadius: '14px',
-              border: '1px solid #e2e8f0',
-              boxShadow: '0 14px 34px rgba(15, 23, 42, 0.12)'
+      {showActionsColumn && (
+        <Menu
+          anchorEl={menuState.anchorEl}
+          open={Boolean(menuState.anchorEl && menuState.row)}
+          onClose={handleCloseMenu}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          slotProps={{
+            paper: {
+              elevation: 0,
+              sx: {
+                mt: 0.6,
+                minWidth: 230,
+                borderRadius: '14px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 14px 34px rgba(15, 23, 42, 0.12)'
+              }
             }
-          }
-        }}
-      >
-        <MenuItem
-          onClick={() => {
-            const target = menuState.row;
-            if (target?.id) setSelectedRowId(target.id);
-            handleCloseMenu();
-            if (target) onVisualizeMinute(target);
           }}
         >
-          <ListItemIcon sx={{ color: '#0284c7', minWidth: 32 }}>
-            <FaEye size={14} />
-          </ListItemIcon>
-          <ListItemText primary="Visualizar" primaryTypographyProps={{ fontSize: 13.5, fontWeight: 700 }} />
-        </MenuItem>
+          {canViewPdf && (
+            <MenuItem
+              onClick={() => {
+                const target = menuState.row;
+                if (target?.id) setSelectedRowId(target.id);
+                handleCloseMenu();
+                if (target) onVisualizeMinute(target);
+              }}
+            >
+              <ListItemIcon sx={{ color: '#0284c7', minWidth: 32 }}>
+                <FaEye size={14} />
+              </ListItemIcon>
+              <ListItemText primary="Visualizar" primaryTypographyProps={{ fontSize: 13.5, fontWeight: 700 }} />
+            </MenuItem>
+          )}
 
-        <MenuItem
-          onClick={() => {
-            const target = menuState.row;
-            if (target?.id) setSelectedRowId(target.id);
-            handleCloseMenu();
-            if (target) onDownloadMinute(target);
-          }}
+          {canDownloadPdf && (
+            <MenuItem
+              onClick={() => {
+                const target = menuState.row;
+                if (target?.id) setSelectedRowId(target.id);
+                handleCloseMenu();
+                if (target) onDownloadMinute(target);
+              }}
+            >
+              <ListItemIcon sx={{ color: '#1e3a8a', minWidth: 32 }}>
+                <FaDownload size={14} />
+              </ListItemIcon>
+              <ListItemText primary="Descargar acta" primaryTypographyProps={{ fontSize: 13.5, fontWeight: 700 }} />
+            </MenuItem>
+          )}
+
+          {menuRowCanResend && (
+            <MenuItem
+              onClick={() => {
+                const target = menuState.row;
+                if (target?.id) setSelectedRowId(target.id);
+                handleCloseMenu();
+                if (target) onResendPending(target);
+              }}
+            >
+              <ListItemIcon sx={{ color: '#d97706', minWidth: 32 }}>
+                <FaPaperPlane size={14} />
+              </ListItemIcon>
+              <ListItemText
+                primary="Enviar firmas a pendientes"
+                secondary={`${menuPendingCount} firma(s) pendiente(s)`}
+                primaryTypographyProps={{ fontSize: 13.5, fontWeight: 700 }}
+                secondaryTypographyProps={{ fontSize: 11.5, color: '#b45309', fontWeight: 600 }}
+              />
+            </MenuItem>
+          )}
+
+          {canDeleteMinute && (canViewPdf || canDownloadPdf || menuRowCanResend) && (
+            <Divider sx={{ my: 0.5 }} />
+          )}
+
+          {canDeleteMinute && (
+            <MenuItem
+              onClick={() => {
+                const target = menuState.row;
+                if (target?.id) setSelectedRowId(target.id);
+                handleCloseMenu();
+                if (target) setDeleteTarget(target);
+              }}
+              sx={{ color: '#dc2626' }}
+            >
+              <ListItemIcon sx={{ color: '#dc2626', minWidth: 32 }}>
+                <FaTrashCan size={14} />
+              </ListItemIcon>
+              <ListItemText primary="Eliminar registro" primaryTypographyProps={{ fontSize: 13.5, fontWeight: 750 }} />
+            </MenuItem>
+          )}
+        </Menu>
+      )}
+
+      {canDeleteMinute && (
+        <Dialog
+          open={Boolean(deleteTarget)}
+          onClose={() => { if (!busyMinuteId) setDeleteTarget(null); }}
+          maxWidth="xs"
+          fullWidth
+          PaperProps={{ sx: { borderRadius: '18px' } }}
         >
-          <ListItemIcon sx={{ color: '#1e3a8a', minWidth: 32 }}>
-            <FaDownload size={14} />
-          </ListItemIcon>
-          <ListItemText primary="Descargar acta" primaryTypographyProps={{ fontSize: 13.5, fontWeight: 700 }} />
-        </MenuItem>
-
-        {menuState.row && hasPendingSignatures(menuState.row) && (
-          <MenuItem
-            onClick={() => {
-              const target = menuState.row;
-              if (target?.id) setSelectedRowId(target.id);
-              handleCloseMenu();
-              if (target) onResendPending(target);
-            }}
-          >
-            <ListItemIcon sx={{ color: '#d97706', minWidth: 32 }}>
-              <FaPaperPlane size={14} />
-            </ListItemIcon>
-            <ListItemText primary="Enviar firmas a pendientes" primaryTypographyProps={{ fontSize: 13.5, fontWeight: 700 }} />
-          </MenuItem>
-        )}
-
-        <Divider sx={{ my: 0.5 }} />
-
-        <MenuItem
-          onClick={() => {
-            const target = menuState.row;
-            if (target?.id) setSelectedRowId(target.id);
-            handleCloseMenu();
-            if (target) setDeleteTarget(target);
-          }}
-          sx={{ color: '#dc2626' }}
-        >
-          <ListItemIcon sx={{ color: '#dc2626', minWidth: 32 }}>
-            <FaTrashCan size={14} />
-          </ListItemIcon>
-          <ListItemText primary="Eliminar registro" primaryTypographyProps={{ fontSize: 13.5, fontWeight: 750 }} />
-        </MenuItem>
-      </Menu>
-
-      <Dialog
-        open={Boolean(deleteTarget)}
-        onClose={() => { if (!busyMinuteId) setDeleteTarget(null); }}
-        maxWidth="xs"
-        fullWidth
-        PaperProps={{ sx: { borderRadius: '18px' } }}
-      >
-        <DialogTitle sx={{ fontWeight: 850, color: '#0f172a', pb: 1 }}>
-          ¿Eliminar registro definitivamente?
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText sx={{ color: '#475569', fontSize: 14 }}>
-            Esta acción eliminará definitivamente el acta <strong>{deleteTarget?.code}</strong> ({deleteTarget?.title || 'Sin título'}) junto con sus participantes y firmas de la base de datos. No podrá recuperarse.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
-          <Button
-            variant="outlined"
-            disabled={Boolean(busyMinuteId)}
-            onClick={() => setDeleteTarget(null)}
-            sx={{ textTransform: 'none', fontWeight: 750, borderRadius: '10px' }}
-          >
-            Cancelar
-          </Button>
-          <Button
-            variant="contained"
-            color="error"
-            disabled={Boolean(busyMinuteId)}
-            startIcon={busyMinuteId === deleteTarget?.id ? <CircularProgress size={14} color="inherit" /> : <FaTrashCan size={13} />}
-            onClick={async () => {
-              const target = deleteTarget;
-              if (!target) return;
-              await onDeleteMinutePermanently(target);
-              setSelectedRowId((prev) => (prev === target.id ? null : prev));
-              setDeleteTarget(null);
-            }}
-            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px' }}
-          >
-            Eliminar definitivamente
-          </Button>
-        </DialogActions>
-      </Dialog>
+          <DialogTitle sx={{ fontWeight: 850, color: '#0f172a', pb: 1 }}>
+            ¿Eliminar registro definitivamente?
+          </DialogTitle>
+          <DialogContent>
+            <DialogContentText sx={{ color: '#475569', fontSize: 14 }}>
+              Esta acción eliminará definitivamente el acta <strong>{deleteTarget?.code}</strong> ({deleteTarget?.title || 'Sin título'}) junto con sus participantes y firmas de la base de datos. No podrá recuperarse.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+            <Button
+              variant="outlined"
+              disabled={Boolean(busyMinuteId)}
+              onClick={() => setDeleteTarget(null)}
+              sx={{ textTransform: 'none', fontWeight: 750, borderRadius: '10px' }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              disabled={Boolean(busyMinuteId)}
+              startIcon={busyMinuteId === deleteTarget?.id ? <CircularProgress size={14} color="inherit" /> : <FaTrashCan size={13} />}
+              onClick={async () => {
+                const target = deleteTarget;
+                if (!target) return;
+                await onDeleteMinutePermanently(target);
+                setSelectedRowId((prev) => (prev === target.id ? null : prev));
+                setDeleteTarget(null);
+              }}
+              sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '10px' }}
+            >
+              Eliminar definitivamente
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </Paper>
   );
 });
 
 export default function MeetingMinuteStatisticsDashboard() {
   const { enqueueSnackbar } = useSnackbar();
+  const { user } = useAuth();
   const [selectedFormat, setSelectedFormat] = useState(null);
   const [selectedYear, setSelectedYear] = useState('');
   const [activeStatus, setActiveStatus] = useState(null);
@@ -828,6 +962,10 @@ export default function MeetingMinuteStatisticsDashboard() {
 
   const summary = data.summary || emptyData.summary;
   const archiveRows = useMemo(() => (Array.isArray(data.archive) ? data.archive : []), [data.archive]);
+  const actionPermissions = useMemo(
+    () => resolveStatisticsPermissions(user, data.permissions),
+    [user, data.permissions]
+  );
 
   const statusDistribution = useMemo(() => {
     const list = Array.isArray(data.by_status) ? data.by_status : [];
@@ -1540,6 +1678,7 @@ export default function MeetingMinuteStatisticsDashboard() {
         <ArchiveTableSection
           archiveRows={archiveRows}
           busyMinuteId={busyMinuteId}
+          permissions={actionPermissions}
           onVisualizeMinute={visualizeArchivedMinute}
           onDownloadMinute={downloadArchivedMinuteFile}
           onResendPending={resendArchivedPending}

@@ -1,11 +1,24 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import MeetingMinuteStatisticsDashboard, {
-  matchesExactResponsible
+  hasPendingSignatures,
+  matchesExactResponsible,
+  resolveStatisticsPermissions
 } from './MeetingMinuteStatisticsDashboard';
 import meetingMinuteService from '../../services/meetingMinuteService';
 
 const mockEnqueueSnackbar = jest.fn();
+let mockAuthUser = {
+  id: 10,
+  email: 'sgc@unicesmag.edu.co',
+  role: 'administrador'
+};
+
+jest.mock('../../context/AuthContext', () => ({
+  useAuth: () => ({
+    user: mockAuthUser
+  })
+}));
 
 jest.mock('notistack', () => ({
   useSnackbar: () => ({
@@ -127,9 +140,9 @@ const mockStatsPayload = {
           { name: 'Adriana Carolina Valdes Chicunque', document: '1087648128', is_primary: false }
         ],
         dependency: 'Vicerrectoria Academica',
-        participants: 0,
+        participants: 2,
         signed_participants: 0,
-        pending_participants: 0,
+        pending_participants: 2,
         archive_location: 'Base de datos SIAC · Plantilla COM-IF-FR-002'
       }
     ]
@@ -137,6 +150,11 @@ const mockStatsPayload = {
 };
 
 beforeEach(() => {
+  mockAuthUser = {
+    id: 10,
+    email: 'sgc@unicesmag.edu.co',
+    role: 'administrador'
+  };
   meetingMinuteService.getStatistics.mockResolvedValue(mockStatsPayload);
   meetingMinuteService.downloadArchivedPdf.mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }));
   meetingMinuteService.resendArchivedPendingInvitations.mockResolvedValue({ success: true, message: 'Enviado a pendientes' });
@@ -350,8 +368,9 @@ test('menú de 3 puntos ofrece visualizar, descargar, enviar firmas solo si hay 
     expect(rowsAfterSelectSecond[1]).toHaveAttribute('data-selected', 'false');
     expect(rowsAfterSelectSecond[2]).toHaveAttribute('data-selected', 'true');
 
-    // Eliminar registro en m-3 abre confirmación y elimina definitivamente
+    // Eliminar registro en m-3 (Borrador con 2 participantes sin firmar) NO muestra enviar firmas
     fireEvent.click(screen.getAllByRole('button', { name: /Acciones del acta/i })[2]);
+    expect(screen.queryByText('Enviar firmas a pendientes')).toBeNull();
     fireEvent.click(screen.getByText('Eliminar registro'));
     expect(screen.getByText('¿Eliminar registro definitivamente?')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Eliminar definitivamente/i }));
@@ -367,3 +386,98 @@ test('menú de 3 puntos ofrece visualizar, descargar, enviar firmas solo si hay 
     window.URL.revokeObjectURL = originalRevokeObjectURL;
   }
 }, 15000);
+
+test('resuelve permisos por rol/correo y excluye borradores o retiradas de firmas pendientes', () => {
+  expect(resolveStatisticsPermissions({ email: '  SGC@UNICESMAG.EDU.CO ', role: 'administrador' })).toEqual({
+    can_view_pdf: true,
+    can_download_pdf: true,
+    can_resend_pending: true,
+    can_delete_permanently: true
+  });
+  expect(resolveStatisticsPermissions({ email: 'acvaldes@unicesmag.edu.co', role: 'gestion_por_procesos' })).toEqual({
+    can_view_pdf: false,
+    can_download_pdf: false,
+    can_resend_pending: true,
+    can_delete_permanently: false
+  });
+  expect(resolveStatisticsPermissions({ email: 'otro.admin@unicesmag.edu.co', role: 'administrador' })).toEqual({
+    can_view_pdf: false,
+    can_download_pdf: false,
+    can_resend_pending: false,
+    can_delete_permanently: false
+  });
+
+  expect(hasPendingSignatures({ status: 'signing', lifecycle: 'operational', pending_participants: 2 })).toBe(true);
+  expect(hasPendingSignatures({ status: 'draft', lifecycle: 'operational', pending_participants: 2 })).toBe(false);
+  expect(hasPendingSignatures({ status: 'signing', lifecycle: 'deleted', pending_participants: 2 })).toBe(false);
+  expect(hasPendingSignatures({ status: 'signed', lifecycle: 'operational', pending_participants: 0 })).toBe(false);
+});
+
+test('rol gestión por procesos visualiza tabla y únicamente puede enviar firmas a pendientes', async () => {
+  mockAuthUser = {
+    id: 231,
+    email: 'acvaldes@unicesmag.edu.co',
+    role: 'gestion_por_procesos'
+  };
+
+  render(<MeetingMinuteStatisticsDashboard />);
+  fireEvent.click(screen.getByRole('button', { name: /Ver estadísticas/i }));
+
+  await waitFor(() => {
+    expect(screen.getByText('ACTA-2026-238767361')).toBeInTheDocument();
+  });
+
+  expect(screen.getByRole('columnheader', { name: /Acciones/i })).toBeInTheDocument();
+
+  // Solo m-2 (En firmas) habilita menú de acciones; m-1 (Firmada) y m-3 (Borrador) no muestran botón
+  const actionButtons = screen.getAllByRole('button', { name: /Acciones del acta/i });
+  expect(actionButtons).toHaveLength(1);
+
+  fireEvent.click(actionButtons[0]);
+  expect(screen.getByText('Enviar firmas a pendientes')).toBeInTheDocument();
+  expect(screen.getByText('2 firma(s) pendiente(s)')).toBeInTheDocument();
+  expect(screen.queryByText('Visualizar')).toBeNull();
+  expect(screen.queryByText('Descargar acta')).toBeNull();
+  expect(screen.queryByText('Eliminar registro')).toBeNull();
+
+  fireEvent.click(screen.getByText('Enviar firmas a pendientes'));
+  await waitFor(() => {
+    expect(meetingMinuteService.resendArchivedPendingInvitations).toHaveBeenCalledWith('m-2', {
+      public_base_url: window.location.origin
+    });
+  });
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /Acciones del acta/i })).toBeEnabled();
+  });
+
+  const pendingFilterChip = screen.getByRole('button', { name: /Pendientes de firma \(1\)/i });
+  fireEvent.click(pendingFilterChip);
+  expect(screen.getByText('ACTA-2026-238767361')).toBeInTheDocument();
+  expect(screen.queryByText('ACTA-2026-007520334')).toBeNull();
+  expect(screen.queryByText('ACTA-2026-005726379')).toBeNull();
+  expect(screen.getByText(/1 de 3 documento\(s\)/i)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: /Limpiar filtro/i }));
+  expect(screen.getByText('ACTA-2026-007520334')).toBeInTheDocument();
+  expect(screen.getByText('3 documento(s)')).toBeInTheDocument();
+});
+
+test('otros administradores y roles autorizados solo tienen acceso de lectura sin columna ni menú de acciones', async () => {
+  for (const readOnlyUser of [
+    { id: 11, email: 'otro.admin@unicesmag.edu.co', role: 'administrador' },
+    { id: 15, email: 'planeacion@unicesmag.edu.co', role: 'planeacion_estrategica' }
+  ]) {
+    mockAuthUser = readOnlyUser;
+    render(<MeetingMinuteStatisticsDashboard />);
+    fireEvent.click(screen.getByRole('button', { name: /Ver estadísticas/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('ACTA-2026-007520334')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole('columnheader', { name: /Acciones/i })).toBeNull();
+    expect(screen.queryAllByRole('button', { name: /Acciones del acta/i })).toHaveLength(0);
+    expect(screen.queryByText('Enviar firmas a pendientes')).toBeNull();
+    cleanup();
+  }
+});
