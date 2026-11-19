@@ -18,9 +18,11 @@ function InternacionalizacionNavSegment({ activeView, onNavigateMovilidad, onNav
       sx={{
         borderRadius: 3,
         border: '1px solid #e2e8f0',
+        bgcolor: 'rgba(255, 255, 255, 0.84)',
+        backdropFilter: 'blur(6px)',
         overflow: 'hidden',
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
+        gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
         mb: 2.5
       }}
     >
@@ -29,12 +31,13 @@ function InternacionalizacionNavSegment({ activeView, onNavigateMovilidad, onNav
         onClick={isMovilidad ? undefined : onNavigateMovilidad}
         sx={{
           p: { xs: 1.8, md: 2.5 },
-          background: isMovilidad ? MOVILIDAD_GRADIENT : '#f8fafc',
+          background: isMovilidad ? MOVILIDAD_GRADIENT : 'rgba(248, 250, 252, 0.78)',
           cursor: isMovilidad ? 'default' : 'pointer',
           display: 'flex',
           flexDirection: 'column',
           gap: 0.6,
-          borderRight: '1px solid',
+          borderRight: { xs: 'none', sm: '1px solid' },
+          borderBottom: { xs: '1px solid', sm: 'none' },
           borderColor: isMovilidad ? 'transparent' : '#e2e8f0',
           transition: 'background .2s, box-shadow .2s',
           '&:hover': isMovilidad ? {} : {
@@ -95,7 +98,7 @@ function InternacionalizacionNavSegment({ activeView, onNavigateMovilidad, onNav
         onClick={isConvenios ? undefined : onNavigateConvenios}
         sx={{
           p: { xs: 1.8, md: 2.5 },
-          background: isConvenios ? CONVENIOS_GRADIENT : '#f8fafc',
+          background: isConvenios ? CONVENIOS_GRADIENT : 'rgba(248, 250, 252, 0.78)',
           cursor: isConvenios ? 'default' : 'pointer',
           display: 'flex',
           flexDirection: 'column',
@@ -111,7 +114,12 @@ function InternacionalizacionNavSegment({ activeView, onNavigateMovilidad, onNav
             <ArrowForwardRoundedIcon sx={{ color: '#7c3aed', fontSize: 20, flexShrink: 0 }} />
           )}
           <Box flex={1} minWidth={0}>
-            <Stack direction="row" alignItems="center" spacing={0.8} justifyContent={isConvenios ? 'flex-start' : 'flex-end'}>
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.8}
+              justifyContent={{ xs: 'flex-start', sm: isConvenios ? 'flex-start' : 'flex-end' }}
+            >
               {isConvenios && (
                 <CheckCircleIcon sx={{ color: 'rgba(255,255,255,0.8)', fontSize: 16, flexShrink: 0 }} />
               )}
@@ -121,7 +129,7 @@ function InternacionalizacionNavSegment({ activeView, onNavigateMovilidad, onNav
                   fontSize: { xs: 13, md: 15 },
                   color: isConvenios ? '#fff' : '#0f172a',
                   lineHeight: 1.2,
-                  textAlign: isConvenios ? 'left' : 'right'
+                  textAlign: { xs: 'left', sm: isConvenios ? 'left' : 'right' }
                 }}
               >
                 Convenios
@@ -132,7 +140,7 @@ function InternacionalizacionNavSegment({ activeView, onNavigateMovilidad, onNav
                 fontSize: { xs: 11, md: 12 },
                 color: isConvenios ? 'rgba(255,255,255,0.75)' : '#64748b',
                 mt: 0.2,
-                textAlign: isConvenios ? 'left' : 'right'
+                textAlign: { xs: 'left', sm: isConvenios ? 'left' : 'right' }
               }}
             >
               {isConvenios ? 'Módulo activo' : 'Catálogo con búsqueda y documentos'}

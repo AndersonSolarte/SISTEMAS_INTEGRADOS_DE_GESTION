@@ -58,6 +58,10 @@ const { generatePlanAccionBuffer } = require('../services/planAccionExportServic
 const { generateActaBuffer } = require('../services/actaExportService');
 const { suggestIndicators } = require('../services/geminiIndicatorService');
 const { listEvidenceFilesRecursive } = require('../services/googleDriveEvidenceService');
+const {
+  getMovilidadDashboardData,
+  clearInternacionalizacionMovilidadCache
+} = require('../services/internacionalizacionMovilidadService');
 
 const validateAdminConfirmation = async (req, res) => {
   const { identifier, password } = req.body || {};
@@ -176,6 +180,7 @@ const clearDatasetStorage = async ({
   }
 
   if (categoria === DATASET_CATEGORIES.internacionalizacion) {
+    clearInternacionalizacionMovilidadCache();
     if (internacionalizacionConfig?.model) {
       await internacionalizacionConfig.model.destroy({ where: {} });
     } else if (Array.isArray(internacionalizacionConfig?.configs)) {
@@ -5446,305 +5451,10 @@ const getEstadisticas = async (req, res) => {
     }
 
     if (aggregate === 'movilidad_dashboard') {
-      const {
-        periodo: periodoFilter = '',
-        alcance = '',
-        direccion = '',
-        tipo_persona: tipoPersonaFilter = '',
-        pais = '',
-        programa: programaFilter = ''
-      } = req.query;
-
-      const mov_where = {};
-      const normalizeFilterKey = (value = '') => String(value || '')
-        .toUpperCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^A-Z0-9 ]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      const COUNTRY_FILTER_ALIASES = {
-        COLOMBIA: ['Colombia', 'COLOMBIA'],
-        ECUADOR: ['Ecuador', 'ECUADOR'],
-        MEXICO: ['Mexico', 'MEXICO', 'México', 'MÉXICO'],
-        PERU: ['Peru', 'PERU', 'Perú', 'PERÚ'],
-        CHILE: ['Chile', 'CHILE'],
-        'EL SALVADOR': ['El Salvador', 'EL SALVADOR'],
-        BRASIL: ['Brasil', 'BRASIL', 'Brazil', 'BRAZIL'],
-        ARGENTINA: ['Argentina', 'ARGENTINA'],
-        PANAMA: ['Panama', 'PANAMA', 'Panamá', 'PANAMÁ'],
-        CANADA: ['Canada', 'CANADA', 'Canadá', 'CANADÁ'],
-        ESPANA: ['Espana', 'ESPANA', 'España', 'ESPAÑA'],
-        'ESTADOS UNIDOS': ['Estados Unidos', 'ESTADOS UNIDOS', 'USA']
-      };
-      const COUNTRY_DISPLAY_NAMES = {
-        COLOMBIA: 'Colombia',
-        ECUADOR: 'Ecuador',
-        MEXICO: 'México',
-        PERU: 'Perú',
-        CHILE: 'Chile',
-        'EL SALVADOR': 'El Salvador',
-        BRASIL: 'Brasil',
-        ARGENTINA: 'Argentina',
-        PANAMA: 'Panamá',
-        CANADA: 'Canadá',
-        ESPANA: 'España',
-        'ESTADOS UNIDOS': 'Estados Unidos'
-      };
-      const COUNTRY_VALUE_OVERRIDES = {
-        NARINO: 'Colombia',
-        NO: 'Colombia',
-        'UNIVERSIDAD DEL VALLE': 'Colombia',
-        'INFOTEC SOLUCIONES S A S': 'Colombia',
-        'UNIVERSIDAD CATOLICA': 'Colombia',
-        'COLOMBIA PERU': 'Colombia',
-        'MEXICO ECUADOR BRASIL': 'México',
-        'ECUADOR PERU MEXICO': 'Ecuador',
-        ESCUADOR: 'Ecuador',
-        SALVADOR: 'El Salvador',
-        '32 ARGENTINA': 'Argentina',
-        '862 VEN': 'Venezuela',
-        '840 ESTADOS UNIDOS': 'Estados Unidos',
-        'E E U U': 'Estados Unidos',
-        '484 MEX': 'México',
-        'CHILE 152': 'Chile'
-      };
-      const COUNTRY_MATCHERS = [
-        { name: 'Colombia', patterns: [/COLOMBIA/, /170\s*COL$/, /^COL$/, /^CO$/, /^170$/] },
-        { name: 'Ecuador', patterns: [/ECUADOR/, /ESCUADOR/, /(^|[^A-Z])ECU([^A-Z]|$)/, /218\s*ECU/, /^EC$/, /^218$/] },
-        { name: 'México', patterns: [/MEXICO/, /(^|[^A-Z])MEX([^A-Z]|$)/, /484\s*MEX/, /^484$/] },
-        { name: 'Perú', patterns: [/PERU/, /604\s*PER/, /^604$/] },
-        { name: 'Chile', patterns: [/CHILE/, /152\s*CHI/, /^152$/, /^CL$/] },
-        { name: 'El Salvador', patterns: [/EL SALVADOR/, /^SALVADOR$/] },
-        { name: 'Brasil', patterns: [/BRASIL/, /BRAZIL/, /^76$/] },
-        { name: 'Argentina', patterns: [/ARGENTINA/, /^32$/] },
-        { name: 'Honduras', patterns: [/HONDURAS/, /^340$/] },
-        { name: 'Uruguay', patterns: [/URUGUAY/, /^858$/] },
-        { name: 'España', patterns: [/ESPANA/, /724\s*ESP/, /^724$/] },
-        { name: 'Estados Unidos', patterns: [/ESTADOS UNIDOS/, /^E E U U$/, /^EEUU$/, /^USA$/, /840\s*ESTADOS UNIDOS/, /^840$/] },
-        { name: 'Venezuela', patterns: [/VENEZUELA/, /862\s*VEN$/, /^VEN$/, /^862$/] },
-        { name: 'Italia', patterns: [/ITALIA/, /^380$/] },
-        { name: 'Costa Rica', patterns: [/COSTA RICA/, /^188$/] },
-        { name: 'Cuba', patterns: [/CUBA/, /^192$/] },
-        { name: 'Guatemala', patterns: [/GUATEMALA/, /^320$/] },
-        { name: 'Panamá', patterns: [/PANAMA/, /^591$/] },
-        { name: 'Alemania', patterns: [/ALEMANIA/, /^276$/] },
-        { name: 'Marruecos', patterns: [/MARRUECOS/, /^504$/] }
-      ];
-      const toFilterValues = (value) => {
-        const values = Array.isArray(value) ? value : String(value || '').split(',');
-        return values.map((item) => String(item || '').trim()).filter(Boolean);
-      };
-      const expandCountryValues = (values) => [...new Set(values.flatMap((item) => COUNTRY_FILTER_ALIASES[normalizeFilterKey(item)] || [item]))];
-      const applyILikeFilter = (field, value, expandValues = null) => {
-        const values = expandValues ? expandValues(toFilterValues(value)) : toFilterValues(value);
-        if (!values.length) return;
-        mov_where[field] = values.length === 1
-          ? { [Op.iLike]: `%${values[0]}%` }
-          : { [Op.or]: values.map((item) => ({ [Op.iLike]: `%${item}%` })) };
-      };
-
-      applyILikeFilter('periodo', periodoFilter);
-      applyILikeFilter('alcance_movilidad', alcance);
-      applyILikeFilter('direccion_movilidad', direccion);
-      applyILikeFilter('tipo_persona', tipoPersonaFilter);
-      applyILikeFilter('pais_extranjero', pais, expandCountryValues);
-      applyILikeFilter('programa_dependencia', programaFilter);
-
-      const rows = await InternacionalizacionMovilidad.findAll({ where: mov_where, raw: true, order: [['periodo', 'ASC'], ['id', 'ASC']] });
-
-      const count = (rows, key) => rows.reduce((acc, r) => {
-        const k = r[key] || 'Sin dato';
-        acc[k] = (acc[k] || 0) + 1;
-        return acc;
-      }, {});
-
-      const toArr = (obj) => Object.entries(obj).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-      const normalizeCountryName = (value = '') => {
-        const key = normalizeFilterKey(value);
-        if (!key || ['N A', 'NA', 'N/A', 'SIN DATO', 'REGIONAL', 'OTRO', 'OTROS', 'NO APLICA'].includes(key)) return 'Sin dato';
-        if (COUNTRY_VALUE_OVERRIDES[key]) return COUNTRY_VALUE_OVERRIDES[key];
-        const matches = COUNTRY_MATCHERS
-          .filter((country) => country.patterns.some((pattern) => pattern.test(key)))
-          .map((country) => country.name);
-        const uniqueMatches = [...new Set(matches)];
-        if (uniqueMatches.length === 1) return uniqueMatches[0];
-        if (uniqueMatches.length > 1) return 'Sin dato';
-        return COUNTRY_DISPLAY_NAMES[key] || 'Sin dato';
-      };
-      const cleanMobilityTypeKey = (value = '') => String(value || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/^\s*\d+\s*\.?\s*/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toUpperCase();
-      const MOBILITY_TYPE_NAMES = {
-        'ASISTENCIA A EVENTOS': 'Asistencia a eventos',
-        'ASISTENCIA EVENTOS': 'Asistencia a eventos',
-        'CURSO CORTO': 'Curso corto',
-        'PASANTIA O PRACTICA': 'Pasantía o práctica',
-        PASANTIA: 'Pasantía',
-        MISION: 'Misión',
-        'SECTOR EMPRESARIAL': 'Sector empresarial',
-        'EDUCACION CONTINUADA': 'Educación continuada',
-        SEMINARIOS: 'Seminarios',
-        SIMPOSIOS: 'Simposios',
-        CONGRESOS: 'Congresos',
-        'GESTION DE CONVENIOS': 'Gestión de convenios',
-        'SEMESTRE ACADEMICO DE INTERCAMBIO': 'Semestre académico de intercambio',
-        'PAR ACADEMICO': 'Par académico',
-        PONENCIA: 'Ponencia',
-        'VISITA EMPRESARIAL': 'Visita empresarial',
-        ACADEMICA: 'Académica',
-        ENTRANTE: 'Entrante',
-        SALIENTE: 'Saliente'
-      };
-      const normalizeMobilityType = (value = '') => {
-        const key = cleanMobilityTypeKey(value);
-        if (!key || ['N A', 'NA', 'N/A', 'SIN DATO'].includes(key)) return 'Sin dato';
-        return MOBILITY_TYPE_NAMES[key] || key.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
-      };
-      const countNormalized = (items, field, normalizer) => items.reduce((acc, row) => {
-        const key = normalizer(row[field]);
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {});
-      const crossCount = (rows, rowKey, colKey) => rows.reduce((acc, r) => {
-        const row = r[rowKey] || 'Sin dato';
-        const col = r[colKey] || 'Sin dato';
-        if (!acc[row]) acc[row] = {};
-        acc[row][col] = (acc[row][col] || 0) + 1;
-        return acc;
-      }, {});
-      const classifyPerson = (value = '') => {
-        const key = normalizeFilterKey(value);
-        if (key.includes('ESTUD')) return 'estudiantes';
-        if (key.includes('DOCEN') || key.includes('PROFES')) return 'docentes';
-        if (key.includes('ADMIN')) return 'administrativos';
-        return 'otros';
-      };
-      const classifyDirection = (value = '') => {
-        const key = normalizeFilterKey(value);
-        if (key.includes('ENTR')) return 'entrantes';
-        if (key.includes('SAL')) return 'salientes';
-        return 'sin_direccion';
-      };
-      const sniesPersonDirection = rows.reduce((acc, row) => {
-        const person = classifyPerson(row.tipo_persona);
-        const direction = classifyDirection(row.direccion_movilidad);
-        if (!acc[person]) acc[person] = { entrantes: 0, salientes: 0, sin_direccion: 0, total: 0 };
-        acc[person][direction] = (acc[person][direction] || 0) + 1;
-        acc[person].total += 1;
-        return acc;
-      }, {
-        estudiantes: { entrantes: 0, salientes: 0, sin_direccion: 0, total: 0 },
-        docentes: { entrantes: 0, salientes: 0, sin_direccion: 0, total: 0 },
-        administrativos: { entrantes: 0, salientes: 0, sin_direccion: 0, total: 0 },
-        otros: { entrantes: 0, salientes: 0, sin_direccion: 0, total: 0 }
-      });
-      const initPopulationProfile = () => ({
-        total: 0,
-        entrantes: { total: 0, entidades: {}, convenios: {}, actividades: {}, tiposMovilidad: {}, paises: {}, departamentos: {}, municipios: {} },
-        salientes: { total: 0, entidades: {}, convenios: {}, actividades: {}, tiposMovilidad: {}, paises: {}, departamentos: {}, municipios: {} },
-        sin_direccion: { total: 0, entidades: {}, convenios: {}, actividades: {}, tiposMovilidad: {}, paises: {}, departamentos: {}, municipios: {} }
-      });
-      const addCount = (target, key, fallback = 'Sin dato') => {
-        const value = String(key || '').trim() || fallback;
-        if (['Sin dato', 'N/A', 'NA', 'N A'].includes(value)) return;
-        target[value] = (target[value] || 0) + 1;
-      };
-      const topFromObject = (obj = {}, limit = 6) => Object.entries(obj)
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value || String(a.name).localeCompare(String(b.name), 'es'))
-        .slice(0, limit);
-      const populationProfilesRaw = {
-        estudiantes: initPopulationProfile(),
-        docentes: initPopulationProfile(),
-        administrativos: initPopulationProfile()
-      };
-      rows.forEach((row) => {
-        const person = classifyPerson(row.tipo_persona);
-        if (!populationProfilesRaw[person]) return;
-        const direction = classifyDirection(row.direccion_movilidad);
-        const bucket = populationProfilesRaw[person][direction] || populationProfilesRaw[person].sin_direccion;
-        populationProfilesRaw[person].total += 1;
-        bucket.total += 1;
-        addCount(bucket.entidades, row.institucion_extranjera);
-        addCount(bucket.convenios, row.codigo_convenio || row.movilidad_por_convenio);
-        addCount(bucket.actividades, row.actividad_movilidad);
-        addCount(bucket.tiposMovilidad, normalizeMobilityType(row.tipo_movilidad));
-        addCount(bucket.paises, normalizeCountryName(row.pais_extranjero));
-        addCount(bucket.departamentos, row.estado_provincia_departamento);
-        addCount(bucket.municipios, row.ciudad_municipio);
-      });
-      const populationProfiles = Object.fromEntries(Object.entries(populationProfilesRaw).map(([key, value]) => [
-        key,
-        {
-          total: value.total,
-          entrantes: {
-            total: value.entrantes.total,
-            entidades: topFromObject(value.entrantes.entidades),
-            convenios: topFromObject(value.entrantes.convenios),
-            actividades: topFromObject(value.entrantes.actividades),
-            tiposMovilidad: topFromObject(value.entrantes.tiposMovilidad),
-            paises: topFromObject(value.entrantes.paises),
-            departamentos: topFromObject(value.entrantes.departamentos),
-            municipios: topFromObject(value.entrantes.municipios)
-          },
-          salientes: {
-            total: value.salientes.total,
-            entidades: topFromObject(value.salientes.entidades),
-            convenios: topFromObject(value.salientes.convenios),
-            actividades: topFromObject(value.salientes.actividades),
-            tiposMovilidad: topFromObject(value.salientes.tiposMovilidad),
-            paises: topFromObject(value.salientes.paises),
-            departamentos: topFromObject(value.salientes.departamentos),
-            municipios: topFromObject(value.salientes.municipios)
-          }
-        }
-      ]));
-
-      const byPeriodo = toArr(count(rows, 'periodo'));
-      const byAlcance = toArr(count(rows, 'alcance_movilidad'));
-      const byDireccion = toArr(count(rows, 'direccion_movilidad'));
-      const byTipoPersona = toArr(count(rows, 'tipo_persona'));
-      const byPais = toArr(countNormalized(rows, 'pais_extranjero', normalizeCountryName)).filter((row) => row.name !== 'Sin dato');
-      const byActividad = toArr(count(rows, 'actividad_movilidad'));
-      const byTipoMovilidad = toArr(countNormalized(rows, 'tipo_movilidad', normalizeMobilityType));
-      const byPrograma = toArr(count(rows, 'programa_dependencia')).slice(0, 20);
-      const byModalidad = toArr(count(rows, 'modalidad'));
-      const heatmapPeriodoDireccion = crossCount(rows, 'direccion_movilidad', 'periodo');
-      const institucionesMovilidad = [...new Set(rows.map((r) => String(r.institucion_extranjera || '').trim()).filter(Boolean))].sort();
-
-      const catalogos = {
-        periodos: [...new Set(rows.map((r) => r.periodo).filter(Boolean))].sort(),
-        alcances: [...new Set(rows.map((r) => r.alcance_movilidad).filter(Boolean))].sort(),
-        direcciones: [...new Set(rows.map((r) => r.direccion_movilidad).filter(Boolean))].sort(),
-        tiposPersona: [...new Set(rows.map((r) => r.tipo_persona).filter(Boolean))].sort(),
-        paises: [...new Set(rows.map((r) => normalizeCountryName(r.pais_extranjero)).filter((item) => item && item !== 'Sin dato'))].sort(),
-        programas: [...new Set(rows.map((r) => r.programa_dependencia).filter(Boolean))].sort()
-      };
-
+      const dashboardData = await getMovilidadDashboardData(req.query);
       return res.json({
         success: true,
-        data: {
-          total: rows.length,
-          byPeriodo,
-          byAlcance,
-          byDireccion,
-          byTipoPersona,
-          byPais,
-          byActividad,
-          byTipoMovilidad,
-          byPrograma,
-          byModalidad,
-          heatmapPeriodoDireccion,
-          sniesPersonDirection,
-          populationProfiles,
-          institucionesMovilidad,
-          catalogos
-        }
+        data: dashboardData
       });
     }
 
@@ -8013,6 +7723,8 @@ const importFromExcel = async (req, res) => {
       if (!result.total) {
         return res.status(400).json({ success: false, message: 'No se encontraron hojas validas de Internacionalizacion en el archivo' });
       }
+
+      clearInternacionalizacionMovilidadCache();
 
       return res.json({
         success: true,
