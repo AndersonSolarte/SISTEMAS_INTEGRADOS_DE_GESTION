@@ -891,7 +891,7 @@ export default function ReporteSalidaFormatStatisticsDashboard({ onBack = null }
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
                     data={filteredDailyChart}
-                    margin={{ top: 24, right: 24, left: 0, bottom: 8 }}
+                    margin={{ top: 36, right: 24, left: 0, bottom: 8 }}
                     onClick={handleChartClick}
                     style={{ cursor: 'pointer' }}
                   >
@@ -944,7 +944,8 @@ export default function ReporteSalidaFormatStatisticsDashboard({ onBack = null }
                         const pointDate = props.payload?.date;
                         const isSelected = Boolean(selectedDate && selectedDate === pointDate);
                         const isPeak = Boolean(peakPoint && peakPoint.solicitudes > 0 && peakPoint.date === pointDate);
-                        if (filteredDailyChart.length > 45 && !isSelected && !isPeak) return null;
+                        const hasValue = Number(props.payload?.solicitudes || 0) > 0;
+                        if (filteredDailyChart.length > 45 && !isSelected && !isPeak && !hasValue) return null;
                         return (
                           <circle
                             cx={props.cx}
@@ -958,14 +959,13 @@ export default function ReporteSalidaFormatStatisticsDashboard({ onBack = null }
                         );
                       }}
                     >
-                      {filteredDailyChart.length <= 35 && (
-                        <LabelList
-                          dataKey="solicitudes"
-                          position="top"
-                          offset={10}
-                          style={{ fontSize: 12, fontWeight: 800, fill: activeCardMeta.color }}
-                        />
-                      )}
+                      <LabelList
+                        dataKey="solicitudes"
+                        position="top"
+                        offset={10}
+                        formatter={(value) => Number(value) > 0 ? formatNumber(value) : ''}
+                        style={{ fontSize: 12, fill: activeCardMeta.color, pointerEvents: 'none' }}
+                      />
                     </Area>
                   </AreaChart>
                 </ResponsiveContainer>
