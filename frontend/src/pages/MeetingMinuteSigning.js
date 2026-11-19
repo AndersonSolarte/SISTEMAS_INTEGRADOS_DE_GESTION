@@ -286,7 +286,7 @@ export default function MeetingMinuteSigning() {
       canvas.removeEventListener('pointercancel', stop);
       canvas.removeEventListener('lostpointercapture', stop);
     };
-  }, [participantId]);
+  }, [participantId, loading, identityVerified, signed]);
 
   const useGoogleAccount = async (credential) => {
     setWorking(true);

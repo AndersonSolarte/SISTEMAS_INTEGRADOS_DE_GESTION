@@ -150,7 +150,7 @@ export const getRowResponsibles = (row = {}) => {
   return Array.from(unique.values());
 };
 
-export const matchesExactResponsible = (row, rawQuery) => {
+export const matchesResponsible = (row, rawQuery) => {
   const target = extractResponsibleSearchTarget(rawQuery);
   if (!target.raw) return true;
 
@@ -165,13 +165,13 @@ export const matchesExactResponsible = (row, rawQuery) => {
 
     if (target.hasExplicitSplit) {
       if (normDoc && respDoc) {
-        return respDoc === normDoc;
+        return respDoc.includes(normDoc);
       }
-      return Boolean(normName && respName === normName);
+      return Boolean(normName && respName.includes(normName));
     }
 
-    const docMatches = Boolean(normDoc && respDoc && respDoc === normDoc);
-    const nameMatches = Boolean(normName && respName && respName === normName);
+    const docMatches = Boolean(normDoc && respDoc && respDoc.includes(normDoc));
+    const nameMatches = Boolean(normName && respName && respName.includes(normName));
     return docMatches || nameMatches;
   });
 };
@@ -503,9 +503,9 @@ const ArchiveTableSection = React.memo(({
       ? indexedArchive
         .filter((entry) => {
           if (target.hasExplicitSplit) {
-            return matchesExactResponsible(entry.row, responsibleFilter);
+            return matchesResponsible(entry.row, responsibleFilter);
           }
-          return (normDoc && entry.exactDocs.has(normDoc)) || (normName && entry.exactNames.has(normName));
+          return (normDoc && [...entry.exactDocs].some((value) => value.includes(normDoc))) || (normName && [...entry.exactNames].some((value) => value.includes(normName)));
         })
         .map((entry) => entry.row)
       : archiveRows;
@@ -596,8 +596,8 @@ const ArchiveTableSection = React.memo(({
             size="small"
             value={responsibleFilter}
             onChange={(event) => setResponsibleFilter(event.target.value)}
-            placeholder="Buscar por cédula o nombre exacto..."
-            inputProps={{ 'aria-label': 'Filtrar responsable por cédula o nombre exacto' }}
+            placeholder="Buscar por parte del nombre o cédula..."
+            inputProps={{ 'aria-label': 'Filtrar responsable por nombre o cédula' }}
             sx={{
               bgcolor: '#fff',
               borderRadius: '12px',
@@ -612,10 +612,10 @@ const ArchiveTableSection = React.memo(({
             }}
           />
 
-          <Tooltip title="Filtra únicamente las actas donde la cédula o el nombre completo del responsable coincidan exactamente.">
+          <Tooltip title="Busca coincidencias parciales desde una letra, sin distinguir mayúsculas ni tildes.">
             <Chip
               icon={<FaShieldHalved size={13} />}
-              label="Coincidencia exacta"
+              label="Coincidencia parcial"
               size="small"
               sx={{
                 alignSelf: { xs: 'flex-start', md: 'center' },
@@ -723,7 +723,7 @@ const ArchiveTableSection = React.memo(({
                     <Stack spacing={1.2} alignItems="center">
                       <Typography variant="body2" fontWeight={700} color="#334155">
                         {hasResponsibleFilter
-                          ? `No se encontraron actas cuya cédula o nombre completo del responsable coincida exactamente con «${responsibleFilter}».`
+                          ? `No se encontraron actas cuyo responsable coincida con «${responsibleFilter}».`
                           : 'No hay actas con firmas pendientes para el filtro seleccionado.'}
                       </Typography>
                       <Button
@@ -932,10 +932,10 @@ const ArchiveTableSection = React.memo(({
   );
 });
 
-export default function MeetingMinuteStatisticsDashboard() {
+export default function MeetingMinuteStatisticsDashboard({ initialFormat = null, onBackToFormats = null } = {}) {
   const { enqueueSnackbar } = useSnackbar();
   const { user } = useAuth();
-  const [selectedFormat, setSelectedFormat] = useState(null);
+  const [selectedFormat, setSelectedFormat] = useState(initialFormat);
   const [selectedYear, setSelectedYear] = useState('');
   const [activeStatus, setActiveStatus] = useState(null);
   const [pinnedStatus, setPinnedStatus] = useState(null);
@@ -1273,7 +1273,7 @@ export default function MeetingMinuteStatisticsDashboard() {
               <Button
                 variant="outlined"
                 aria-label="Volver a formatos"
-                onClick={() => setSelectedFormat(null)}
+                onClick={() => (typeof onBackToFormats === 'function' ? onBackToFormats() : setSelectedFormat(null))}
                 sx={{
                   minWidth: 42,
                   width: 42,

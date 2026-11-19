@@ -2,7 +2,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import MeetingMinuteStatisticsDashboard, {
   hasPendingSignatures,
-  matchesExactResponsible,
+  matchesResponsible,
   resolveStatisticsPermissions
 } from './MeetingMinuteStatisticsDashboard';
 import meetingMinuteService from '../../services/meetingMinuteService';
@@ -166,19 +166,22 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-test('coincidencia exacta rechaza subcadenas parciales y acepta nombre completo o cédula exacta', () => {
+test('encuentra fragmentos desde una letra sin distinguir tildes ni mayusculas', () => {
   const row = mockStatsPayload.data.archive[0];
-  expect(matchesExactResponsible(row, '')).toBe(true);
-  expect(matchesExactResponsible(row, '1004')).toBe(false);
-  expect(matchesExactResponsible(row, 'Sofia')).toBe(false);
-  expect(matchesExactResponsible(row, 'Sofia Valeria')).toBe(false);
-  expect(matchesExactResponsible(row, '1004555666')).toBe(true);
-  expect(matchesExactResponsible(row, 'CC 1004555666')).toBe(true);
-  expect(matchesExactResponsible(row, 'Sofía Valeria Martínez Salas')).toBe(true);
-  expect(matchesExactResponsible(row, '  sofia   valeria martinez salas ')).toBe(true);
+  expect(matchesResponsible(row, '')).toBe(true);
+  expect(matchesResponsible(row, 'F')).toBe(true);
+  expect(matchesResponsible(row, 'VALERIA')).toBe(true);
+  expect(matchesResponsible(row, 'inexistente')).toBe(false);
+  expect(matchesResponsible(row, '1004')).toBe(true);
+  expect(matchesResponsible(row, 'Sofia')).toBe(true);
+  expect(matchesResponsible(row, 'Sofia Valeria')).toBe(true);
+  expect(matchesResponsible(row, '1004555666')).toBe(true);
+  expect(matchesResponsible(row, 'CC 1004555666')).toBe(true);
+  expect(matchesResponsible(row, 'Sofía Valeria Martínez Salas')).toBe(true);
+  expect(matchesResponsible(row, '  sofia   valeria martinez salas ')).toBe(true);
 });
 
-test('navega desde la tarjeta de formato y filtra la tabla únicamente por coincidencias exactas', async () => {
+test('navega desde la tarjeta de formato y filtra la tabla por coincidencias parciales', async () => {
   render(<MeetingMinuteStatisticsDashboard />);
 
   const openButton = screen.getByRole('button', { name: /Ver estadísticas/i });
@@ -192,13 +195,13 @@ test('navega desde la tarjeta de formato y filtra la tabla únicamente por coinc
   expect(screen.getByText('ACTA-2026-238767361')).toBeInTheDocument();
   expect(screen.getByText('ACTA-2026-005726379')).toBeInTheDocument();
 
-  const filterInput = screen.getByLabelText(/Filtrar responsable por cédula o nombre exacto/i);
+  const filterInput = screen.getByLabelText(/Filtrar responsable por nombre o cédula/i);
 
-  // Búsqueda parcial por cédula NO debe mostrar coincidencias
+  // Un fragmento de cedula encuentra las actas del responsable
   fireEvent.change(filterInput, { target: { value: '1085' } });
-  expect(screen.queryByText('ACTA-2026-238767361')).toBeNull();
-  expect(screen.queryByText('ACTA-2026-005726379')).toBeNull();
-  expect(screen.getByText(/0 de 3 documento\(s\)/i)).toBeInTheDocument();
+  expect(screen.getByText('ACTA-2026-238767361')).toBeInTheDocument();
+  expect(screen.getByText('ACTA-2026-005726379')).toBeInTheDocument();
+  expect(screen.getByText(/2 de 3 documento\(s\)/i)).toBeInTheDocument();
 
   // Búsqueda exacta por cédula SÍ muestra únicamente sus actas
   fireEvent.change(filterInput, { target: { value: '1085327166' } });
@@ -207,10 +210,10 @@ test('navega desde la tarjeta de formato y filtra la tabla únicamente por coinc
   expect(screen.getByText('ACTA-2026-005726379')).toBeInTheDocument();
   expect(screen.getByText(/2 de 3 documento\(s\)/i)).toBeInTheDocument();
 
-  // Búsqueda parcial por nombre NO debe mostrar coincidencias
+  // Un fragmento de nombre encuentra la fila
   fireEvent.change(filterInput, { target: { value: 'Sofia' } });
-  expect(screen.queryByText('ACTA-2026-007520334')).toBeNull();
-  expect(screen.getByText(/0 de 3 documento\(s\)/i)).toBeInTheDocument();
+  expect(screen.getByText('ACTA-2026-007520334')).toBeInTheDocument();
+  expect(screen.getByText(/1 de 3 documento\(s\)/i)).toBeInTheDocument();
 
   // Búsqueda exacta por nombre completo (con acentos/mayúsculas distintos) SÍ muestra coincidencia
   fireEvent.change(filterInput, { target: { value: 'Sofía Valeria Martínez Salas' } });
@@ -298,7 +301,7 @@ test('pagina de 25 registros y encuentra coincidencias exactas de cualquier pág
   expect(screen.getByText('ACTA-2026-0028')).toBeInTheDocument();
   expect(screen.getByText('Página 2 de 2')).toBeInTheDocument();
 
-  const filterInput = screen.getByLabelText(/Filtrar responsable por cédula o nombre exacto/i);
+  const filterInput = screen.getByLabelText(/Filtrar responsable por nombre o cédula/i);
   fireEvent.change(filterInput, { target: { value: '99887766' } });
   expect(screen.getByText('ACTA-2026-0028')).toBeInTheDocument();
   expect(screen.getByText(/1 de 28 documento\(s\)/i)).toBeInTheDocument();
