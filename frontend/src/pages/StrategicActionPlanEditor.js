@@ -22,6 +22,7 @@ import logoFormatos from '../assets/logo_formatos.jpg';
 import RichTextEditor, { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
 import MeetingCalendarScheduler from '../components/meetingMinute/MeetingCalendarScheduler';
 import PlanAccionConsulta from './PlanAccionConsulta';
+import { relationRole, matchingRelations, filterRelatedOptions, relatedChanges } from '../utils/strategicActivityRelations';
 import { actionPlanFormFields } from '../utils/actionPlanFormFields';
 import { getPlanEffectiveSchedule } from '../utils/strategicPlanSchedule';
 
@@ -291,36 +292,11 @@ const isIndicatorLevelField = (field) => {
   );
 };
 
-const STRATEGIC_OBJECTIVE_GUIDELINES = {
-  OE1: ['LE-001', 'LE-002', 'LE-003', 'LE-004'],
-  OE2: ['LE-005', 'LE-006', 'LE-007', 'LE-008', 'LE-009', 'LE-010'],
-  OE3: ['LE-011', 'LE-012', 'LE-013']
-};
-
-const isObjectiveField = (field) => {
-  if (!field) return false;
-  const k = normalizeFieldText(field.key);
-  const l = normalizeFieldText(field.label);
-  return k === 'strategic_objective' || k === 'objetivo_estrategico' || k.includes('objective') || l.includes('objetivo');
-};
-
 const isGuidelineField = (field) => {
   if (!field) return false;
   const k = normalizeFieldText(field.key);
   const l = normalizeFieldText(field.label);
   return k === 'strategic_guideline' || k === 'lineamiento_estrategico' || k.includes('guideline') || k.includes('lineamiento') || l.includes('lineamiento');
-};
-
-const belongsToObjective = (guidelineEl, objectiveEl) => {
-  if (!guidelineEl || !objectiveEl) return true;
-  if (guidelineEl.parent_id && objectiveEl.id) {
-    return String(guidelineEl.parent_id) === String(objectiveEl.id);
-  }
-  const objCode = (objectiveEl.code || '').toUpperCase().trim();
-  const gCode = (guidelineEl.code || '').toUpperCase().trim();
-  const allowed = STRATEGIC_OBJECTIVE_GUIDELINES[objCode];
-  if (allowed && allowed.includes(gCode)) return true;
-  return false;
 };
 
 const parseCoResponsibles = (val) => {
@@ -1582,89 +1558,16 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     return '';
   };
   const setFieldValue = (field, value) => {
-    if (isObjectiveField(field)) {
-      const newObjStr = String(value || '').trim().toLowerCase();
-      const newObjEl = (formElements || []).find((el) => {
-        const text = (el.code ? `${el.code} ${el.name}` : el.name).trim().toLowerCase();
-        const code = (el.code || '').trim().toLowerCase();
-        return String(el.id) === String(value) || text === newObjStr || (code && newObjStr.startsWith(code));
-      });
-
-      const gField = activityFields.find(isGuidelineField);
-      let resetGuideline = false;
-      if (gField && newObjEl) {
-        const curGVal = fieldValue(gField);
-        if (curGVal) {
-          const curGStr = String(curGVal).trim().toLowerCase();
-          const curGEl = (formElements || []).find((el) => {
-            const text = (el.code ? `${el.code} ${el.name}` : el.name).trim().toLowerCase();
-            const code = (el.code || '').trim().toLowerCase();
-            return String(el.id) === String(curGVal) || text === curGStr || (code && curGStr.startsWith(code));
-          });
-          if (curGEl && !belongsToObjective(curGEl, newObjEl)) {
-            resetGuideline = true;
-          }
-        }
-      }
-
+    if (relationRole(field)) {
       setItem((current) => {
-        const nextCustom = { ...(current.custom_values || {}), [field.key]: value };
-        if (field.key === 'strategic_objective') nextCustom.objetivo_estrategico = value;
-        if (resetGuideline && gField) {
-          nextCustom[gField.key] = '';
-          if (gField.key === 'strategic_guideline') nextCustom.lineamiento_estrategico = '';
-        }
-        return {
-          ...current,
-          ...(field.key in current ? { [field.key]: value } : {}),
-          ...(resetGuideline && gField && gField.key in current ? { [gField.key]: '' } : {}),
-          custom_values: nextCustom
-        };
-      });
-      return;
-    }
-
-    if (isGuidelineField(field)) {
-      const newGStr = String(value || '').trim().toLowerCase();
-      const newGEl = (formElements || []).find((el) => {
-        const text = (el.code ? `${el.code} ${el.name}` : el.name).trim().toLowerCase();
-        const code = (el.code || '').trim().toLowerCase();
-        return String(el.id) === String(value) || text === newGStr || (code && newGStr.startsWith(code));
-      });
-
-      let autoObjVal = null;
-      const objField = activityFields.find(isObjectiveField);
-      if (newGEl && objField) {
-        let parentObjEl = null;
-        if (newGEl.parent_id) {
-          parentObjEl = (formElements || []).find((el) => String(el.id) === String(newGEl.parent_id));
-        }
-        if (!parentObjEl) {
-          for (const [oCode, gCodes] of Object.entries(STRATEGIC_OBJECTIVE_GUIDELINES)) {
-            if (gCodes.includes((newGEl.code || '').toUpperCase().trim())) {
-              parentObjEl = (formElements || []).find((el) => (el.code || '').toUpperCase().trim() === oCode);
-              break;
-            }
-          }
-        }
-        if (parentObjEl) {
-          autoObjVal = parentObjEl.code ? `${parentObjEl.code} ${parentObjEl.name}` : parentObjEl.name;
-        }
-      }
-
-      setItem((current) => {
-        const nextCustom = { ...(current.custom_values || {}), [field.key]: value };
-        if (field.key === 'strategic_guideline') nextCustom.lineamiento_estrategico = value;
-        if (autoObjVal && objField) {
-          nextCustom[objField.key] = autoObjVal;
-          if (objField.key === 'strategic_objective') nextCustom.objetivo_estrategico = autoObjVal;
-        }
-        return {
-          ...current,
-          ...(field.key in current ? { [field.key]: value } : {}),
-          ...(autoObjVal && objField && objField.key in current ? { [objField.key]: autoObjVal } : {}),
-          custom_values: nextCustom
-        };
+        const changes = relatedChanges(field, value, activityFields,
+          (other) => current.custom_values?.[other.key] ?? current[other.key] ?? '');
+        const direct = {};
+        activityFields.forEach((other) => {
+          if (Object.prototype.hasOwnProperty.call(changes, other.key) && other.key in current) direct[other.key] = changes[other.key];
+          if (isMacroactivityField(other) && Object.prototype.hasOwnProperty.call(changes, other.key)) direct.macroactivity = changes[other.key];
+        });
+        return { ...current, ...direct, custom_values: { ...current.custom_values, ...changes } };
       });
       return;
     }
@@ -2154,23 +2057,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       if (matchedLevel) {
         let matchingElements = formElements.filter((el) => String(el.level_id) === String(matchedLevel.id) && el.active !== false);
 
-        // Filtro cruzado inteligente: Si es campo de Lineamiento Estratégico y hay un Objetivo seleccionado
-        if (isGuidelineField(field)) {
-          const selectedObjField = activityFields.find(isObjectiveField);
-          const rawObjVal = selectedObjField ? fieldValue(selectedObjField) : (item.custom_values?.strategic_objective || item.custom_values?.objetivo_estrategico);
-          if (rawObjVal) {
-            const normObjVal = String(rawObjVal).trim().toLowerCase();
-            const selectedObjEl = formElements.find((el) => {
-              const text = (el.code ? `${el.code} ${el.name}` : el.name).trim().toLowerCase();
-              const code = (el.code || '').trim().toLowerCase();
-              return String(el.id) === String(rawObjVal) || text === normObjVal || (code && normObjVal.startsWith(code));
-            });
-            if (selectedObjEl) {
-              matchingElements = matchingElements.filter((el) => belongsToObjective(el, selectedObjEl));
-            }
-          }
-        }
-
         if (matchingElements.length > 0) {
           options = matchingElements.map((el) => {
             const text = el.code ? `${el.code} ${el.name}` : el.name;
@@ -2182,30 +2068,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       }
     }
 
-    if (isGuidelineField(field)) {
-      const selectedObjField = activityFields.find(isObjectiveField);
-      const rawObjVal = selectedObjField ? fieldValue(selectedObjField) : (item.custom_values?.strategic_objective || item.custom_values?.objetivo_estrategico);
-      if (rawObjVal) {
-        const normObjVal = String(rawObjVal).trim().toLowerCase();
-        const selectedObjEl = formElements.find((el) => {
-          const text = (el.code ? `${el.code} ${el.name}` : el.name).trim().toLowerCase();
-          const code = (el.code || '').trim().toLowerCase();
-          return String(el.id) === String(rawObjVal) || text === normObjVal || (code && normObjVal.startsWith(code));
-        });
-        if (selectedObjEl) {
-          const allowedCodes = STRATEGIC_OBJECTIVE_GUIDELINES[(selectedObjEl.code || '').toUpperCase()] || [];
-          if (allowedCodes.length > 0 && options.length > 0) {
-            const filtered = options.filter((opt) => {
-              const str = (opt.label || opt.value || '').toUpperCase();
-              return allowedCodes.some((ac) => str.includes(ac));
-            });
-            if (filtered.length > 0) {
-              options = filtered;
-            }
-          }
-        }
-      }
-    }
+    options = filterRelatedOptions(field, options, activityFields, fieldValue);
 
     if (field.key === 'indicator_type' && !options.length) options = ['Gestión','Resultado','Producto','Impacto'].map((value) => ({ value, label: value }));
     
@@ -2304,6 +2167,9 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             }
           }}
         >
+          {select && !multiple && relationRole(field) && (
+            <MenuItem value=""><em>Limpiar selección</em></MenuItem>
+          )}
           {select && options.map((option) => (
             <MenuItem key={option.value} value={option.value} sx={{ whiteSpace: 'normal', lineHeight: 1.45, py: 1 }}>
               {option.label}
@@ -2476,6 +2342,15 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
     if (!primaryActivity) return enqueueSnackbar('Escriba el nombre o descripción principal del registro.', { variant: 'warning' });
     const missingField = activityFields.find((field) => field.required && (Array.isArray(fieldValue(field)) ? !fieldValue(field).length : !String(fieldValue(field) || '').trim()));
     if (missingField) return enqueueSnackbar(`Complete el campo “${missingField.label}”.`, { variant: 'warning' });
+
+    const strategicSelections = {};
+    activityFields.forEach((field) => {
+      const role = relationRole(field);
+      if (role && fieldValue(field)) strategicSelections[role] = fieldValue(field);
+    });
+    if (Object.keys(strategicSelections).length > 1 && !matchingRelations(strategicSelections).length) {
+      return enqueueSnackbar('El objetivo, lineamiento y macroactividad deben pertenecer a la misma relaci?n del PED.', { variant: 'warning' });
+    }
 
     // Validar que no se registren actividades duplicadas en el mismo Plan de Acción
     const normActivity = normalizeFieldText(primaryActivity);
@@ -4220,14 +4095,41 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     </Box>
                     <Typography variant="h6" fontWeight={900} color="#303a53" sx={{ fontSize: 17, lineHeight: 1.2 }}>{editingItemId ? 'Editar actividad' : 'Registrar una actividad'}</Typography>
                   </Stack>
-                  <Box sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))', xl: 'repeat(4, minmax(0, 1fr))' },
-                    alignItems: 'start',
-                    gap: { xs: 1.35, md: 1.6 }
-                  }}>
-                    {activityFields.map(renderConfiguredField)}
-                  </Box>
+                  <Stack spacing={{ xs: 2, sm: 2.5 }} sx={{ minWidth: 0 }}>
+                    {activityFields.reduce((rows, field) => {
+                      const fullWidth = isActivityField(field) || isIndicatorBlockField(field)
+                        || ['long_text', 'file'].includes(field.data_type);
+                      const category = relationRole(field) ? 'strategic' : 'details';
+                      const last = rows[rows.length - 1];
+                      if (fullWidth || !last || last.fullWidth || last.category !== category || last.fields.length === 3) {
+                        rows.push({ category, fullWidth, fields: [field] });
+                      } else {
+                        last.fields.push(field);
+                      }
+                      return rows;
+                    }, []).map((row) => (
+                      <Box key={row.fields[0].key} sx={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'flex-start',
+                        gap: { xs: 2, sm: 2.25 },
+                        minWidth: 0
+                      }}>
+                        {row.fields.map((field) => (
+                          <Box key={field.key} sx={{
+                            flex: row.fullWidth ? '1 1 100%' : '1 1 18rem',
+                            minWidth: 0,
+                            maxWidth: '100%',
+                            '& > *': { minWidth: 0, width: '100%' },
+                            '& .MuiFormControl-root': { minWidth: 0, width: '100%' },
+                            '& .MuiFormHelperText-root': { overflowWrap: 'anywhere' }
+                          }}>
+                            {renderConfiguredField(field)}
+                          </Box>
+                        ))}
+                      </Box>
+                    ))}
+                  </Stack>
                   <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="flex-end" mt={2.25}>
                     <Button
                       variant="contained"

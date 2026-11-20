@@ -143,6 +143,21 @@ const saveActionItem = async ({ req, actionPlan, payload, item = null }) => sequ
     custom_values: { ...preservedCustomValues, ...require('./legacyActionIdentity').stripLegacyProvenance(incomingCustomValues) },
     updated_by: req.user.id
   };
+  const termForRelations = await StrategicTerm.findByPk(actionPlan.term_id, { transaction });
+  if (termForRelations) {
+    const { captureActionPlanSchema } = require('./strategicActionPlanSchemaService');
+    const schema = await captureActionPlanSchema(termForRelations.strategic_plan_id, transaction);
+    const { relationRole, matchingRelations } = require('./strategicActivityRelations');
+    const selections = {};
+    (schema?.fields || []).filter((field) => field.active !== false).forEach((field) => {
+      const role = relationRole(field);
+      const value = values.custom_values[field.key] ?? payload[field.key];
+      if (role && value) selections[role] = value;
+    });
+    if (Object.keys(selections).length > 1 && !matchingRelations(selections).length) {
+      throw Object.assign(new Error('El objetivo, lineamiento y macroactividad deben pertenecer a la misma relación del PED.'), { statusCode: 422 });
+    }
+  }
   const { policyDimensions } = require('./activityPolicyStatisticsService');
   const policyCatalog = await require('./institutionalPolicyCatalogService').listPolicies();
   values.custom_values.policy_statistics = policyDimensions(
