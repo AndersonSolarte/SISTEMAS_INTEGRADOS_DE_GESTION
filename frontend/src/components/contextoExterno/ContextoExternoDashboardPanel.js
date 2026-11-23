@@ -49,6 +49,7 @@ import FileDownloadRoundedIcon from '@mui/icons-material/FileDownloadRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import html2canvas from 'html2canvas';
+import radialCategories from '../../data/contextoExternoRadial.json';
 import { useSnackbar } from 'notistack';
 import XLSXStyle from 'xlsx-js-style';
 import {
@@ -3025,6 +3026,14 @@ function SequenceGroup({ title, icon: Icon, color, items }) {
 
 function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChange }) {
   const offerGraphicRef = useRef(null);
+  const radialLayoutRef = useRef(null);
+  const [radialWidth, setRadialWidth] = useState(1000);
+  useEffect(() => {
+    if (view !== 'radial' || !radialLayoutRef.current) return undefined;
+    const observer = new ResizeObserver(([entry]) => setRadialWidth(entry.contentRect.width || 1000));
+    observer.observe(radialLayoutRef.current);
+    return () => observer.disconnect();
+  }, [view]);
   const groups = [
     { slot: 0, title: 'RECONOCIMIENTO MEN', icon: AccountBalanceRoundedIcon, color: '#173f96', items: summary.recognition },
     { slot: 1, title: 'SECTOR', icon: BusinessRoundedIcon, color: '#3a9626', items: summary.sectors },
@@ -3032,13 +3041,21 @@ function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChan
     { slot: 4, title: 'NÚMERO DE SEMESTRES', icon: CalendarMonthRoundedIcon, color: '#0891a5', items: summary.semesters },
     { slot: 3, title: 'RANGO DE CRÉDITOS ACADÉMICOS', icon: WorkspacePremiumRoundedIcon, color: '#ea6a0a', items: summary.credits }
   ].filter((group) => group.items.length);
-  const radialConnectors = [
-    { slot: 0, points: '285,145 350,145 408,235', dot: ['408', '235'], color: '#173f96' },
-    { slot: 1, points: '715,145 650,145 592,235', dot: ['592', '235'], color: '#3a9626' },
-    { slot: 2, points: '285,350 345,350 395,335', dot: ['395', '335'], color: '#92278f' },
-    { slot: 3, points: '715,350 655,350 605,335', dot: ['605', '335'], color: '#ea6a0a' },
-    { slot: 4, points: '500,450 500,510', dot: ['500', '450'], color: '#0891a5' }
-  ].filter((connector) => groups.some((group) => group.slot === connector.slot));
+  const radialConnectors = radialCategories.filter((category) => groups.some((group) => group.slot === category.slot)).map((category) => {
+    const cx = radialWidth / 2;
+    const angle = category.angle * Math.PI / 180;
+    const dot = [cx + 120 * Math.cos(angle), 315 + 120 * Math.sin(angle)];
+    const left = category.slot === 0 || category.slot === 2;
+    const upper = category.slot === 0 || category.slot === 1;
+    const y = upper ? 145 : 350;
+    const points = category.slot === 4
+      ? `${dot[0]},${dot[1]} ${cx},503`
+      : `${left ? 300 : radialWidth - 300},${y} ${cx + (left ? -160 : 160)},${y} ${dot[0]},${dot[1]}`;
+    const start = category.startAngle * Math.PI / 180;
+    const end = category.endAngle * Math.PI / 180;
+    const arc = `M${125 + 120 * Math.cos(start)} ${125 + 120 * Math.sin(start)} A120 120 0 0 1 ${125 + 120 * Math.cos(end)} ${125 + 120 * Math.sin(end)}`;
+    return { ...category, dot, points, arc };
+  });
   const calculatedOrbitGroups = useMemo(() => {
     let currentY = 20;
     const gap = 16;
@@ -3193,14 +3210,18 @@ function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChan
             <Typography sx={{ color: '#082b66', fontSize: 16, fontWeight: 950 }}>{analysisTitle}</Typography>
             <Typography sx={{ color: '#475569', fontSize: 11.5, fontWeight: 500 }}>Información consolidada de la tabla OFERTA según los filtros aplicados</Typography>
           </Box>
-          <Box sx={{ position: 'relative', maxWidth: 1080, height: { xs: 'auto', md: 700 }, mx: 'auto', mt: { md: 1 } }}>
-            <Box component="svg" viewBox="0 0 1000 700" preserveAspectRatio="none" sx={{ display: { xs: 'none', md: 'block' }, position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0 }}>
+          <Box ref={radialLayoutRef} sx={{ position: 'relative', maxWidth: 1000, height: { xs: 'auto', md: 700 }, mx: 'auto', mt: { md: 1 } }}>
+            <Box component="svg" viewBox={`0 0 ${radialWidth} 700`} preserveAspectRatio="none" sx={{ display: { xs: 'none', md: 'block' }, position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0 }}>
               {radialConnectors.map((connector) => <polyline key={`line-${connector.slot}`} points={connector.points} fill="none" stroke={connector.color} strokeWidth="2" />)}
               {radialConnectors.map((connector) => <circle key={`dot-${connector.slot}`} cx={connector.dot[0]} cy={connector.dot[1]} r="7" fill={connector.color} stroke="#fff" strokeWidth="3" />)}
             </Box>
 
-            <Box sx={{ position: { xs: 'relative', md: 'absolute' }, zIndex: 1, left: { md: '50%' }, top: { md: 190 }, transform: { md: 'translateX(-50%)' }, width: { xs: 210, md: 250 }, height: { xs: 210, md: 250 }, mx: { xs: 'auto', md: 0 }, mb: { xs: 4, md: 0 }, borderRadius: '50%', p: 1.2, background: 'conic-gradient(#173f96 0 16%,#edf2f7 16% 20%,#3a9626 20% 36%,#edf2f7 36% 40%,#ea6a0a 40% 56%,#edf2f7 56% 60%,#0891a5 60% 76%,#edf2f7 76% 80%,#92278f 80% 96%,#edf2f7 96% 100%)', boxShadow: '0 16px 36px rgba(15,23,42,.14)' }}>
-              <Box sx={{ width: '100%', height: '100%', borderRadius: '50%', bgcolor: '#fff', border: '1px solid #d7e0eb', display: 'grid', placeItems: 'center', textAlign: 'center' }}>
+            <Box sx={{ position: { xs: 'relative', md: 'absolute' }, zIndex: 1, left: { md: '50%' }, top: { md: 190 }, transform: { md: 'translateX(-50%)' }, width: { xs: 210, md: 250 }, height: { xs: 210, md: 250 }, mx: { xs: 'auto', md: 0 }, mb: { xs: 4, md: 0 }, borderRadius: '50%', p: 1.2, bgcolor: '#fff', boxShadow: '0 16px 36px rgba(15,23,42,.14)' }}>
+              <Box component="svg" viewBox="0 0 250 250" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+                <circle cx="125" cy="125" r="120" fill="none" stroke="#edf2f7" strokeWidth="9.6" />
+                {radialConnectors.map((connector) => <path key={`arc-${connector.slot}`} data-radial-slot={connector.slot} d={connector.arc} fill="none" stroke={connector.color} strokeWidth="9.6" />)}
+              </Box>
+              <Box sx={{ position: 'relative', width: '100%', height: '100%', borderRadius: '50%', bgcolor: '#fff', border: '1px solid #d7e0eb', display: 'grid', placeItems: 'center', textAlign: 'center' }}>
                 <Box>
                   <Typography sx={{ color: '#475569', fontSize: 12, fontWeight: 800 }}>TOTAL</Typography>
                   <Typography sx={{ color: '#082b66', fontSize: 23, lineHeight: 1.05, fontWeight: 950 }}>PROGRAMAS</Typography>
@@ -3552,6 +3573,12 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
       const response = await gestionInformacionService.downloadContextoExternoGeneralPdf(selectedProgram, {
         seccion: 'completo',
         vista_oferta: summaryView,
+        sector: sector === ALL ? '' : sector,
+        modalidad: modality === ALL ? '' : modality,
+        municipio: municipality === ALL ? '' : municipality,
+        busqueda: offerSearch,
+        departamentos: regionFilter === ALL ? undefined : JSON.stringify(Array.from(new Set(oferta.filter((row) => getRegionForDepartment(row.departamento).key === regionFilter).map((row) => row.departamento)))),
+        periodo: period === ALL ? '' : period,
         grafico_ingreso: populationViews[0].chartType,
         alcance_ingreso: populationViews[0].scope,
         grafico_matriculados: populationViews[1].chartType,
@@ -3563,7 +3590,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
       const url = window.URL.createObjectURL(response.data);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `contexto_externo_${normalize(selectedProgram).toLowerCase().replace(/[^a-z0-9]+/g, '_')}.pdf`;
+      link.download = `CONTEXTO_EXTERNO_${normalize(selectedProgram).toUpperCase().replace(/[^A-Z0-9]+/g, '_')}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();

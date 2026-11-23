@@ -705,19 +705,30 @@ const downloadContextoExternoGeneralPdf = async (req, res) => {
       : 'ingreso';
     const exactFilter = (rowValue, queryValue) => !cleanText(queryValue) || normalizeKey(rowValue) === normalizeKey(queryValue);
     const searchKey = normalizeKey(req.query?.busqueda);
-    const searchFields = ['nombre_programa', 'institucion', 'area_conocimiento', 'municipio'];
+    const searchFields = ['nombre_programa', 'institucion', 'area_conocimiento', 'municipio', 'departamento'];
+    let departments = null;
+    if (req.query?.departamentos) {
+      try {
+        const parsed = JSON.parse(req.query.departamentos);
+        if (!Array.isArray(parsed) || parsed.some((value) => typeof value !== 'string')) throw new Error();
+        departments = new Set(parsed.map(normalizeKey));
+      } catch (_) {
+        return res.status(400).json({ success: false, message: 'El filtro de departamentos no es válido.' });
+      }
+    }
     const oferta = rows.filter((row) => (
       row.seccion === 'oferta'
       && normalizeKey(row.area_conocimiento) === programKey
-      && (section === 'completo' || exactFilter(row.sector, req.query?.sector))
-      && (section === 'completo' || exactFilter(row.modalidad, req.query?.modalidad))
-      && (section === 'completo' || exactFilter(row.municipio, req.query?.municipio))
-      && (section === 'completo' || !searchKey || searchFields.some((field) => normalizeKey(row[field]).includes(searchKey)))
+      && exactFilter(row.sector, req.query?.sector)
+      && exactFilter(row.modalidad, req.query?.modalidad)
+      && exactFilter(row.municipio, req.query?.municipio)
+      && (!searchKey || searchFields.some((field) => normalizeKey(row[field]).includes(searchKey)))
+      && (!departments || departments.has(normalizeKey(row.departamento)))
     ));
     const poblacional = rows.filter((row) => (
       row.seccion === 'poblacional'
       && normalizeKey(row.programa) === programKey
-      && (section === 'completo' || exactFilter(row.periodo_referencia, req.query?.periodo))
+      && exactFilter(row.periodo_referencia, req.query?.periodo)
     ));
     const hasVisibleData = section === 'completo'
       ? oferta.length + poblacional.length
@@ -776,8 +787,8 @@ const downloadContextoExternoGeneralPdf = async (req, res) => {
       aiAnalysis,
       includeAnalysis
     });
-    const slug = normalizeKey(program).toLowerCase().replace(/_+/g, '_');
-    res.setHeader('Content-Disposition', `attachment; filename=contexto_externo_${slug}.pdf`);
+    const slug = normalizeKey(program).toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+    res.setHeader('Content-Disposition', `attachment; filename=CONTEXTO_EXTERNO_${slug}.pdf`);
     res.setHeader('Content-Type', 'application/pdf');
     return res.send(buffer);
   } catch (error) {

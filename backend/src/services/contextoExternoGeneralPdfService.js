@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const PdfPrinter = require('pdfmake');
+const radialCategories = require('../assets/contextoExternoRadial.json');
 
 const printer = new PdfPrinter({
   ReportFont: {
@@ -116,7 +117,7 @@ const generateOfferAnalysis = (rows, regionalRows, scope = 'Nacional') => {
   const mainModalityPercent = count > 0 ? ((mainModalityVal / count) * 100).toFixed(1) : '0';
   const minCred = credits.length ? Math.min(...credits) : 'N/A';
   const maxCred = credits.length ? Math.max(...credits) : 'N/A';
-  const avgCred = credits.length ? Math.round(credits.reduce((a, b) => a + b, 0) / credits.length) : 'N/A';
+  const avgCred = credits.length ? credits.reduce((a, b) => a + b, 0) / credits.length : 'N/A';
 
   return `La caracterización estructural de la oferta académica a escala ${scope.toLowerCase()} comprende un ecosistema de ${count} programas afines formalmente registrados ante el SNIES. El comportamiento sectorial refleja una participación preponderante del sector ${mainSector.toLowerCase()}, que agrupa el ${mainSectorPercent}% de la oferta (${mainSectorVal} programas), evidenciando las dinámicas de inversión e iniciativa institucional en este campo. En materia metodológica, la modalidad ${mainModality.toLowerCase()} se posiciona como el formato rector con un ${mainModalityPercent}% (${mainModalityVal} programas), reflejando la tradición formativa y la demanda de presencialidad en la disciplina.\n\nEn cuanto a la arquitectura curricular, la carga académica se estructura en un rango de ${minCred} a ${maxCred} créditos académicos, con una media de ${avgCred} créditos y duraciones estándar acordes a los lineamientos regulatorios del MEN (Decreto 1330). Esta distribución ratifica la consistencia académica del área formativa y delinea un marco de referencia propicio para fortalecer la diferenciación de contenidos, la pertinencia regional y la competitividad curricular institucional.`;
 };
@@ -307,9 +308,16 @@ const stackedBarChartSvg = ({ data, series, width = 690, height = 300, title = '
   const visibleData = data.filter((row) => series.some((item) => number(row[item.key]) > 0));
   const margin = { left: 48, right: 18, top: 62, bottom: 46 };
   const chartW = width - margin.left - margin.right;
-  const chartH = height - margin.top - margin.bottom;
   const maxStack = Math.max(1, ...visibleData.map((row) => series.reduce((total, item) => total + number(row[item.key]), 0)));
   const maxValue = maxStack * 1.15;
+  const positiveValues = visibleData.flatMap((row) => series.map((item) => number(row[item.key]))).filter((value) => value > 0);
+  const smallestValue = Math.min(...positiveValues, maxStack);
+  // Give the smallest segment room for the same readable label as every other segment.
+  // Increasing the plot height preserves the proportions and the linear axis.
+  const valueFontSize = 9;
+  const minimumSegmentHeight = 11;
+  height = Math.max(height, Math.ceil(maxValue / smallestValue * minimumSegmentHeight + margin.top + margin.bottom));
+  const chartH = height - margin.top - margin.bottom;
   const slotWidth = chartW / Math.max(1, visibleData.length);
   const barWidth = Math.max(18, Math.min(62, slotWidth * 0.8));
   const x = (index) => margin.left + slotWidth * index + slotWidth / 2;
@@ -322,7 +330,6 @@ const stackedBarChartSvg = ({ data, series, width = 690, height = 300, title = '
   }).join('');
   const bars = visibleData.map((row, rowIndex) => {
     let cumulative = 0;
-    const totalStack = series.reduce((sum, item) => sum + number(row[item.key]), 0);
     const lastActiveIndex = series.reduce((lastIdx, item, idx) => (number(row[item.key]) > 0 ? idx : lastIdx), -1);
     const segments = series.map((item, seriesIndex) => {
       const value = number(row[item.key]);
@@ -339,18 +346,14 @@ const stackedBarChartSvg = ({ data, series, width = 690, height = 300, title = '
         ? `<path d="M ${bx} ${top + segmentHeight} V ${top + r} A ${r} ${r} 0 0 1 ${bx + r} ${top} H ${bx + barWidth - r} A ${r} ${r} 0 0 1 ${bx + barWidth} ${top + r} V ${top + segmentHeight} Z" fill="${color}"/>`
         : `<rect x="${bx}" y="${top}" width="${barWidth}" height="${segmentHeight}" fill="${color}"/>`;
       const formatted = format.format(value);
-      let label = '';
-      if (segmentHeight >= 11 && barWidth >= 20) {
-        const labelY = (top + segmentHeight / 2 + (segmentHeight < 16 ? 2.5 : 3.2)).toFixed(1);
-        label = `<text x="${x(rowIndex)}" y="${labelY}" text-anchor="middle" font-size="${segmentHeight < 16 ? 7.2 : 8.5}" font-weight="900" fill="#ffffff">${escapeXml(formatted)}</text>`;
-      } else if (segmentHeight >= 8 && barWidth >= 18) {
-        const labelY = (top + segmentHeight / 2 + 2.2).toFixed(1);
-        label = `<text x="${x(rowIndex)}" y="${labelY}" text-anchor="middle" font-size="6.8" font-weight="900" fill="#ffffff">${escapeXml(formatted)}</text>`;
-      }
+      // Keep each value centered in its own segment, including values of one.
+      const fontSize = valueFontSize;
+      const labelY = top + segmentHeight / 2 + fontSize * .35;
+      const label = `<text data-stack-value="${rowIndex}-${seriesIndex}" data-segment-top="${top}" data-segment-height="${segmentHeight}" x="${x(rowIndex)}" y="${labelY}" text-anchor="middle" font-size="${fontSize}" font-weight="bold" fill="#ffffff">${escapeXml(formatted)}</text>`;
       return `${segmentShape}${label}`;
     }).join('');
 
-    return `${segments}`;
+    return segments;
   }).join('');
   const labels = visibleData.map((row, index) => {
     const [year, semester] = text(row.periodo).split('-');
@@ -1028,23 +1031,30 @@ const aggregatePeriods = (rows, fields) => {
   return Array.from(map.values()).sort((a, b) => text(a.periodo).localeCompare(text(b.periodo)));
 };
 
+// Material UI rounded paths shared with the dashboard (Material Icons, Apache-2.0).
+const offerIconPaths = {
+  "bank": [
+    "M4 11.5v4c0 .83.67 1.5 1.5 1.5S7 16.33 7 15.5v-4c0-.83-.67-1.5-1.5-1.5S4 10.67 4 11.5m6 0v4c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5v-4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5M3.5 22h16c.83 0 1.5-.67 1.5-1.5s-.67-1.5-1.5-1.5h-16c-.83 0-1.5.67-1.5 1.5S2.67 22 3.5 22M16 11.5v4c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5v-4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5M10.57 1.49l-7.9 4.16c-.41.21-.67.64-.67 1.1C2 7.44 2.56 8 3.25 8h16.51C20.44 8 21 7.44 21 6.75c0-.46-.26-.89-.67-1.1l-7.9-4.16c-.58-.31-1.28-.31-1.86 0"
+  ],
+  "building": [
+    "M12 7V5c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zM6 19H4v-2h2zm0-4H4v-2h2zm0-4H4V9h2zm0-4H4V5h2zm4 12H8v-2h2zm0-4H8v-2h2zm0-4H8V9h2zm0-4H8V5h2zm9 12h-7v-2h2v-2h-2v-2h2v-2h-2V9h7c.55 0 1 .45 1 1v8c0 .55-.45 1-1 1m-1-8h-2v2h2zm0 4h-2v2h2z"
+  ],
+  "ribbon": [
+    "m10.92 12.75 1.08-.82 1.07.81c.39.29.92-.08.78-.55l-.42-1.36 1.2-.95c.37-.28.16-.88-.32-.88h-1.4l-.43-1.34c-.15-.46-.8-.46-.95 0L11.09 9H9.68c-.47 0-.68.6-.31.89l1.19.95-.42 1.36c-.14.47.39.84.78.55M6 21.61c0 .68.67 1.16 1.32.95L12 21l4.68 1.56c.65.22 1.32-.26 1.32-.95v-6.33c1.24-1.41 2-3.25 2-5.28 0-4.42-3.58-8-8-8s-8 3.58-8 8c0 2.03.76 3.87 2 5.28zM12 4c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6 2.69-6 6-6"
+  ],
+  "calendar": [
+    "M17 2c-.55 0-1 .45-1 1v1H8V3c0-.55-.45-1-1-1s-1 .45-1 1v1H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-1V3c0-.55-.45-1-1-1m2 18H5V10h14zm-8-7c0-.55.45-1 1-1s1 .45 1 1-.45 1-1 1-1-.45-1-1m-4 0c0-.55.45-1 1-1s1 .45 1 1-.45 1-1 1-1-.45-1-1m8 0c0-.55.45-1 1-1s1 .45 1 1-.45 1-1 1-1-.45-1-1m-4 4c0-.55.45-1 1-1s1 .45 1 1-.45 1-1 1-1-.45-1-1m-4 0c0-.55.45-1 1-1s1 .45 1 1-.45 1-1 1-1-.45-1-1m8 0c0-.55.45-1 1-1s1 .45 1 1-.45 1-1 1-1-.45-1-1"
+  ],
+  "laptop": [
+    "M4 7c0-.55.45-1 1-1h16c.55 0 1-.45 1-1s-.45-1-1-1H4c-1.1 0-2 .9-2 2v11h-.5c-.83 0-1.5.67-1.5 1.5S.67 20 1.5 20H14v-3H4zm19 1h-6c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V9c0-.55-.45-1-1-1m-1 9h-4v-7h4z"
+  ],
+  "school": [
+    "M5 13.18v2.81c0 .73.4 1.41 1.04 1.76l5 2.73c.6.33 1.32.33 1.92 0l5-2.73c.64-.35 1.04-1.03 1.04-1.76v-2.81l-6.04 3.3c-.6.33-1.32.33-1.92 0zm6.04-9.66-8.43 4.6c-.69.38-.69 1.38 0 1.76l8.43 4.6c.6.33 1.32.33 1.92 0L21 10.09V16c0 .55.45 1 1 1s1-.45 1-1V9.59c0-.37-.2-.7-.52-.88l-9.52-5.19a2.04 2.04 0 0 0-1.92 0"
+  ]
+};
 const renderIconSvg = (type, x, y, color) => {
-  if (type === 'bank') {
-    return `<g transform="translate(${x}, ${y})" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M-5 4h10M-4 0h8M-3 -3l3 -2l3 2M-3 0v4M0 0v4M3 0v4"/></g>`;
-  }
-  if (type === 'building') {
-    return `<g transform="translate(${x}, ${y})" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M-4 -5h8v10h-8zM-2 -3h1M1 -3h1M-2 0h1M1 0h1M-2 3h1M1 3h1"/></g>`;
-  }
-  if (type === 'ribbon') {
-    return `<g transform="translate(${x}, ${y})" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="0" cy="-2" r="3.5"/><path d="M-2 1.5l-1.5 5.5l3.5 -1.8l3.5 1.8l-1.5 -5.5"/></g>`;
-  }
-  if (type === 'calendar') {
-    return `<g transform="translate(${x}, ${y})" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M-4 -3h8v8h-8zM-2 -5v2M2 -5v2M-4 -1h8"/></g>`;
-  }
-  if (type === 'laptop') {
-    return `<g transform="translate(${x}, ${y})" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M-3 -4h6v5h-6zM-5 3h10"/></g>`;
-  }
-  return '';
+  const paths = offerIconPaths[type] || [];
+  return `<g transform="translate(${x - 6}, ${y - 6}) scale(.5)" fill="${color}">${paths.map((d) => `<path d="${d}"/>`).join('')}</g>`;
 };
 
 const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', program = '', width = 955, height = 380 }) => {
@@ -1061,232 +1071,200 @@ const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', pr
     { title: 'RANGO DE CRÉDITOS ACADÉMICOS', color: '#ea6a0a', items: credits.length ? [
       { label: 'MÍNIMO DE CRÉDITOS', value: Math.min(...credits) },
       { label: 'MÁXIMO DE CRÉDITOS', value: Math.max(...credits) },
-      { label: 'PROMEDIO DE CRÉDITOS', value: Math.round(credits.reduce((a, b) => a + b, 0) / credits.length) }
+      { label: 'PROMEDIO DE CRÉDITOS', value: credits.reduce((a, b) => a + b, 0) / credits.length }
     ] : [], icon: 'ribbon' }
   ];
-  const card = (group, x, y, w, h, compact = false) => {
-    const availableSlots = compact
-      ? Math.max(2, Math.floor((h - 34) / 13))
-      : Math.max(2, Math.floor((h - 46) / 16));
-    const shouldSummarize = view !== 'orbit' && group.items.length > availableSlots;
-    const visibleItems = shouldSummarize ? group.items.slice(0, availableSlots - 1) : group.items;
-    const hiddenItems = shouldSummarize ? group.items.slice(availableSlots - 1) : [];
-    const items = shouldSummarize ? [
-      ...visibleItems,
-      {
-        label: `OTRAS ${hiddenItems.length} CATEGORÍAS`,
-        value: hiddenItems.reduce((total, item) => total + number(item.value), 0)
-      }
-    ] : visibleItems;
-    const startY = y + (compact ? (view === 'orbit' ? 30 : 36) : 43);
-    const step = compact ? (view === 'orbit' ? 16 : (h < 90 ? 13.5 : 15.5)) : Math.max(16, Math.min(28, (h - 53) / Math.max(1, items.length)));
-    const headerHeight = compact ? 22 : 28;
-    const headerTextY = y + (compact ? 15 : 19);
-    const body = items.length ? items.map((item, index) => {
-      const iy = startY + index * step;
-      const rawLabel = text(item.label).toUpperCase();
-      const label = rawLabel.length > 28 ? `${rawLabel.slice(0, 27)}…` : rawLabel;
-      return `<circle cx="${x + 14}" cy="${iy - 2.5}" r="${compact ? 2.5 : 3}" fill="${group.color}"/><text x="${x + 23}" y="${iy}" font-size="${compact ? 7.8 : 9}" font-weight="bold" fill="#334155">${escapeXml(label)}</text><rect x="${x + w - 48}" y="${iy - (compact ? 8.5 : 11)}" width="38" height="${compact ? 12.5 : 16}" rx="${compact ? 4 : 5}" fill="#fff" stroke="${group.color}" stroke-opacity=".4"/><text x="${x + w - 29}" y="${iy + 0.5}" text-anchor="middle" font-size="${compact ? 8.2 : 9.5}" font-weight="bold" fill="${group.color}">${escapeXml(format.format(item.value))}</text>`;
-    }).join('') : `<text x="${x + w / 2}" y="${y + h / 2 + 10}" text-anchor="middle" font-size="8.5" fill="#94a3b8">Sin información</text>`;
-    if (view === 'orbit') {
-      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="${group.color}" stroke-width="1.4" stroke-opacity=".45"/><text x="${x + 16}" y="${y + 16}" font-size="9" font-weight="bold" fill="${group.color}">${escapeXml(group.title.toUpperCase())}</text>${body}`;
-    }
-    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="${group.color}" stroke-opacity=".35"/><rect x="${x}" y="${y}" width="${w}" height="${headerHeight}" rx="12" fill="${group.color}"/><rect x="${x}" y="${y + headerHeight - 9}" width="${w}" height="9" fill="${group.color}"/><text x="${x + w / 2}" y="${headerTextY}" text-anchor="middle" font-size="${compact ? 7.5 : 8.5}" font-weight="bold" fill="#fff">${escapeXml(group.title.toUpperCase())}</text>${body}`;
-  };
-  let body = '';
-  let calculatedHeight = height;
-
-  if (view === 'radial') {
-    const cx = 478;
-    const cy = 185;
-
-    const getCardH = (group) => Math.max(56, 34 + (group.items.length || 1) * 22);
-    const h0 = getCardH(groups[0]);
-    const h1 = getCardH(groups[1]);
-    const h2 = getCardH(groups[2]);
-    const h4 = getCardH(groups[4]);
-    const h3 = getCardH(groups[3]);
-
-    const radialCardsConfig = [
-      {
-        group: groups[0],
-        title: 'RECONOCIMIENTO MEN',
-        icon: 'bank',
-        card: { x: 25, y: 25, w: 250, h: h0 },
-        badge: { x: 150, y: 13 },
-        dot: { x: 420, y: 134 },
-        line: `M 275 65 L 350 65 L 420 134`
-      },
-      {
-        group: groups[1],
-        title: 'SECTOR',
-        icon: 'building',
-        card: { x: 680, y: 25, w: 250, h: h1 },
-        badge: { x: 805, y: 13 },
-        dot: { x: 536, y: 134 },
-        line: `M 680 65 L 605 65 L 536 134`
-      },
-      {
-        group: groups[2],
-        title: 'MODALIDADES',
-        icon: 'laptop',
-        card: { x: 25, y: 155, w: 250, h: h2 },
-        badge: { x: 150, y: 143 },
-        dot: { x: 410, y: 185 },
-        line: `M 275 185 L 410 185`
-      },
-      {
-        group: groups[4],
-        title: 'RANGO DE CRÉDITOS ACADÉMICOS',
-        icon: 'ribbon',
-        card: { x: 680, y: 155, w: 250, h: h4 },
-        badge: { x: 805, y: 143 },
-        dot: { x: 546, y: 210 },
-        line: `M 680 210 L 605 210 L 546 210`
-      },
-      {
-        group: groups[3],
-        title: 'NÚMERO DE SEMESTRES',
-        icon: 'calendar',
-        card: { x: 353, y: 300, w: 250, h: h3 },
-        badge: { x: 478, y: 287 },
-        dot: { x: 478, y: 253 },
-        line: `M 478 253 L 478 287`
-      }
-    ];
-
-    calculatedHeight = Math.max(380, 300 + h3 + 15);
-
-    const cardsMarkup = radialCardsConfig.map(({ group, title, icon, card: c, badge, dot, line }) => {
-      const { x, y, w, h } = c;
-      const startY = y + 34;
-      const items = group.items;
-      const step = 22;
-
-      const bodyMarkup = items.length ? items.map((item, index) => {
-        const iy = startY + index * step + 12;
-        const label = text(item.label);
-        return `<circle cx="${x + 14}" cy="${iy - 2.8}" r="3" fill="${group.color}"/><text x="${x + 23}" y="${iy}" font-size="8.5" font-weight="bold" fill="#334155">${escapeXml(label)}</text><rect x="${x + w - 48}" y="${iy - 10.5}" width="38" height="15" rx="5" fill="#fff" stroke="${group.color}" stroke-opacity=".4"/><text x="${x + w - 29}" y="${iy + 0.5}" text-anchor="middle" font-size="8.5" font-weight="bold" fill="${group.color}">${escapeXml(format.format(item.value))}</text>`;
-      }).join('') : `<text x="${x + w / 2}" y="${y + h / 2 + 5}" text-anchor="middle" font-size="8.5" fill="#94a3b8">Sin información</text>`;
-
-      return `
-        <path d="${line}" fill="none" stroke="${group.color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="${dot.x}" cy="${dot.y}" r="4.8" fill="${group.color}" stroke="#fff" stroke-width="1.8"/>
-        <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="${group.color}" stroke-opacity=".35"/>
-        <rect x="${x}" y="${y}" width="${w}" height="24" rx="12" fill="${group.color}"/>
-        <rect x="${x}" y="${y + 15}" width="${w}" height="9" fill="${group.color}"/>
-        <text x="${x + w / 2}" y="${y + 16.5}" text-anchor="middle" font-size="9" font-weight="bold" fill="#fff">${escapeXml(title)}</text>
-        ${bodyMarkup}
-        <circle cx="${badge.x}" cy="${badge.y}" r="13" fill="#fff" stroke="${group.color}" stroke-width="2"/>
-        ${renderIconSvg(icon, badge.x, badge.y, group.color)}
-      `;
-    }).join('');
-
-    const donutArcs = `
-      <path d="M 420 134 A 68 68 0 0 1 536 134" fill="none" stroke="#173f96" stroke-width="9"/>
-      <path d="M 536 134 A 68 68 0 0 1 546 210" fill="none" stroke="#3a9626" stroke-width="9"/>
-      <path d="M 546 210 A 68 68 0 0 1 478 253" fill="none" stroke="#ea6a0a" stroke-width="9"/>
-      <path d="M 478 253 A 68 68 0 0 1 410 185" fill="none" stroke="#0891a5" stroke-width="9"/>
-      <path d="M 410 185 A 68 68 0 0 1 420 134" fill="none" stroke="#92278f" stroke-width="9"/>
-    `;
-
-    const centerCircle = `
-      <circle cx="${cx}" cy="${cy}" r="58" fill="#fff" stroke="#f1f5f9"/>
-      <text x="${cx}" y="${cy - 18}" text-anchor="middle" font-size="9" font-weight="bold" fill="#082b66" letter-spacing="1">TOTAL</text>
-      <text x="${cx}" y="${cy - 3}" text-anchor="middle" font-size="12" font-weight="900" fill="#082b66" letter-spacing="0.5">PROGRAMAS</text>
-      <text x="${cx}" y="${cy + 25}" text-anchor="middle" font-size="25" font-weight="900" fill="${scopeColor}">${format.format(rows.length)}</text>
-    `;
-
-    body = `<g>${donutArcs}${centerCircle}${cardsMarkup}</g>`;
-  } else if (view === 'orbit') {
-    let currentY = 44;
-    const cardGap = 12;
-    const circleCenterX = Math.round(width * 0.195);
-    const badgeX = Math.round(width * 0.41);
-    const cardX = Math.round(width * 0.43);
-    const cardWidth = Math.max(260, width - cardX - 18);
-
-    const cardLayouts = groups.map((group) => {
-      const itemsCount = Math.max(1, group.items.length);
-      const cardH = Math.max(62, 32 + itemsCount * 17);
-      const y = currentY;
-      currentY += cardH + cardGap;
-      const badgeY = Math.round(y + cardH / 2);
-      return { group, y, height: cardH, badgeY };
+  // Use the same category order and decimal precision as the dashboard.
+  groups.forEach((group) => group.items.sort((a, b) => group.icon === 'calendar'
+    ? Number(a.label.split(' ')[0]) - Number(b.label.split(' ')[0])
+    : b.value - a.value || a.label.localeCompare(b.label, 'es')));
+  // Credit statistics have a semantic order, independent of their values.
+  groups[4].items = credits.length ? [
+    { label: 'M\u00cdNIMO DE CR\u00c9DITOS', value: Math.min(...credits) },
+    { label: 'M\u00c1XIMO DE CR\u00c9DITOS', value: Math.max(...credits) },
+    { label: 'PROMEDIO DE CR\u00c9DITOS', value: credits.reduce((sum, value) => sum + value, 0) / credits.length, average: true }
+  ] : [];
+  const visible = groups.filter((group) => group.items.length);
+  const wrap = (label, maxChars) => {
+    const lines = [''];
+    text(label).split(/\s+/).forEach((word) => {
+      const i = lines.length - 1;
+      if (lines[i] && `${lines[i]} ${word}`.length > maxChars) lines.push(word);
+      else lines[i] += `${lines[i] ? ' ' : ''}${word}`;
     });
-
-    calculatedHeight = Math.max(380, currentY + 16);
-    const circleCenterY = Math.round((44 + currentY - cardGap) / 2);
-
-    const orbitCards = cardLayouts.map(({ group, y, height: cardH, badgeY }, index) => {
-      const angle = (index - 2) * 20 * (Math.PI / 180);
-      const circleEdgeX = Math.round(circleCenterX + 100 * Math.cos(angle));
-      const circleEdgeY = Math.round(circleCenterY + 100 * Math.sin(angle));
-      const iconType = group.icon || 'bank';
-      return `<polyline points="${circleEdgeX},${circleEdgeY} ${badgeX - 25},${badgeY} ${badgeX},${badgeY}" fill="none" stroke="${group.color}" stroke-width="2"/><circle cx="${circleEdgeX}" cy="${circleEdgeY}" r="5" fill="${group.color}" stroke="#fff" stroke-width="2"/><circle cx="${badgeX}" cy="${badgeY}" r="16" fill="${group.color}" stroke="#fff" stroke-width="2.5"/><circle cx="${badgeX}" cy="${badgeY}" r="16" fill="none" stroke="${group.color}" stroke-width="1.2"/>${renderIconSvg(iconType, badgeX, badgeY, '#ffffff')}${card(group, cardX, y, cardWidth, cardH, true)}`;
+    return lines;
+  };
+  const svgText = (label, x, y, { size = 9, color = '#0f172a', anchor = 'start', chars = 30, bold = true } = {}) =>
+    wrap(label, chars).map((line, i) => `<text x="${x}" y="${y + i * (size + 2)}" text-anchor="${anchor}" font-size="${size}" font-weight="${bold ? 'bold' : 'normal'}" fill="${color}">${escapeXml(line)}</text>`).join('');
+  const icon = (type, x, y, color, scale = 1.5) => `<g transform="translate(${x} ${y}) scale(${scale})">${renderIconSvg(type, 0, 0, color)}</g>`;
+  const valueText = (item) => item.average
+    ? new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.value)
+    : format.format(item.value);
+  const rowsHeight = (group, w) => group.items.reduce((sum, item) => sum + Math.max(view === 'orbit' ? 20 : 25, wrap(item.label, Math.max(12, Math.floor((w - 82) / 5.4))).length * 11 + 8), 0);
+  const cardHeight = (group, w) => (view === 'orbit' ? 42 : 62) + rowsHeight(group, w);
+  const card = (group, x, y, w, h, style = 'plain') => {
+    const rounded = style === 'executive';
+    const headingChars = Math.max(13, Math.floor((w - (style === 'panel' || rounded ? 60 : 24)) / 5.7));
+    const headingLines = wrap(group.title, headingChars).length;
+    const headerH = Math.max(view === 'orbit' ? 30 : 44, 18 + headingLines * 11);
+    let result = `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16" fill="#fff" stroke="${rounded ? '#d8e1ee' : group.color}" stroke-opacity="${rounded ? 1 : '.5'}"/>`;
+    if (style === 'radial') {
+      result += `<rect x="${x}" y="${y + 20}" width="${w}" height="${headerH - 12}" fill="${group.color}"/>${svgText(group.title, x + w / 2, y + 35, { color: '#fff', anchor: 'middle', chars: headingChars })}`;
+    } else if (style === 'panel' || rounded) {
+      if (rounded) result += `<path d="M${x + 16} ${y + 2}H${x + w - 16}" stroke="${group.color}" stroke-width="3"/>`;
+      result += `<circle cx="${x + 25}" cy="${y + headerH / 2}" r="15" fill="${group.color}" fill-opacity="${rounded ? '.07' : '1'}"/>${icon(group.icon, x + 25, y + headerH / 2, rounded ? group.color : '#fff')}${svgText(group.title, x + 47, y + headerH / 2 - (headingLines - 1) * 5 + 3, { color: rounded ? '#183153' : group.color, chars: headingChars })}`;
+    } else {
+      result += svgText(group.title, x + (style === 'sequence' ? w / 2 : 16), y + 22, { color: group.color, anchor: style === 'sequence' ? 'middle' : 'start', chars: headingChars });
+    }
+    let iy = y + headerH + 8;
+    group.items.forEach((item) => {
+      const labelChars = Math.max(12, Math.floor((w - 82) / 5.4));
+      const lines = wrap(item.label, labelChars);
+      const rowH = Math.max(view === 'orbit' ? 20 : 25, lines.length * 11 + 8);
+      const baseline = iy + rowH / 2 + 3;
+      result += rounded ? `<line x1="${x + 10}" y1="${iy - 2}" x2="${x + w - 10}" y2="${iy - 2}" stroke="#edf1f7"/>` : `<circle cx="${x + 11}" cy="${baseline - 3}" r="2.2" fill="${group.color}"/>`;
+      result += svgText(item.label, x + (rounded ? 10 : 18), baseline - (lines.length - 1) * 5.5, { size: 8.5, chars: labelChars });
+      result += `<rect x="${x + w - 56}" y="${baseline - 12}" width="46" height="20" rx="${rounded ? 10 : 0}" fill="${rounded ? group.color : '#fcfdff'}" fill-opacity="${rounded ? '.05' : '1'}" stroke="${rounded ? 'none' : '#bdc8d6'}"/><text x="${x + w - 33}" y="${baseline + 2}" text-anchor="middle" font-size="9" font-weight="bold" fill="${rounded ? group.color : '#102a4c'}">${escapeXml(valueText(item))}</text>`;
+      iy += rowH;
+    });
+    return result;
+  };
+  const title = `AN\u00c1LISIS DE CONTEXTO EXTERNO \u2014 ${program.toUpperCase()} \u00b7 OFERTA ${scopeLabel}`;
+  const titleMarkup = svgText(title, width / 2, 25, { size: 12, color: BLUE, anchor: 'middle', chars: 115 });
+  const titleH = wrap(title, 115).length * 14 + 20;
+  const totalBadge = (y) => `<rect x="${width / 2 - 82}" y="${y}" width="164" height="22" rx="11" fill="${BLUE}"/>${svgText(`${format.format(rows.length)} programas analizados`, width / 2, y + 15, { color: '#fff', anchor: 'middle', size: 9 })}`;
+  let body = '';
+  let calculatedHeight;
+  let background = '#fbfcfe';
+  if (view === 'sequence') {
+    const w = (width - 40 - 8 * (visible.length - 1)) / Math.max(1, visible.length);
+    const hexY = titleH + 74;
+    const cardY = hexY + 68;
+    const h = Math.max(125, ...visible.map((group) => cardHeight(group, w)));
+    calculatedHeight = cardY + h + 16;
+    body = `${titleMarkup}${svgText('Indicadores de la oferta acad\u00e9mica calculados seg\u00fan los filtros aplicados', width / 2, titleH + 5, { anchor: 'middle', bold: false, color: '#475569', chars: 120 })}${totalBadge(titleH + 15)}<line x1="${20 + w / 2}" y1="${cardY}" x2="${width - 20 - w / 2}" y2="${cardY}" stroke="#aeb9c8" stroke-width="1.5"/>`;
+    body += visible.map((group, i) => {
+      const x = 20 + i * (w + 8), cx = x + w / 2;
+      return `<polygon points="${cx - 17},${hexY - 28} ${cx + 17},${hexY - 28} ${cx + 33},${hexY} ${cx + 17},${hexY + 28} ${cx - 17},${hexY + 28} ${cx - 33},${hexY}" fill="${group.color}"/>${icon(group.icon, cx, hexY, '#fff', 2.6)}<line x1="${cx}" y1="${hexY + 28}" x2="${cx}" y2="${cardY}" stroke="${group.color}" stroke-width="1.5"/>${card(group, x, cardY, w, h, 'sequence')}<circle cx="${cx}" cy="${cardY}" r="6" fill="${group.color}" stroke="#fff" stroke-width="2"/>`;
     }).join('');
-
-    body = `<circle cx="${circleCenterX}" cy="${circleCenterY}" r="100" fill="#fff" stroke="#aeb9c7" stroke-width="1.8" stroke-dasharray="5 4"/><circle cx="${circleCenterX}" cy="${circleCenterY}" r="83" fill="#f8fafc" stroke="#d7e0eb"/><path d="M${circleCenterX - 22} ${circleCenterY - 40}l22-12 22 12-22 12zM${circleCenterX - 16} ${circleCenterY - 31}v13h32v-13M${circleCenterX - 9} ${circleCenterY - 16}v8h18v-8" fill="none" stroke="#082b66" stroke-width="3" stroke-linejoin="round"/><text x="${circleCenterX}" y="${circleCenterY + 13}" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#082b66">OFERTA DE PROGRAMAS</text><text x="${circleCenterX}" y="${circleCenterY + 29}" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#082b66">ACADÉMICOS</text><rect x="${circleCenterX - 29}" y="${circleCenterY + 41}" width="58" height="26" rx="8" fill="${scopeColor}"/><text x="${circleCenterX}" y="${circleCenterY + 59}" text-anchor="middle" font-size="16" font-weight="bold" fill="#fff">${format.format(rows.length)}</text>${orbitCards}`;
   } else if (view === 'panel') {
-    const positions = [[12, 48, 460, 112], [482, 48, 460, 112], [12, 172, 302, 158], [326, 172, 302, 158], [640, 172, 302, 158]];
-    body = groups.map((group, index) => card(group, ...positions[index])).join('');
-  } else if (view === 'executive') {
-    const positions = [[12, 84, 460, 105], [482, 84, 460, 105], [12, 201, 302, 124], [326, 201, 302, 124], [640, 201, 302, 124]];
-    body = `<path d="M18 37H890L940 61L890 85H18Z" fill="#082b66"/><text x="42" y="65" font-size="10" font-weight="bold" fill="#fff">TOTAL DE PROGRAMAS ANALIZADOS</text><rect x="415" y="46" width="72" height="30" rx="5" fill="#fff"/><text x="451" y="67" text-anchor="middle" font-size="17" font-weight="bold" fill="#082b66">${format.format(rows.length)}</text>${groups.map((group, index) => card(group, ...positions[index], true)).join('')}`;
+    body = `<path d="M60 25H${width - 55}L${width - 20} 49L${width - 55} 73H60Z" fill="${BLUE}"/><circle cx="58" cy="49" r="34" fill="${BLUE}"/>${icon('school', 58, 49, '#fff', 3)}${svgText('TOTAL PROGRAMAS', 112, 53, { color: '#fff', size: 13 })}<rect x="330" y="33" width="80" height="32" fill="#fff"/>${svgText(format.format(rows.length), 370, 56, { size: 22, color: BLUE, anchor: 'middle' })}`;
+    let y = 94;
+    [visible.slice(0, 2), visible.slice(2)].forEach((rowGroups) => {
+      if (!rowGroups.length) return;
+      const w = (width - 40 - 12 * (rowGroups.length - 1)) / rowGroups.length;
+      const h = Math.max(...rowGroups.map((group) => cardHeight(group, w)));
+      body += rowGroups.map((group, i) => card(group, 20 + i * (w + 12), y, w, h, 'panel')).join('');
+      y += h + 12;
+    });
+    calculatedHeight = y + 4;
+    background = '#f8fafc';
+  } else if (view === 'orbit') {
+    // Center the complete composition, including the circle, badges and cards.
+    const diagramWidth = 800;
+    const left = (width - diagramWidth) / 2;
+    const radius = 100, cx = left + radius;
+    const cardX = left + 380, cardW = 420, badgeX = cardX - 5;
+    const headingY = 26;
+    const subtitle = `${program.toUpperCase()} \u00b7 OFERTA ${scopeLabel}`;
+    const subtitleLines = wrap(subtitle, 110).length;
+    const contentTop = 46 + subtitleLines * 12 + 20;
+    const rowGap = 5, rowH = 19, headerH = 30, cardGap = 12;
+    const labelChars = Math.floor((cardW - 116) / 5.2);
+    let currentY = contentTop;
+    const layouts = visible.map((group) => {
+      const itemLayouts = group.items.map((item) => ({ item, lines: wrap(item.label, labelChars) }));
+      const rowsH = itemLayouts.reduce((total, item) => total + Math.max(rowH, item.lines.length * 11 + 6), 0) + Math.max(0, itemLayouts.length - 1) * rowGap;
+      const h = Math.max(68, headerH + rowsH + 12);
+      const layout = { group, items: itemLayouts, y: currentY, h };
+      currentY += h + cardGap;
+      return layout;
+    });
+    const cardsHeight = Math.max(0, currentY - cardGap - contentTop);
+    const contentHeight = Math.max(220, cardsHeight);
+    const columnOffset = (contentHeight - cardsHeight) / 2;
+    layouts.forEach((layout) => { layout.y += columnOffset; });
+    const contentBottom = contentTop + contentHeight;
+    const cy = (contentTop + contentBottom) / 2;
+    calculatedHeight = contentBottom + 20;
+    body = `${svgText('OFERTA DE PROGRAMAS ACAD\u00c9MICOS', width / 2, headingY, { size: 15, color: BLUE, anchor: 'middle', chars: 100 })}${svgText(subtitle, width / 2, 46, { size: 10, color: '#475569', anchor: 'middle', chars: 110, bold: false })}`;
+    const dots = [];
+    layouts.forEach(({ group, items, y, h }, index) => {
+      const by = y + h / 2;
+      const angle = Math.atan2(by - cy, badgeX - cx);
+      const ex = cx + radius * Math.cos(angle), ey = cy + radius * Math.sin(angle);
+      dots.push(`<circle cx="${ex}" cy="${ey}" r="4.5" fill="${group.color}" stroke="#fff" stroke-width="2"/>`);
+      body += `<polyline points="${ex},${ey} ${badgeX - 50},${by} ${badgeX},${by}" fill="none" stroke="${group.color}" stroke-width="1.7" stroke-linejoin="round"/>`;
+      body += `<rect data-orbit-card="${index}" x="${cardX}" y="${y}" width="${cardW}" height="${h}" rx="18" fill="#fff" stroke="${group.color}" stroke-opacity=".45"/>`;
+      body += svgText(group.title, cardX + 34, y + 20, { size: 12, color: group.color, chars: 65 });
+      let rowY = y + headerH;
+      items.forEach(({ item, lines }, rowIndex) => {
+        const itemH = Math.max(rowH, lines.length * 11 + 6);
+        const baseline = rowY + itemH / 2 + 3;
+        if (rowIndex) body += `<line x1="${cardX + 34}" y1="${rowY - 3}" x2="${cardX + cardW - 16}" y2="${rowY - 3}" stroke="#edf1f7"/>`;
+        body += `<circle cx="${cardX + 36}" cy="${baseline - 3}" r="2" fill="${group.color}"/>${svgText(item.label, cardX + 44, baseline - (lines.length - 1) * 5.5, { size: 10.5, chars: labelChars })}`;
+        body += `<rect data-orbit-value="${index}-${rowIndex}" x="${cardX + cardW - 70}" y="${rowY + (itemH - 18) / 2}" width="54" height="18" rx="5" fill="${group.color}" fill-opacity=".05" stroke="${group.color}" stroke-opacity=".25"/>${svgText(valueText(item), cardX + cardW - 43, baseline, { color: BLUE, size: 11, anchor: 'middle' })}`;
+        rowY += itemH + rowGap;
+      });
+      body += `<circle cx="${badgeX}" cy="${by}" r="25" fill="#fff" stroke="${group.color}" stroke-width=".8"/><circle cx="${badgeX}" cy="${by}" r="20" fill="${group.color}"/>${icon(group.icon, badgeX, by, '#fff', 2.2)}`;
+    });
+    body += `<circle data-orbit-center="true" cx="${cx}" cy="${cy}" r="${radius}" fill="#fff" stroke="#aeb9c7" stroke-width="1.5" stroke-dasharray="5 4"/><circle cx="${cx}" cy="${cy}" r="91" fill="#f8fafc" stroke="#d7e0eb"/>${icon('school', cx, cy - 49, BLUE, 3.5)}${svgText('OFERTA DE', cx, cy - 12, { anchor: 'middle', color: BLUE, size: 14 })}${svgText('PROGRAMAS', cx, cy + 6, { anchor: 'middle', color: BLUE, size: 14 })}${svgText('ACAD\u00c9MICOS', cx, cy + 24, { anchor: 'middle', color: BLUE, size: 14 })}<rect x="${cx - 32}" y="${cy + 40}" width="64" height="28" rx="14" fill="${BLUE}"/>${svgText(format.format(rows.length), cx, cy + 60, { anchor: 'middle', color: '#fff', size: 20 })}${dots.join('')}`;
+    background = '#fff';
+  } else if (view === 'radial') {
+    const w = 260, left = 22, right = width - w - 22;
+    const sideH = Math.max(cardHeight(groups[0], w), cardHeight(groups[1], w));
+    const lowerH = Math.max(cardHeight(groups[2], w), cardHeight(groups[4], w));
+    const top = titleH + 32, lowerY = top + sideH + 40;
+    const cx = width / 2, cy = lowerY - 6;
+    const bottomY = lowerY + lowerH + 35;
+    calculatedHeight = bottomY + cardHeight(groups[3], w) + 16;
+    const positions = [[left, top], [right, top], [left, lowerY], [cx - w / 2, bottomY], [right, lowerY]];
+    body = titleMarkup;
+    const radialNodes = [];
+    groups.forEach((group, i) => {
+      if (!group.items.length) return;
+      const slot = i === 3 ? 4 : i === 4 ? 3 : i;
+      const category = radialCategories.find((item) => item.slot === slot);
+      const [x,y] = positions[i], h = i < 2 ? sideH : i === 3 ? cardHeight(group, w) : lowerH;
+      const tx = x + w / 2, ty = y - 6;
+      const angle = category.angle * Math.PI / 180;
+      const ex = cx + 79 * Math.cos(angle), ey = cy + 79 * Math.sin(angle);
+      const leftSide = i === 0 || i === 2;
+      const targetX = i === 3 ? tx : leftSide ? x + w : x;
+      const targetY = i === 3 ? ty - 17 : y + h / 2;
+      const elbowX = i === 3 ? cx : cx + (leftSide ? -115 : 115);
+      body += `<polyline data-radial-link="${slot}" points="${ex},${ey} ${elbowX},${targetY} ${targetX},${targetY}" stroke="${category.color}" fill="none" stroke-width="1.5"/>${card(group,x,y,w,h,'radial')}<circle cx="${tx}" cy="${ty}" r="17" fill="#fff" stroke="${category.color}"/>${icon(group.icon,tx,ty,category.color,1.8)}`;
+      radialNodes.push({ ...category, ex, ey });
+    });
+    body += `<circle cx="${cx}" cy="${cy}" r="79" fill="#fff" stroke="#edf2f7" stroke-width="9"/>`;
+    radialNodes.forEach((category) => {
+      const start = category.startAngle * Math.PI / 180, end = category.endAngle * Math.PI / 180;
+      body += `<path data-radial-arc="${category.slot}" d="M${cx + 79 * Math.cos(start)} ${cy + 79 * Math.sin(start)}A79 79 0 0 1 ${cx + 79 * Math.cos(end)} ${cy + 79 * Math.sin(end)}" fill="none" stroke="${category.color}" stroke-width="9"/><circle data-radial-dot="${category.slot}" cx="${category.ex}" cy="${category.ey}" r="4" fill="${category.color}"/>`;
+    });
+    body += `${svgText('TOTAL',cx,cy-22,{anchor:'middle',color:'#475569'})}${svgText('PROGRAMAS',cx,cy-5,{anchor:'middle',color:BLUE,size:12})}${svgText(format.format(rows.length),cx,cy+30,{anchor:'middle',color:BLUE,size:30})}`;
+    background = '#fff';
   } else {
-    // VISTA SECUENCIAL (Compact layout matching UI data, with no duplicate inner header titles)
-    const cardWidth = 174;
-    const marginX = 18;
-    const gap = 16;
-    const cardY = 98;
-
-    const maxItems = Math.max(...groups.map((g) => g.items.length || 1));
-    const cardHeight = Math.max(125, 30 + maxItems * 22);
-    calculatedHeight = cardY + cardHeight + 10;
-
-    const headerMarkup = `
-      <rect x="${width / 2 - 75}" y="10" width="150" height="20" rx="10" fill="#082b66"/>
-      <text x="${width / 2}" y="23.5" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#fff">${format.format(rows.length)} programas analizados</text>
-      <line x1="105" y1="86" x2="850" y2="86" stroke="#aeb9c8" stroke-width="2"/>
-    `;
-
-    const nodesMarkup = groups.map((group, index) => {
-      const cx = marginX + index * (cardWidth + gap) + cardWidth / 2;
-      const x = cx - cardWidth / 2;
-      const iconType = group.icon || 'bank';
-
-      // Hexagon polygon (centered at cx, top y=33, height=44)
-      const hexPoints = `${cx - 13},33 ${cx + 13},33 ${cx + 22},55 ${cx + 13},77 ${cx - 13},77 ${cx - 22},55`;
-      const hexagon = `<polygon points="${hexPoints}" fill="${group.color}"/><g transform="translate(0, 0)">${renderIconSvg(iconType, cx, 55, '#ffffff')}</g>`;
-
-      // Connector line & Dot on line at y=86
-      const connectorLine = `<line x1="${cx}" y1="77" x2="${cx}" y2="98" stroke="${group.color}" stroke-width="2"/>`;
-      const dot = `<circle cx="${cx}" cy="86" r="6" fill="${group.color}" stroke="#ffffff" stroke-width="2"/>`;
-
-      // Card below
-      const items = group.items;
-      const itemsMarkup = items.length ? items.map((item, itemIdx) => {
-        const iy = cardY + 34 + itemIdx * 20;
-        const itemLabel = text(item.label).length > 24 ? `${text(item.label).slice(0, 23)}…` : text(item.label);
-        return `<circle cx="${x + 10}" cy="${iy - 3}" r="2.2" fill="${group.color}"/><text x="${x + 17}" y="${iy}" font-size="7.8" font-weight="bold" fill="#334155">${escapeXml(itemLabel)}</text><rect x="${x + cardWidth - 38}" y="${iy - 9}" width="30" height="13" rx="3" fill="#fcfdff" stroke="#bdc8d6"/><text x="${x + cardWidth - 23}" y="${iy + 1}" text-anchor="middle" font-size="8" font-weight="900" fill="#102a4c">${format.format(item.value)}</text>`;
-      }).join('') : `<text x="${cx}" y="${cardY + cardHeight / 2}" text-anchor="middle" font-size="8.5" fill="#94a3b8">Sin información</text>`;
-
-      const cardBox = `
-        <rect x="${x}" y="${cardY}" width="${cardWidth}" height="${cardHeight}" rx="10" fill="#ffffff" stroke="${group.color}" stroke-opacity=".6" stroke-width="1.3"/>
-        <text x="${cx}" y="${cardY + 16}" text-anchor="middle" font-size="8.5" font-weight="900" fill="${group.color}">${escapeXml(group.title)}</text>
-        ${itemsMarkup}
-      `;
-
-      return `<g>${hexagon}${connectorLine}${dot}${cardBox}</g>`;
-    }).join('');
-
-    body = `<g>${headerMarkup}${nodesMarkup}</g>`;
+    const w = (width - 32 - 10 * (visible.length - 1)) / Math.max(1, visible.length);
+    const h = Math.max(140, ...visible.map((group) => cardHeight(group, w)));
+    const headerH = titleH + 35;
+    calculatedHeight = headerH + h + 28;
+    body = `<path d="M20 0H${width - 20}Q${width} 0 ${width} 20V${headerH}H0V20Q0 0 20 0" fill="${BLUE}"/>${svgText(title, 20, 24, { color:'#fff',size:11,chars:125 })}${svgText('Resumen ejecutivo seg\u00fan los filtros aplicados',20,titleH+14,{color:'#c9d8ef',size:9,chars:90})}${svgText('TOTAL DE PROGRAMAS',width-210,titleH+14,{color:'#c9d8ef',size:9})}<rect x="${width-83}" y="${titleH-3}" width="65" height="25" rx="12" fill="#fff"/>${svgText(format.format(rows.length),width-50,titleH+15,{color:BLUE,size:19,anchor:'middle'})}`;
+    body += visible.map((group,i)=>card(group,16+i*(w+10),headerH+14,w,h,'executive')).join('');
+    background = '#f6f8fc';
   }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${calculatedHeight}" viewBox="0 0 ${width} ${calculatedHeight}" font-family="Arial, sans-serif"><rect x=".5" y=".5" width="${width-1}" height="${calculatedHeight-1}" rx="20" fill="${background}" stroke="#d5dde8"/>${body}</svg>`;
+};
 
-  if (view === 'radial') {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${calculatedHeight}" viewBox="0 0 ${width} ${calculatedHeight}" preserveAspectRatio="xMidYMid meet"><rect width="100%" height="100%" fill="#ffffff"/><g>${body}</g></svg>`;
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${calculatedHeight}" viewBox="0 0 ${width} ${calculatedHeight}" preserveAspectRatio="xMidYMid meet"><rect x=".5" y=".5" width="${width - 1}" height="${calculatedHeight - 1}" rx="15" fill="#f8fbff" stroke="#cbd9ea"/><rect x="1" y="1" width="6" height="${calculatedHeight - 2}" rx="3" fill="${scopeColor}"/><g>${body}</g></svg>`;
+const offerSummaryPdfBlock = (options) => {
+  const svg = offerSummaryVisualSvg({ ...options, width: 955 });
+  const svgHeight = Number(svg.match(/<svg[^>]*height="([\d.]+)"/)[1]);
+  const printedWidth = Math.min(860, 460 * 955 / svgHeight);
+  const printedHeight = svgHeight * printedWidth / 955;
+  return {
+    svg,
+    width: printedWidth,
+    margin: [(960 - printedWidth) / 2, 6 + (470 - printedHeight) / 2, 0, 0]
+  };
 };
 
 const offerSingleProgramTableSvg = ({ rows, scope = 'Nacional', width = 955 }) => {
@@ -1409,7 +1387,7 @@ const offerPage = ({ rows = [], regionalRows = [], program, view, aiAnalysis = {
   if (hasNational) {
     pages.push([
       ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA NACIONAL', program),
-      { svg: offerSummaryVisualSvg({ rows, view, scope: 'Nacional', program, width: 955 }), width: 955, alignment: 'center', margin: [0, 4, 0, 8] }
+      offerSummaryPdfBlock({ rows, view, scope: 'Nacional', program })
     ]);
     if (includeAnalysis) {
       pages.push([
@@ -1426,7 +1404,7 @@ const offerPage = ({ rows = [], regionalRows = [], program, view, aiAnalysis = {
   if (hasRegional) {
     pages.push([
       ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA REGIONAL', program),
-      { svg: offerSummaryVisualSvg({ rows: regionalRows, view, scope: 'Regional', program, width: 955 }), width: 955, alignment: 'center', margin: [0, 4, 0, 8] }
+      offerSummaryPdfBlock({ rows: regionalRows, view, scope: 'Regional', program })
     ]);
     if (includeAnalysis) {
       pages.push([
@@ -1487,7 +1465,7 @@ const singleMetricSpecialChartSvg = ({ data, series, type, width = 580, height =
   const annualRows = periodRows.map((row) => ({ ...row, periodo: periodLabel(row.periodo) }));
   const titles = {
     funnel: [`${item.label.toUpperCase()} · EMBUDO COMPARATIVO`, 'Comparación proporcional entre los períodos visibles.'],
-    indicators: [`${item.label.toUpperCase()} · TABLERO DE INDICADORES`, 'Resumen ejecutivo calculated con el alcance seleccionado.'],
+    indicators: [`${item.label.toUpperCase()} · TABLERO DE INDICADORES`, 'Resumen ejecutivo calculado con el alcance seleccionado.'],
     journey: [`${item.label.toUpperCase()} · CAMINO HISTÓRICO`, 'Trayectoria por período y cambios de dirección del indicador.'],
     conversion: [`${item.label.toUpperCase()} · ÍNDICES DE EVOLUCIÓN`, 'El primer período visible representa la base 100.'],
     stackedArea: [`${item.label.toUpperCase()} · ÁREA ACUMULADA`, 'Magnitud de cada período representada como una superficie continua.']
@@ -1512,9 +1490,20 @@ const singleMetricSpecialChartSvg = ({ data, series, type, width = 580, height =
     const gauges = rows.map((row, index) => { const cx = left + index * slot + slot / 2; const value = row.value / base * 100; const progress = Math.min(100, value); return `<text x="${cx}" y="75" text-anchor="middle" font-size="7" font-weight="bold" fill="#315275">${escapeXml(row.periodo)}</text><circle cx="${cx}" cy="140" r="${radius}" fill="#f1f5f9" stroke="#e1e8f1"/><circle cx="${cx}" cy="140" r="${radius}" fill="none" stroke="${item.color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${progress / 100 * circumference} ${circumference}" transform="rotate(-90 ${cx} 140)"/><text x="${cx}" y="143" text-anchor="middle" font-size="6.3" font-weight="bold" fill="${item.color}">${Math.round(value)}</text><text x="${cx}" y="184" text-anchor="middle" font-size="6.3" font-weight="bold" fill="#52657c">${escapeXml(format.format(row.value))}</text>`; }).join('');
     return frame(`<rect x="14" y="54" width="${width - 28}" height="154" rx="10" fill="#fff" stroke="#e1e9f3"/>${gauges}<text x="${width / 2}" y="235" text-anchor="middle" font-size="7" font-weight="bold" fill="#64748b">ÍNDICE BASE: ${escapeXml(rows[0].periodo)} = 100</text>`);
   }
-  const points = rows.map((row, index) => `${x(index)},${y(row.value)}`).join(' '); const labels = rows.map((row, index) => `<circle cx="${x(index)}" cy="${y(row.value)}" r="${type === 'journey' ? 7 : 3.5}" fill="${item.color}" stroke="#fff" stroke-width="1.5"/><text x="${x(index)}" y="${y(row.value) - 10}" text-anchor="middle" font-size="6" font-weight="bold" fill="${item.color}" stroke="#fff" stroke-width="2" paint-order="stroke">${escapeXml(format.format(row.value))}</text><text x="${x(index)}" y="${height - 17}" text-anchor="middle" font-size="6" font-weight="bold" fill="${315275}">${escapeXml(row.periodo.replace('-', '·'))}</text>`).join('');
+  const points = rows.map((row, index) => `${x(index)},${y(row.value)}`).join(' '); const labels = rows.map((row, index) => `<circle cx="${x(index)}" cy="${y(row.value)}" r="${type === 'journey' ? 7 : 3.5}" fill="${item.color}" stroke="#fff" stroke-width="1.5"/><text x="${x(index)}" y="${y(row.value) - 10}" text-anchor="middle" font-size="6" font-weight="bold" fill="${item.color}" stroke="#fff" stroke-width="2" paint-order="stroke">${escapeXml(format.format(row.value))}</text><text x="${x(index)}" y="${height - 17}" text-anchor="middle" font-size="6" font-weight="bold" fill="#315275">${escapeXml(row.periodo.replace('-', '·'))}</text>`).join('');
   if (type === 'journey') return frame(`<polyline points="${points}" fill="none" stroke="${item.color}" stroke-opacity=".15" stroke-width="14" stroke-linejoin="miter"/><polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2.4" stroke-linejoin="miter"/>${labels}`);
   return frame(`<polygon points="${left},${bottom} ${points} ${right},${bottom}" fill="${item.color}" fill-opacity=".76"/><polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linejoin="miter"/>${labels}`);
+};
+
+// A viewBox is required when pdfmake prints an SVG at a smaller width.
+// Without it, svg-to-pdfkit clips the native drawing instead of scaling it.
+const populationChartPdfBlock = (svg, printedWidth = 820) => {
+  const root = svg.match(/<svg\b[^>]*>/)[0];
+  const nativeWidth = Number(root.match(/\bwidth="([\d.]+)"/)[1]);
+  const nativeHeight = Number(root.match(/\bheight="([\d.]+)"/)[1]);
+  const scaledSvg = /\bviewBox=/.test(root) ? svg : svg.replace('<svg ', `<svg viewBox="0 0 ${nativeWidth} ${nativeHeight}" `);
+  const fittedWidth = Math.min(printedWidth, 460 * nativeWidth / nativeHeight);
+  return { svg: scaledSvg, width: fittedWidth, height: nativeHeight * fittedWidth / nativeWidth, alignment: 'center', margin: [0, 4, 0, 8] };
 };
 
 const populationPage = ({ title, program, data, charts, selection = {}, aiAnalysis = {}, aiGroup = 'ingreso', includeAnalysis = true }) => {
@@ -1583,7 +1572,7 @@ const populationPage = ({ title, program, data, charts, selection = {}, aiAnalys
     stacked: 300
   };
   const baseHeight = baseHeights[supportedType] || 300;
-  const height = includeAnalysis ? baseHeight : Math.min(410, Math.round(baseHeight * 1.25));
+  const height = baseHeight;
   let svg;
 
   if (supportedType === 'trend') {
@@ -1626,7 +1615,7 @@ const populationPage = ({ title, program, data, charts, selection = {}, aiAnalys
 
   return [[
     ...sectionHeader(title, program),
-    { svg, width: chartWidth, alignment: 'center', margin: [0, 4, 0, 8] },
+    populationChartPdfBlock(svg),
     ...aiAnalysisBox(customAnalysisText || defaultAnalysisText, undefined, includeAnalysis)
   ]];
 };
@@ -1748,9 +1737,11 @@ module.exports = {
   generateCoverAnalysis,
   offerSingleProgramTableSvg,
   offerSummaryVisualSvg,
+  offerSummaryPdfBlock,
   aggregatePeriods,
   labelCountRows,
   stackedBarChartSvg,
+  populationChartPdfBlock,
   trendLineChartSvg,
   funnelChartSvg,
   indicatorTrendBoardSvg,

@@ -1,0 +1,37 @@
+[
+  {
+    "slot": 0,
+    "color": "#173f96",
+    "angle": -140,
+    "startAngle": -161,
+    "endAngle": -94
+  },
+  {
+    "slot": 1,
+    "color": "#3a9626",
+    "angle": -40,
+    "startAngle": -86,
+    "endAngle": -19
+  },
+  {
+    "slot": 2,
+    "color": "#92278f",
+    "angle": 170,
+    "startAngle": 134,
+    "endAngle": 191
+  },
+  {
+    "slot": 3,
+    "color": "#ea6a0a",
+    "angle": 10,
+    "startAngle": -11,
+    "endAngle": 46
+  },
+  {
+    "slot": 4,
+    "color": "#0891a5",
+    "angle": 90,
+    "startAngle": 54,
+    "endAngle": 126
+  }
+]
