@@ -1,3 +1,5 @@
+import { chatChannelMessages, planningChatPeers } from '../utils/actionPlanChatChannels';
+import AdminActionPlanChatRecipient from '../components/AdminActionPlanChatRecipient';
 import { uploadEvidenceBatch } from '../utils/uploadEvidenceBatch';
 import PeriodObservationButton from '../components/PeriodObservationButton';
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
@@ -228,14 +230,21 @@ export default function PlanAccionConsulta({
   const [leaderChatModalOpen, setLeaderChatModalOpen] = useState(false);
   const [leaderChatMessage, setLeaderChatMessage] = useState('');
   const [sendingLeaderChat, setSendingLeaderChat] = useState(false);
+  const [adminChatRecipient, setAdminChatRecipient] = useState('planning_effectiveness');
+  const privateChatPeers = useMemo(() => planningChatPeers(selectedPlan?.metadata?.chat_thread, authUser), [selectedPlan?.metadata, authUser]);
+  useEffect(() => {
+    const peer = new URLSearchParams(window.location.search).get('chatPeer');
+    const available = planningChatPeers(selectedPlan?.metadata?.chat_thread, authUser);
+    setAdminChatRecipient(authUser?.role === 'administrador' ? 'planning_effectiveness' : available.some(item => item.id === peer) ? 'administrator:' + peer : 'leader');
+  }, [selectedPlan?.id, leaderChatModalOpen, authUser?.id, authUser?.role]);
 
   const leaderChatThread = useMemo(() => {
     const meta = selectedPlan?.metadata || {};
     if (Array.isArray(meta.chat_thread)) {
-      return meta.chat_thread;
+      return chatChannelMessages(meta.chat_thread, authUser, adminChatRecipient, selectedPlan?.responsible_user_id);
     }
     return [];
-  }, [selectedPlan?.metadata]);
+  }, [selectedPlan?.metadata, selectedPlan?.responsible_user_id, authUser, adminChatRecipient]);
 
   // Modal y descarga de actas
   const [actasModalOpen, setActasModalOpen] = useState(false);
@@ -494,10 +503,11 @@ export default function PlanAccionConsulta({
     try {
       const resp = await strategicPlanningService.sendChatMessage(selectedPlan.id, {
         message: msg,
-        senderType: 'leader'
+        senderType: 'leader',
+        ...((authUser?.role === 'administrador' || adminChatRecipient.startsWith('administrator:')) ? { recipient: adminChatRecipient } : {})
       });
       setLeaderChatMessage('');
-      enqueueSnackbar('Mensaje enviado al equipo de Planeación y notificado a su correo institucional.', { variant: 'success' });
+      enqueueSnackbar(authUser?.role === 'administrador' ? 'Mensaje enviado al destinatario seleccionado.' : 'Mensaje enviado al equipo de Planeación y notificado a su correo institucional.', { variant: 'success' });
       if (resp?.data?.actionPlan) {
         setSelectedPlan((prev) => ({ ...prev, ...resp.data.actionPlan }));
       } else {
@@ -515,11 +525,11 @@ export default function PlanAccionConsulta({
   const handleClearLeaderChat = async () => {
     if (!selectedPlan?.id) return;
     try {
-      await strategicPlanningService.clearChatThread(selectedPlan.id);
+      await strategicPlanningService.clearChatThread(selectedPlan.id, { recipient: adminChatRecipient });
       setSelectedPlan((prev) => {
         if (!prev) return prev;
         const meta = { ...(prev.metadata || {}) };
-        meta.chat_thread = [];
+        meta.chat_thread = (meta.chat_thread || []).filter(message => !leaderChatThread.includes(message));
         return { ...prev, metadata: meta };
       });
       enqueueSnackbar('Canal revisado: mensajes archivados.', { variant: 'info' });
@@ -4187,7 +4197,7 @@ export default function PlanAccionConsulta({
             zIndex: 2
           }}
         >
-          <Stack direction="row" spacing={1.5} alignItems="center">
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flex: 1, minWidth: 0, mr: 1.5 }}>
             <Badge
               overlap="circular"
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
@@ -4214,17 +4224,19 @@ export default function PlanAccionConsulta({
                   border: '1.5px solid rgba(255,255,255,0.35)'
                 }}
               >
-                LF
+                {authUser?.role === 'administrador' ? (adminChatRecipient === 'leader' ? 'LD' : 'PE') : 'LF'}
               </Avatar>
             </Badge>
-            <Box>
+            {(authUser?.role === 'administrador' || privateChatPeers.length > 0) ? <AdminActionPlanChatRecipient role={authUser.role} value={adminChatRecipient}
+              onChange={setAdminChatRecipient} peers={privateChatPeers} planCode={selectedPlan?.code} actorId={authUser.id} disabled={sendingLeaderChat}
+              leader={{ id: selectedPlan?.responsible_user_id, name: selectedPlan?.responsibleUser?.nombre }} planningUser={selectedPlan?.planningEfectividadUser} /> : <Box>
               <Typography sx={{ fontWeight: 850, fontSize: 14.5, lineHeight: 1.2, color: '#ffffff' }}>
                 Dirección de Planeación y Aseguramiento de la Calidad
               </Typography>
               <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.88)', fontSize: 12 }}>
                 LUISA FERNANDA ORTEGA MUÑOZ (Analista de Planeación)
               </Typography>
-            </Box>
+            </Box>}
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center">
             <IconButton
@@ -4343,6 +4355,7 @@ export default function PlanAccionConsulta({
                         </span>
                       </Typography>
 
+                      {msg.recipient_name && <Typography variant="caption" sx={{ display: 'block', color: '#667781', mb: 0.4 }}>Para: {msg.recipient_name}</Typography>}
                       <Typography sx={{ fontSize: 13.5, color: '#111b21', lineHeight: 1.52, whiteSpace: 'pre-wrap' }}>
                         {msg.message}
                       </Typography>

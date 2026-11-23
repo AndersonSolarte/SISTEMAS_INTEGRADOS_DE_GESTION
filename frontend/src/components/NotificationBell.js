@@ -128,11 +128,16 @@ const NotificationBell = () => {
 
     // ÚNICAMENTE el analista de Planeación y Efectividad (Luisa Fernanda) va a la plataforma global institucional.
     // Todos los líderes de dependencias (incluyendo administradores, directores y docentes) van a su propio plan de acción.
-    const isInstitutionalPlanner = user?.role === 'planeacion_efectividad';
+    const isPrivateChat = isChat && ['planning_effectiveness', 'administrator'].includes(notif.metadata?.recipient_type);
+    const isInstitutionalPlanner = user?.role === 'planeacion_efectividad' || (user?.role === 'administrador' && isPrivateChat);
 
     const params = new URLSearchParams();
     if (planId) params.set('planId', planId);
     if (isChat || isAdj) params.set('openChat', 'true');
+    if (isPrivateChat && notif.metadata?.sender_id) params.set('chatPeer', notif.metadata.sender_id);
+    if (isChat && notif.metadata?.channel_kind === 'leader_planning') params.set('chatPeer', 'leader');
+    if (isChat && notif.metadata?.channel_kind === 'admin_leader') params.set('chatPeer', notif.metadata.sender_id);
+    if (isChat && notif.metadata?.channel_kind) params.set('chatChannel', notif.metadata.channel_kind);
     const q = params.toString();
 
     if (isInstitutionalPlanner) {

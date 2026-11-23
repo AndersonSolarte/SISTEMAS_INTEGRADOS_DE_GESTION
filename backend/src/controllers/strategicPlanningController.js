@@ -2135,26 +2135,39 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
     throw Object.assign(new Error('El mensaje no puede estar vacío.'), { statusCode: 422 });
   }
 
-  const isPlanningAdmin = ['administrador', 'planeacion_estrategica', 'planeacion_efectividad'].includes(req.user.role);
+  const isPlanningAdmin = ['administrador', 'planeacion_efectividad'].includes(req.user.role);
   const isLeader = String(actionPlan.responsible_user_id) === String(req.user.id);
   if (!isLeader && !isPlanningAdmin) {
     throw Object.assign(new Error('No tiene permisos para participar en este canal de retroalimentación.'), { statusCode: 403 });
   }
 
-  const senderType = req.body.senderType
-    ? req.body.senderType
-    : (isLeader && !req.body.isPlanningStaff ? 'leader' : (isPlanningAdmin ? 'planning' : 'leader'));
+  const { resolveAdminChatRecipient, resolveLeaderPlanningRecipient, notifyAdminChatRecipient } = require('../services/actionPlanChatRecipientService');
+  const adminDelivery = req.user.role === 'administrador' || Object.hasOwn(req.body, 'recipient')
+    ? await resolveAdminChatRecipient({ actor: req.user, plan: actionPlan, recipient: req.body.recipient ?? 'planning_effectiveness' }) : null;
+  if (adminDelivery && req.body.submitValidation && adminDelivery.type !== 'leader') {
+    throw Object.assign(new Error('El chat privado con Planeación no remite ajustes al líder. Use el flujo del plan.'), { statusCode: 422 });
+  }
+
+  const delivery = adminDelivery || await resolveLeaderPlanningRecipient({ actor: req.user, plan: actionPlan });
+  const conversationId = require('../services/actionPlanChatPrivacy').conversationId(actionPlan.id, req.user.id, delivery.user.id);
+  if (req.body.conversation_id && req.body.conversation_id !== conversationId) {
+    throw Object.assign(new Error('Esta conversación no corresponde a sus participantes o a este plan.'), { statusCode: 403 });
+  }
+
+  const senderType = adminDelivery ? (req.user.role === 'administrador' ? 'admin' : 'planning_private') : (isLeader ? 'leader' : 'planning');
   const senderName = req.user.nombre || req.user.username || (senderType === 'planning' ? 'LUISA FERNANDA ORTEGA MUÑOZ' : 'Líder de Dependencia');
-  const senderCargo = req.user.cargo || (senderType === 'planning' ? 'Analista de Planeación' : 'Líder Responsable');
+  const senderCargo = req.user.cargo || (req.user.role === 'administrador' ? 'Administrador' : req.user.role === 'planeacion_efectividad' ? 'Planeación y Efectividad' : 'Líder Responsable');
   const senderDep = senderType === 'planning'
     ? 'Dirección de Planeación y Aseguramiento de la Calidad'
     : (req.user.dependencia || actionPlan.organizationalUnit?.name || 'Dependencia');
   const senderEmail = req.user.email || '';
   const nowIso = new Date().toISOString();
-  const nowBogota = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
 
   const newMessage = {
     id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    action_plan_id: actionPlan.id,
+    action_plan_code: actionPlan.code,
+    conversation_id: conversationId,
     sender_type: senderType,
     sender_id: req.user.id,
     sender_name: senderName,
@@ -2162,7 +2175,9 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
     sender_dependencia: senderDep,
     sender_email: senderEmail,
     message: messageText,
-    created_at: nowIso
+    created_at: nowIso,
+    recipient_id: delivery.user.id, recipient_type: delivery.type, recipient_name: delivery.user.name,
+    private_channel: true, channel_kind: delivery.channel || (adminDelivery ? 'admin_planning' : 'leader_planning')
   };
 
   const currentMeta = { ...(actionPlan.metadata || {}) };
@@ -2172,6 +2187,7 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
 
   if (senderType === 'planning') {
     currentMeta.last_planning_response = {
+      sender_id: req.user.id, recipient_id: delivery.user.id, conversation_id: conversationId,
       comment: messageText,
       responded_by: req.user.id,
       responded_by_name: senderName,
@@ -2183,8 +2199,9 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
       ...(Array.isArray(currentMeta.planning_responses_history) ? currentMeta.planning_responses_history : []),
       currentMeta.last_planning_response
     ];
-  } else {
+  } else if (!adminDelivery) {
     currentMeta.last_adjustment_request = {
+      sender_id: req.user.id, recipient_id: delivery.user.id, conversation_id: conversationId,
       comment: messageText,
       requested_by: req.user.id,
       requested_by_name: senderName,
@@ -2201,115 +2218,15 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
 
   if (req.body.submitValidation && actionPlan.status === 'adjustments') {
     try {
-      await transitionPlan({ req, actionPlan, action: 'submit_owner_validation', comment: messageText });
+      await transitionPlan({ req, actionPlan, action: 'submit_owner_validation', comment: 'Plan remitido al líder para revisión. Consulte su conversación privada para la retroalimentación.' });
     } catch (eTrans) {
       console.warn('sendActionPlanChatMessage: auto-transition submit_owner_validation:', eTrans.message);
     }
   }
 
   const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
-  const orgUnitName = actionPlan.organizationalUnit?.name || 'Dependencia';
 
-  if (senderType === 'planning') {
-    if (actionPlan.responsible_user_id && String(actionPlan.responsible_user_id) !== String(req.user.id)) {
-      await StrategicNotification.create({
-        user_id: actionPlan.responsible_user_id,
-        action_plan_id: actionPlan.id,
-        type: 'action_plan_chat_message',
-        title: 'Mensaje de Planeación y Aseguramiento de la Calidad',
-        message: `${senderName}: ${messageText.slice(0, 95)}${messageText.length > 95 ? '...' : ''}`,
-        link: '/plan-accion-consulta',
-        metadata: {
-          action_plan_code: actionPlan.code,
-          dependency: orgUnitName,
-          sender_name: senderName
-        }
-      }).catch((e) => console.warn('Error creando StrategicNotification para líder:', e.message));
-    }
-
-    if (actionPlan.responsibleUser?.email) {
-      const consultationUrl = `${baseUrl}/plan-accion-consulta`;
-      const emailSubject = `[MENSAJE DE PLANEACIÓN Y CALIDAD] Plan de Acción ${actionPlan.code} - ${orgUnitName}`;
-      const introHtml = `
-        <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#008069;">CANAL INSTITUCIONAL DE RETROALIMENTACIÓN Y AJUSTES</p>
-        <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) <strong>${escapeHtml(actionPlan.responsibleUser.nombre || 'Líder')}</strong>,</p>
-        <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">La <strong>Dirección de Planeación y Aseguramiento de la Calidad</strong> (desde el componente de <strong>Planeación y Efectividad</strong>) le ha enviado un mensaje respecto a su <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> (${escapeHtml(orgUnitName)}):</p>
-      `;
-      const bodyHtml = `
-        <div style="margin:16px 0;padding:16px;background:#dcfce7;border:2px solid #86efac;border-radius:12px;">
-          <div style="margin-bottom:8px;">
-            <strong style="color:#065f46;font-size:13.5px;">💬 Mensaje de ${escapeHtml(senderName)}:</strong>
-            <span style="font-size:12px;color:#047857;margin-left:6px;">(${escapeHtml(senderCargo)})</span>
-          </div>
-          <div style="padding:14px;background:#ffffff;border-radius:8px;border:1px solid #bbf7d0;font-size:14px;color:#1e293b;line-height:1.6;white-space:pre-wrap;">${escapeHtml(messageText)}</div>
-        </div>
-        <div style="text-align:center;margin:24px 0;">
-          <a href="${escapeHtml(consultationUrl)}" style="display:inline-block;padding:13px 26px;background:#008069;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Ingresar al Plan de Acción y Responder</a>
-        </div>
-        <div style="margin-top:22px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:12.5px;color:#475569;">
-          <p style="margin:0;font-weight:800;color:#0f172a;">${escapeHtml(senderName)}</p>
-          <p style="margin:2px 0 0;color:#64748b;">${escapeHtml(senderCargo)} · Componente de Planeación y Efectividad</p>
-          <p style="margin:2px 0 0;color:#64748b;">${escapeHtml(senderDep)} - UNICESMAG</p>
-        </div>
-      `;
-      const html = renderInstitutionalTemplate({
-        title: `Mensaje de Planeación y Aseguramiento de la Calidad · ${actionPlan.code}`,
-        introHtml,
-        bodyHtml
-      });
-      sendStrategicPlanningEmail({
-        to: actionPlan.responsibleUser.email,
-        subject: emailSubject,
-        text: `Nuevo mensaje de Planeación y Calidad (${senderName}):\n\n${messageText}\n\nIngresar a: ${consultationUrl}`,
-        html
-      }).catch((e) => console.warn('Error enviando correo de chat al líder:', e.message));
-    }
-  } else {
-    await notifyPlanningUsers({
-      actionPlanId: actionPlan.id,
-      type: 'action_plan_chat_message',
-      title: `Mensaje del Líder (${actionPlan.code})`,
-      message: `${senderName}: ${messageText.slice(0, 95)}${messageText.length > 95 ? '...' : ''}`,
-      link: `/planeacion-estrategica/planes-accion/${actionPlan.id}`,
-      metadata: {
-        action_plan_code: actionPlan.code,
-        dependency: orgUnitName,
-        sender_name: senderName
-      },
-      excludeUserId: req.user.id
-    });
-
-    const planEditorUrl = `${baseUrl}/planeacion-estrategica/planes-accion/${actionPlan.id}`;
-    const emailSubject = `[CHAT PLAN DE ACCIÓN] Nuevo mensaje de ${senderName} (${orgUnitName}) - ${actionPlan.code}`;
-    const introHtml = `
-      <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#d97706;">MENSAJE RECIBIDO DEL LÍDER DE DEPENDENCIA</p>
-      <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado equipo de la <strong>Dirección de Planeación y Aseguramiento de la Calidad</strong> (Planeación y Efectividad),</p>
-      <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">El líder <strong>${escapeHtml(senderName)}</strong> ha enviado un nuevo mensaje en el canal de retroalimentación de su <strong>Plan de Acción ${escapeHtml(actionPlan.code)}</strong> (${escapeHtml(orgUnitName)}):</p>
-    `;
-    const bodyHtml = `
-      <div style="margin:16px 0;padding:16px;background:#fffbeb;border:2px solid #fde68a;border-radius:12px;">
-        <div style="margin-bottom:8px;">
-          <strong style="color:#92400e;font-size:13.5px;">💬 Mensaje de ${escapeHtml(senderName)}:</strong>
-          <span style="font-size:12px;color:#b45309;margin-left:6px;">(${escapeHtml(senderCargo)})</span>
-        </div>
-        <div style="padding:14px;background:#ffffff;border-radius:8px;border:1px solid #fde68a;font-size:14px;color:#1e293b;line-height:1.6;white-space:pre-wrap;">${escapeHtml(messageText)}</div>
-      </div>
-      <div style="text-align:center;margin:24px 0;">
-        <a href="${escapeHtml(planEditorUrl)}" style="display:inline-block;padding:13px 26px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Abrir Chat en el Plan de Acción</a>
-      </div>
-    `;
-    const html = renderInstitutionalTemplate({
-      title: `Mensaje del Líder · ${actionPlan.code}`,
-      introHtml,
-      bodyHtml
-    });
-    sendStrategicPlanningEmail({
-      to: ['planeacionestrategica@unicesmag.edu.co', 'lfortega@unicesmag.edu.co'],
-      subject: emailSubject,
-      text: `Nuevo mensaje de ${senderName} (${orgUnitName}) en el plan ${actionPlan.code}:\n\n${messageText}\n\nIngresar a: ${planEditorUrl}`,
-      html
-    }).catch((e) => console.warn('Error enviando correo de chat a planeación:', e.message));
-  }
+  await notifyAdminChatRecipient({ actor: req.user, plan: actionPlan, delivery, message: newMessage, baseUrl });
 
   const updatedPlan = await StrategicActionPlan.findByPk(actionPlan.id, {
     include: [
@@ -2324,15 +2241,26 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
     message: newMessage,
     chat_thread: currentMeta.chat_thread,
     actionPlan: updatedPlan
-  }, 'Mensaje enviado y notificado por correo institucional.');
+  }, adminDelivery ? 'Mensaje enviado al destinatario seleccionado.' : 'Mensaje enviado y notificado por correo institucional.');
 });
 
 const clearActionPlanChat = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
   if (!actionPlan) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
   const meta = { ...(actionPlan.metadata || {}) };
-  meta.chat_archive = [...(meta.chat_archive || []), ...(meta.chat_thread || [])];
-  meta.chat_thread = [];
+  const { privateMessage, visibleTo } = require('../services/actionPlanChatPrivacy');
+  const privatePeer = String(req.body?.recipient || '');
+  const selectedMessages = (meta.chat_thread || []).filter(message => {
+    if (!visibleTo(message, req.user, actionPlan.responsible_user_id)) return false;
+    if (privatePeer === 'planning_effectiveness' || privatePeer.startsWith('administrator:')) {
+      if (!privateMessage(message) || message.channel_kind === 'leader_planning') return false;
+      const peer = privatePeer.startsWith('administrator:') ? privatePeer.slice(14) : null;
+      return peer ? [message.sender_id, message.recipient_id].some(id => String(id) === peer) : message.channel_kind !== 'admin_leader';
+    }
+    return !privateMessage(message) || ['leader_planning', 'admin_leader'].includes(message.channel_kind);
+  });
+  meta.chat_archive = [...(meta.chat_archive || []), ...selectedMessages];
+  meta.chat_thread = (meta.chat_thread || []).filter(message => !selectedMessages.includes(message));
   meta.chat_last_cleared_at = new Date().toISOString();
   meta.chat_last_cleared_by = req.user.id;
   meta.chat_last_cleared_by_name = req.user.nombre || req.user.username;
@@ -4268,7 +4196,7 @@ const listStrategicNotifications = wrap(async (req, res) => {
 
   // 1. Si el usuario tiene rol de Planeación y Efectividad (Luisa Fernanda),
   // recibe las notificaciones de su bandeja de revisión institucional
-  if (userRole === 'planeacion_efectividad') {
+  if (['planeacion_efectividad', 'administrador'].includes(userRole)) {
     const notifications = await StrategicNotification.findAll({
       where: { user_id: userId },
       order: [['created_at', 'DESC']],

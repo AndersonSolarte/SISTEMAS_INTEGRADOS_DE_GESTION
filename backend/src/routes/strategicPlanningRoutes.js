@@ -8,6 +8,12 @@ const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: Number(process.env.SIAC_PEI_MAX_UPLOAD_BYTES || 25 * 1024 * 1024) } });
 
 router.use(auth);
+router.use((req, res, next) => {
+  require('../services/actionPlanChatPrivacy').protectChatMetadata(req.body);
+  const originalJson = res.json.bind(res);
+  res.json = payload => originalJson(require('../services/actionPlanChatPrivacy').filterChatPayload(payload, req.user));
+  next();
+});
 router.get('/bootstrap', permit(), c.bootstrap);
 router.get('/plans', permit('pei_consulta_ejecutiva'), c.listPlans);
 router.post('/plans', permit('pei_configurar'), c.createPlan);

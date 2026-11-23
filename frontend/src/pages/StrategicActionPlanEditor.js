@@ -1,3 +1,5 @@
+import { chatChannelMessages, planningChatPeers } from '../utils/actionPlanChatChannels';
+import AdminActionPlanChatRecipient from '../components/AdminActionPlanChatRecipient';
 import { mergeActivityTemplateValues } from '../utils/activityTemplateValues';
 import { minuteScrollStyles } from '../components/meetingMinute/minuteScrollStyles';
 // PEI StrategicActionPlanEditor Module
@@ -2213,6 +2215,17 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const [planningResponseComment, setPlanningResponseComment] = useState('');
   const [submittingValidation, setSubmittingValidation] = useState(false);
   const [sendingChatMessage, setSendingChatMessage] = useState(false);
+  const [adminChatRecipient, setAdminChatRecipient] = useState('planning_effectiveness');
+  const privateChatPeers = useMemo(() => planningChatPeers(detail?.metadata?.chat_thread, user), [detail?.metadata, user]);
+  useEffect(() => {
+    if (user?.role === 'administrador') setAdminChatRecipient('planning_effectiveness');
+    else if (user?.role === 'planeacion_efectividad') {
+      const peer = new URLSearchParams(window.location.search).get('chatPeer');
+      const available = planningChatPeers(detail?.metadata?.chat_thread, user);
+      const selected = peer === 'leader' ? null : available.find(item => item.id === peer) || available[available.length - 1];
+      setAdminChatRecipient(selected ? 'administrator:' + selected.id : 'leader');
+    } else setAdminChatRecipient('leader');
+  }, [detail?.id, feedbackChatModalOpen, user?.id, user?.role]);
 
   useEffect(() => {
     if (open && initialOpenChat) {
@@ -2223,10 +2236,10 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const chatThread = useMemo(() => {
     const meta = detail?.metadata || {};
     if (Array.isArray(meta.chat_thread)) {
-      return meta.chat_thread;
+      return chatChannelMessages(meta.chat_thread, user, adminChatRecipient, detail?.responsible_user_id);
     }
     return [];
-  }, [detail?.metadata]);
+  }, [detail?.metadata, detail?.responsible_user_id, user, adminChatRecipient]);
 
   const handleSendChatMessage = async (isSubmittingValidation = false) => {
     const comment = planningResponseComment.trim();
@@ -2239,13 +2252,16 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
       const resp = await strategicPlanningService.sendChatMessage(detail.id, {
         message: comment,
         submitValidation: isSubmittingValidation,
-        senderType: 'planning'
+        senderType: 'planning',
+        ...((user?.role === 'administrador' || adminChatRecipient.startsWith('administrator:')) ? { recipient: adminChatRecipient } : {})
       });
+      const sentMessage = resp?.data?.message;
+      if (user?.role === 'planeacion_efectividad' && sentMessage?.channel_kind === 'admin_planning' && sentMessage?.recipient_type === 'administrator') setAdminChatRecipient('administrator:' + sentMessage.recipient_id);
       setPlanningResponseComment('');
       enqueueSnackbar(
         isSubmittingValidation
           ? 'Ajustes remitidos al Líder para firmas y notificados a su correo institucional.'
-          : 'Mensaje enviado y notificado por correo institucional al Líder.',
+          : (user?.role === 'administrador' || adminChatRecipient.startsWith('administrator:')) ? (adminChatRecipient === 'leader' ? 'Mensaje enviado al líder del plan.' : 'Mensaje privado enviado al destinatario seleccionado.') : 'Mensaje enviado y notificado por correo institucional al Líder.',
         { variant: 'success' }
       );
       if (resp?.data?.actionPlan) {
@@ -2267,11 +2283,11 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
   const handleClearFeedbackChat = async () => {
     if (!detail?.id) return;
     try {
-      await strategicPlanningService.clearChatThread(detail.id);
+      await strategicPlanningService.clearChatThread(detail.id, { recipient: adminChatRecipient });
       setDetail((prev) => {
         if (!prev) return prev;
         const meta = { ...(prev.metadata || {}) };
-        meta.chat_thread = [];
+        meta.chat_thread = (meta.chat_thread || []).filter(message => !chatThread.includes(message));
         return { ...prev, metadata: meta };
       });
       enqueueSnackbar('Chat limpiado. Los mensajes han sido archivados en la trazabilidad.', { variant: 'info' });
@@ -8721,7 +8737,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
             zIndex: 2
           }}
         >
-          <Stack direction="row" spacing={1.5} alignItems="center">
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flex: 1, minWidth: 0, mr: 1.5 }}>
             <Badge
               overlap="circular"
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
@@ -8748,7 +8764,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   border: '1.5px solid rgba(255,255,255,0.35)'
                 }}
               >
-                {((adjustmentInfo?.requested_by_name || detail?.responsibleUser?.nombre || 'Líder')
+                {user?.role === 'administrador' && adminChatRecipient === 'planning_effectiveness' ? 'PE' : ((adjustmentInfo?.requested_by_name || detail?.responsibleUser?.nombre || 'Líder')
                   .split(' ')
                   .filter(Boolean)
                   .map((n) => n[0])
@@ -8756,14 +8772,16 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                   .join('') || 'LD').toUpperCase()}
               </Avatar>
             </Badge>
-            <Box>
+            {(user?.role === 'administrador' || privateChatPeers.length > 0) ? <AdminActionPlanChatRecipient role={user.role} value={adminChatRecipient}
+              onChange={setAdminChatRecipient} peers={privateChatPeers} planCode={detail?.code} actorId={user.id} disabled={sendingChatMessage}
+              leader={{ id: detail?.responsible_user_id, name: detail?.responsibleUser?.nombre }} planningUser={detail?.planningEfectividadUser} /> : <Box>
               <Typography sx={{ fontWeight: 850, fontSize: 15, lineHeight: 1.2, color: '#ffffff' }}>
                 {adjustmentInfo?.requested_by_name || detail?.responsibleUser?.nombre || 'Líder Responsable'}
               </Typography>
               <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>
                 {detail?.organizationalUnit?.name || 'Dependencia'}
               </Typography>
-            </Box>
+            </Box>}
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center">
             <IconButton
@@ -8885,6 +8903,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                     </Typography>
 
                     <Typography sx={{ fontSize: 13.5, color: '#111b21', lineHeight: 1.52, whiteSpace: 'pre-wrap' }}>
+                      {msg.recipient_name && <Typography variant="caption" sx={{ display: 'block', color: '#667781', mb: 0.4 }}>Para: {msg.recipient_name}</Typography>}
                       {msg.message}
                     </Typography>
 
@@ -8987,7 +9006,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               <Button
                 size="small"
                 variant="contained"
-                disabled={sendingChatMessage || submittingValidation}
+                disabled={sendingChatMessage || submittingValidation || adminChatRecipient !== 'leader'}
                 onClick={() => handleSendChatMessage(true)}
                 startIcon={submittingValidation ? <CircularProgress size={14} color="inherit" /> : <CheckCircle sx={{ fontSize: 15 }} />}
                 sx={{
@@ -9014,7 +9033,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
               minRows={1}
               maxRows={5}
               size="small"
-              placeholder="Escribe un mensaje para el líder (Enter para nueva línea, clic en enviar o Ctrl+Enter)..."
+              placeholder={user?.role === 'administrador' ? 'Escriba un mensaje para el destinatario seleccionado...' : 'Escriba un mensaje para el líder...'}
               value={planningResponseComment}
               onChange={(e) => setPlanningResponseComment(e.target.value)}
               onKeyDown={(e) => {
