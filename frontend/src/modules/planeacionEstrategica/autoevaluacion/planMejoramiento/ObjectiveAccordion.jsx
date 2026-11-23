@@ -1,10 +1,11 @@
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { Box, ButtonBase, Chip, Collapse, IconButton, Paper, Stack, Tooltip } from '@mui/material';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import DeleteOutline from '@mui/icons-material/DeleteOutline';
 
-export default function ObjectiveAccordion({ number, imported, onRemove, children }) {
+export default function ObjectiveAccordion({ number, imported, onRemove, revealRequest, children }) {
   const [expanded, setExpanded] = useState(false);
+  useEffect(() => { if (revealRequest) setExpanded(true); }, [revealRequest]);
   const id = useId();
   return <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid #cbd5e1', bgcolor: '#fbfdff', overflow: 'hidden' }}>
     <Stack direction="row" alignItems="center" sx={{ px: { xs: 1, md: 1.5 }, py: 0.5 }}>

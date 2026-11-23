@@ -172,6 +172,7 @@ const statusTone = (status) => ({
 const visiblePlanState = (plan) => !plan?.asignacion?.usuario && plan?.estado === 'en_ejecucion' ? 'borrador' : plan?.estado;
 const saveTone = (status) => ({
   pending: { label: 'Cambios pendientes', color: '#b45309', soft: '#fff7ed', border: '#fed7aa' },
+  incomplete: { label: 'Faltan datos obligatorios · Revisar', color: '#b45309', soft: '#fff7ed', border: '#fed7aa' },
   saving: { label: 'Guardando…', color: '#1d4ed8', soft: '#eff6ff', border: '#bfdbfe' },
   saved: { label: 'Todos los cambios guardados', color: '#047857', soft: '#ecfdf5', border: '#a7f3d0' },
   error: { label: 'Error al guardar · Reintentar', color: '#b91c1c', soft: '#fef2f2', border: '#fecaca' }
@@ -409,6 +410,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
   const [assignmentPlan, setAssignmentPlan] = useState(null);
   const [tab, setTab] = useState(0);
   const [expandedActivityKey, setExpandedActivityKey] = useState(null);
+  const [indicatorValidationTarget, setIndicatorValidationTarget] = useState(null);
   const [expandedTraceability, setExpandedTraceability] = useState(false);
   const [expandedFollowUpObjective, setExpandedFollowUpObjective] = useState(0);
   const [expandedFollowUpActivity, setExpandedFollowUpActivity] = useState(null);
@@ -939,6 +941,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
       lastSavedSnapshotRef.current = planSnapshot(nextEditor);
       setSaveStatus('saved');
       setEditor(nextEditor);
+      setIndicatorValidationTarget(null);
       driveSyncedPlanRef.current = null;
       setDriveSyncStatus(nextEditor.objetivos.flatMap((item) => item.actividades || []).every((item) => item.evidenceFolderUrl) ? 'synced' : 'idle');
       setDriveSyncMessage('');
@@ -954,10 +957,18 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     if (!plan?.programa?.trim()) return null;
     const indicatorIssues = planIndicatorErrors(plan.objetivos || []);
     if (indicatorIssues.length) {
-      setSaveStatus('error');
-      if (notify) enqueueSnackbar(indicatorIssues[0].message, { variant: 'warning' });
+      setSaveStatus('incomplete');
+      if (notify) {
+        const issue = indicatorIssues[0];
+        setTab(2);
+        const activity = plan.objetivos[issue.objectiveIndex].actividades[issue.activityIndex];
+        setExpandedActivityKey(activity.uid || `${issue.objectiveIndex}_${issue.activityIndex}`);
+        setIndicatorValidationTarget((previous) => ({ ...issue, revision: (previous?.revision || 0) + 1 }));
+        enqueueSnackbar(issue.message, { variant: 'warning' });
+      }
       return null;
     }
+    setIndicatorValidationTarget(null);
     if (saveInFlightRef.current) {
       queuedSaveRef.current = true;
       setSaveStatus('pending');
@@ -1028,6 +1039,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
     lastSavedSnapshotRef.current = planSnapshot(plan);
     setSaveStatus('saved');
     setEditor(plan);
+    setIndicatorValidationTarget(null);
     setExpandedTraceability(false);
   };
 
@@ -2092,8 +2104,8 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                 <Chip
                   size="small"
                   label={saveTone(saveStatus).label}
-                  onClick={saveStatus === 'error' ? save : undefined}
-                  sx={{ height: 24, fontWeight: 850, color: saveTone(saveStatus).color, bgcolor: saveTone(saveStatus).soft, border: `1px solid ${saveTone(saveStatus).border}`, cursor: saveStatus === 'error' ? 'pointer' : 'default' }}
+                  onClick={['error', 'incomplete'].includes(saveStatus) ? save : undefined}
+                  sx={{ height: 24, fontWeight: 850, color: saveTone(saveStatus).color, bgcolor: saveTone(saveStatus).soft, border: `1px solid ${saveTone(saveStatus).border}`, cursor: ['error', 'incomplete'].includes(saveStatus) ? 'pointer' : 'default' }}
                 />
               </Stack>
             </Box>
@@ -2336,7 +2348,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                 </Alert>
               )}
               {editor.objetivos.map((objective, objectiveIndex) => (
-                <ObjectiveAccordion key={objectiveIndex} number={objectiveIndex + 1} imported={Boolean(objective.origenAutoevaluacion?.id)} onRemove={() => removeObjective(objectiveIndex)}>
+                <ObjectiveAccordion key={objectiveIndex} number={objectiveIndex + 1} imported={Boolean(objective.origenAutoevaluacion?.id)} onRemove={() => removeObjective(objectiveIndex)} revealRequest={indicatorValidationTarget?.objectiveIndex === objectiveIndex ? indicatorValidationTarget : null}>
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5, alignItems: 'start' }}>
                     <BufferedTextField label="Código" value={objective.codigo} onChange={(e) => updateObjective(objectiveIndex, 'codigo', e.target.value)} sx={{ gridColumn: { md: 'span 2' } }} />
                     <PendingAspectFields pending={pendingOpportunityList} factor={objective.factor} characteristic={objective.caracteristica}
@@ -2446,7 +2458,7 @@ function PlanMejoramiento({ onBack, executionMode = false }) {
                         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(12, 1fr)' }, gap: 1.5, alignItems: 'start' }}>
                           <BufferedTextField label="Nombre de la actividad" value={activity.nombre} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'nombre', e.target.value)} fullWidth size="small" multiline minRows={1} sx={{ gridColumn: '1 / -1' }} />
                           <BufferedTextField label="Descripción de la actividad" value={activity.descripcion} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'descripcion', e.target.value)} fullWidth size="small" multiline minRows={1} sx={{ gridColumn: '1 / -1' }} />
-                          <ActivityIndicatorFields activity={activity} onChange={(field, value) => updateActivity(objectiveIndex, activityIndex, field, value)} />
+                          <ActivityIndicatorFields activity={activity} onChange={(field, value) => updateActivity(objectiveIndex, activityIndex, field, value)} focusRequest={indicatorValidationTarget?.objectiveIndex === objectiveIndex && indicatorValidationTarget?.activityIndex === activityIndex ? indicatorValidationTarget : null} />
                           <ActivityResourceField value={activity.recursos} onChange={(value) => updateActivity(objectiveIndex, activityIndex, 'recursos', value)} />
                           <TextField select label="Proceso responsable" value={activity.procesoResponsable} onChange={(e) => updateActivity(objectiveIndex, activityIndex, 'procesoResponsable', e.target.value)} sx={{ gridColumn: { md: 'span 4' } }}>{withCurrent(catalogs.processes?.length ? catalogs.processes : PROCESSES, activity.procesoResponsable).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
                           <Box sx={{ gridColumn: { md: 'span 5' }, minWidth: 0 }}>

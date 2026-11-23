@@ -14,6 +14,35 @@ configure({ asyncUtilTimeout: 5000 });
 jest.setTimeout(30000);
 beforeEach(() => jest.clearAllMocks());
 
+test('saving an incomplete legacy indicator opens its objective and activity, focuses the real missing date and saves after correction', async () => {
+  const activity = { uid: 'missing-start', nombre: 'Reportes', descripcion: 'Conservar descripción', indicador: 'Informes entregados', meta: '12 informes', fechaEntregaResultado: '2026-12-31' };
+  const plan = { id: 4, programa: 'EDUCACIÓN INFANTIL', estado: 'borrador', periodo_inicio: 2026, periodo_fin: 2028,
+    contenido: { objetivos: [{ codigo: 'OPM_01', objetivo: 'Conservar primer objetivo', actividades: [] }, { codigo: 'OPM_02', objetivo: 'Segundo objetivo', actividades: [activity] }], presupuesto: [] } };
+  service.list.mockResolvedValue([plan]);
+  service.catalogs.mockResolvedValue({});
+  service.syncAutoevaluacion.mockResolvedValue({});
+  service.get.mockResolvedValue(plan);
+  service.update.mockResolvedValue(plan);
+  gestion.getAutoevaluacionDashboard.mockResolvedValue({ data: { aspectos: [] } });
+  render(<PlanMejoramiento />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Abrir plan' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Guardar ahora' }));
+  expect(screen.getByRole('tab', { name: /Objetivos y actividades/ })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByRole('button', { name: 'Contraer objetivo 2' })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('button', { name: 'Expandir objetivo 1' })).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByRole('button', { name: 'Faltan datos obligatorios · Revisar' })).toBeInTheDocument();
+  const date = await screen.findByLabelText('Fecha inicio de resultado');
+  expect(date).toHaveValue('');
+  await waitFor(() => expect(date).toHaveFocus());
+  expect(service.update).not.toHaveBeenCalled();
+  expect(screen.getByRole('textbox', { name: 'Meta de resultado' })).toHaveValue('12 informes');
+  fireEvent.change(date, { target: { value: '2026-11-01' } });
+  await waitFor(() => expect(service.update).toHaveBeenCalledTimes(1), { timeout: 3500 });
+  const saved = service.update.mock.calls[0][1].contenido.objetivos;
+  expect(saved[0].objetivo).toBe('Conservar primer objetivo');
+  expect(saved[1].actividades[0]).toMatchObject({ nombre: 'Reportes', descripcion: 'Conservar descripción', fechaInicioResultado: '2026-11-01', fechaFinResultado: '2026-12-31', metaResultado: '12 informes' });
+});
+
 test('can create several objectives without closing the editor or losing the previous objective', async () => {
   const plan = { id: 1, programa: 'DERECHO', estado: 'borrador', periodo_inicio: 2026, periodo_fin: 2028, contenido: { objetivos: [], presupuesto: [] } };
   service.list.mockResolvedValue([plan]);
