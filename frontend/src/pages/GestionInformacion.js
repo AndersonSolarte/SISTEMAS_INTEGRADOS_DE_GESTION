@@ -16134,7 +16134,7 @@ const renderCategoryBars = (items = [], options = {}) => {
         });
         return {
           ...row,
-          matriculados: foundMatch ? progTotal : 0
+          matriculados: foundMatch ? progTotal : null
         };
       });
     }
@@ -16155,9 +16155,20 @@ const renderCategoryBars = (items = [], options = {}) => {
         semester,
         rawPeriod,
         isSelected,
-        value: normalizeNumber(row.matriculados || 0)
+        value: normalizeNumber(row.matriculados) > 0 ? normalizeNumber(row.matriculados) : null
       };
     });
+
+    // Acercar la escala solo en líneas filtradas; las barras conservan su base en cero.
+    const lineValues = chartData.map((row) => row.value).filter(Number.isFinite);
+    const lineMin = lineValues.length ? Math.min(...lineValues) : 0;
+    const lineMax = lineValues.length ? Math.max(...lineValues) : 0;
+    const useFocusedLineScale = (selectedYears.length > 0 || selectedPeriods.length > 0 || selectedProgs.length > 0)
+      && lineValues.length > 1 && lineMax > lineMin;
+    const linePadding = Math.max(1, (lineMax - lineMin) * 0.2);
+    const lineDomain = useFocusedLineScale
+      ? [Math.max(0, Math.floor(lineMin - linePadding)), Math.ceil(lineMax + linePadding)]
+      : [0, 'auto'];
 
     const handleBarClick = (_, index) => {
       const period = chartData[index]?.rawPeriod;
@@ -16176,7 +16187,7 @@ const renderCategoryBars = (items = [], options = {}) => {
     };
 
     const CustomTooltip = ({ active, payload, label }) => {
-      if (!active || !payload || !payload.length) return null;
+      if (!active || !payload || !payload.length || payload[0].value == null) return null;
       const isSelected = hasSelection && selectedPeriods.some((p) => p.replace(/-1$/, '-I').replace(/-2$/, '-II').toUpperCase() === label);
       return (
         <Box sx={{ bgcolor: '#fff', border: `1.5px solid ${isSelected ? '#1d4ed8' : '#dbeafe'}`, borderRadius: 2, p: 1.5, boxShadow: '0 8px 24px -6px rgba(29,78,216,0.22)', minWidth: 160 }}>
@@ -16658,8 +16669,25 @@ const renderCategoryBars = (items = [], options = {}) => {
               };
 
               return (
-                <Box sx={{ px: 1, py: 0.5, maxHeight: 420, overflow: 'auto' }}>
-                  <Table size="small" stickyHeader sx={{ minWidth: Math.max(620, 540 + activePeriods.length * 110), '& th': { whiteSpace: 'nowrap' } }}>
+                <Box sx={{ px: 1, py: 0.5, maxHeight: 420, overflow: 'auto', '--mat-label-width': { xs: '240px', md: '360px' } }}>
+                  <Table size="small" stickyHeader sx={{
+                    tableLayout: 'fixed',
+                    width: `calc(var(--mat-label-width) + ${activePeriods.length * 86 + 230}px)`,
+                    minWidth: '100%',
+                    '& th, & td': { px: 1, fontVariantNumeric: 'tabular-nums' },
+                    '& th': { whiteSpace: 'nowrap', bgcolor: '#f8fafc' },
+                    '& th:first-of-type, & td:first-of-type': {
+                      position: 'sticky', left: 0, zIndex: 1,
+                      bgcolor: 'inherit', boxShadow: '2px 0 0 #e2e8f0'
+                    },
+                    '& thead th:first-of-type': { zIndex: 3, bgcolor: '#f8fafc', whiteSpace: 'normal' }
+                  }}>
+                    <colgroup>
+                      <col style={{ width: 'var(--mat-label-width)' }} />
+                      {activePeriods.map((p) => <col key={p} style={{ width: 86 }} />)}
+                      <col style={{ width: 100 }} />
+                      <col style={{ width: 130 }} />
+                    </colgroup>
                     <TableHead>
                       <TableRow sx={{ bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                         <TableCell sx={{ fontWeight: 800, color: '#475569', fontSize: 11, py: 0.9 }}>FACULTAD / PROGRAMA ACADÉMICO</TableCell>
@@ -16689,10 +16717,11 @@ const renderCategoryBars = (items = [], options = {}) => {
                               }}
                             >
                               <TableCell sx={{ py: 0.9 }}>
-                                <Stack direction="row" spacing={1} alignItems="center">
+                                <Stack direction="row" spacing={0.75} alignItems="center">
                                   <ExpandMoreIcon
                                     sx={{
                                       fontSize: 16,
+                                      flexShrink: 0,
                                       color: '#64748b',
                                       transition: 'transform 0.2s',
                                       transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)'
@@ -16711,13 +16740,13 @@ const renderCategoryBars = (items = [], options = {}) => {
                                   >
                                     {fac.meta.iconSvg}
                                   </Box>
-                                  <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 12.5 }}>
+                                  <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 12, minWidth: 0, overflowWrap: 'anywhere', lineHeight: 1.3 }}>
                                     {fac.name.toUpperCase()}
                                   </Typography>
                                   <Chip
                                     label={`${fac.programas.length} prog.`}
                                     size="small"
-                                    sx={{ height: 18, fontSize: 10, fontWeight: 700, bgcolor: '#e2e8f0', color: '#475569' }}
+                                    sx={{ height: 18, flexShrink: 0, fontSize: 10, fontWeight: 700, bgcolor: '#e2e8f0', color: '#475569' }}
                                   />
                                 </Stack>
                               </TableCell>
@@ -16746,8 +16775,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                                       '&:hover': { bgcolor: '#eff6ff' }
                                     }}
                                   >
-                                    <TableCell sx={{ pl: 5.5, py: 0.65 }}>
-                                      <Typography sx={{ fontWeight: 600, color: '#334155', fontSize: 11.5 }}>
+                                    <TableCell sx={{ '&&': { pl: 4 }, py: 0.65 }}>
+                                      <Typography sx={{ fontWeight: 600, color: '#334155', fontSize: 11.5, overflowWrap: 'anywhere', lineHeight: 1.35 }}>
                                         {prog.name}
                                       </Typography>
                                     </TableCell>
@@ -16774,8 +16803,18 @@ const renderCategoryBars = (items = [], options = {}) => {
               );
             })()}
 
-            {matChartViewMode === 'line' && (
+            {(matChartViewMode === 'line' || matChartViewMode === 'bar') && lineValues.length === 0 && (
+              <Typography sx={{ py: 5, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
+                No hay registros para los filtros seleccionados.
+              </Typography>
+            )}
+            {matChartViewMode === 'line' && lineValues.length > 0 && (
               <Box sx={{ width: '100%', minWidth: Math.max(960, chartData.length * 58), mx: 'auto' }}>
+                {useFocusedLineScale && (
+                  <Typography sx={{ px: 1, mb: 0.5, fontSize: 12, color: '#475569' }}>
+                    Escala ampliada para ver las variaciones · Eje vertical: {formatNumber(lineDomain[0])} a {formatNumber(lineDomain[1])} estudiantes
+                  </Typography>
+                )}
                 <Box sx={{ height: 360 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartData} margin={{ top: 36, right: 18, left: 0, bottom: 4 }} onClick={(e) => e && e.activeTooltipIndex != null && handleBarClick(null, e.activeTooltipIndex)}>
@@ -16788,17 +16827,19 @@ const renderCategoryBars = (items = [], options = {}) => {
                       <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
                       <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 29, right: 29 }} />
                       <YAxis
-                        domain={[0, 'auto']}
+                        domain={lineDomain}
+                        allowDecimals={false}
                         tick={{ fontSize: 14, fill: '#475569', fontWeight: 800 }}
                         axisLine={false}
                         tickLine={false}
-                        tickFormatter={fmtAxis}
+                        tickFormatter={useFocusedLineScale ? formatNumber : fmtAxis}
                         width={54}
                       />
                       <RechartsTooltip content={<CustomTooltip />} />
                       <Area
                         type="linear"
                         dataKey="value"
+                        connectNulls={false}
                         stroke="#1d4ed8"
                         strokeWidth={3.5}
                         fill="url(#matAreaGrad)"
@@ -16820,7 +16861,7 @@ const renderCategoryBars = (items = [], options = {}) => {
               </Box>
             )}
 
-            {matChartViewMode === 'bar' && (
+            {matChartViewMode === 'bar' && lineValues.length > 0 && (
               <Box sx={{ width: '100%', minWidth: Math.max(960, chartData.length * 58), mx: 'auto' }}>
                 <Box sx={{ height: { xs: 330, md: 380 } }}>
                   <ResponsiveContainer width="100%" height="100%">
