@@ -1060,6 +1060,8 @@ const getCanonicalProgramMeta = (value = '') => {
     { test: (text) => /LIC.*QUIMICA/.test(text), canonical: 'LICENCIATURA EN QUIMICA' },
     { test: (text) => /INGENIER.*SISTEMAS/.test(text), canonical: 'INGENIERIA DE SISTEMAS' },
     { test: (text) => /INGENIER.*ELECTRONIC/.test(text), canonical: 'INGENIERIA ELECTRONICA' },
+    { test: (text) => /^INGENIER.*FINANCIER/.test(text), canonical: 'INGENIERIA FINANCIERA' },
+    { test: (text) => /^INGENIER.*INDUSTRIAL/.test(text), canonical: 'INGENIERIA INDUSTRIAL' },
     { test: (text) => /TECNOLOG.*CONTABILIDAD.*FINANZAS/.test(text), canonical: 'TECNOLOGIA EN CONTABILIDAD Y FINANZAS' },
     { test: (text) => /TECNOLOG.*GESTION FINANCIERA/.test(text), canonical: 'TECNOLOGIA EN GESTION FINANCIERA' }
   ];
@@ -1456,6 +1458,22 @@ const selectPreferredProgramLabel = (current = '', incoming = '') => {
 };
 
 const formatNumber = (value) => normalizeNumber(value).toLocaleString('es-CO');
+const uniqueMatriculadosPrograms = (programs = []) => Array.from(new Map(
+  programs.filter(Boolean).map((program) => {
+    const key = normalizeProgramKey(program);
+    return [key, { value: key, label: getDisplayProgramLabel(key) }];
+  })
+).values()).sort((a, b) => a.label.localeCompare(b.label, 'es'));
+
+const expandMatriculadosPrograms = (selected = [], catalog = []) => {
+  if (!selected.length || selected.includes('__NONE__')) return selected;
+  const keys = new Set(selected.map(normalizeProgramKey));
+  return Array.from(new Set([
+    ...selected,
+    ...catalog.filter((program) => keys.has(normalizeProgramKey(program)))
+  ]));
+};
+
 const formatCompactNumber = (value) => {
   const normalized = normalizeNumber(value);
   if (Math.abs(normalized) >= 1000000) return `${(normalized / 1000000).toFixed(normalized % 1000000 === 0 ? 0 : 1)}M`;
@@ -1662,7 +1680,15 @@ const FACULTY_ORDER = [
   'Ciencias de la Salud',
   'Otras'
 ];
+const getProgramFacultyOverride = (programa = '') => {
+  const key = normalizeProgramMatchText(programa);
+  return /^TECNOLOG.*(?:GESTION|ADMINISTRACION) FINANCIERA$/.test(key)
+    ? 'Ciencias Administrativas y Contables'
+    : '';
+};
 const classifyProgramFaculty = (programa = '') => {
+  const override = getProgramFacultyOverride(programa);
+  if (override) return override;
   const u = String(programa).toUpperCase();
   if (u.includes('INGENIER') || u.includes('BIG DATA') || u.includes('SEGURIDAD INFORM') ||
       u.includes('ELECTRONI') || u.includes('SISTEMAS') || u.includes('FINANCIER') ||
@@ -2898,7 +2924,7 @@ function GestionInformacion() {
       const requestParams = {
         categoria: 'Poblacional',
         aggregate: 'matriculados_geo_dashboard',
-        programas: isExplicitNoneProg ? ['__NONE__'] : (matFilters.programas || []),
+        programas: isExplicitNoneProg ? ['__NONE__'] : expandMatriculadosPrograms(matFilters.programas || [], matMasterCatalog.programas),
         anios: isExplicitNoneAnio ? ['__NONE__'] : (matFilters.anios || []),
         periodos: isExplicitNonePeriod ? ['__NONE__'] : _selPeriodos,
         sexos: [...(geoFiltersRef.current.sexos || [])],
@@ -2929,6 +2955,7 @@ function GestionInformacion() {
     }
   }, [
     matFilters,
+    matMasterCatalog.programas,
     enqueueSnackbar,
     menuView,
     poblacionalPanel,
@@ -3183,7 +3210,7 @@ function GestionInformacion() {
 
   useEffect(() => {
     if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || (statSection !== 'matriculados' && statSection !== 'resumen_poblacional')) return;
-    const currentKey = JSON.stringify([matFilters, matriculadosRefreshToken]);
+    const currentKey = JSON.stringify([matFilters, matriculadosRefreshToken, matMasterCatalog.programas]);
     if (matriculadosPanelDataRef.current && matLoadedKeyRef.current === currentKey) return;
     matLoadedKeyRef.current = currentKey;
     let cancelled = false;
@@ -3194,7 +3221,7 @@ function GestionInformacion() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [fetchMatriculadosPanel, matriculadosRefreshToken, matFilters, menuView, selectedCard, poblacionalPanel, statSection]);
+  }, [fetchMatriculadosPanel, matriculadosRefreshToken, matFilters, matMasterCatalog.programas, menuView, selectedCard, poblacionalPanel, statSection]);
 
   useEffect(() => {
     if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || statSection !== 'matriculados') return;
@@ -12678,7 +12705,7 @@ const renderCategoryBars = (items = [], options = {}) => {
       : ['1', '2'];
     const appliedFilters = matriculadosPanelData?.filtrosAplicados || {};
     const mapFiltersAligned = (
-      JSON.stringify([...(matFilters.programas || [])].sort()) === JSON.stringify([...(appliedFilters.programas || [])].sort())
+      JSON.stringify([...new Set((matFilters.programas || []).map(normalizeProgramKey))].sort()) === JSON.stringify([...new Set((appliedFilters.programas || []).map(normalizeProgramKey))].sort())
       && JSON.stringify([..._aniosSent].map(String).sort()) === JSON.stringify([...(appliedFilters.anios || [])].map(String).sort())
       && JSON.stringify([..._semestresSent].sort()) === JSON.stringify([...(appliedFilters.periodos || ['1', '2'])].map(String).sort())
       && JSON.stringify([...(geoTerritorialAppliedFilters.sexos || [])].sort()) === JSON.stringify([...(appliedFilters.sexos || [])].sort())
@@ -15323,8 +15350,8 @@ const renderCategoryBars = (items = [], options = {}) => {
     const currentPayloadProgs = matriculadosPanelData?.programasDisponibles || [];
     const selectedProgs = (matFilters.programas || []).filter((p) => p && p !== '__NONE__');
     if (selectedProgs.length === 0 && currentPayloadProgs.length > 0 && (selectedYears.length > 0 || selectedPeriods.length > 0)) {
-      const progSet = new Set(currentPayloadProgs);
-      const filtered = masterProgramas.filter((p) => progSet.has(p));
+      const progSet = new Set(currentPayloadProgs.map(normalizeProgramKey));
+      const filtered = masterProgramas.filter((p) => progSet.has(normalizeProgramKey(p)));
       if (filtered.length > 0) programasOpts = filtered;
     }
 
@@ -15332,7 +15359,7 @@ const renderCategoryBars = (items = [], options = {}) => {
     if (periodosOpts.length === 0) periodosOpts = masterPeriodos;
     if (programasOpts.length === 0) programasOpts = masterProgramas;
 
-    return { aniosOpts, periodosOpts, programasOpts };
+    return { aniosOpts, periodosOpts, programasOpts: uniqueMatriculadosPrograms(programasOpts) };
   };
 
   const renderResumenPoblacionalStandaloneDashboard = () => {
@@ -15430,7 +15457,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 label="PROGRAMA ACADÉMICO"
                 placeholder="Buscar programa..."
                 options={programasOpts}
-                value={matFilters.programas}
+                value={Array.from(new Set((matFilters.programas || []).map((p) => p === '__NONE__' ? p : normalizeProgramKey(p))))}
                 onChange={(nextValues) => setMatFilters((prev) => ({ ...prev, programas: nextValues }))}
               />
               <Button
@@ -15606,7 +15633,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 label="PROGRAMA ACADÉMICO"
                 placeholder="Buscar programa..."
                 options={matProgramasOpts}
-                value={matFilters.programas}
+                value={Array.from(new Set((matFilters.programas || []).map((p) => p === '__NONE__' ? p : normalizeProgramKey(p))))}
                 onChange={(nextValues) => {
                   setMatFilters((prev) => ({
                     ...prev,
@@ -16139,6 +16166,8 @@ const renderCategoryBars = (items = [], options = {}) => {
       });
     }
 
+    // Los períodos sin matriculados tampoco deben ocupar espacio en el eje.
+    filteredSeries = filteredSeries.filter((row) => normalizeNumber(row.matriculados) >= 1);
     const showLabels = filteredSeries.length <= 22;
     const hasSelection = selectedPeriods.length > 0;
 
@@ -16332,6 +16361,8 @@ const renderCategoryBars = (items = [], options = {}) => {
               });
 
               const resolveFacForProg = (progName) => {
+                const override = getProgramFacultyOverride(progName);
+                if (override) return override;
                 const canonKey = normalizeProgramKey(progName);
                 if (canonKey.includes('PSICOLOG') || canonKey.includes('FISIOTERAPIA')) {
                   return 'Ciencias de la Salud';
@@ -16544,6 +16575,8 @@ const renderCategoryBars = (items = [], options = {}) => {
               });
 
               const resolveFacForProg = (progName) => {
+                const override = getProgramFacultyOverride(progName);
+                if (override) return override;
                 const canonKey = normalizeProgramKey(progName);
                 if (canonKey.includes('PSICOLOG') || canonKey.includes('FISIOTERAPIA')) {
                   return 'Ciencias de la Salud';
@@ -16825,7 +16858,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
-                      <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 29, right: 29 }} />
+                      <XAxis dataKey="periodo" scale="band" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 0, right: 0 }} />
                       <YAxis
                         domain={lineDomain}
                         allowDecimals={false}

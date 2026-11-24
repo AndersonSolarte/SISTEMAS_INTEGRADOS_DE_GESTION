@@ -1,4 +1,4 @@
-const { Op, fn, col, literal, QueryTypes, DataTypes } = require('sequelize');
+const { Op, fn, col, literal, where: sqlWhere, QueryTypes, DataTypes } = require('sequelize');
 const crypto = require('crypto');
 const {
   User,
@@ -4454,12 +4454,14 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
   const dbWhere = {
     anio: { [Op.gte]: MATRICULADOS_MIN_DASHBOARD_YEAR }
   };
-  const dbProgramFilters = (programas || [])
-    .map((item) => String(item || '').trim())
-    .filter(Boolean)
-    .map((programa) => ({ programa: { [Op.iLike]: programa } }));
-  if (dbProgramFilters.length > 0) {
-    dbWhere[Op.or] = dbProgramFilters;
+  if (selectedPrograms.size > 0) {
+    // Misma comparación que en memoria: sin tildes, mayúsculas ni espacios extra.
+    // No usar ILIKE: además de excluir variantes, interpreta % y _ como comodines.
+    const normalizedProgramColumn = fn('btrim', fn('regexp_replace',
+      fn('translate', fn('upper', col('programa')), 'ÁÉÍÓÚÜÑ', 'AEIOUUN'),
+      '[^A-Z0-9]+', ' ', 'g'
+    ));
+    dbWhere[Op.and] = sqlWhere(normalizedProgramColumn, { [Op.in]: Array.from(selectedPrograms) });
   }
 
   if (anios && anios.length > 0) {

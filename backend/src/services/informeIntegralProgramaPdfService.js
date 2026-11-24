@@ -2914,10 +2914,10 @@ const generateInformeIntegralProgramaPdf = async ({
 
   const tecPrograms = matriculadosData.catalogoDetalle?.TECNOLOGICO || [
     { programa: 'TECNOLOGÍA EN CONTABILIDAD Y FINANZAS', facultad: 'Ciencias Administrativas y Contables', total: 2196, enfoque: 'Gestión Contable, Tributaria y Financiera' },
-    { programa: 'TECNOLOGIA EN GESTIÓN FINANCIERA', facultad: 'Ingeniería', total: 1010, enfoque: 'Mercados Financieros y Presupuesto Corporativo' },
+    { programa: 'TECNOLOGIA EN GESTIÓN FINANCIERA', facultad: 'Ciencias Administrativas y Contables', total: 1010, enfoque: 'Mercados Financieros y Presupuesto Corporativo' },
     { programa: 'TECNOLOGÍA EN MARKETING DIGITAL', facultad: 'Ciencias Administrativas y Contables', total: 103, enfoque: 'Comercio Electrónico y Mercadeo Estratégico' },
     { programa: 'Tecnología en Marketing Digital (V2)', facultad: 'Ciencias Administrativas y Contables', total: 51, enfoque: 'Medios Digitales y Publicidad Interactiva' },
-    { programa: 'TECNOLOGIA EN ADMINISTRACION FINANCIERA', facultad: 'Ingeniería', total: 3, enfoque: 'Administración Presupuestal y Costos' },
+    { programa: 'TECNOLOGIA EN ADMINISTRACION FINANCIERA', facultad: 'Ciencias Administrativas y Contables', total: 3, enfoque: 'Administración Presupuestal y Costos' },
     { programa: 'TECNOLOGIA EN CONTADURIA Y FINANZAS', facultad: 'Ciencias Administrativas y Contables', total: 2, enfoque: 'Soporte y Asistencia Contable' }
   ];
 
