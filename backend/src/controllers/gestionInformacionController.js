@@ -4593,7 +4593,11 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
       const programOk = !selectedPrograms.size || selectedPrograms.has(normalizeGeoJoinKey(row.programa));
       const yearOk = ignoreYear || !selectedYears.size || selectedYears.has(String(Number(row.anio || 0)));
       const periodToken = normalizeSemesterToken(row.periodo) || '1';
-      const periodOk = !selectedPeriods.size || selectedPeriods.has(periodToken);
+      const fullPeriodKey = `${Number(row.anio || 0)}-${periodToken}`;
+      const periodOk = !selectedRawPeriods.size
+        || selectedRawPeriods.has(fullPeriodKey)
+        || selectedRawPeriods.has(periodToken)
+        || selectedRawPeriods.has(String(row.periodo));
       const sexoOk = !selectedSexos.size || selectedSexos.has(normalizeGenero(row.genero));
       const nivelOk = !selectedNiveles.size || selectedNiveles.has(classifyMatriculadosProgramLevel(row.programa));
       return programOk && yearOk && periodOk && sexoOk && nivelOk;
