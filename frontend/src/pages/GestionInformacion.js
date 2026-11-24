@@ -16579,20 +16579,21 @@ const renderCategoryBars = (items = [], options = {}) => {
                 const periodSet = new Set(selectedPeriods);
                 const normProgsSet = new Set(selectedProgs.map((p) => normalizeProgramKey(p)));
 
-                const allPeriods = (matriculadosPeriodosDisponibles || []).map((p) => p.label || p);
-                const activePeriods = selectedPeriods.length > 0
-                  ? selectedPeriods
-                  : (allPeriods.length ? allPeriods.slice(-4).reverse() : []);
+                const allPeriods = [...new Set([
+                  ...(matriculadosPeriodosDisponibles || []).map((p) => String(p.label || p)),
+                  ...cacheKeys
+                ])];
+                const activePeriods = allPeriods
+                  .filter((p) => (!selectedYears.length || yearSet.has(p.split('-')[0]))
+                    && (!selectedPeriods.length || periodSet.has(p)))
+                  .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+                const activePeriodSet = new Set(activePeriods);
 
                 const facMap = new Map();
 
                 if (cacheKeys.length > 0) {
                   cacheKeys.forEach((pKey) => {
-                    const yrRaw = pKey.split('-')[0];
-                    const yearMatch = !selectedYears.length || yearSet.has(yrRaw);
-                    const periodMatch = !selectedPeriods.length || periodSet.has(pKey);
-
-                    if (!yearMatch || !periodMatch) return;
+                    if (!activePeriodSet.has(pKey)) return;
 
                     const progCounts = matProgramaCache[pKey] || {};
                     Object.entries(progCounts).forEach(([progName, count]) => {
@@ -16657,8 +16658,8 @@ const renderCategoryBars = (items = [], options = {}) => {
               };
 
               return (
-                <Box sx={{ px: 1, py: 0.5, maxHeight: 420, overflowY: 'auto' }}>
-                  <Table size="small" sx={{ minWidth: 620 }}>
+                <Box sx={{ px: 1, py: 0.5, maxHeight: 420, overflow: 'auto' }}>
+                  <Table size="small" stickyHeader sx={{ minWidth: Math.max(620, 540 + activePeriods.length * 110), '& th': { whiteSpace: 'nowrap' } }}>
                     <TableHead>
                       <TableRow sx={{ bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                         <TableCell sx={{ fontWeight: 800, color: '#475569', fontSize: 11, py: 0.9 }}>FACULTAD / PROGRAMA ACADÉMICO</TableCell>
@@ -16668,7 +16669,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                           </TableCell>
                         ))}
                         <TableCell align="right" sx={{ fontWeight: 800, color: '#0f172a', fontSize: 11, py: 0.9 }}>TOTAL</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 800, color: '#475569', fontSize: 11, py: 0.9 }}>% SHARE</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 800, color: '#475569', fontSize: 11, py: 0.9 }}>% PARTICIPACIÓN</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
