@@ -32,7 +32,7 @@ test('administrators message only planning; only an administrator who is the act
   assert.deepEqual(plan.metadata, {});
   assert.equal((await send(users.admin, {})).statusCode, 201);
   assert.equal(notices.at(-1).user_id, 'planning');
-  assert.equal(emails.at(-1).to, 'planning@example.test');
+  assert.equal(emails.at(-1).to, 'planeacionestrategica@unicesmag.edu.co');
   assert.equal((await send(users.planning, { recipient: 'administrator:admin' })).statusCode, 201);
   assert.equal(notices.at(-1).user_id, 'admin');
   assert.ok(notices.every(notice => notice.user_id !== 'leader'));
@@ -45,6 +45,6 @@ test('administrators message only planning; only an administrator who is the act
   assert.equal(plan.metadata.chat_thread.at(-1).channel_kind, 'admin_planning');
   assert.equal((await send(users.admin, {})).statusCode, 201);
   assert.equal(notices.at(-1).user_id, 'planning');
-  assert.equal(emails.at(-1).to, 'planning@example.test');
+  assert.equal(emails.at(-1).to, 'planeacionestrategica@unicesmag.edu.co');
   assert.equal((await send(users.admin, { recipient: 'leader' })).statusCode, 422);
 });

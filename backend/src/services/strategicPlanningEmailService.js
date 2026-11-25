@@ -95,7 +95,7 @@ const prepareAttachments = (html, attachments) => {
   return prepared;
 };
 
-const buildMailOptions = ({ config, recipients, subject, text, html, attachments, replyTo, headers }) => ({
+const buildMailOptions = ({ config, recipients, subject, text, html, attachments, replyTo, headers = {} }) => ({
   from: config.from,
   to: recipients.join(', '),
   replyTo: normalizeRecipient(replyTo || config.replyTo || STRATEGIC_PLANNING_OFFICIAL_EMAIL),
@@ -103,7 +103,10 @@ const buildMailOptions = ({ config, recipients, subject, text, html, attachments
   text: String(text || ''),
   html: html || undefined,
   attachments: prepareAttachments(html, attachments),
-  headers
+  headers,
+  ...(headers['Message-ID'] ? { messageId: headers['Message-ID'] } : {}),
+  ...(headers['In-Reply-To'] ? { inReplyTo: headers['In-Reply-To'] } : {}),
+  ...(headers.References ? { references: headers.References } : {})
 });
 
 const sendWithGoogleOAuth = async (config, mailOptions) => {
@@ -162,6 +165,10 @@ const sendStrategicPlanningEmail = async ({
       html,
       attachments,
       replyTo: effectiveReplyTo,
+      headers,
+      messageId: headers['Message-ID'] || '',
+      inReplyTo: headers['In-Reply-To'] || '',
+      references: headers.References || '',
       allowExternalRecipients: true
     });
     return result;

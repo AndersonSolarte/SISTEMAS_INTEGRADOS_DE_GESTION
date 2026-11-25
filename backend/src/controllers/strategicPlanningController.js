@@ -2182,6 +2182,7 @@ const sendActionPlanChatMessage = wrap(async (req, res) => {
 
   const currentMeta = { ...(actionPlan.metadata || {}) };
   const existingThread = Array.isArray(currentMeta.chat_thread) ? [...currentMeta.chat_thread] : [];
+  newMessage.email_thread_root_id = require('../services/actionPlanChatEmailPolicy').chatEmailThreadRoot(newMessage, currentMeta);
   existingThread.push(newMessage);
   currentMeta.chat_thread = existingThread;
 

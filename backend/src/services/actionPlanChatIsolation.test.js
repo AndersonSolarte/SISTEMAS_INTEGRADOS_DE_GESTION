@@ -78,7 +78,7 @@ test('notification email and email replies target only the other participant', a
     delivery: { type: 'planning_leader', user: { id: 'planning-a', email: 'planning-a@example.test' } }, message: { ...message, sender_name: 'Leader A', id: 'msg' }, baseUrl: 'http://localhost:3000',
     sendEmail: async mail => emails.push(mail), notifications: { create: async notice => notifications.push(notice) } });
   assert.equal(emails.length, 1);
-  assert.equal(emails[0].to, 'planning-a@example.test');
+  assert.equal(emails[0].to, 'planeacionestrategica@unicesmag.edu.co');
   assert.equal(emails[0].replyTo, 'leader-a@example.test');
   assert.equal(emails[0].cc, undefined);
   assert.equal(emails[0].bcc, undefined);

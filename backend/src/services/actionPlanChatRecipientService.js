@@ -13,7 +13,7 @@ async function resolveAdminChatRecipient({ actor, plan, recipient, users = requi
     if (!hasConversation) throw failure('No tiene acceso a esta conversación.', 403);
     const selected = await users.findOne({ where: { id, role: 'administrador', estado: 'activo' } });
     if (!selected) throw failure('El administrador no está activo.');
-    return { type: 'administrator', channel: 'admin_planning', user: { id: selected.id, name: selected.nombre || selected.username || '', email: selected.email || '' } };
+    return { type: 'administrator', channel: 'admin_planning', user: { id: selected.id, role: selected.role, name: selected.nombre || selected.username || '', email: selected.email || '' } };
   }
   if (actor.role !== 'administrador') throw failure('Solo un administrador puede elegir el destinatario del chat.', 403);
   if (recipient !== 'planning_effectiveness') throw failure('Los mensajes del administrador solo se envían a Planeación y Efectividad.');
@@ -23,7 +23,7 @@ async function resolveAdminChatRecipient({ actor, plan, recipient, users = requi
   const selected = await users.findOne({ where: { ...(existing ? { id: otherParticipant(existing, actor.id) } : {}), role: 'planeacion_efectividad', estado: 'activo' }, order: [['updated_at', 'DESC'], ['id', 'ASC']] });
   if (!selected) throw failure('No hay un usuario activo de Planeación y Efectividad para esta conversación.');
   if (String(selected.id) === String(actor.id)) throw failure('Seleccione un destinatario distinto de su propia cuenta.');
-  return { type: recipient, user: { id: selected.id, name: selected.nombre || selected.username || '', email: selected.email || '' } };
+  return { type: recipient, user: { id: selected.id, role: selected.role, name: selected.nombre || selected.username || '', email: selected.email || '' } };
 }
 
 async function resolveLeaderPlanningRecipient({ actor, plan, users = require('../models').User }) {
@@ -39,7 +39,7 @@ async function resolveLeaderPlanningRecipient({ actor, plan, users = require('..
   if (!selected || String(selected.id) === String(actor.id)) throw failure('No hay un destinatario activo para esta conversación.');
   return { type: fromLeader ? 'planning_leader' : selected.role === 'administrador' ? 'administrator' : 'leader',
     ...(selected.role === 'administrador' && !fromLeader ? { channel: 'admin_planning' } : {}),
-    user: { id: selected.id, name: selected.nombre || selected.username || '', email: selected.email || '' } };
+    user: { id: selected.id, role: selected.role, name: selected.nombre || selected.username || '', email: selected.email || '' } };
 }
 
 async function notifyAdminChatRecipient({ actor, plan, delivery, message, baseUrl,
@@ -55,9 +55,10 @@ async function notifyAdminChatRecipient({ actor, plan, delivery, message, baseUr
     title: title.slice(0, 240), message: (actor.nombre || actor.username || 'Administrador') + ': ' + message.message.slice(0, 95),
     link, metadata: { action_plan_code: plan.code, sender_id: actor.id, sender_name: message.sender_name,
       recipient_type: delivery.type, recipient_id: delivery.user.id, channel_kind: message.channel_kind, conversation_id: message.conversation_id, chat_message_id: message.id } });
-  if (delivery.user.email) {
+  const emailPolicy = require('./actionPlanChatEmailPolicy').chatEmailPolicy({ actor, plan, delivery, message });
+  if (emailPolicy.to) {
     const url = baseUrl + link;
-    await sendEmail({ to: delivery.user.email, replyTo: actor.email || delivery.user.email, subject: title,
+    await sendEmail({ ...emailPolicy,
       text: message.sender_name + ' le escribió sobre el plan ' + plan.code + ':\n\n' + message.message + '\n\n' + url,
       html: renderInstitutionalTemplate({ title,
         introHtml: '<p>Hola, ' + escapeHtml(delivery.user.name) + '. ' + escapeHtml(message.sender_name) + ' le envió un mensaje sobre este plan.</p>',

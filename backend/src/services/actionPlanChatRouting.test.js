@@ -61,7 +61,7 @@ test('chat controller persists the selected recipient and does not broadcast', a
       body: { senderType, message: 'Leader-planning conversation', public_base_url: 'http://localhost:3000' }, get: () => 'http://localhost:3000' }, result);
     assert.equal(result.statusCode, 201, JSON.stringify(result.body));
     assert.equal(notices.at(-1).user_id, target);
-    assert.equal(emails.at(-1).to, target + '@example.test');
+    assert.equal(emails.at(-1).to, target === 'planning' ? 'planeacionestrategica@unicesmag.edu.co' : target + '@example.test');
     assert.equal(plan.metadata.chat_thread.at(-1).channel_kind, 'leader_planning');
     const filtered = require('./actionPlanChatPrivacy').filterChatPayload({ actionPlan: plan }, { id: 'admin', role: 'administrador' });
     assert.ok(!JSON.stringify(filtered).includes('Leader-planning conversation'));

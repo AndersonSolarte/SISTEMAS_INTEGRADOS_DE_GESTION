@@ -42,7 +42,7 @@ test('each selection sends exactly one notification and email to that recipient'
     assert.equal(notices[0].user_id, type);
     assert.match(notices[0].link, type === 'leader' ? /plan-accion-mi-plan/ : /planeacion-efectividad/);
     assert.equal(emails.length, 1);
-    assert.equal(emails[0].to, type + '@example.test');
+    assert.equal(emails[0].to, type === 'planning_effectiveness' ? 'planeacionestrategica@unicesmag.edu.co' : type + '@example.test');
     assert.equal(emails[0].cc, undefined);
     assert.ok(!emails[0].html.includes('<script>unsafe</script>'));
   }
