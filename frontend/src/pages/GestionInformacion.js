@@ -2771,7 +2771,7 @@ function GestionInformacion() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      if (canImportDatabaseData) {
+      if (canImportDatabaseData && menuView === 'gestion_bases') {
         const [listRes, resumenRes] = await Promise.all([
           gestionInformacionService.getCargues({
             page: page + 1,
@@ -2793,7 +2793,7 @@ function GestionInformacion() {
     } finally {
       setLoading(false);
     }
-  }, [canImportDatabaseData, enqueueSnackbar, page, rowsPerPage]);
+  }, [canImportDatabaseData, enqueueSnackbar, menuView, page, rowsPerPage]);
 
   const fetchRegistrosCalificadosDashboard = useCallback(async () => {
     setRegistrosCalificadosLoading(true);
@@ -3133,8 +3133,10 @@ function GestionInformacion() {
   }, [isGestionProcesosStatsRoute, selectedCard, baseSeleccionada, visibleBaseKeys]);
 
   useEffect(() => {
+    // Los tableros consultan sus propios datos; el historial solo se usa en bases.
+    if (menuView === 'estadistica' && selectedCard) return;
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, menuView, selectedCard]);
 
   useEffect(() => {
     if (menuView === 'estadistica' && selectedCard === 'poblacional') {

@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import {
   Box,
   Button,
   Chip,
+  LinearProgress,
   Fade,
   Paper,
   Stack,
@@ -13,11 +14,12 @@ import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import BusinessIcon from '@mui/icons-material/Business';
 import SchoolIcon from '@mui/icons-material/School';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
-import RecursoHumanoDashboard from './RecursoHumanoDashboard';
-import AdminDirectivosDashboard from './AdminDirectivosDashboard';
-import ReporteSalidaSeguimiento from '../reporteSalida/ReporteSalidaSeguimiento';
 import reporteSalidaService from '../../services/reporteSalidaService';
 import { useAuth } from '../../context/AuthContext';
+
+const RecursoHumanoDashboard = lazy(() => import('./RecursoHumanoDashboard'));
+const AdminDirectivosDashboard = lazy(() => import('./AdminDirectivosDashboard'));
+const ReporteSalidaSeguimiento = lazy(() => import('../reporteSalida/ReporteSalidaSeguimiento'));
 
 const SUB_CARDS = [
   {
@@ -48,7 +50,6 @@ const SUB_CARDS = [
 
 function RecursoHumanoLandingPage({ onBack }) {
   const [subView, setSubView] = useState(null);
-  const [reporteSalidaEnabled, setReporteSalidaEnabled] = useState(false);
   const [seguimientoAccess, setSeguimientoAccess] = useState(null);
   const { user, isAdmin } = useAuth();
   
@@ -56,19 +57,13 @@ function RecursoHumanoLandingPage({ onBack }) {
 
   useEffect(() => {
     let active = true;
-    Promise.allSettled([
-      reporteSalidaService.getConfig(),
-      reporteSalidaService.getSeguimiento({ page: 1, limit: 1 })
-    ])
-      .then(([configResult, seguimientoResult]) => {
+    reporteSalidaService.getSeguimientoBadge()
+      .then((response) => {
         if (!active) return;
-        const enabled = configResult.status === 'fulfilled' && Boolean(configResult.value?.data?.enabled);
-        setReporteSalidaEnabled(enabled);
-        setSeguimientoAccess(seguimientoResult.status === 'fulfilled' ? seguimientoResult.value?.data?.access || null : null);
+        setSeguimientoAccess(response?.data?.access || null);
       })
       .catch(() => {
         if (!active) return;
-        setReporteSalidaEnabled(false);
         setSeguimientoAccess(null);
       });
     return () => { active = false; };
@@ -113,15 +108,15 @@ function RecursoHumanoLandingPage({ onBack }) {
   }
 
   if (subView === 'profesores') {
-    return <RecursoHumanoDashboard onBack={() => setSubView(null)} />;
+    return <Suspense fallback={<LinearProgress aria-label="Cargando profesores" />}><RecursoHumanoDashboard onBack={() => setSubView(null)} /></Suspense>;
   }
 
   if (subView === 'administrativos') {
-    return <AdminDirectivosDashboard onBack={() => setSubView(null)} />;
+    return <Suspense fallback={<LinearProgress aria-label="Cargando administrativos" />}><AdminDirectivosDashboard onBack={() => setSubView(null)} /></Suspense>;
   }
 
   if (subView === 'seguimiento_reportes') {
-    return <ReporteSalidaSeguimiento initialAccess={seguimientoAccess} onBack={() => setSubView(null)} />;
+    return <Suspense fallback={<LinearProgress aria-label="Cargando seguimiento" />}><ReporteSalidaSeguimiento initialAccess={seguimientoAccess} onBack={() => setSubView(null)} /></Suspense>;
   }
 
   return (
