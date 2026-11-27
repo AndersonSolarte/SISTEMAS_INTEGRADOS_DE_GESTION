@@ -9038,7 +9038,7 @@ const sendProyeccionSocialGroupApprovalEmail = async (solicitudes, token) => {
     `
   });
 
-  const psEmail = PROYECCION_SOCIAL_LEADER_EMAIL || 'proyeccionsocial@unicesmag.edu.co';
+  const psEmail = getReporteSalidaRecipients().proyeccionSocial;
   return sendInstitutionalEmail({
     to: [psEmail],
     subject,
